@@ -26,3 +26,8 @@ venv/
 # Local scratch
 scratch/
 *.log
+
+# feature ledger (feat.ps1) -- file DAN XUAT, sinh lai duoc, khong bao gio commit
+docs/features-dashboard.html
+tools/feat-actions/
+.feat-drift-history.json
