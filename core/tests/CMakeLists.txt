@@ -11,7 +11,14 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(rta_core_tests
     test_window.cpp
     test_ringbuffer.cpp
+    test_fft.cpp
 )
+
+# Golden vectors are committed, so the C++ suite needs neither Python nor
+# NumPy. Regenerate them with tools/gen_golden.py and review the diff.
+target_compile_definitions(rta_core_tests PRIVATE
+    RTA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
+target_include_directories(rta_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(rta_core_tests PRIVATE rta::core Catch2::Catch2WithMain)
 

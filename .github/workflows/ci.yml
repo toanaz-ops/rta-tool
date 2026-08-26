@@ -15,7 +15,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRTA_BUILD_TESTS=ON -DRTA_BUILD_APP=OFF

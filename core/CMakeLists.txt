@@ -9,6 +9,8 @@
 # test in core/tests -- not by this comment.
 
 add_library(rta_core STATIC
+    src/dsp/Fft.cpp
+    src/dsp/RealFft.cpp
     src/dsp/Window.cpp
 )
 
