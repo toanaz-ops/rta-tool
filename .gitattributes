@@ -1,0 +1,10 @@
+# Normalise to LF in the repository. CI builds on Linux and macOS as well as
+# Windows, and a CMake or shell file that arrives with CRLF fails there in ways
+# that look like a code bug rather than a checkout bug.
+* text=auto eol=lf
+
+# Fonts and other binaries must never be touched.
+*.ttf  binary
+*.otf  binary
+*.png  binary
+*.wav  binary

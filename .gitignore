@@ -1,0 +1,28 @@
+# Build
+build/
+out/
+cmake-build-*/
+_deps/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Third-party SDKs fetched at configure time (not redistributable from here)
+third_party/asio-sdk/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local scratch
+scratch/
+*.log

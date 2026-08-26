@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+cmake_minimum_required(VERSION 3.22)
+
+project(RtaTool
+    VERSION 0.1.0
+    DESCRIPTION "Dual-FFT audio measurement tool"
+    # C is required: JUCE compiles C sources in several of its modules and
+    # refuses to configure without the language enabled.
+    LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+endif()
+
+option(RTA_BUILD_TESTS "Build rta_core unit tests" ON)
+option(RTA_BUILD_APP   "Build the JUCE application shell" OFF)
+option(RTA_ENABLE_ASIO "Enable ASIO support (Windows only)" OFF)
+
+if(MSVC)
+    add_compile_options(/W4 /permissive- /utf-8)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# --- Layers, bottom up -------------------------------------------------
+# core      pure DSP, no framework          (portable)
+# platform  audio device I/O behind an interface
+# ui        az_ui JUCE module, design system (portable)
+# app       composition root
+
+add_subdirectory(core)
+
+if(RTA_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(core/tests)
+endif()
+
+if(RTA_BUILD_APP)
+    # JUCE is acquired here, not inside app/, because ui/ needs it too.
+    #
+    # RTA_JUCE_PATH lets a machine that already has a checkout reuse it rather
+    # than clone a second ~200 MB copy. It is opt-in and explicit: silently
+    # reaching for a sibling project's copy would make the build depend on a
+    # path outside this repo without saying so.
+    set(RTA_JUCE_PATH "" CACHE PATH "Existing JUCE checkout to reuse; empty = fetch")
+
+    if(RTA_JUCE_PATH)
+        message(STATUS "Reusing JUCE from ${RTA_JUCE_PATH}")
+        add_subdirectory(${RTA_JUCE_PATH} ${CMAKE_BINARY_DIR}/_juce EXCLUDE_FROM_ALL)
+    else()
+        include(FetchContent)
+        FetchContent_Declare(JUCE
+            GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+            GIT_TAG        9.0.1
+            GIT_SHALLOW    TRUE
+        )
+        FetchContent_MakeAvailable(JUCE)
+    endif()
+
+    add_subdirectory(ui)
+    add_subdirectory(app)
+endif()
