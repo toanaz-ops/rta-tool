@@ -30,22 +30,40 @@ const std::array<Swatch, 13> kSwatches {{
     { az::ui::danger,     "danger" },
 }};
 
+/// Three faces, not two. A bool called `mono` cannot express the mono MEDIUM
+/// weight, and a type that cannot express a value is a type that will silently
+/// drop it -- which is exactly what happened: the countdown step is specified
+/// as mono medium and was being drawn in regular, so the heaviest figure in the
+/// scale rendered as the thinnest-looking one.
+enum class Face { Legend, Mono, MonoMedium };
+
 struct TypeStep
 {
     float       size;
     const char* name;
-    bool        mono;
+    Face        face;
 };
 
 const std::array<TypeStep, 7> kTypeScale {{
-    { az::ui::countdownFontSize, "countdown 26",  true  },
-    { az::ui::switchFontSize,    "switch 21",     false },
-    { az::ui::brandFontSize,     "brand 16",      false },
-    { az::ui::captionFontSize,   "caption 14.5",  false },
-    { az::ui::columnFontSize,    "column 13",     false },
-    { az::ui::tableFontSize,     "table 12.5",    true  },
-    { az::ui::hintFontSize,      "hint 11",       true  },
+    { az::ui::countdownFontSize, "countdown 26",  Face::MonoMedium },
+    { az::ui::switchFontSize,    "switch 21",     Face::Legend     },
+    { az::ui::brandFontSize,     "brand 16",      Face::Legend     },
+    { az::ui::captionFontSize,   "caption 14.5",  Face::Legend     },
+    { az::ui::columnFontSize,    "column 13",     Face::Legend     },
+    { az::ui::tableFontSize,     "table 12.5",    Face::Mono       },
+    { az::ui::hintFontSize,      "hint 11",       Face::Mono       },
 }};
+
+juce::Font faceFont (const TypeStep& step)
+{
+    switch (step.face)
+    {
+        case Face::Mono:       return az::ui::monoFont (step.size, false);
+        case Face::MonoMedium: return az::ui::monoFont (step.size, true);
+        case Face::Legend:     break;
+    }
+    return az::ui::legendFont (step.size, true, az::ui::trackingColumn);
+}
 
 } // namespace
 
@@ -82,7 +100,7 @@ void MainComponent::paint (juce::Graphics& g)
     paintSwatches (g, area.removeFromTop (140));
 
     area.removeFromTop (az::ui::gap * 2);
-    paintTypeScale (g, area.removeFromTop (230));
+    paintTypeScale (g, area.removeFromTop (280));
 
     area.removeFromTop (az::ui::gap * 2);
     paintPrimitives (g, area);
@@ -118,7 +136,9 @@ void MainComponent::paintTypeScale (juce::Graphics& g, juce::Rectangle<int> area
 
     for (const auto& step : kTypeScale)
     {
-        auto row = area.removeFromTop ((int) step.size + az::ui::spacing * 2);
+        // 1.5x the type size, so a 26 px figure is not boxed in by a 34 px row.
+        // Leading is part of legibility, not decoration.
+        auto row = area.removeFromTop ((int) (step.size * 1.5f));
 
         auto gutter = row.removeFromLeft (az::ui::gutterWidth);
         g.setColour (az::ui::faded);
@@ -126,9 +146,9 @@ void MainComponent::paintTypeScale (juce::Graphics& g, juce::Rectangle<int> area
         g.drawText (step.name, gutter, juce::Justification::centredLeft);
 
         g.setColour (az::ui::text);
-        g.setFont (step.mono ? az::ui::monoFont (step.size)
-                             : az::ui::legendFont (step.size, true, az::ui::trackingColumn));
-        g.drawText (step.mono ? "1000.0 Hz  -20.0 dB  0.98" : "TRANSFER FUNCTION",
+        g.setFont (faceFont (step));
+        g.drawText (step.face == Face::Legend ? "TRANSFER FUNCTION"
+                                              : "1000.0 Hz  -20.0 dB  0.98",
                     row, juce::Justification::centredLeft);
     }
 }
