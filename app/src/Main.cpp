@@ -7,31 +7,11 @@
 
 #include <az_ui/az_ui.h>
 
-#include <BinaryData.h>
-
+#include "AppTypefaces.h"
 #include "MainComponent.h"
 
 namespace
 {
-
-/// Hand az_ui the typeface bytes. The module deliberately does not reach for
-/// BinaryData itself -- see the rationale in az_ui/theme/Typography.h -- so
-/// this is the one place the generated symbol names appear.
-void installTypefaces()
-{
-    az::ui::TypefaceSet faces;
-    faces.legendSemiBold = { BinaryData::SairaCondensedSemiBold_ttf,
-                             BinaryData::SairaCondensedSemiBold_ttfSize };
-    faces.legendBold     = { BinaryData::SairaCondensedBold_ttf,
-                             BinaryData::SairaCondensedBold_ttfSize };
-    faces.body           = { BinaryData::IBMPlexSansRegular_ttf,
-                             BinaryData::IBMPlexSansRegular_ttfSize };
-    faces.mono           = { BinaryData::IBMPlexMonoRegular_ttf,
-                             BinaryData::IBMPlexMonoRegular_ttfSize };
-    faces.monoMedium     = { BinaryData::IBMPlexMonoMedium_ttf,
-                             BinaryData::IBMPlexMonoMedium_ttfSize };
-    az::ui::setTypefaces (faces);
-}
 
 class MainWindow final : public juce::DocumentWindow
 {
@@ -66,7 +46,7 @@ public:
 
     void initialise (const juce::String&) override
     {
-        installTypefaces();
+        installAppTypefaces();
         juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
         window = std::make_unique<MainWindow>();
     }

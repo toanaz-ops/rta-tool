@@ -124,3 +124,39 @@ each figure.
 **9.0.1**, matching the checkout at
 `D:\DEV CAVE EP3\PROJECT005-AZ-handsfree\external\JUCE`, which is shipping in
 production. Set `RTA_JUCE_PATH` to reuse it instead of fetching a second copy.
+
+## Reading out numbers
+
+**Frequency displays as a whole number of hertz.** `1000 Hz`, not `1000.0 Hz`.
+One-hertz resolution is already finer than any decision made while tuning a
+system, and a decimal that never carries information costs a character on every
+readout and invites a false sense of precision.
+
+**dB keeps one decimal.** 0.1 dB is a real, actionable difference; 0.1 Hz is
+not. Different quantities, different rules -- do not unify them for tidiness.
+
+Coherence is 0..1 with two decimals.
+
+## Seeing the GUI
+
+Do not screen-capture the running app. Render it offscreen:
+
+```
+cmake --build build --config Release --target rtatool_snapshot --parallel
+build/app/rtatool_snapshot_artefacts/Release/rtatool_snapshot.exe shots 1100 760
+```
+
+Then read `shots/specimen.png`. Screen capture of a live app fails for reasons
+unrelated to the app -- another window drifts in front, desktop DPI scaling
+rescales the result, layout has not settled after a resize, and the running
+binary holds a lock on its own .exe so the next build cannot link. A snapshot
+has none of those and is identical every run.
+
+Invoke the exe through `cmd //c` from Git Bash; direct invocation returns 127.
+
+Two things make a snapshot come out blank: `setSize()` does not call `resized()`
+on a component with no desktop peer, and `createComponentSnapshot` needs `true`
+for its children argument. Both are handled in `tools/snapshot.cpp`.
+
+Credit: the technique is from the `juce-component-snapshot` skill in
+PROJECT005-AZ-handsfree.

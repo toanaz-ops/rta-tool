@@ -35,6 +35,23 @@ const std::array<Swatch, 13> kSwatches {{
 /// drop it -- which is exactly what happened: the countdown step is specified
 /// as mono medium and was being drawn in regular, so the heaviest figure in the
 /// scale rendered as the thinnest-looking one.
+/// The specimen's own label column.
+///
+/// Deliberately NOT az::ui::gutterWidth. That token is 74 px because it sizes
+/// the legend gutter of a real panel, where legends are single words. These
+/// labels carry a name AND a size ("countdown 26"), which at columnFontSize
+/// needs roughly 95 px -- reusing the panel token here would silently clip
+/// them. A token means "this measurement", not "any measurement of about this
+/// kind".
+constexpr int kLabelColumn = 220;
+
+/// Chip height in the palette band.
+constexpr int kSwatchHeight = 84;
+
+/// Leading factor. A figure needs room above and below it or the row boxes it
+/// in; 1.5x is the smallest that still reads as a list rather than a stack.
+constexpr float kLeading = 1.5f;
+
 enum class Face { Legend, Mono, MonoMedium };
 
 struct TypeStep
@@ -53,6 +70,14 @@ const std::array<TypeStep, 7> kTypeScale {{
     { az::ui::tableFontSize,     "table 12.5",    Face::Mono       },
     { az::ui::hintFontSize,      "hint 11",       Face::Mono       },
 }};
+
+int typeScaleHeight()
+{
+    int total = 0;
+    for (const auto& step : kTypeScale)
+        total += (int) (step.size * kLeading);
+    return total;
+}
 
 juce::Font faceFont (const TypeStep& step)
 {
@@ -89,18 +114,37 @@ void MainComponent::paint (juce::Graphics& g)
 
     auto area = getLocalBounds().reduced (az::ui::gap * 2);
 
-    auto masthead = area.removeFromTop (az::ui::mastheadHeight);
-    g.setColour (az::ui::text);
-    g.setFont (az::ui::legendFont (az::ui::brandFontSize, true, az::ui::trackingCaption));
-    g.drawText ("RTA TOOL  \xe2\x80\x94  SODIUM RACK SPECIMEN",
-                masthead, juce::Justification::centredLeft);
-    az::ui::drawEngravedDivider (g, masthead.removeFromBottom (2));
+    // The title is drawn as two pieces rather than one string with a dash in
+    // it. Two reasons: the wordmark and its qualifier want different weights,
+    // and a one-piece title needs a non-ASCII dash, which is a source-encoding
+    // question this project has no reason to open.
+    auto masthead = area.removeFromTop (az::ui::transportHeight / 2);
+    auto rule = masthead.removeFromBottom (2);
 
-    area.removeFromTop (az::ui::gap);
-    paintSwatches (g, area.removeFromTop (140));
+    const auto brandFont = az::ui::legendFont (az::ui::switchFontSize, true,
+                                               az::ui::trackingCaption);
+    g.setColour (az::ui::text);
+    g.setFont (brandFont);
+    g.drawText ("RTA TOOL", masthead, juce::Justification::centredLeft);
+
+    masthead.removeFromLeft ((int) az::ui::stringWidth (brandFont, "RTA TOOL")
+                             + az::ui::gap * 3);
+    g.setColour (az::ui::dim);
+    g.setFont (az::ui::legendFont (az::ui::columnFontSize, false, az::ui::trackingColumn));
+    g.drawText ("SODIUM RACK SPECIMEN", masthead, juce::Justification::centredLeft);
+
+    az::ui::drawEngravedDivider (g, rule);
+
+    // Each band takes the height its content needs. Hard-coded band heights
+    // are what left a hand's width of dead space under the type scale in the
+    // first pass: the number was a guess, and a guess cannot follow the
+    // content when the content changes.
+    area.removeFromTop (az::ui::gap * 2);
+    paintSwatches (g, area.removeFromTop (az::ui::captionHeight + kSwatchHeight
+                                          + az::ui::captionHeight));
 
     area.removeFromTop (az::ui::gap * 2);
-    paintTypeScale (g, area.removeFromTop (280));
+    paintTypeScale (g, area.removeFromTop (az::ui::captionHeight + typeScaleHeight()));
 
     area.removeFromTop (az::ui::gap * 2);
     paintPrimitives (g, area);
@@ -116,17 +160,24 @@ void MainComponent::paintSwatches (juce::Graphics& g, juce::Rectangle<int> area)
     {
         auto cell = area.removeFromLeft (cellWidth).reduced (az::ui::spacing / 2, 0);
 
-        auto chip = cell.removeFromTop (cell.getHeight() - 20).toFloat();
+        auto chip = cell.removeFromTop (kSwatchHeight).toFloat();
         g.setColour (swatch.colour);
         g.fillRoundedRectangle (chip, az::ui::cornerRadius);
-        g.setColour (az::ui::border);
+
+        // Outlined in `dim`, not in `border`. `border` is the engraved hairline
+        // of the real UI and is nearly the value of the darkest chips, so the
+        // `background` swatch came out invisible against the page it was drawn
+        // on -- a palette whose first entry cannot be seen has failed at its
+        // one job. This outline is specimen chrome, not part of the system.
+        g.setColour (az::ui::dim);
         g.drawRoundedRectangle (chip.reduced (0.5f), az::ui::cornerRadius, 1.0f);
 
-        g.setColour (az::ui::faded);
-        const auto font = az::ui::monoFont (10.0f);
+        g.setColour (az::ui::dim);
+        const auto font = az::ui::monoFont (az::ui::hintFontSize);
         g.setFont (font);
         g.drawText (az::ui::elideMiddle (font, swatch.name, (float) cell.getWidth()),
-                    cell, juce::Justification::centredTop);
+                    cell.removeFromTop (az::ui::captionHeight),
+                    juce::Justification::centredTop);
     }
 }
 
@@ -136,41 +187,82 @@ void MainComponent::paintTypeScale (juce::Graphics& g, juce::Rectangle<int> area
 
     for (const auto& step : kTypeScale)
     {
-        // 1.5x the type size, so a 26 px figure is not boxed in by a 34 px row.
-        // Leading is part of legibility, not decoration.
-        auto row = area.removeFromTop ((int) (step.size * 1.5f));
+        auto row = area.removeFromTop ((int) (step.size * kLeading));
 
-        auto gutter = row.removeFromLeft (az::ui::gutterWidth);
-        g.setColour (az::ui::faded);
-        g.setFont (az::ui::monoFont (10.0f));
-        g.drawText (step.name, gutter, juce::Justification::centredLeft);
+        auto gutter = row.removeFromLeft (kLabelColumn);
+        // Set at ITS OWN step's size, so the two columns descend together. Held
+        // at one size the label column reads as a second, flat typographic
+        // voice arguing with the descending one beside it. Hierarchy is carried
+        // by colour instead -- dim against text -- and the smallest step is
+        // hintFontSize, which the system already defines as readable, so no
+        // floor is needed.
+        g.setColour (az::ui::dim);
+        const auto labelFont = az::ui::monoFont (step.size);
+        g.setFont (labelFont);
+        g.drawText (az::ui::elideMiddle (labelFont, step.name, (float) gutter.getWidth()),
+                    gutter, juce::Justification::centredLeft);
 
         g.setColour (az::ui::text);
         g.setFont (faceFont (step));
         g.drawText (step.face == Face::Legend ? "TRANSFER FUNCTION"
-                                              : "1000.0 Hz  -20.0 dB  0.98",
+                                              : "1000 Hz   -20.0 dB   0.98",
                     row, juce::Justification::centredLeft);
     }
 }
 
 void MainComponent::paintPrimitives (juce::Graphics& g, juce::Rectangle<int> area)
 {
-    az::ui::drawCaption (g, "PRIMITIVES & CONTROLS",
+    az::ui::drawCaption (g, "PRIMITIVES",
                          area.removeFromTop (az::ui::captionHeight), az::ui::dim);
 
-    // A panel face with a recessed well on it -- the two surfaces that
-    // everything else in the system is built out of.
-    auto panelArea = area.removeFromTop (az::ui::fieldHeight + az::ui::gap * 2);
+    // A panel face carrying the two field states, so a change to drawWell shows
+    // up here rather than only inside whichever screen happens to use it.
+    auto panelArea = area.removeFromTop (az::ui::fieldHeight * 2 + az::ui::gap * 5);
     g.setColour (az::ui::panel);
     g.fillRoundedRectangle (panelArea.toFloat(), az::ui::cornerRadius);
+    panelArea.reduce (az::ui::gap * 2, az::ui::gap * 2);
 
-    auto wellArea = panelArea.reduced (az::ui::gap)
-                             .removeFromLeft (280)
-                             .withHeight (az::ui::fieldHeight);
-    az::ui::drawWell (g, wellArea.toFloat(), false);
-    g.setColour (az::ui::dim);
-    g.setFont (az::ui::monoFont (az::ui::readoutFontSize));
-    g.drawText ("  48000 Hz  /  256 samples", wellArea, juce::Justification::centredLeft);
+    const auto readout = az::ui::monoFont (az::ui::readoutFontSize);
+
+    struct Field { const char* legend; const char* value; bool focused; };
+    const Field fields[] = {
+        { "STREAM", "48000 Hz   256 samples",            false },
+        { "DEVICE", "Focusrite Scarlett 18i20 USB Analogue 7", true  },
+    };
+
+    for (const auto& field : fields)
+    {
+        auto row = panelArea.removeFromTop (az::ui::fieldHeight);
+
+        auto legendArea = row.removeFromLeft (az::ui::gutterWidth);
+        g.setColour (az::ui::faded);
+        g.setFont (az::ui::legendFont (az::ui::columnFontSize, true, az::ui::trackingColumn));
+        g.drawText (field.legend, legendArea, juce::Justification::centredLeft);
+
+        auto well = row.removeFromLeft (220);
+        az::ui::drawWell (g, well.toFloat(), field.focused);
+
+        // Deliberately narrower than the value it holds, so the middle-elision
+        // is visible: a channel is identified by its LAST characters, and
+        // trailing truncation would leave two ports looking identical.
+        g.setColour (az::ui::text);
+        g.setFont (readout);
+        g.drawText (az::ui::elideMiddle (readout, field.value,
+                                         (float) well.getWidth() - az::ui::gap * 2),
+                    well.reduced (az::ui::gap, 0), juce::Justification::centredLeft);
+
+        g.setColour (az::ui::faded);
+        g.setFont (az::ui::monoFont (az::ui::hintFontSize));
+        g.drawText (field.focused ? "drawWell (focused)" : "drawWell (idle)",
+                    row.reduced (az::ui::gap * 2, 0), juce::Justification::centredLeft);
+
+        panelArea.removeFromTop (az::ui::gap);
+    }
+
+    area.removeFromTop (az::ui::gap * 2);
+    az::ui::drawCaption (g, "ENGRAVED DIVIDER",
+                         area.removeFromTop (az::ui::captionHeight), az::ui::faded);
+    az::ui::drawEngravedDivider (g, area.removeFromTop (2));
 }
 
 void MainComponent::resized()
