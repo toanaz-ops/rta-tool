@@ -32,3 +32,4 @@ docs/features-dashboard.html
 tools/feat-actions/
 .feat-drift-history.json
 shots/
+build-ci/
