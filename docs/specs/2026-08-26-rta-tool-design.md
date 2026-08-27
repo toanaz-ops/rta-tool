@@ -11,7 +11,7 @@ that matters:
 
 | | gap |
 |---|---|
-| [Open Sound Meter][osm] | no ASIO; DSP entangled with Qt/QML so accuracy cannot be verified independently |
+| [Open Sound Meter][osm] | ASIO only via an optional build flag, absent from default builds; DSP entangled with Qt/QML so accuracy cannot be verified independently |
 | [OpenOptimize][oo] | dormant since 2019 |
 | [Friture][friture] | a visualiser, not a measurement instrument — no transfer function |
 | [REW][rew] | excellent room analysis, but Java and not built for live low-latency dual-FFT |

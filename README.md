@@ -18,9 +18,11 @@ best ideas. It exists to close three gaps that all of them share:
    numbers. Every algorithm is asserted against closed-form identities and
    golden vectors generated from NumPy/SciPy, on CI, with no hardware. That rule
    is enforced by a test, not by a comment — see `core/tests/check_no_framework_deps.cmake`.
-2. **No ASIO.** In October 2025 Steinberg dual-licensed the ASIO SDK under
-   GPLv3, removing the legal barrier that kept open-source Windows analysers off
-   low-latency multichannel drivers for two decades. This project uses it.
+2. **ASIO absent from default builds.** Open Sound Meter carries an optional
+   ASIO backend behind a `USE_ASIO` build flag, gated for years by Steinberg's
+   proprietary SDK licence. In October 2025 Steinberg dual-licensed the SDK
+   under GPLv3, so this project ships multichannel ASIO on by default, with
+   per-channel measurement/reference routing.
 3. **No multi-resolution transfer function.** A single fixed FFT gives too few
    points at 30 Hz and thousands of redundant ones at 16 kHz. Phase 3 implements
    a multi-time-window engine (decimation cascade with per-band FFT sizes).
