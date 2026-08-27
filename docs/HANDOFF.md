@@ -7,24 +7,16 @@ docs/plans/MASTER-EXECUTION-PLAN.md trước khi đọc bất kỳ code nào.*
 
 ```
 git log --oneline | wc -l          -> 46 commits, main, đã push đủ
-ctest --test-dir build -C Release  -> 119/119 (shared build, TRƯỚC generator)
+ctest --test-dir build -C Release  -> 149/149 (generator ĐÃ commit, 66c770c)
 warnings /W4                       -> 0
 snapshot exit code                 -> 0 (heap bug đã diệt tận gốc)
 ```
 
 ## Việc DANG DỞ — làm đầu tiên
 
-**Generator track chưa commit, đang nằm trên đĩa** (`git status` sẽ thấy
-core/gen/*, test_generator_*, tools/gen_generator.py, golden/generator.txt).
-Một coordinator agent có thể vẫn đang chạy vòng tích hợp trong `build-gen/`.
-Trình tự:
-
-1. Nếu báo cáo gom cuối của coordinator đã về root — đối chiếu nó với đĩa.
-2. Nếu không có báo cáo: TỰ tích hợp từ đĩa — configure/build `build-gen`
-   (hoặc build chung), full ctest, golden tái sinh 2 lần byte-identical,
-   guard no_polynomial_form xanh, rồi commit trọn track một commit.
-3. Sau commit: xoá build-gen/ và build-meters/, cập nhật FEAT + report 002
-   mục Outstanding.
+Generator track ĐÃ được commit và verify trong phiên này (66c770c, 149/149).
+Phase 1 chỉ còn T12 hardware M1-M7 (cần chủ) rồi đóng FEAT theo path C.
+Sau đó mở đợt 1: L2 ∥ L5 theo MASTER-EXECUTION-PLAN.
 
 ## Quyết định CHỜ NGƯỜI — không tự quyết
 

@@ -1,7 +1,7 @@
 # Report 002 — Phase 1: the audio chain, end to end
 
 *2026-08-28. Covers everything landed since report 001 (Phase 0). 46 commits on
-main; shared build 119/119 green, zero warnings at /W4; the generator track is
+main; shared build 149/149 green (updated after the generator landed), zero warnings at /W4; the generator track is
 in flight on disk, uncommitted (see Outstanding).*
 
 ## What the human can run, right now
@@ -76,14 +76,10 @@ snapshot tool exiting 0 with a plain return).
 
 ## Outstanding
 
-- **Generator track in flight, uncommitted**: stations A/B/C/E complete and
-  verified per-station; F's gen_generator.py plus golden/generator.txt just
-  landed on disk; D (Sweep) finishing; the coordinator's integration pass
-  (goldens byte-identical twice, full ctest in build-gen, rollup report) is
-  the gate. THEN the orchestrator verifies in the shared build and commits.
-- **T12 hardware pass M1-M7** (plan §5.8): needs a real ASIO interface plugged
-  in — the owner's hands.
-- STI needs IEC 60268-16; the Class-1 SLM claim needs the full Table 2 —
+- ~~Generator track~~ — LANDED after this report's first writing: commit
+  66c770c, shared build 149/149, goldens byte-identical, scratch build dirs
+  removed. Phase 1's remaining gap is exactly one item:
+- **T12 hardware pass M1-M7** (AudioIo plan §5.8): needs a real ASIO interface
+  plugged in — the owner's hands. Everything else in Phase 1 is done.
+- STI needs IEC 60268-16; any Class-1 SLM claim needs the full Table 2 —
   both paywalled, tracked in the weighting decision record.
-- build-gen/ and build-meters/ scratch dirs can be deleted after the
-  generator commit.
