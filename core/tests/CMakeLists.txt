@@ -16,6 +16,9 @@ add_executable(rta_core_tests
     test_spectrum.cpp
     test_bandweights.cpp
     test_synthetic.cpp
+    test_biquad.cpp
+    test_butterworth.cpp
+    test_filterbank.cpp
 )
 
 # Golden vectors are committed, so the C++ suite needs neither Python nor
@@ -38,4 +41,16 @@ add_test(NAME core_has_no_framework_deps
     COMMAND ${CMAKE_COMMAND}
             -DCORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_framework_deps.cmake
+)
+
+# --- Representation guard ------------------------------------------------
+# The ba (transfer-function polynomial) form of these filters is numerically
+# invalid at the bottom of the band table -- its denominator roots leave the
+# unit circle. This fails the pipeline if anyone reintroduces it, in core or in
+# the generator scripts. See docs/dsp/2026-08-27-filterbank.md.
+add_test(NAME filter_design_has_no_polynomial_form
+    COMMAND ${CMAKE_COMMAND}
+            -DCORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
+            -DTOOLS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../../tools
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_polynomial_form.cmake
 )

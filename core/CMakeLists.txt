@@ -10,7 +10,9 @@
 
 add_library(rta_core STATIC
     src/dsp/BandWeights.cpp
+    src/dsp/ButterworthDesign.cpp
     src/dsp/Fft.cpp
+    src/dsp/FilterBank.cpp
     src/dsp/OctaveBands.cpp
     src/dsp/RealFft.cpp
     src/dsp/SpectrumEngine.cpp
