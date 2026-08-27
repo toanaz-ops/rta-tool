@@ -17,6 +17,9 @@
 
 #include "AppTypefaces.h"
 #include "dev/SpecimenComponent.h"
+#include "dev/preview/PhaseAlignPreview.h"
+#include "dev/preview/TargetMatchPreview.h"
+#include "dev/preview/TransferFunctionPreview.h"
 #include "measure/SnapshotSource.h"
 #include "measure/SyntheticSnapshot.h"
 #include "view/RtaView.h"
@@ -102,6 +105,28 @@ int main (int argc, char** argv)
 
         rta::view::RtaView component (source);
         if (! renderComponent (component, outDir, "rta-view.png", width, height))
+            ++failures;
+    }
+
+    // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
+    // tuning-visuals.md): paint-only components fed canned synthetic data,
+    // so -- like SpecimenComponent and RtaView above -- no message loop and
+    // no timer ever has to fire for the picture to be complete.
+    {
+        TransferFunctionPreview component;
+        if (! renderComponent (component, outDir, "preview-tf.png", width, height))
+            ++failures;
+    }
+
+    {
+        TargetMatchPreview component;
+        if (! renderComponent (component, outDir, "preview-target.png", width, height))
+            ++failures;
+    }
+
+    {
+        PhaseAlignPreview component;
+        if (! renderComponent (component, outDir, "preview-phase.png", width, height))
             ++failures;
     }
 

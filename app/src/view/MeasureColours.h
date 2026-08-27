@@ -45,4 +45,60 @@ inline const juce::Colour axisText = az::ui::dim;
 inline const juce::Colour readoutText = az::ui::text;
 inline const juce::Colour emptyStateText = az::ui::faded;
 
+/// The target/tuning judgement grammar (docs/specs/2026-08-28-interactive-
+/// tuning-visuals.md, "The principle all three views share"), added for the
+/// L5 preview mockups (app/src/dev/preview/) and reused as-is once the real
+/// views land. Every name below is still an alias to an existing `az::ui`
+/// token -- some of them the SAME token an existing name above already
+/// aliases, because the judgement grammar and the RTA view's own vocabulary
+/// occasionally mean the same colour for a different reason (`untrusted` is
+/// `underResolved`'s tone: both say "refuse to judge", one because the FFT
+/// cannot resolve the band, the other because coherence says the read is
+/// noise). Duplicating the alias rather than reusing the RTA-view name keeps
+/// each call site's grep-for-meaning honest about WHY a bar is dim.
+
+/// A band or segment inside its tolerance corridor AND trusted -- LED SIG
+/// green, per the spec's "match = az::ui `ok`". Never used for anything else
+/// in this app (SODIUM RACK rule: ice blue, not this token, is the one
+/// colour reserved for a single meaning, but a green used for two different
+/// verdicts would erode the same way).
+inline const juce::Colour match = az::ui::ok;
+
+/// Outside the tolerance corridor, ranked among the worst offenders --
+/// destructive red, the same token `az::ui::danger` already means
+/// "clipping" elsewhere in the app. A miss is not a fault, but it is the
+/// thing on screen the engineer most needs their eye pulled to.
+inline const juce::Colour miss = az::ui::danger;
+
+/// Low coherence or an under-resolved band: judged by NOBODY, drawn dimmed
+/// and hatched (`drawHatch` in PreviewFurniture.h) rather than tinted alone
+/// -- same reasoning `RtaView.cpp` already states for `underResolved`, "a
+/// dimmed bar in a dark room is a dimmed bar nobody notices".
+inline const juce::Colour untrusted = az::ui::faded;
+
+/// A borderline read: not a clean match, not yet a ranked miss -- e.g. a
+/// match-score chip's middle tier. `az::ui::warn` already carries this
+/// exact meaning for the device panel's drop counter (DevicePanel.cpp:
+/// "warn -- not danger -- a drop is a symptom the callback survived, not a
+/// fault"); a judgement grammar with only two colours either over-praises a
+/// mediocre score as green or over-alarms it as red.
+inline const juce::Colour borderline = az::ui::warn;
+
+/// The target curve / reference line -- a neutral secondary silkscreen tone
+/// so it reads as "the goal", not as data fighting the measured trace
+/// (`trace`, sodium amber) for the eye's attention.
+inline const juce::Colour target = az::ui::dim;
+
+/// The second live trace in a two-source view (V2's two phase captures).
+/// Full silkscreen white rather than another accent: exactly two traces are
+/// ever on screen in that view, so contrast against `trace`'s amber is
+/// enough to tell them apart without spending a second colour meaning.
+inline const juce::Colour secondaryTrace = az::ui::text;
+
+/// A predicted-not-yet-real curve: the freeze-ghost pre-move trace (V1) and
+/// the summation ghost (V2) both draw with this tone, always at reduced
+/// alpha and dashed at the call site -- never solid, because solid-and-dim
+/// reads as "quiet data" and a ghost is not data at all yet.
+inline const juce::Colour ghost = az::ui::dim;
+
 }  // namespace rta::view

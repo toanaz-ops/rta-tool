@@ -113,6 +113,10 @@ juce_add_console_app(rtatool_snapshot
 )
 
 target_sources(rtatool_snapshot PRIVATE
+    src/dev/preview/PreviewFurniture.cpp
+    src/dev/preview/TransferFunctionPreview.cpp
+    src/dev/preview/TargetMatchPreview.cpp
+    src/dev/preview/PhaseAlignPreview.cpp
     ${CMAKE_SOURCE_DIR}/tools/snapshot.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
