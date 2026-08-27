@@ -18,6 +18,31 @@ that matters:
 
 None of them can prove their numbers are correct without a sound card in the loop.
 
+## The goal, as the owner set it
+
+**Build the best RTA analyser there is: every feature superior to what is on the
+market.** Stated 2026-08-27.
+
+An ambition is not a specification. To guide a decision it has to say what
+"better" means, against whom, and how anyone would know. So each area below
+names the incumbent, the claim, and the measurement that settles it.
+
+| Area | Who currently leads | What "better" means here | How it gets checked |
+|---|---|---|---|
+| Band accuracy | Class-1 sound level meters; Smaart for display | Ship **both** an FFT banding path and an IEC 61260 **class 0** filter bank, side by side. No analyser on the market offers both from one input | per-band verdict against the IEC 61260-1 mask, on CI |
+| Provability | nobody | Every DSP claim asserted against an independent reference, on CI, with no sound card | the test count, and what each test is pinned to |
+| Low-frequency resolution | Smaart MTW: better than 1/48 octave from 60 Hz up, ~800 points | match it, then beat it at the bottom octave | compare MTW output against a long fixed FFT in the overlap region |
+| Real-time safety | Smaart | audio callback does nothing but copy | dropout counters under load |
+| Multichannel ASIO | closed-source tools only; Open Sound Meter has none | open source, with ASIO, since the SDK went GPLv3 in Oct 2025 | runs at a show |
+| Honesty of the display | most tools draw under-resolved bands with no qualification | mark them, visibly, not by tint alone | the specimen render |
+| Licence | commercial, per-seat | AGPL-3.0 | — |
+
+**The rule that keeps this from becoming a slogan:** superiority is a claim, and
+this project does not make claims it has not measured. A feature that cannot be
+shown to beat the incumbent ships as parity and the feature ledger says so. A
+claim without a number beside it is a marketing line, and this document is not
+for marketing.
+
 ## Goals
 
 1. RTA, SPL metering, signal generation, dual-FFT transfer function

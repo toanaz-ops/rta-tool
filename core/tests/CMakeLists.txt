@@ -13,6 +13,8 @@ add_executable(rta_core_tests
     test_ringbuffer.cpp
     test_fft.cpp
     test_bands.cpp
+    test_spectrum.cpp
+    test_bandweights.cpp
 )
 
 # Golden vectors are committed, so the C++ suite needs neither Python nor

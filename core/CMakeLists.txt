@@ -9,9 +9,11 @@
 # test in core/tests -- not by this comment.
 
 add_library(rta_core STATIC
+    src/dsp/BandWeights.cpp
     src/dsp/Fft.cpp
     src/dsp/OctaveBands.cpp
     src/dsp/RealFft.cpp
+    src/dsp/SpectrumEngine.cpp
     src/dsp/Window.cpp
 )
 

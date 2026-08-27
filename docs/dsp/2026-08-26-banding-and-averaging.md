@@ -133,6 +133,47 @@ at six feet is a dimmed bar nobody notices. The under-resolved region carries a
 visible boundary as well, so the qualification survives the viewing conditions
 the tool is actually used in.
 
+### A band is summed from PSD, never from the power spectrum
+
+Measured here, with a periodic Hann window, 8192 points, white noise of variance
+4.0000:
+
+```
+sum(power spectrum)               = 6.0040     wrong, high by exactly 1.5x
+integral(power spectral density)  = 4.0026     right
+ratio                             = 1.500000   = the window's NENBW
+```
+
+Summing power-spectrum bins over-counts broadband energy by exactly the window's
+equivalent noise bandwidth, because the window correlates neighbouring bins: a
+Hann mainlobe spreads one bin's worth of noise over 1.5 bins, so adjacent bins
+share energy and adding them counts it twice.
+
+With Hann that is **1.76 dB high in every band**, on every noise or music
+source, with a plot that looks entirely reasonable. It is the same trap as
+confusing a window's amplitude correction with its energy correction, arriving
+one layer up.
+
+So: band level is `sum over bins of PSD[k] * delta_f`. The power spectrum is
+still exposed, because it is the correct reading for a **tone** -- a sine at bin
+centre reads its true mean square there, verified exact to the last digit -- but
+it is never what a band is summed from.
+
+Conventions, following Heinzel's treatment of DFT spectrum estimation:
+
+```
+S1 = sum(w)                 S2 = sum(w^2)
+NENBW = N * S2 / S1^2       (bins; exactly 1.5 for periodic Hann)
+ENBW  = fs * S2 / S1^2      (hertz)
+power spectrum      PS[k]  = 2 |X[k]|^2 / S1^2          (halved at DC and Nyquist)
+power spectral density PSD[k] = 2 |X[k]|^2 / (fs * S2)  (halved at DC and Nyquist)
+PS[k] = PSD[k] * ENBW
+```
+
+Verified numerically before any of it was implemented: a sine of amplitude A
+reads `A^2/2` in PS at its bin, and white noise of variance sigma^2 integrates
+to sigma^2 under PSD.
+
 ### Averaging
 
 Following Smaart's distinction, banding is summation and averaging is separate:
