@@ -581,7 +581,7 @@ sourced, no such claim may be made.
   `y[0] = alpha` already includes one time step. Feeding `N+1` samples and
   asserting `-1.992` fails by 0.0012 dB, and that failure is the test doing its
   job. Add the neighbouring assertion explicitly:
-  `CHECK_THAT(10*log10(1 - exp(-6001.0/6000.0)), WithinAbs(-1.99080, 1e-4));`
+  `CHECK_THAT(10*log10(1 - exp(-6001.0/6000.0)), WithinAbs(-1.9915797 (corrected during build; the plan originally said -1.99080, refuted by 10*log10(1-exp(-6001/6000))), 1e-4));`
   with the comment "this is what index N+1 reads; the assertion above is index N".
 - Repeat for Slow at `N = 48000`.
 - Same-answer-at-a-different-sample-rate: repeat Fast at 44100 (N = 5512.5, so
@@ -644,7 +644,7 @@ sourced, no such claim may be made.
   gives mean square 1 → `CHECK_THAT(leq.leqDb(), WithinAbs(0.0, 1e-12));`
 - Then the two-level case: half the time at amplitude `a1`, half at `a2`, with
   `a1 = 1.0`, `a2 = 0.1` (i.e. 0 dB and −20 dB):
-  `expected = 10*log10(0.5*1.0 + 0.5*0.01) = -2.7003 dB`, asserted as the
+  `expected = 10*log10(0.5*1.0 + 0.5*0.01) = -2.9671 (corrected during build; the plan originally said -2.7003, refuted by 10*log10(0.505)) dB`, asserted as the
   formula `10*std::log10(0.5*a1*a1 + 0.5*a2*a2)`, `WithinAbs(1e-12)`.
 - Three-segment case with unequal durations (0.2 / 0.3 / 0.5) against
   `10*log10(sum(duty_i * a_i^2))`.
@@ -996,7 +996,7 @@ wants to prime the detector calls `reset(meanSquare)` explicitly.
 
 The matching off-by-one: after feeding **N = τ·fs** samples, the state is
 `1 − e^(−1)`, because `y[0] = α` already advances one step. Index `N` (the
-`N+1`-th sample) reads −1.99080 dB, not −1.99200. Feed exactly N.
+`N+1`-th sample) reads −1.9915797 (corrected during build; originally −1.99080, refuted by the formula) dB, not −1.99200. Feed exactly N.
 
 ### 11.4 The 100 ms Ln sampling comes from the DETECTOR output
 

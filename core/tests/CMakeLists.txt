@@ -19,6 +19,9 @@ add_executable(rta_core_tests
     test_biquad.cpp
     test_butterworth.cpp
     test_filterbank.cpp
+    test_weighting.cpp
+    test_detector.cpp
+    test_leq.cpp
 )
 
 # Golden vectors are committed, so the C++ suite needs neither Python nor
@@ -53,4 +56,14 @@ add_test(NAME filter_design_has_no_polynomial_form
             -DCORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
             -DTOOLS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../../tools
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_polynomial_form.cmake
+)
+
+# --- Honesty guard ---------------------------------------------------------
+# core/ must never claim IEC 61672-1 "Class 1" conformance -- the tolerance
+# table is not fully sourced. See docs/dsp/2026-08-27-weighting-and-meters.md
+# and core/tests/check_no_conformance_claim.cmake.
+add_test(NAME core_makes_no_class_1_claim
+    COMMAND ${CMAKE_COMMAND}
+            -DCORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_conformance_claim.cmake
 )

@@ -16,8 +16,11 @@ add_library(rta_core STATIC
     src/dsp/OctaveBands.cpp
     src/dsp/RealFft.cpp
     src/dsp/SpectrumEngine.cpp
+    src/dsp/Weighting.cpp
     src/dsp/Window.cpp
     src/gen/Synthetic.cpp
+    src/meter/Detector.cpp
+    src/meter/Leq.cpp
 )
 
 add_library(rta::core ALIAS rta_core)
