@@ -84,7 +84,10 @@ still never sits in the signal chain.
 
 - **10EaZy / certified Class 1-2 hardware integration** (Smaart SPL): requires
   a commercial partnership, not code. Recorded, not scheduled.
-- **Beyond-the-floor candidates seen at REW/SysTune** (auto-EQ generation,
+- Auto-EQ was listed here as beyond-floor on 2026-08-28 morning; the owner
+  mandated it the same day — it now lives in the tuning-visuals design record
+  (P7) together with auto-delay. Remaining beyond-the-floor candidates:
+- **Seen at REW/SysTune** (
   stepped-sine THD sweeps at 96 pts/octave, room-mode tools, SysTune's TFC
   continuous windowing as an alternative to MTW, bidirectional DSP plug-in
   API): worth weighing once the floor is met — the spec's superiority table

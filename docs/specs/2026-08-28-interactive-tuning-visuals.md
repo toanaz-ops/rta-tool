@@ -43,11 +43,15 @@ The machinery that makes it honest and smooth:
 5. **Time window / gating control** (G25): the same drag-gate that yields the
    quasi-anechoic view feeds this one, so the engineer chooses "judge the
    direct sound" vs "judge the room".
-6. **Suggestion engine** (P7, over G11's math): fit the worst deviation as a
-   PEQ (fc/gain/Q), preview the predicted post-EQ trace as a ghost, offer
-   "apply to virtual EQ" or "export". Suggestions are ranked by audibility
-   (deviation x bandwidth x band weighting), max 3 at a time — a wall of red
-   arrows is noise, not advice.
+6. **AUTO EQ** (owner upgrade, 2026-08-28 — promoted from suggestion to
+   solver): one action fits a full correction — N parametric filters
+   (fc/gain/Q, N user-capped, default 6) optimised against the corridor over
+   the coherence-trusted region, REW-class but live. The result lands on the
+   VIRTUAL EQ (G11) with the predicted post-EQ ghost drawn before anything is
+   committed; from there: accept, trim by hand, or export to external DSP.
+   Manual mode keeps the ranked max-3 suggestions for engineers who tune by
+   hand. Boundary unchanged: the solver writes to the virtual layer and to
+   exports — never directly into the live chain.
 7. **Match score**: per-zone (LF/MF/HF) and overall, 0–100, from
    coherence-weighted in-corridor fraction. This is the "am I done?"
    readout — the differentiator the market sweep confirmed nobody ships.
@@ -64,10 +68,13 @@ alignment. Same judgement grammar:
    |Δφ| < threshold (default 45°) AND both coherences pass — judged only in
    the user-selected crossover region, because whole-band phase match is
    neither achievable nor needed.
-2. **Delay solver**: propose the delay (and polarity flip if it wins) that
-   maximises in-threshold fraction over the region — from the existing
-   delay-finder + group-delay-difference machinery (P2). One-decimal ms plus
-   whole-sample display; environment input (G16) annotates expected drift.
+2. **AUTO DELAY** (owner upgrade, 2026-08-28): the solver computes the
+   delay (and polarity flip if it wins) that maximises in-threshold fraction
+   over the region — delay-finder + group-delay difference (P2) — and applies
+   it to the virtual alignment in one action, summation ghost updating live.
+   One-decimal ms plus whole samples; environment input (G16) annotates
+   expected drift. Export carries the number to the external DSP; the live
+   chain is never driven directly.
 3. **Predicted summation ghost** (G11): live preview of the combined
    magnitude at the current delay/polarity BEFORE committing — including the
    dreaded combing when it's wrong. Slider scrubs delay; ghost re-draws.
@@ -84,11 +91,22 @@ alignment. Same judgement grammar:
 | V3d | **Drift watch** | after tuning, a small HUD chip re-measuring periodically: match score trend + delay drift vs temperature (G16); goes amber when the 3 pm tune has drifted by evening | G16, G7 alarms |
 | V3e | **Done-ness HUD** | the V1+V2 scores as three small chips (EQ match, phase, stability) always visible during tuning — tuning gets a definition of done | V1, V2, V3a |
 
+## Auto-solver honesty rules (both solvers)
+
+- A solver only optimises over coherence-trusted, resolved data; it states
+  what it refused to judge.
+- Every auto result is shown as prediction-vs-measured after apply; if the
+  next measurement disagrees with the prediction beyond tolerance, the view
+  says so instead of silently re-solving.
+- Auto-EQ never boosts into a null (a dip the predicted-summation ghost
+  attributes to cancellation gets flagged "phase problem, not EQ problem" and
+  routed to V2).
+
 ## Phase placement
 
 - **P5**: V1 without suggestions (target+corridor+offset+gating+score), V3b,
   V3c. The score enters here.
-- **P7**: V1 suggestion engine, V2 complete (solver + summation ghost = the
+- **P7**: V1 auto-EQ solver, V2 complete (auto-delay + summation ghost = the
   G17 wizard), V3a, V3e.
 - **P6+**: V3d (needs logging/alarms plumbing).
 
