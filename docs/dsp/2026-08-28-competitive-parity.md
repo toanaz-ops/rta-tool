@@ -32,6 +32,45 @@ API (P6).
 | G12 | Reference-free TF (SyncSource-style) | Smaart v9 | **P8** (research-heavy: needs its own station-1 pass before any promise about method) |
 | G13 | AES-75 measurement procedure support | Smaart RT | **P8** (standard acquisition + procedure automation) |
 
+## Round 2 — market sweep beyond the floor (2026-08-28)
+
+Products surveyed: SysTune (deep), SATlive, ARTA/STEPS/LIMP, WaveCapture
+Live-Capture Pro, Meyer SIM3/Galaxy, L-Acoustics M1, CrossLite+
+(F.MonteiroScience), Studio Six AudioTools, HOLMImpulse, CLIO, Klippel dB-Lab,
+REW Pro. URLs in the research transcript. Thirteen further gaps adopted:
+
+| # | Gap | Seen at | Lands in |
+|---|---|---|---|
+| G14 | Spatial multi-mic averaging with per-mic weighting and SPL alignment | REW Pro, M1 | **P6** |
+| G15 | Coherence-weighted blending of multi-mic captures (down-weight a noisy position) | REW Pro + SysTune SSA concept | **P6** |
+| G16 | Environment compensation: temperature/humidity → speed of sound, delay-drift warning | CrossLite+, AudioTools | **P2** (delay finder gains an optional environment input) |
+| G17 | Sub/main alignment wizard — guided or one-click delay/polarity proposal | M1 Autoalign, SATlive Delay-Suggestion | **P7** (UI front end over G11's summation prediction) |
+| G18 | Crossover design surface (LR/Butterworth/Bessel 12-48 dB/oct + FIR) with phase-alignment cursor | CrossLite+ | **P7** (UI mode over G10/G11 math, no new DSP) |
+| G19 | Network-audio input at protocol level (Dante/AVB/Milan) | M1 (Milan via P1) | **P8** — own research pass; scoped to protocol input, never vendor-hardware coupling |
+| G20 | Measurement sequencing with auto solo/mute and automatic bad-capture discard | M1 | **P6** |
+| G21 | One-click polarity checker (sign of first arrival) | AudioTools, SysTune delay module | **P4** (cheap IR-toolkit add) |
+| G22 | Offline dual-FFT against a reference WAV with latency compensation | WaveCapture, REW | **P4** |
+| G23 | Cepstrum and wavelet / cycle-wavelet views | WaveCapture, CLIO | **P5** |
+| G24 | Minimum-phase / excess-phase decomposition | REW | **P4** — feeds G11's "EQ can fix this / EQ cannot" verdicts |
+| G25 | Drag-adjustable IR gating for quasi-anechoic response — table stakes in every surveyed tool | ARTA, HOLMImpulse, REW, CLIO | **P4** (ships regardless of the MTW decision) |
+| G26 | Open bidirectional DSP plug-in API + SDK | SysTune (30+ vendors) | **P8** — promoted from the earlier gesture; the SDK, not the 30 partnerships |
+
+## Rejected in round 2, with reasons (so nobody rediscovers them)
+
+- **Vendor-hardware coupling** (M1's P1-only Milan node, SIM3's Galaxy line
+  switcher): business models that sell hardware through the analyzer. G19 stays
+  protocol-level.
+- **Lab/production-line QC** (CLIO 3-D balloons, Klippel rub-and-buzz/3DL,
+  Thiele-Small/LCR): answers "is this box built right", not "is this system
+  tuned right". Different product; REW/ARTA/CLIO already serve it.
+- **Predictive room/driver simulation with no measurement in it** (REW's
+  8-sub room simulator): outside the amended non-goal — G11's carve-out is for
+  simulation over CAPTURED measurements only.
+- **Klippel MTON multi-tone distortion**: needs near-anechoic conditions and
+  calibrated excitation; G3's THD readout is the right-sized live version.
+- **Tonal-balance match scoring**: found in NO surveyed product's official
+  docs — not parity. Logged instead as a potential DIFFERENTIATOR candidate
+  for the beyond-the-floor list.
 ## Non-goal amendment
 
 The design doc's non-goal said "not an EQ processor... it measures and

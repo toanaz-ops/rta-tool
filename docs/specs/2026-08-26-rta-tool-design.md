@@ -161,13 +161,13 @@ interface — that exercises the whole chain on real hardware.
 |---|---|
 | 0 | repo, CMake, CI on three OSes, `rta_core` skeleton, test harness, licence, docs |
 | 1 | RTA + SPL + generator (this spec) |
-| 2 | dual-FFT: cross-spectrum, `H = Sxy/Sxx`, coherence, delay finder, phase unwrap, group delay, FIFO ring averaging |
+| 2 | dual-FFT: cross-spectrum, `H = Sxy/Sxx`, coherence, delay finder, phase unwrap, group delay, FIFO ring averaging, environment input (temperature -> speed of sound, delay-drift warning) |
 | 3 | multi-time-window engine (decimation cascade, per-band FFT sizes, band stitching), running CONCURRENTLY with the fixed-FFT engine on one measurement |
-| 4 | swept-sine measurement mode (short log sweep -> complex FR + IR in one shot) and impulse response analysis: Farina deconvolution, ETC, Schroeder integration with Lundeby truncation, EDT/T20/T30, C50/C80/D50, STI/STIPA, THD readout |
-| 5 | spectrograph, trace library, target curves (incl. cinema X-curve presets), Bode paired layout, multi-plot workspaces, trace maths, session persistence |
-| 6 | full multichannel routing, presets, remote API, SPL logging/alarms/PDF reports/web viewer, noise dose (IEC 61252), i18n (VI/EN), installers |
-| 7 | RiTA parity: virtual processor (predictive multi-source summation over captured measurements) and FIR/filter export for third-party DSP |
-| 8 | reference-free transfer function (SyncSource-class), AES-75 support — each behind its own research pass |
+| 4 | swept-sine measurement mode (short log sweep -> complex FR + IR in one shot) and impulse response analysis: Farina deconvolution, ETC, Schroeder integration with Lundeby truncation, EDT/T20/T30, C50/C80/D50, STI/STIPA, THD readout, polarity checker, offline dual-FFT vs reference WAV, minimum/excess-phase split, drag-adjustable IR gating |
+| 5 | spectrograph, trace library, target curves (incl. cinema X-curve presets), Bode paired layout, multi-plot workspaces, cepstrum and wavelet views, trace maths, session persistence |
+| 6 | full multichannel routing, presets, remote API, SPL logging/alarms/PDF reports/web viewer, noise dose (IEC 61252), spatial multi-mic averaging with coherence weighting, measurement sequencing with auto-discard, i18n (VI/EN), installers |
+| 7 | RiTA parity: virtual processor (predictive multi-source summation over captured measurements), sub/main alignment wizard, crossover design surface, FIR/filter export for third-party DSP |
+| 8 | reference-free transfer function (SyncSource-class), AES-75 support, protocol-level network audio input (Dante/AVB/Milan), open DSP plug-in SDK — each behind its own research pass |
 
 MTW is deliberately *after* a working fixed-window dual-FFT. Fixed-window
 measurement is usable at a real show on its own, and separating the two means a
