@@ -74,7 +74,11 @@ alignment. Same judgement grammar:
    it to the virtual alignment in one action, summation ghost updating live.
    One-decimal ms plus whole samples; environment input (G16) annotates
    expected drift. Export carries the number to the external DSP; the live
-   chain is never driven directly.
+   chain is never driven directly. Owner clarification 2026-08-28: BOTH modes
+   ship for BOTH solvers — a suggestion chip the engineer taps to accept, and
+   the one-action auto solve. Suggestion mode is not a fallback; it is how an
+   engineer keeps their own judgement in the loop, and the auto mode is how
+   they move fast when they trust the data. Same math underneath, one flag.
 3. **Predicted summation ghost** (G11): live preview of the combined
    magnitude at the current delay/polarity BEFORE committing — including the
    dreaded combing when it's wrong. Slider scrubs delay; ghost re-draws.
