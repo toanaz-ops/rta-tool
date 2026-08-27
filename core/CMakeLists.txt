@@ -15,6 +15,7 @@ add_library(rta_core STATIC
     src/dsp/RealFft.cpp
     src/dsp/SpectrumEngine.cpp
     src/dsp/Window.cpp
+    src/gen/Synthetic.cpp
 )
 
 add_library(rta::core ALIAS rta_core)
