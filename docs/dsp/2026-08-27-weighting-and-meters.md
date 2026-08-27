@@ -18,10 +18,13 @@ Digitisation choice — measured error of plain bilinear (no prewarp) at 48 kHz:
 | f | error | Class 1 envelope (corroborated points) |
 |---|---|---|
 | ≤4 kHz | ≈0 | ±1.1..±1.9 |
-| 8 kHz | −0.54 | wide |
-| 10 kHz | −1.22 | +2.6/−3.6 ← eats most of the margin |
-| 12.5 kHz | −2.67 | (official limit not yet obtained) |
-| 16 kHz | −6.43 | +3.5/**−17** — passes easily |
+| 8 kHz | −0.53 | wide |
+| 10 kHz | −1.21 | +2.6/−3.6 ← eats most of the margin |
+| 12.5 kHz | −2.73 | (official limit not yet obtained) |
+| 16 kHz | −6.21 | +3.5/**−17** — passes easily |
+
+(Values at the EXACT third-octave frequencies 1000·10^(0.1n); the first draft
+tabulated nominal frequencies, which shifts each figure by a few hundredths.)
 
 Matched-Z halves the 16 kHz error (−2.9) but adds +0.03..+1.7 dB where bilinear
 was exact. Oversample-filter-decimate pushes the sag out of band at real CPU
@@ -44,7 +47,9 @@ corroborated. Buy or source the table before writing any test that says
 Fast τ=125 ms, Slow τ=1 s, exponential mean square (IEC 61672-1 clause 5).
 Tests need no golden vectors:
 
-- step response: ΔL(t) = 10·log10(1 − e^(−t/τ)); at t=τ exactly −1.9895 dB
+- step response: ΔL(t) = 10·log10(1 − e^(−t/τ)); at t=τ exactly −1.9920 dB
+  (an earlier draft said −1.9895 — transcription error caught by the planning
+  pass re-deriving it; tests must assert the FORMULA, never a copied literal)
 - decay: linear in dB at 10·log10(e)/τ = 4.3429/τ dB/s → 34.74 (F), 4.343 (S)
 
 Impulse (35 ms rise / 1.5 s decay, 2.895 dB/s) is legacy — outside current IEC
