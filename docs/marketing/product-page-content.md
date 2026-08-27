@@ -119,7 +119,7 @@ khối feature lớn có ảnh preview đi kèm (assets/preview-*.png khi có).*
 - `specimen.png` — design system SODIUM RACK: graphite ấm + sodium amber,
   typography đo lường. Caption: "Ngôn ngữ thị giác sinh ra cho FOH — đọc được
   từ 2 mét, trong bóng tối."
-- `preview-tf.png`, `preview-target.png`, `preview-phase.png` (đang render) —
+- `preview-tf.png`, `preview-target.png`, `preview-phase.png` —
   ba view tương lai dựng SỚM bằng chính code sản phẩm với dữ liệu minh hoạ:
   transfer function + coherence, target-match với phán quyết xanh/đỏ + match
   score, đồng pha với ghost tổng hợp + auto-delay. Caption chung: "Preview
