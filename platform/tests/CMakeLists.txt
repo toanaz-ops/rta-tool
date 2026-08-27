@@ -29,3 +29,15 @@ add_test(NAME platform_types_has_no_framework_deps
             -DCORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../types
             -DLABEL=rta_platform_types
             -P ${CMAKE_SOURCE_DIR}/core/tests/check_no_framework_deps.cmake)
+
+# --- Callback-shape guard ---------------------------------------------------
+# Only registered when RTA_BUILD_APP is ON: the file it greps
+# (platform/src/AudioIo.cpp) is not present in a CI-configured
+# (RTA_BUILD_APP=OFF) tree. See check_callback_shape.cmake and
+# docs/plans/2026-08-27-audioio-rta-impl-plan.md §4.3.
+if(RTA_BUILD_APP)
+    add_test(NAME audioio_scoped_no_denormals_is_first
+        COMMAND ${CMAKE_COMMAND}
+                -DSOURCE=${CMAKE_SOURCE_DIR}/platform/src/AudioIo.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_callback_shape.cmake)
+endif()

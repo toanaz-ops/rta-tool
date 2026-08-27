@@ -68,6 +68,9 @@ if(RTA_BUILD_APP)
         FetchContent_MakeAvailable(JUCE)
     endif()
 
+    # rta_platform is the one target allowed to link juce_audio_devices --
+    # see platform/CMakeLists.txt and docs/plans/2026-08-27-audioio-rta-impl-plan.md §1.1.
+    add_subdirectory(platform)
     add_subdirectory(ui)
     add_subdirectory(app)
 endif()
