@@ -8,7 +8,7 @@
 #include <az_ui/az_ui.h>
 
 #include "AppTypefaces.h"
-#include "MainComponent.h"
+#include "dev/SpecimenComponent.h"
 
 namespace
 {
@@ -20,7 +20,7 @@ public:
         : juce::DocumentWindow ("RTA Tool", az::ui::background, juce::DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new MainComponent(), true);
+        setContentOwned (new SpecimenComponent(), true);
         setResizable (true, false);
         centreWithSize (1100, 720);
         setVisible (true);

@@ -46,7 +46,7 @@ juce_generate_juce_header(rtatool)
 
 target_sources(rtatool PRIVATE
     src/Main.cpp
-    src/MainComponent.cpp
+    src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
 )
 
@@ -78,8 +78,8 @@ target_link_libraries(rtatool PRIVATE
 # reviewed without a screen. See tools/snapshot.cpp for why this beats
 # capturing the running app.
 #
-# MainComponent.cpp and AppTypefaces.cpp are listed in both targets rather than
-# factored into a static library: a plain library does not receive the
+# SpecimenComponent.cpp and AppTypefaces.cpp are listed in both targets rather
+# than factored into a static library: a plain library does not receive the
 # JUCE_MODULE_AVAILABLE_* definitions that juce_add_gui_app injects, so the
 # az_ui include would fail. Two short source lists is the cheaper problem.
 juce_add_console_app(rtatool_snapshot
@@ -89,7 +89,7 @@ juce_add_console_app(rtatool_snapshot
 
 target_sources(rtatool_snapshot PRIVATE
     ${CMAKE_SOURCE_DIR}/tools/snapshot.cpp
-    src/MainComponent.cpp
+    src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
 )
 

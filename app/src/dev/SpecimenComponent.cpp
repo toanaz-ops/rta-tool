@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-#include "MainComponent.h"
+#include "SpecimenComponent.h"
 
 #include <array>
 
@@ -92,7 +92,7 @@ juce::Font faceFont (const TypeStep& step)
 
 } // namespace
 
-MainComponent::MainComponent()
+SpecimenComponent::SpecimenComponent()
 {
     latching.setClickingTogglesState (true);
     latching.setToggleState (true, juce::dontSendNotification);
@@ -108,7 +108,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (toggle);
 }
 
-void MainComponent::paint (juce::Graphics& g)
+void SpecimenComponent::paint (juce::Graphics& g)
 {
     g.fillAll (az::ui::background);
 
@@ -150,7 +150,7 @@ void MainComponent::paint (juce::Graphics& g)
     paintPrimitives (g, area);
 }
 
-void MainComponent::paintSwatches (juce::Graphics& g, juce::Rectangle<int> area)
+void SpecimenComponent::paintSwatches (juce::Graphics& g, juce::Rectangle<int> area)
 {
     az::ui::drawCaption (g, "PALETTE", area.removeFromTop (az::ui::captionHeight), az::ui::dim);
 
@@ -181,7 +181,7 @@ void MainComponent::paintSwatches (juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::paintTypeScale (juce::Graphics& g, juce::Rectangle<int> area)
+void SpecimenComponent::paintTypeScale (juce::Graphics& g, juce::Rectangle<int> area)
 {
     az::ui::drawCaption (g, "TYPE SCALE", area.removeFromTop (az::ui::captionHeight), az::ui::dim);
 
@@ -210,7 +210,7 @@ void MainComponent::paintTypeScale (juce::Graphics& g, juce::Rectangle<int> area
     }
 }
 
-void MainComponent::paintPrimitives (juce::Graphics& g, juce::Rectangle<int> area)
+void SpecimenComponent::paintPrimitives (juce::Graphics& g, juce::Rectangle<int> area)
 {
     az::ui::drawCaption (g, "PRIMITIVES",
                          area.removeFromTop (az::ui::captionHeight), az::ui::dim);
@@ -265,7 +265,7 @@ void MainComponent::paintPrimitives (juce::Graphics& g, juce::Rectangle<int> are
     az::ui::drawEngravedDivider (g, area.removeFromTop (2));
 }
 
-void MainComponent::resized()
+void SpecimenComponent::resized()
 {
     auto area = getLocalBounds().reduced (az::ui::gap * 2);
     auto row = area.removeFromBottom (az::ui::buttonCellHeight + az::ui::gap);

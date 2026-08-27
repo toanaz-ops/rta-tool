@@ -16,7 +16,7 @@
 #include <az_ui/az_ui.h>
 
 #include "AppTypefaces.h"
-#include "MainComponent.h"
+#include "dev/SpecimenComponent.h"
 
 namespace
 {
@@ -52,7 +52,7 @@ int main (int argc, char** argv)
 
     int failures = 0;
     {
-        MainComponent component;
+        SpecimenComponent component;
         component.setSize (width, height);
 
         // setSize() alone does not call resized() on a component with no
