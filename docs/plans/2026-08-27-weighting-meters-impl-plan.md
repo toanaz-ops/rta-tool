@@ -1,5 +1,16 @@
 # Implementation plan — A/C/Z weighting, detectors, Leq/Ln
 
+> **Build-time corrections (2026-08-28).** Four literals in this plan and its
+> decision record were refuted by independent re-derivation during the build;
+> every test asserts formulas, so none reached an assertion: the detector step
+> constant (−1.9895 → −1.9920), the D1 off-by-one case (−1.99080 → −1.9915797,
+> annotated inline below), the L1 duty-cycle case (−2.7003 → −2.9671, inline
+> below), and §7/W1's Table 3 C-weighting column, which is SHIFTED BY ONE INDEX
+> for n ≥ 2 — verified against python-acoustics' shipped IEC 61672-1 CSV; the
+> corrected column lives in core/tests/test_weighting.cpp with both sources
+> cited. Lesson, again: literals in planning prose are hints, never oracles.
+
+
 *Station 3 of the pipeline in `docs/reports/README.md`. Turns
 `docs/dsp/2026-08-27-weighting-and-meters.md` into exact files, exact tests and
 exact acceptance numbers. Written 2026-08-27.*
