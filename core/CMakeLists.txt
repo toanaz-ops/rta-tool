@@ -18,6 +18,10 @@ add_library(rta_core STATIC
     src/dsp/SpectrumEngine.cpp
     src/dsp/Weighting.cpp
     src/dsp/Window.cpp
+    src/gen/Mls.cpp
+    src/gen/Noise.cpp
+    src/gen/Oscillator.cpp
+    src/gen/Sweep.cpp
     src/gen/Synthetic.cpp
     src/meter/Detector.cpp
     src/meter/Leq.cpp

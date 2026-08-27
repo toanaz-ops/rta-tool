@@ -22,6 +22,11 @@ add_executable(rta_core_tests
     test_weighting.cpp
     test_detector.cpp
     test_leq.cpp
+    test_generator_prng.cpp
+    test_generator_osc.cpp
+    test_generator_noise.cpp
+    test_generator_sweep.cpp
+    test_generator_mls.cpp
 )
 
 # Golden vectors are committed, so the C++ suite needs neither Python nor
