@@ -56,6 +56,60 @@ Tagline ngắn: **Đo được. Chứng minh được. / Measured. Proven.**
 Nguồn sự thật của bảng này: docs/dsp/2026-08-28-competitive-parity.md và
 docs/plans/MASTER-EXECUTION-PLAN.md — cập nhật tag khi lane đóng.
 
+## Tính năng ưu việt sắp tới (the superiority section — the page's second act)
+
+*Đây là mục làm trang này khác một trang RTA thường. Mỗi dòng đều đã có hồ sơ
+thiết kế trong repo (docs/dsp/2026-08-28-competitive-parity.md và
+docs/specs/2026-08-28-interactive-tuning-visuals.md). Agency dựng thành các
+khối feature lớn có ảnh preview đi kèm (assets/preview-*.png khi có).*
+
+### Tune có phán quyết — không tool nào trên thị trường có
+- **Target-match view**: đường target + hành lang dung sai + đường đo; vùng
+  khớp bật XANH, kẻ lệch tệ nhất bật ĐỎ kèm gợi ý xử lý; vùng dữ liệu không
+  đáng tin bị gạch chéo và KHÔNG bị phán — phần mềm từ chối phán trên rác.
+  EN: judged tuning — match turns green, worst offenders turn red with ranked
+  suggestions, and untrusted data is refused judgement, not painted over.
+- **Match score theo vùng (LF/MF/HF)**: tune có định nghĩa "xong". Không sản
+  phẩm nào được khảo sát có điểm số này. EN: per-zone match scores give tuning
+  a definition of done — surveyed nowhere else on the market.
+- **Auto-EQ hai chế độ**: gợi ý từng filter cho người muốn tự tay, hoặc một
+  chạm giải trọn bộ PEQ — luôn vẽ ghost DỰ ĐOÁN trước khi commit, và không bao
+  giờ boost vào chỗ triệt pha (lỗi đó bị gắn cờ "lỗi phase" và chuyển đúng
+  view). EN: dual-mode auto-EQ that previews before commit and never boosts
+  into a cancellation null.
+
+### Đồng pha như có thêm một kỹ sư
+- **Phase view có ghost tổng hợp**: kéo delay là thấy ngay đường cộng gộp dự
+  đoán — thấy combing TRƯỚC khi nó ra loa. **Auto-delay** giải delay + cực
+  tính một chạm, hai chế độ như auto-EQ. EN: predicted-summation ghost while
+  you scrub delay; one-tap auto-delay with polarity.
+- **Wizard căn sub/main**: quy trình lặp lại nhiều nhất của nghề thành một
+  luồng có hướng dẫn. EN: guided sub/main alignment.
+- **Bù môi trường**: nhập nhiệt độ/độ ẩm — delay quy đổi đúng tốc độ âm hôm
+  đó, và cảnh báo khi bản tune 3 giờ chiều đã trôi lúc 9 giờ tối. EN:
+  temperature-aware delay and drift warnings for outdoor shows.
+
+### Đo kiểu phòng thí nghiệm, chạy ở hiện trường
+- **Sweep một phát ra cả FR + IR**; RT60/EDT, C50/C80, STI/STIPA; **gating
+  kéo-thả trên IR** cho đo quasi-anechoic; **tách minimum/excess phase** — trả
+  lời thẳng "EQ sửa được hay không". EN: one-shot sweep to FR+IR, drag-gating,
+  min/excess-phase split.
+- **MTW chạy ĐỒNG THỜI với FFT cố định** trên cùng một phép đo. EN: concurrent
+  MTW + fixed-FFT engines.
+- **Gộp nhiều mic theo trọng số coherence** + đo tuần tự tự động có loại
+  capture hỏng. EN: coherence-weighted spatial averaging; sequenced capture
+  with auto-discard.
+
+### Mô phỏng trước, hệ thống sau
+- **Virtual processor**: cộng gộp nhiều nguồn từ phép đo ĐÃ BẮT — chỉnh
+  delay/cực/PEQ ảo và xem kết quả tổng trước khi phát một tiếng ồn nào; xuất
+  FIR/filter cho DSP ngoài (miniDSP, v.v.). Ranh giới ghi rõ trên trang: mô
+  phỏng và xuất — KHÔNG bao giờ chen vào đường tín hiệu live. EN: predictive
+  summation over captured measurements, FIR export; never in the live chain.
+- **SPL chuyên nghiệp**: logging + lịch sử + cảnh báo + báo cáo PDF + xem từ
+  điện thoại; liều tiếng ồn IEC 61252. EN: SPL logging, alarms, PDF reports,
+  phone viewing, noise dose.
+
 ## Screenshots (assets/)
 
 - `rta-view.png` — RTA thật render offscreen: pink noise phẳng đúng lý thuyết,
@@ -65,6 +119,11 @@ docs/plans/MASTER-EXECUTION-PLAN.md — cập nhật tag khi lane đóng.
 - `specimen.png` — design system SODIUM RACK: graphite ấm + sodium amber,
   typography đo lường. Caption: "Ngôn ngữ thị giác sinh ra cho FOH — đọc được
   từ 2 mét, trong bóng tối."
+- `preview-tf.png`, `preview-target.png`, `preview-phase.png` (đang render) —
+  ba view tương lai dựng SỚM bằng chính code sản phẩm với dữ liệu minh hoạ:
+  transfer function + coherence, target-match với phán quyết xanh/đỏ + match
+  score, đồng pha với ghost tổng hợp + auto-delay. Caption chung: "Preview
+  build — render từ chính app, dữ liệu minh hoạ." KHÔNG ghi là ảnh đo thật.
 
 ## Licence & positioning notes for the agency
 
