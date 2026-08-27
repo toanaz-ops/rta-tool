@@ -41,8 +41,8 @@ public:
     /// `CaptureBus::prepare`), the internal `Analyser` is rebuilt at
     /// `bus.sampleRate()` instead, and the fresh `Analyser` (no buffered
     /// samples, no running average) is itself the drain on this side of the
-    /// bus -- the freshly rebuilt `RingBuffer`s CaptureBus::prepare() made
-    /// are already empty.
+    /// bus -- the `RingBuffer`s CaptureBus::prepare() just reset (never
+    /// rebuilt; see `CaptureBus.h`) are already empty.
     ///
     /// Starts the thread immediately; there is no separate `start()`.
     AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::Config& config);

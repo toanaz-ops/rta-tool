@@ -6,7 +6,6 @@
 #include "measure/Levels.h"
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
 
 namespace rta::measure {
@@ -14,23 +13,6 @@ namespace rta::measure {
 namespace {
 
 constexpr int kChannels = 2;
-
-// Same formula as AudioIo::ringCapacityFor (platform/src/AudioIo_Devices.cpp,
-// plan §1.4): bit_ceil(max(8 * bufferSize, 4 * fftSize)). Duplicated rather
-// than shared because that helper is private to rta::platform::AudioIo and
-// exposing it would mean editing platform/, which is out of this task's
-// scope -- both call sites exist only to give AnalysisThread's ring reads
-// the same slack regardless of which producer (real device or this one) is
-// feeding the bus.
-constexpr std::size_t kAssumedAnalysisFftSize = 4096;
-
-std::size_t ringCapacityFor(int bufferSize) {
-    const std::size_t safeBufferSize =
-        bufferSize > 0 ? static_cast<std::size_t>(bufferSize) : std::size_t{0};
-    const std::size_t byBuffer = 8 * safeBufferSize;
-    const std::size_t byFft = 4 * kAssumedAnalysisFftSize;
-    return std::bit_ceil(std::max(byBuffer, byFft));
-}
 
 int millisecondsPerBlock(double sampleRate, int bufferSize) {
     if (sampleRate <= 0.0) {
@@ -62,7 +44,9 @@ SyntheticInput::SyntheticInput(rta::platform::CaptureBus& bus, const Config& con
 
     // Message thread, before the thread body starts: satisfies the
     // precondition CaptureBus::prepare() documents (no concurrent writer).
-    bus_.prepare(config.sampleRate, kChannels, ringCapacityFor(config.bufferSize));
+    // No capacity argument: bus's rings were already sized once, at its own
+    // construction (rta::platform::kFixedRingCapacitySamples).
+    bus_.prepare(config.sampleRate, kChannels);
     bus_.setActive(true);
 
     startThread();

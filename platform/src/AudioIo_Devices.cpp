@@ -7,36 +7,7 @@
 // methods of the same rta::platform::AudioIo class.
 #include "rta/platform/AudioIo.h"
 
-#include <algorithm>
-#include <bit>
-
 namespace rta::platform {
-
-namespace {
-
-// Ring capacity per plan §1.4: bit_ceil(max(8 * bufferSize, 4 * fftSize)).
-// ~341 ms at 48 kHz with a 4096-point FFT -- enough slack to survive a GUI
-// stall without dropping.
-//
-// AudioIo (platform/) cannot see the analysis side's REAL fftSize --
-// app/src/measure/Analyser::Config lives above this layer, and platform/
-// must never depend on app/ (CLAUDE.md module boundaries: dependencies point
-// down only). kAssumedAnalysisFftSize mirrors that Config's default (4096,
-// app/src/measure/Analyser.h) so the sizing formula matches the common case
-// exactly; a run with a larger FFT still gets useful (if less generous)
-// slack from the 8*bufferSize term, since capacity is a max of the two, not
-// a promise tied to whatever the analysis thread actually chooses.
-constexpr std::size_t kAssumedAnalysisFftSize = 4096;
-
-}  // namespace
-
-std::size_t AudioIo::ringCapacityFor(int bufferSize) noexcept {
-    const std::size_t safeBufferSize =
-        bufferSize > 0 ? static_cast<std::size_t>(bufferSize) : std::size_t{0};
-    const std::size_t byBuffer = 8 * safeBufferSize;
-    const std::size_t byFft = 4 * kAssumedAnalysisFftSize;
-    return std::bit_ceil(std::max(byBuffer, byFft));
-}
 
 std::vector<std::string> AudioIo::availableDeviceTypeNames() {
     std::vector<std::string> names;

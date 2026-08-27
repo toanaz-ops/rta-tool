@@ -6,20 +6,31 @@
 
 namespace rta::platform {
 
-void CaptureBus::prepare(double sampleRate, int numChannels, std::size_t ringCapacity) {
+CaptureBus::CaptureBus(std::size_t ringCapacity) {
+    // The ONLY allocation this class ever does (see the header's class
+    // comment). All kMaxChannels rings exist from here on, whether or not
+    // prepare() has ever been called for that many channels -- ring()
+    // still reports an unprepared channel as absent (bounds-checked against
+    // preparedChannels_, not against this vector's size).
+    rings_.reserve(static_cast<std::size_t>(kMaxChannels));
+    for (int i = 0; i < kMaxChannels; ++i) {
+        rings_.push_back(std::make_unique<rta::dsp::RingBuffer<float>>(ringCapacity));
+    }
+}
+
+void CaptureBus::prepare(double sampleRate, int numChannels) {
     const int clamped =
         numChannels < 0 ? 0 : (numChannels > kMaxChannels ? kMaxChannels : numChannels);
 
-    // Rebuilding the vector -- rather than resizing in place -- is the drain:
-    // a freshly constructed RingBuffer starts with both indices at zero, so
-    // there is no separate "now call reset() on each one" step to forget.
-    // This is the one place in this class allowed to allocate; it runs on the
-    // message thread, with the callback guaranteed stopped (documented
-    // precondition -- see the header).
-    rings_.clear();
-    rings_.reserve(static_cast<std::size_t>(clamped));
-    for (int i = 0; i < clamped; ++i) {
-        rings_.push_back(std::make_unique<rta::dsp::RingBuffer<float>>(ringCapacity));
+    // The drain: reset every ring back to empty (both indices to zero; see
+    // RingBuffer::reset()) rather than rebuilding the vector. Every ring is
+    // reset, not only the first `clamped` of them -- a channel that was
+    // measurement last session and is unused this one must not keep serving
+    // stale samples to a caller that still (mistakenly) reads it.
+    // No allocation happens here: this is the whole point of sizing rings_
+    // to kMaxChannels once, in the constructor, and never touching it again.
+    for (auto& ring : rings_) {
+        ring->reset();
     }
 
     // A device reconfiguration invalidates whatever was dropped under the

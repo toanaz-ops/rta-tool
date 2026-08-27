@@ -95,10 +95,12 @@ void AnalysisThread::rebuildAnalyserIfEpochChanged() {
         cfg.sampleRate = rate;
     }
     // A fresh Analyser has no buffered samples and no running average --
-    // that IS the drain on this side of the bus, matching the fresh (empty)
-    // RingBuffer objects CaptureBus::prepare() just built for the new
-    // device session (decision record: "drains every ring"). Without this,
-    // stale frames analysed at the old sample rate would splice onto the
+    // that IS the drain on this side of the bus, matching the freshly
+    // RESET (not rebuilt -- CaptureBus::prepare() no longer reallocates,
+    // see CaptureBus.h) RingBuffer objects CaptureBus::prepare() just
+    // emptied for the new device session (decision record: "drains every
+    // ring"). Without this, stale frames analysed at the old sample rate
+    // would splice onto the
     // new one and mislabel every bin-to-Hz conversion.
     analyser_ = std::make_unique<Analyser>(cfg);
 }
@@ -109,9 +111,20 @@ void AnalysisThread::drainRole(rta::platform::ChannelRole role, bool isReference
         return;
     }
 
-    // Re-fetched every call rather than cached across iterations: a device
-    // reconfiguration rebuilds CaptureBus's ring objects (not just their
-    // contents), so a pointer held across a prepare() call would dangle.
+    // Re-fetched every call rather than cached across iterations. This used
+    // to be load-bearing against a genuine hazard: CaptureBus::prepare()
+    // once rebuilt its ring objects (not just their contents) on every
+    // call, so a pointer held across a prepare() -- exactly what a cached
+    // local here would be -- could dangle, a real use-after-free reachable
+    // whenever a device change landed mid-drain. That hazard is closed now:
+    // CaptureBus allocates every ring once, in its constructor, and
+    // prepare() only resets them in place (see CaptureBus.h's class
+    // comment), so a pointer from ring() stays valid for the CaptureBus's
+    // whole lifetime. Re-fetching here is kept anyway because it is still
+    // meaningful, just for a smaller reason: `channel` itself can change
+    // (ChannelConfig role reassignment) and a shrinking prepare() can make a
+    // previously-valid channel index report absent (ring() bounds-checks
+    // against preparedChannels_) -- caching would miss both.
     auto* ring = bus_.ring(channel);
     if (ring == nullptr) {
         return;

@@ -54,6 +54,9 @@ public:
     /// Calls `bus.prepare()` and `bus.setActive(true)` here, on the message
     /// thread, before the thread body ever touches `bus` -- matching the
     /// precondition `CaptureBus::prepare` documents (no concurrent writer).
+    /// `bus`'s ring capacity is fixed at ITS construction (see
+    /// `rta::platform::kFixedRingCapacitySamples`), not chosen by this
+    /// class -- `prepare()` no longer takes a capacity argument at all.
     /// Starts the thread immediately; there is no separate `start()`.
     SyntheticInput(rta::platform::CaptureBus& bus, const Config& config);
 

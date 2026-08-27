@@ -49,7 +49,13 @@ namespace rta::platform {
 ///    fault is stored as `std::string`, matching `Fault`'s own contract).
 class AudioIo final : public juce::AudioIODeviceCallback {
 public:
-    AudioIo() = default;
+    /// `bus_` is constructed at the fixed `kFixedRingCapacitySamples` (see
+    /// `CaptureBus.h`) -- capacity is no longer a per-open parameter derived
+    /// from the buffer size (that logic used to live here as
+    /// `ringCapacityFor` and has been removed along with the reallocating
+    /// `CaptureBus::prepare` it fed; see `CaptureBus.h`'s class comment for
+    /// why prepare() can no longer take a capacity at all).
+    AudioIo() : bus_(kFixedRingCapacitySamples) {}
     ~AudioIo() override { stop(); }
 
     /// Opens the device with the desired type/name (applied by the setters
@@ -143,12 +149,6 @@ public:
 
 private:
     void recordFault(Fault::Kind kind, const std::string& message);
-
-    /// `bit_ceil(max(8 * bufferSize, kAssumedAnalysisFftSize * 4))` per plan
-    /// §1.4. Defined in AudioIo_Devices.cpp alongside the other device
-    /// numerics; see that file for why the FFT size is an assumption rather
-    /// than a real parameter (platform/ must not depend on app/).
-    [[nodiscard]] static std::size_t ringCapacityFor(int bufferSize) noexcept;
 
     juce::AudioDeviceManager deviceManager_;
     CaptureBus bus_;

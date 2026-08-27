@@ -150,7 +150,6 @@ void AudioIo::audioDeviceAboutToStart(juce::AudioIODevice* device) {
     }
 
     const double sampleRate = device->getCurrentSampleRate();
-    const int bufferSize = device->getCurrentBufferSizeSamples();
 
     // The channel count to prepare rings for: what the device reports active
     // on the input side, clamped to kMaxChannels. This is DIFFERENT from the
@@ -164,12 +163,19 @@ void AudioIo::audioDeviceAboutToStart(juce::AudioIODevice* device) {
 
     // Decision record: "audioDeviceAboutToStart retargets rate-dependent
     // state AND drains every ring". CaptureBus::prepare() does both in one
-    // call -- rebuilds every ring (which starts empty, the drain) and bumps
-    // the epoch so the analysis thread notices and rebuilds its own state.
-    // Safe to call here with no extra synchronisation: JUCE invokes this
-    // BEFORE inserting the callback into its dispatch list (see the header),
-    // so the audio thread cannot be inside pushFromCallback yet.
-    bus_.prepare(sampleRate, numChannels, ringCapacityFor(bufferSize));
+    // call -- resets every ring (back to empty; the drain) and bumps the
+    // epoch so the analysis thread notices and rebuilds its own state. No
+    // capacity argument any more: every ring was sized once, in bus_'s
+    // constructor, at the fixed kFixedRingCapacitySamples (see CaptureBus.h)
+    // -- that is what makes it safe for prepare() to run here, on the
+    // device thread, while AnalysisThread may be mid-drain on its own
+    // thread with no lock between the two (see CaptureBus.h's class
+    // comment for the hazard this closes). Safe to call here with no extra
+    // synchronisation for the SAME reason it always was for the write side:
+    // JUCE invokes this BEFORE inserting the callback into its dispatch
+    // list (see the header), so the audio thread cannot be inside
+    // pushFromCallback yet.
+    bus_.prepare(sampleRate, numChannels);
 
     // Only NOW does the callback start doing anything: setActive(true) after
     // prepare() has finished, never before.

@@ -35,8 +35,8 @@ struct CallbackBlock {
 }  // namespace
 
 TEST_CASE("An inactive bus writes nothing", "[capturebus]") {
-    CaptureBus bus;
-    bus.prepare(48000.0, 2, 4096);
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 2);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     bus.setActive(false);
 
@@ -49,8 +49,8 @@ TEST_CASE("An inactive bus writes nothing", "[capturebus]") {
 }
 
 TEST_CASE("A measurement channel reaches its ring intact", "[capturebus]") {
-    CaptureBus bus;
-    bus.prepare(48000.0, 2, 4096);
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 2);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     bus.setActive(true);
 
@@ -69,8 +69,8 @@ TEST_CASE("A measurement channel reaches its ring intact", "[capturebus]") {
 }
 
 TEST_CASE("An unassigned channel is not written", "[capturebus]") {
-    CaptureBus bus;
-    bus.prepare(48000.0, 2, 4096);
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 2);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     // channel 1 stays Unused
     bus.setActive(true);
@@ -83,9 +83,9 @@ TEST_CASE("An unassigned channel is not written", "[capturebus]") {
 }
 
 TEST_CASE("A full ring counts the whole block as dropped", "[capturebus]") {
-    CaptureBus bus;
     // Small explicit capacity so filling it is cheap and exact.
-    bus.prepare(48000.0, 1, 256);
+    CaptureBus bus(256);
+    bus.prepare(48000.0, 1);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     bus.setActive(true);
 
@@ -112,8 +112,8 @@ TEST_CASE("A full ring counts the whole block as dropped", "[capturebus]") {
 }
 
 TEST_CASE("prepare drains every ring and bumps the epoch", "[capturebus]") {
-    CaptureBus bus;
-    bus.prepare(48000.0, 2, 4096);
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 2);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     REQUIRE(bus.config().setRole(1, ChannelRole::Reference));
     bus.setActive(true);
@@ -124,8 +124,12 @@ TEST_CASE("prepare drains every ring and bumps the epoch", "[capturebus]") {
     REQUIRE(bus.ring(1)->availableToRead() == 512);
 
     const auto epochBefore = bus.epoch();
-    bus.prepare(96000.0, 2, 4096);
+    auto* ring0Before = bus.ring(0);
+    bus.prepare(96000.0, 2);
 
+    // Same object, not a fresh one: prepare() resets in place, it does not
+    // reallocate (see CaptureBus.h's class comment).
+    CHECK(bus.ring(0) == ring0Before);
     CHECK(bus.ring(0)->availableToRead() == 0);
     CHECK(bus.ring(1)->availableToRead() == 0);
     CHECK(bus.sampleRate() == 96000.0);
@@ -133,8 +137,8 @@ TEST_CASE("prepare drains every ring and bumps the epoch", "[capturebus]") {
 }
 
 TEST_CASE("More channels than the bus was prepared for are clipped", "[capturebus]") {
-    CaptureBus bus;
-    bus.prepare(48000.0, 2, 4096);
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 2);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     REQUIRE(bus.config().setRole(1, ChannelRole::Measurement));
     bus.setActive(true);
@@ -153,8 +157,8 @@ TEST_CASE("roles snapshot mid-block stays within bounds under concurrent role ch
           "[capturebus][threads]") {
     // Not a data-race detector by itself, but a stress run that would crash
     // or read out of bounds if the bounds logic were wrong under contention.
-    CaptureBus bus;
-    bus.prepare(48000.0, 4, 4096);
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 4);
     bus.setActive(true);
 
     std::atomic<bool> stop{false};
@@ -192,8 +196,8 @@ TEST_CASE("Concurrent producer and consumer keep the stream intact through pushF
     constexpr std::size_t kTotal = 200'000;
     constexpr int kChunk = 64;
 
-    CaptureBus bus;
-    bus.prepare(48000.0, 1, 4096);
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 1);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     bus.setActive(true);
 
@@ -277,8 +281,8 @@ void operator delete(void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 TEST_CASE("pushFromCallback allocates nothing", "[capturebus]") {
-    CaptureBus bus;
-    bus.prepare(48000.0, 2, 4096);
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 2);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     bus.setActive(true);
 
@@ -289,6 +293,82 @@ TEST_CASE("pushFromCallback allocates nothing", "[capturebus]") {
     for (int i = 0; i < 10000; ++i) {
         bus.pushFromCallback(block.data(), block.numChannels(), block.numSamples());
     }
+    g_counting.store(false, std::memory_order_relaxed);
+
+    CHECK(g_allocCount.load(std::memory_order_relaxed) == 0);
+}
+
+// --- Reallocation-hazard regression -----------------------------------------
+//
+// The bug this closes: prepare() used to rebuild rings_ (rings_.clear() then
+// fresh make_unique<RingBuffer<float>> per channel) on every call. prepare()
+// runs on the device thread and its documented precondition only quiesces
+// the audio callback -- it says nothing about AnalysisThread, a live
+// consumer that can be mid-drain, holding a ring() pointer on its own thread
+// with no lock between the two. A prepare() landing there was a genuine
+// use-after-free. The fix is to make reallocation impossible (allocate once,
+// in the constructor; prepare() only resets in place) rather than to guard
+// it with a lock the audio callback cannot afford. These two tests pin that
+// invariant directly, so a future edit that reintroduces `rings_.clear()` /
+// `make_unique` inside prepare() fails immediately instead of only under
+// contention.
+
+TEST_CASE(
+    "prepare() never reallocates rings: same object and same capacity across "
+    "repeated calls with different rates and channel counts",
+    "[capturebus]") {
+    CaptureBus bus(4096);
+    bus.prepare(48000.0, 2);
+
+    auto* ring0 = bus.ring(0);
+    auto* ring1 = bus.ring(1);
+    REQUIRE(ring0 != nullptr);
+    REQUIRE(ring1 != nullptr);
+    const std::size_t capacityBefore = ring0->capacity();
+
+    // Different rate, MORE channels than before: channel 3 becomes newly
+    // exposed, but channels 0 and 1 must be the identical objects, not
+    // fresh ones at the same address by coincidence -- a use-after-free
+    // through a stale pointer would not necessarily crash on a small test
+    // fixture, so identity (not just non-null) is the assertion that
+    // actually catches a regression here.
+    bus.prepare(96000.0, 4);
+    CHECK(bus.ring(0) == ring0);
+    CHECK(bus.ring(1) == ring1);
+    CHECK(bus.ring(0)->capacity() == capacityBefore);
+    CHECK(bus.ring(3) != nullptr);
+
+    // Different rate again, FEWER channels than either previous call:
+    // channel 1 drops out of the prepared range (ring(1) reports nullptr,
+    // per ring()'s contract) -- but its underlying RingBuffer object is
+    // untouched, not freed, because construction is the only allocation
+    // this class ever performs.
+    bus.prepare(44100.0, 1);
+    CHECK(bus.ring(0) == ring0);
+    CHECK(bus.ring(0)->capacity() == capacityBefore);
+    CHECK(bus.ring(1) == nullptr);
+
+    // Prepared again with channel 1 back in range: the SAME object
+    // reappears. If prepare() had ever reallocated in between, this would
+    // be a different address.
+    bus.prepare(48000.0, 2);
+    CHECK(bus.ring(1) == ring1);
+    CHECK(bus.ring(1)->capacity() == capacityBefore);
+}
+
+TEST_CASE("prepare() allocates nothing once construction has finished",
+          "[capturebus]") {
+    // Construction is the one allocation CaptureBus is allowed (see
+    // CaptureBus.h's class comment) -- it happens here, outside the counted
+    // window below.
+    CaptureBus bus(4096);
+
+    g_allocCount.store(0, std::memory_order_relaxed);
+    g_counting.store(true, std::memory_order_relaxed);
+    bus.prepare(48000.0, 2);
+    bus.prepare(96000.0, 4);
+    bus.prepare(44100.0, kMaxChannels);
+    bus.prepare(192000.0, 0);
     g_counting.store(false, std::memory_order_relaxed);
 
     CHECK(g_allocCount.load(std::memory_order_relaxed) == 0);
