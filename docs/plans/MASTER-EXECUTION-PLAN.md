@@ -52,6 +52,29 @@ P1 (RTA/SPL/gen, finishing now)
 | **L9 — Productization** | i18n VI/EN, installers (3 OS), website content refresh cadence, manual | everything shippable | L8 |
 | **L-web — Website content package** | docs/marketing/ upkeep: re-render mockups after each landed phase, keep VI/EN copy current | none | ALL |
 
+## Orchestration topology (owner question answered 2026-08-28)
+
+**One orchestrator session is sufficient and preferred** — proven by the Phase-1
+session itself, including three-level spawning (orchestrator → lane coordinator
+→ workers; the meters lane ran its own W/D/L children and rolled results up).
+The plan above plus docs/reports/README.md is the orchestrator's rulebook.
+
+Conditions that hold regardless of topology:
+1. **2-3 concurrent BUILD lanes maximum** — build directories and the two core
+   CMake files are physical contention, not organizational.
+2. **The orchestrator stays thin**: delegates everything, reads reports not
+   files, keeps its context for judgement. When context runs low it writes the
+   rule-8 handoff and the NEXT orchestrator session continues — sessions chain
+   serially, they do not run in parallel on this repo.
+3. **Separate sessions only for**: L-web (different repo), L8 research lanes
+   (read-only, contention-free), and the successor orchestrator.
+
+Opening prompt for the orchestrator session:
+"Đọc docs/plans/MASTER-EXECUTION-PLAN.md + docs/reports/README.md +
+docs/HANDOFF.md. Vận hành như orchestrator: mỗi lane một agent cấp trung theo
+pipeline 5 trạm, tôn trọng cột PARALLEL-SAFE và các luật dưới đây. Giữ mình
+mỏng — không tự code, không đọc file lớn, mọi claim phải qua verifier."
+
 ## Session-collision rules (from hard-won incidents this week)
 
 1. **core/CMakeLists.txt + core/tests/CMakeLists.txt are the contention
