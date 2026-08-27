@@ -10,6 +10,7 @@
 
 add_library(rta_core STATIC
     src/dsp/Fft.cpp
+    src/dsp/OctaveBands.cpp
     src/dsp/RealFft.cpp
     src/dsp/Window.cpp
 )

@@ -160,3 +160,25 @@ for its children argument. Both are handled in `tools/snapshot.cpp`.
 
 Credit: the technique is from the `juce-component-snapshot` skill in
 PROJECT005-AZ-handsfree.
+
+## Before each phase: research, then argue, then build
+
+No phase starts by writing code. Each one starts with a research pass:
+
+1. **Read the literature and the standard.** Name the clause. IEC 61260 for
+   fractional-octave bands, IEC 61672-1 for weighting and detectors, and the
+   original papers where a technique has one (Welch 1967, Harris 1978,
+   Farina 2000, Lundeby 1995).
+2. **Read how other projects actually did it** -- Open Sound Meter, Friture,
+   REW, python-acoustics, pyfar, and whatever else is doing the same job. Read
+   the code, not the README. Note where they disagree with each other, because
+   that is where the real decision is.
+3. **Write down two or three candidate approaches with their trade-offs**, and
+   argue against the one that looks obvious. An approach nobody argued against
+   is an approach nobody understood.
+4. **Choose, and record why** in `docs/dsp/`, including what the rejected
+   options would have cost. A decision without its reasoning is a decision the
+   next session will silently reverse.
+
+The cost of this is hours. The cost of skipping it is discovering in phase 4
+that the band summation chosen in phase 1 cannot express what RT60 needs.
