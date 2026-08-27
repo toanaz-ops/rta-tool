@@ -68,9 +68,10 @@ rediscovered as an argument later.
 
 What that buys: band levels that agree with a Class 1 sound level meter, which
 the FFT path cannot deliver at any FFT length because it is not what it
-measures. What it costs: the filter bank needs its own golden vectors, its own
-decimation chain, and its own group-delay accounting, and none of that shares
-code with the FFT path beyond the input ring buffer.
+measures. What it costs: the filter bank needs its own golden vectors. (The
+decimation chain and per-band group-delay accounting originally feared here
+turned out to be unnecessary — measured at ~43 M ops/s for the whole
+single-rate bank; see 2026-08-27-filterbank.md.)
 
 Broadband SPL -- Leq, LAeq, Fast/Slow -- needs neither: an A/C/Z weighting
 filter and an exponential detector in the time domain is the whole of IEC
@@ -200,9 +201,9 @@ less variance reduction than their count suggests.
   FFT path, by running different FFT sizes on decimated streams. When it lands,
   the RTA should be able to use it, so `OctaveBands` must not assume a single
   delta-f.
-- The filter bank's decimation cascade introduces a **different group delay per
-  band**. Harmless for a level reading, wrong for anything time-aligned, so the
-  per-band delay has to be recorded rather than discovered in Phase 4.
+- ~~The filter bank's decimation cascade introduces a different group delay per
+  band~~ — resolved 2026-08-27: the bank runs single-rate, so this trap was
+  removed rather than managed. See 2026-08-27-filterbank.md.
 
 ## Sources
 
