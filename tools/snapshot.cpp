@@ -17,6 +17,9 @@
 
 #include "AppTypefaces.h"
 #include "dev/SpecimenComponent.h"
+#include "measure/SnapshotSource.h"
+#include "measure/SyntheticSnapshot.h"
+#include "view/RtaView.h"
 
 namespace
 {
@@ -30,6 +33,37 @@ bool writePng (const juce::Image& image, const juce::File& file)
         return false;
 
     return juce::PNGImageFormat().writeImageToStream (image, stream);
+}
+
+// Renders `component` to `outDir/fileName` at `width x height` and reports the
+// result on stdout in the one format both snapshots share. Shared by
+// SpecimenComponent and RtaView so a future third snapshot costs one call, not
+// a second copy of the resize/paint/write dance.
+bool renderComponent (juce::Component& component, const juce::File& outDir,
+                      const char* fileName, int width, int height)
+{
+    component.setSize (width, height);
+
+    // setSize() alone does not call resized() on a component with no desktop
+    // peer, so children keep whatever bounds they had -- on a fresh one, none
+    // at all, and the image comes out empty. This call is the single most
+    // common thing missing from a blank snapshot (plan trap T-6).
+    component.resized();
+
+    // `true` renders children too; without it a container yields only its own
+    // background (the other half of trap T-6).
+    const auto image = component.createComponentSnapshot (component.getLocalBounds(), true);
+    const auto file  = outDir.getChildFile (fileName);
+
+    if (! writePng (image, file))
+    {
+        std::printf ("FAILED to write %s\n", file.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    std::printf ("wrote %s  (%d x %d)\n",
+                 file.getFullPathName().toRawUTF8(), image.getWidth(), image.getHeight());
+    return true;
 }
 
 } // namespace
@@ -53,24 +87,22 @@ int main (int argc, char** argv)
     int failures = 0;
     {
         SpecimenComponent component;
-        component.setSize (width, height);
+        if (! renderComponent (component, outDir, "specimen.png", width, height))
+            ++failures;
+    }
 
-        // setSize() alone does not call resized() on a component with no
-        // desktop peer, so children keep whatever bounds they had -- on a fresh
-        // one, none at all, and the image comes out empty. This call is the
-        // single most common thing missing from a blank snapshot.
-        component.resized();
+    {
+        // Fixed spec, fixed seed (SyntheticSpec's default: pink noise, seed
+        // 0x5EED, 4 seconds) -- no threads, no timing, so this is the same
+        // Snapshot every run on this machine, which is the precondition for
+        // rta-view.png being reviewable as a byte-for-byte diff (plan §1.4,
+        // §5.6, trap T-7).
+        const rta::measure::SyntheticSpec spec;
+        const rta::measure::StaticSnapshotSource source (rta::measure::makeSyntheticSnapshot (spec));
 
-        // `true` renders children too; without it a container yields only its
-        // own background.
-        const auto image = component.createComponentSnapshot (component.getLocalBounds(), true);
-        const auto file  = outDir.getChildFile ("specimen.png");
-
-        if (writePng (image, file))
-            std::printf ("wrote %s  (%d x %d)\n",
-                         file.getFullPathName().toRawUTF8(), image.getWidth(), image.getHeight());
-        else
-            (void) ++failures, std::printf ("FAILED to write %s\n", file.getFullPathName().toRawUTF8());
+        rta::view::RtaView component (source);
+        if (! renderComponent (component, outDir, "rta-view.png", width, height))
+            ++failures;
     }
 
     juce::LookAndFeel::setDefaultLookAndFeel (nullptr);

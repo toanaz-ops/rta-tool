@@ -48,7 +48,15 @@ target_sources(rtatool PRIVATE
     src/Main.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
+    src/view/PlotAxes.cpp
+    src/view/RtaView.cpp
 )
+
+# app/src as an include root: app/src/measure and app/src/view headers
+# include each other as "measure/Foo.h" / "view/Foo.h" (see app/tests/
+# CMakeLists.txt, which already does the same for the JUCE-free half), not
+# as a path relative to the including file.
+target_include_directories(rtatool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 target_compile_definitions(rtatool PRIVATE
     JUCE_WEB_BROWSER=0
@@ -91,6 +99,14 @@ target_sources(rtatool_snapshot PRIVATE
     ${CMAKE_SOURCE_DIR}/tools/snapshot.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
+    src/view/PlotAxes.cpp
+    src/view/RtaView.cpp
+    # Only what the tool's second render (rta-view.png, via
+    # makeSyntheticSnapshot) needs: the offline, thread-free measurement
+    # path. AnalysisThread / SyntheticInput are JUCE-owning and belong to a
+    # later wave's live device path, not this offscreen tool.
+    src/measure/Analyser.cpp
+    src/measure/SyntheticSnapshot.cpp
 )
 
 target_include_directories(rtatool_snapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -104,6 +120,7 @@ target_compile_definitions(rtatool_snapshot PRIVATE
 target_link_libraries(rtatool_snapshot PRIVATE
     RtaToolFonts
     az_ui
+    rta::core
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
