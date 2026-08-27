@@ -43,6 +43,7 @@ if(RTA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(core/tests)      # fetches Catch2; must stay first
     add_subdirectory(platform/tests)
+    add_subdirectory(app/tests)       # JUCE-free half of app/; see §1.3
 endif()
 
 if(RTA_BUILD_APP)
