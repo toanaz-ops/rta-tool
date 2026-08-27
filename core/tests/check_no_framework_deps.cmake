@@ -1,8 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Fails if any translation unit in rta_core pulls in a GUI or audio-device
-# framework. Keeping the core free of them is what makes it testable offline.
+# Fails if any translation unit under CORE_DIR pulls in a GUI or audio-device
+# framework. Keeping a layer free of them is what makes it testable offline.
+# Shared between rta_core (the default) and rta_platform_types -- pass LABEL
+# to name the layer being checked in the messages below.
 if(NOT DEFINED CORE_DIR)
     message(FATAL_ERROR "CORE_DIR not set")
+endif()
+
+if(NOT DEFINED LABEL)
+    set(LABEL "rta_core")
 endif()
 
 file(GLOB_RECURSE sources
@@ -28,8 +34,8 @@ endif()
 
 if(violations)
     message(FATAL_ERROR
-        "rta_core must not depend on a GUI/audio framework. Offending files:\n"
+        "${LABEL} must not depend on a GUI/audio framework. Offending files:\n"
         "  ${violations}")
 endif()
 
-message(STATUS "core_has_no_framework_deps: OK (${n_sources} files scanned)")
+message(STATUS "${LABEL}_has_no_framework_deps: OK (${n_sources} files scanned)")

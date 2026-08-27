@@ -34,9 +34,15 @@ endif()
 
 add_subdirectory(core)
 
+# platform/types is JUCE-free on purpose, so it builds and is tested on CI
+# even when RTA_BUILD_APP is OFF. See
+# docs/plans/2026-08-27-audioio-rta-impl-plan.md §1.1.
+add_subdirectory(platform/types)
+
 if(RTA_BUILD_TESTS)
     enable_testing()
-    add_subdirectory(core/tests)
+    add_subdirectory(core/tests)      # fetches Catch2; must stay first
+    add_subdirectory(platform/tests)
 endif()
 
 if(RTA_BUILD_APP)
