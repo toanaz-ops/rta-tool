@@ -1,14 +1,14 @@
 # Report 002 — Phase 1: the audio chain, end to end
 
 *2026-08-28. Covers everything landed since report 001 (Phase 0). 46 commits on
-main; shared build 149/149 green (updated after the generator landed), zero warnings at /W4; the generator track is
-in flight on disk, uncommitted (see Outstanding).*
+main; shared build 149/149 green (updated after the generator landed), zero warnings at /W4; 47+ commits after
+the generator landed (66c770c).*
 
 ## What the human can run, right now
 
 ```
 cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure     # 119/119
+ctest --test-dir build -C Release --output-on-failure     # 149/149
 build/app/rtatool_artefacts/Release/"RTA Tool.exe"        # the app: flip SYNTHETIC, watch a live RTA
 cmd //c "build\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots 1100 760"
                                                           # 6 renders, exit 0
