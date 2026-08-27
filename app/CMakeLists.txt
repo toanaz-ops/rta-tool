@@ -50,6 +50,22 @@ target_sources(rtatool PRIVATE
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
+    src/view/DevicePanel.cpp
+    src/view/ChannelRoleTable.cpp
+    # AnalysisThread / SyntheticInput are JUCE-owning (plan §3.4) and belong
+    # only to the live-device path -- rtatool_snapshot renders from
+    # makeSyntheticSnapshot() instead (see its own target_sources below) and
+    # must not link juce_audio_devices.
+    src/measure/AnalysisThread.cpp
+    src/measure/SyntheticInput.cpp
+    # Analyser.cpp is JUCE-free and already listed in rtatool_snapshot below,
+    # but that is a SEPARATE binary -- AnalysisThread.cpp's calls into
+    # rta::measure::Analyser need the definition linked into rtatool too, not
+    # only into the snapshot tool. Same reasoning as SpecimenComponent.cpp
+    # appearing in both target_sources lists (comment above
+    # rtatool_snapshot): one static library would not receive the
+    # JUCE_MODULE_AVAILABLE_* defines juce_add_gui_app injects.
+    src/measure/Analyser.cpp
 )
 
 # app/src as an include root: app/src/measure and app/src/view headers
@@ -74,6 +90,7 @@ target_link_libraries(rtatool PRIVATE
     RtaToolFonts
     az_ui
     rta::core
+    rta::platform
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_opengl
