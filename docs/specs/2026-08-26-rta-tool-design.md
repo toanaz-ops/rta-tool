@@ -37,6 +37,18 @@ names the incumbent, the claim, and the measurement that settles it.
 | Honesty of the display | most tools draw under-resolved bands with no qualification | mark them, visibly, not by tint alone | the specimen render |
 | Licence | commercial, per-seat | AGPL-3.0 | — |
 
+**Feature floor (owner, 2026-08-28):** the feature list must be AT MINIMUM the
+union of the latest Smaart (v9 Suite) and RiTA. A competitive feature matrix is
+being researched; every gap it finds becomes a roadmap entry, and the matrix is
+kept in docs/dsp/ as the checklist parity is measured against.
+
+**Swept-sine measurement is a first-class mode (owner, 2026-08-28):** play a
+short logarithmic sweep, capture, deconvolve — yielding the complex frequency
+response (magnitude + phase) AND the impulse response from one shot, the way
+REW and ARTA measure. This is the same Farina machinery Phase 4 already plans
+for room acoustics; the requirement here is that it also surfaces as a quick
+transfer-function measurement, not only as an RT60 front-end.
+
 **The rule that keeps this from becoming a slogan:** superiority is a claim, and
 this project does not make claims it has not measured. A feature that cannot be
 shown to beat the incumbent ships as parity and the feature ledger says so. A
@@ -147,7 +159,7 @@ interface — that exercises the whole chain on real hardware.
 | 1 | RTA + SPL + generator (this spec) |
 | 2 | dual-FFT: cross-spectrum, `H = Sxy/Sxx`, coherence, delay finder, phase unwrap, group delay |
 | 3 | multi-time-window engine (decimation cascade, per-band FFT sizes, band stitching) |
-| 4 | impulse response: Farina deconvolution, ETC, Schroeder integration with Lundeby truncation, EDT/T20/T30, C50/C80/D50 |
+| 4 | swept-sine measurement mode (short log sweep -> complex FR + IR in one shot) and impulse response analysis: Farina deconvolution, ETC, Schroeder integration with Lundeby truncation, EDT/T20/T30, C50/C80/D50 |
 | 5 | spectrograph, trace library, target curves, trace maths, session persistence |
 | 6 | full multichannel routing, presets, remote API, i18n (VI/EN), installers |
 
