@@ -20,8 +20,15 @@ struct Faces
 
 Faces& faces()
 {
-    static Faces f;
-    return f;
+    // Deliberately leaked. A function-local static of Typeface::Ptr is
+    // destroyed during full program exit, AFTER the host's
+    // ScopedJuceInitialiser_GUI has already torn JUCE down -- which corrupts
+    // the heap on the way out (measured: STATUS_HEAP_CORRUPTION in every
+    // short-lived CLI use of this module). These faces live for the process
+    // lifetime by definition, so never running their destructor is the
+    // correct shape, not a shortcut.
+    static Faces* f = new Faces();
+    return *f;
 }
 
 juce::Typeface::Ptr parse (const TypefaceSet::Blob& blob)

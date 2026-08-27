@@ -11,25 +11,12 @@
 //
 //   rtatool_snapshot [outputDir] [width] [height]
 //
-// PRE-EXISTING BUG, discovered while adding this tool's third render
-// (main-live.png), documented here rather than silently patched around:
-// az::ui::Typography.cpp's setTypefaces() lazily builds a function-local
-// static (`faces()`) holding `juce::Typeface::Ptr` objects. A function-local
-// static outlives every automatic (stack) variable in main(), including
-// `juceInit` below -- so that static's own destructor runs AFTER
-// ScopedJuceInitialiser_GUI has already torn down JUCE's font cache and
-// graphics singletons, which corrupts the heap on every run of THIS tool
-// (reproduces identically on an unmodified checkout: all PNGs still get
-// written correctly first, then the process crashes on the way out). Fixing
-// Typography.cpp itself is out of this task's touch list
-// (docs/plans/2026-08-27-audioio-rta-impl-plan.md's T10 scope is
-// MainComponent/Main.cpp/CMakeLists/this file only), so main() below calls
-// std::quick_exit() instead of returning -- skipping static/global
-// destruction entirely, which is safe for a one-shot CLI tool that has
-// already finished writing every file it came here to write. The proper fix
-// (a `juce::DeletedAtShutdown`-based cache, or an explicit
-// `az::ui::shutdownTypefaces()` called before `juceInit` goes out of scope)
-// belongs to az_ui and should land as its own change.
+// HISTORY: this tool used to crash with STATUS_HEAP_CORRUPTION on exit —
+// az_ui's Typography kept its Typeface::Ptr cache in a function-local static
+// whose destructor ran AFTER ScopedJuceInitialiser_GUI tore JUCE down. The
+// cache is now deliberately leaked (see ui/az_ui/theme/Typography.cpp), so
+// this tool exits with a plain return. If the crash ever returns, that fix
+// regressed.
 
 #include <cstdlib>
 
@@ -177,10 +164,9 @@ int main (int argc, char** argv)
 
     juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
 
-    // std::quick_exit, not return -- see the file-header comment. Every file
-    // this tool exists to write is already flushed to disk at this point;
-    // quick_exit terminates immediately, before `lookAndFeel` and `juceInit`
-    // unwind and before the corrupting static destructor runs.
-    std::fflush (nullptr);
-    std::quick_exit (failures == 0 ? 0 : 1);
+    // A plain return is the proof that az_ui's teardown bug stays fixed: the
+    // Typography cache is now deliberately leaked (see Typography.cpp), so
+    // full static destruction no longer touches JUCE after juceInit unwinds.
+    // If this exit ever corrupts the heap again, that fix regressed.
+    return failures == 0 ? 0 : 1;
 }
