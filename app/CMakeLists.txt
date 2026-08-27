@@ -46,6 +46,7 @@ juce_generate_juce_header(rtatool)
 
 target_sources(rtatool PRIVATE
     src/Main.cpp
+    src/MainComponent.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
@@ -122,12 +123,22 @@ target_sources(rtatool_snapshot PRIVATE
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
-    # Only what the tool's second render (rta-view.png, via
-    # makeSyntheticSnapshot) needs: the offline, thread-free measurement
-    # path. AnalysisThread / SyntheticInput are JUCE-owning and belong to a
-    # later wave's live device path, not this offscreen tool.
+    # Only what the tool's rta-view.png render (via makeSyntheticSnapshot)
+    # needs: the offline, thread-free measurement path.
     src/measure/Analyser.cpp
     src/measure/SyntheticSnapshot.cpp
+    # main-live.png additionally renders the real MainComponent in synthetic
+    # mode (T10/T11's own composition root, plan §0 item 4's "no hardware at
+    # all, on CI, and offscreen" made literal) -- which needs the live-device
+    # path's JUCE-owning sources too, and AudioIo along with it. This is the
+    # one deviation from plan §3.6's "must not link juce_audio_devices": that
+    # line was written before this tool also had to construct MainComponent
+    # itself, not only feed a StaticSnapshotSource into RtaView.
+    src/MainComponent.cpp
+    src/view/DevicePanel.cpp
+    src/view/ChannelRoleTable.cpp
+    src/measure/AnalysisThread.cpp
+    src/measure/SyntheticInput.cpp
 )
 
 target_include_directories(rtatool_snapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -136,12 +147,18 @@ target_compile_definitions(rtatool_snapshot PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_STANDALONE_APPLICATION=1
+    $<$<AND:$<BOOL:${WIN32}>,$<BOOL:${RTA_ENABLE_ASIO}>>:JUCE_ASIO=1>
 )
+
+if(WIN32 AND RTA_ENABLE_ASIO)
+    target_include_directories(rtatool_snapshot PRIVATE "${RTA_ASIO_SDK_PATH}/common")
+endif()
 
 target_link_libraries(rtatool_snapshot PRIVATE
     RtaToolFonts
     az_ui
     rta::core
+    rta::platform
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags

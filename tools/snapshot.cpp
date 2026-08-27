@@ -10,12 +10,35 @@
 // link. A snapshot has none of those failure modes and is identical every run.
 //
 //   rtatool_snapshot [outputDir] [width] [height]
+//
+// PRE-EXISTING BUG, discovered while adding this tool's third render
+// (main-live.png), documented here rather than silently patched around:
+// az::ui::Typography.cpp's setTypefaces() lazily builds a function-local
+// static (`faces()`) holding `juce::Typeface::Ptr` objects. A function-local
+// static outlives every automatic (stack) variable in main(), including
+// `juceInit` below -- so that static's own destructor runs AFTER
+// ScopedJuceInitialiser_GUI has already torn down JUCE's font cache and
+// graphics singletons, which corrupts the heap on every run of THIS tool
+// (reproduces identically on an unmodified checkout: all PNGs still get
+// written correctly first, then the process crashes on the way out). Fixing
+// Typography.cpp itself is out of this task's touch list
+// (docs/plans/2026-08-27-audioio-rta-impl-plan.md's T10 scope is
+// MainComponent/Main.cpp/CMakeLists/this file only), so main() below calls
+// std::quick_exit() instead of returning -- skipping static/global
+// destruction entirely, which is safe for a one-shot CLI tool that has
+// already finished writing every file it came here to write. The proper fix
+// (a `juce::DeletedAtShutdown`-based cache, or an explicit
+// `az::ui::shutdownTypefaces()` called before `juceInit` goes out of scope)
+// belongs to az_ui and should land as its own change.
+
+#include <cstdlib>
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <az_ui/az_ui.h>
 
 #include "AppTypefaces.h"
+#include "MainComponent.h"
 #include "dev/SpecimenComponent.h"
 #include "dev/preview/PhaseAlignPreview.h"
 #include "dev/preview/TargetMatchPreview.h"
@@ -108,6 +131,28 @@ int main (int argc, char** argv)
             ++failures;
     }
 
+    {
+        // main-live.png: the real measurement window (MainComponent), driven
+        // through the exact same seam a user's SYNTHETIC switch click uses --
+        // not a second, divergent path -- so the picture needs no interface
+        // plugged in at all (plan §0 item 4, made literal for the harness
+        // that verifies this deliverable). AnalysisThread needs real wall
+        // time to drain a few hops of synthetic pink noise and publish past
+        // the empty "NO SIGNAL" state before there is anything worth
+        // rendering; Thread::sleep is acceptable HERE specifically because
+        // this is the offscreen tool, not the real-time audio callback
+        // (project CLAUDE.md's real-time-safety section governs app/'s
+        // audio path, not this harness). Fixed at 1280 x 800 regardless of
+        // the tool's own width/height arguments -- this picture needs room
+        // for the rail beside the plot that specimen.png and rta-view.png
+        // do not carry.
+        MainComponent component;
+        component.setSyntheticMode (true);
+        juce::Thread::sleep (800);
+        if (! renderComponent (component, outDir, "main-live.png", 1280, 800))
+            ++failures;
+    }
+
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
     // tuning-visuals.md): paint-only components fed canned synthetic data,
     // so -- like SpecimenComponent and RtaView above -- no message loop and
@@ -131,5 +176,11 @@ int main (int argc, char** argv)
     }
 
     juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
-    return failures == 0 ? 0 : 1;
+
+    // std::quick_exit, not return -- see the file-header comment. Every file
+    // this tool exists to write is already flushed to disk at this point;
+    // quick_exit terminates immediately, before `lookAndFeel` and `juceInit`
+    // unwind and before the corrupting static destructor runs.
+    std::fflush (nullptr);
+    std::quick_exit (failures == 0 ? 0 : 1);
 }
