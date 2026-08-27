@@ -59,7 +59,7 @@ void drawGrid(juce::Graphics& g, const PlotGeometry& geometry) {
 }
 
 void drawFrequencyLabels(juce::Graphics& g, const PlotGeometry& geometry) {
-    const auto font = az::ui::monoFont(az::ui::hintFontSize);
+    const auto font = az::ui::monoFont(az::ui::tableFontSize);
     g.setFont(font);
     g.setColour(rta::view::axisText);
 
@@ -77,7 +77,7 @@ void drawFrequencyLabels(juce::Graphics& g, const PlotGeometry& geometry) {
 }
 
 void drawLevelLabels(juce::Graphics& g, const PlotGeometry& geometry) {
-    const auto font = az::ui::monoFont(az::ui::hintFontSize);
+    const auto font = az::ui::monoFont(az::ui::tableFontSize);
     g.setFont(font);
     g.setColour(rta::view::axisText);
 

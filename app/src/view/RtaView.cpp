@@ -101,7 +101,7 @@ void drawReadout(juce::Graphics& g, juce::Rectangle<int> area, const rta::measur
     }
 
     g.setColour(readoutText);
-    g.setFont(az::ui::monoFont(az::ui::readoutFontSize));
+    g.setFont(az::ui::monoFont(az::ui::tableFontSize));
     g.drawText(line, area, juce::Justification::centredLeft, false);
 }
 
