@@ -1,10 +1,13 @@
 # FEAT-phase1-rta-spl-generator — RTA, SPL meter và bộ phát tín hiệu
 
 - status: active
-- phases: P1 ⏳
+- phases: P1 ⏳ (90% — còn generator commit + hardware M1-M7)
 - branches: main
-- next: viết `platform/` (lớp I/O thiết bị) trước, vì app shell hiện chưa chạm
-  audio và sẽ vi phạm phân lớp nếu nhét `AudioDeviceManager` vào `MainComponent`.
+- next: (1) generator coordinator gom vòng tích hợp xong thì commit track
+  từ đĩa; (2) T12: cắm interface ASIO thật, chạy M1-M7 (plan AudioIo §5.8);
+  (3) đóng FEAT theo task-closeout path C. Chi tiết: docs/reports/002 +
+  docs/HANDOFF.md. Shared build 119/119, zero warnings; app chạy thật với
+  SYNTHETIC mode; heap bug snapshot đã diệt gốc.
 
 Module đo được đầu tiên. Chọn làm trước Dual-FFT vì dễ kiểm chứng nhất: phát
 pink noise, đo bằng mic, so số với Smaart hoặc máy đo SPL cầm tay. Xây xong thì

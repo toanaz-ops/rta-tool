@@ -30,3 +30,4 @@ what the verifier refuted, and the exact commands + output that prove the state.
 | # | Part | Status |
 |---|---|---|
 | 001 | Phase 0 foundations + FFT/banding core (pre-pipeline) | see docs/features/FEAT-phase0-foundations.md |
+| 002 | Phase 1: the audio chain end to end | [002-phase1-audio-chain.md](002-phase1-audio-chain.md) |
