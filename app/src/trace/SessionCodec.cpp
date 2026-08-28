@@ -230,7 +230,17 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
             else if (key == "name") e.name = v;
             else if (key == "group") e.group = v;
             else if (key == "shadeIndex") { if (!tryParse(v, e.shadeIndex)) return DecodeStatus::Malformed; }
-            else if (key == "visible") e.visible = (v == "1");
+            else if (key == "visible") {
+                // Same policy as calibrationUnit above, for the same reason:
+                // encodeIndex only ever writes "1" or "0" (see writeLine(out,
+                // "visible", ...) below), so any other value is an
+                // unrecognised one from a hand-edited or corrupted file.
+                // Treating it as "0" would silently hide a trace with no
+                // error to explain why it vanished.
+                if (v == "1") e.visible = true;
+                else if (v == "0") e.visible = false;
+                else return DecodeStatus::Malformed;
+            }
             else return DecodeStatus::Malformed;
         } else {
             return DecodeStatus::Malformed;

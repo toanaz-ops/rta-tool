@@ -115,12 +115,13 @@ TEST_CASE("a device error records the fault and clears isRunning()",
     // territory) or a production change to inject the "running" state,
     // neither of which this task allows.
 
-    // This is the one assertion in this file that FAILS against the current
-    // implementation: AudioIo::audioDeviceError() (platform/src/AudioIo.cpp)
-    // records the fault and clears running_, but never calls
-    // bus_.setActive(false). The plan's own M5 row says the postcondition is
-    // "the bus stays inactive" -- see the report for why this is left as a
-    // finding, not "fixed" by touching platform/src/.
+    // This pins the fix landed in 15ae9a6: AudioIo::audioDeviceError()
+    // (platform/src/AudioIo.cpp) now calls bus_.setActive(false) itself, in
+    // the same commit that added this assertion. That matters because a
+    // callback can keep firing after the device has already errored (see the
+    // M6 block below) -- if the bus stayed active across the error, that
+    // stray callback would still be writing into its rings for a device that
+    // is no longer there to read them back.
     CHECK_FALSE(io.bus().isActive());
 }
 
@@ -213,6 +214,13 @@ TEST_CASE(
     }
 
     stopper.join();
+    // This audioDeviceStopped() call sets the bus inactive unconditionally,
+    // so the CHECK_FALSE below it cannot fail -- it is a tautology, not a
+    // test of the race. What this test case actually proves is the SUCCEED
+    // below: 20000 callbacks racing 200 concurrent audioDeviceStopped() calls
+    // on another thread complete with no crash and no UB under a sanitiser.
+    // That is the load-bearing part; keep this call only to leave the bus in
+    // the state every other assertion in the file assumes on exit.
     io.audioDeviceStopped();
     CHECK_FALSE(io.bus().isActive());
 

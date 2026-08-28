@@ -167,6 +167,18 @@ TEST_CASE("an unrecognised calibrationUnit is refused, not silently read as dBFS
     CHECK(back.captures.front().id == "SENTINEL");
 }
 
+TEST_CASE("an unrecognised visible value is refused, not silently hidden", "[codec]") {
+    // Mirrors the calibrationUnit test above: encodeIndex only ever writes
+    // "1" or "0" for this field (see writeLine(out, "visible", ...) in
+    // SessionCodec.cpp), so any other value is either a hand-edited file or
+    // corruption -- either way, defaulting it to false would silently hide a
+    // trace with no error to explain why.
+    SessionDocument back = sentinelDocument();
+    CHECK(decodeIndex("schema=1\n[entry]\ntraceId=x\nvisible=true\n", back) == DecodeStatus::Malformed);
+    REQUIRE(back.captures.size() == 1u);
+    CHECK(back.captures.front().id == "SENTINEL");
+}
+
 TEST_CASE("a CRLF-terminated index decodes the same as an LF one", "[codec]") {
     SessionDocument doc;
     doc.captures.push_back(sampleMeta());

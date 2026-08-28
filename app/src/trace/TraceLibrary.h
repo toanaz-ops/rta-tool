@@ -31,6 +31,28 @@ public:
     /// `generation()`.
     TraceLibrary();
 
+    // generation() is an identity, not a value: it exists precisely so two
+    // distinct TraceLibrary instances can never compare equal even if one
+    // reuses the address of a destroyed other (see generation()'s comment
+    // below). A copy or a move that duplicated generation_ into a second
+    // live object would make that false the moment it ran -- StoredTraceLayer
+    // would then treat two different libraries as the same cache key. There
+    // is no correct value to give a copy/move (a fresh one collides with the
+    // constructor's own counter; carrying the source's value defeats the
+    // point), so the operations are deleted rather than defined wrong.
+    //
+    // Checked before deleting: every use of TraceLibrary in the tree
+    // (app/src/view/RtaView.{h,cpp}, StoredTraceLayer.{h,cpp},
+    // app/tests/test_trace_library.cpp, app/tests_juce/test_stored_trace_layer.cpp)
+    // holds it as a local variable, a pointer, or a reference -- never by
+    // value, never in a std::vector or other container that could reallocate
+    // and need to move an existing element. Nothing in the tree returns one
+    // by value either.
+    TraceLibrary(const TraceLibrary&) = delete;
+    TraceLibrary& operator=(const TraceLibrary&) = delete;
+    TraceLibrary(TraceLibrary&&) = delete;
+    TraceLibrary& operator=(TraceLibrary&&) = delete;
+
     /// Takes the id from `trace.meta().id` rather than generating one: the
     /// capture already has an identity, and a second one invented here would
     /// just be a second name for the same thing. Refuses (returns "", leaves
