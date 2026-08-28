@@ -65,7 +65,7 @@ with the data it indexes.
 | Schema | the record version this trace was written at |
 
 **Where metadata lives, exactly once.** All of the above is written in
-`session.xml` (§3) and nowhere else. The `.bin` header carries only what is
+`session.index` (§3) and nowhere else. The `.bin` header carries only what is
 needed to interpret its own bytes without the index — point count, which fields
 are present and in what order, and the trace UUID as a cross-check. Descriptive
 metadata is never duplicated into the `.bin`, because two homes for one fact is
@@ -126,10 +126,18 @@ for handing one to somebody else.
 
 ```
 <session>/
-  session.xml         index: trace metadata, groups, visibility, workspace, schema version
+  session.index       index: trace metadata, groups, visibility, workspace, schema version
   traces/<uuid>.bin   per-bin field arrays, float32 little-endian, small header
   audio/<uuid>.wav    optional, absent unless the capture opted in
 ```
+
+**The index is a line-oriented `key=value` text format, not XML.** §5 requires
+the session codec to be JUCE-free and to sit under the framework-dependency
+guard. XML would then mean either hand-writing a parser — pure liability for a
+file only this program reads — or pulling `juce::XmlElement` in and breaking the
+guard. A strict line format is trivially parseable, diffable, and easy to assert
+on. Splitting is on the **first** `=` only, so values may contain `=`; newline
+and backslash are backslash-escaped, and nothing else is.
 
 **Why a folder and not a single container.** Capturing during a show appends one
 `.bin` and rewrites a small index. A container format would rewrite the whole
@@ -143,7 +151,7 @@ three are roughly 197 KB per trace and fifty traces are about 10 MB. That is
 nothing, and the alternative discards resolution that cannot be recovered —
 a show does not happen twice. Decimation belongs to drawing (§4), not storage.
 
-**Writing is atomic.** `session.xml` is written to a temporary file and renamed
+**Writing is atomic.** `session.index` is written to a temporary file and renamed
 over the previous one, so an interrupted write leaves the previous index intact
 rather than a truncated one.
 
