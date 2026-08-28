@@ -76,3 +76,50 @@ TEST_CASE("library state is separate from capture metadata", "[library]") {
     CHECK(lib.trace("a")->meta().id == "a");
     CHECK(lib.entry("a")->name == "New name");
 }
+
+TEST_CASE("soloOnly with an unknown id changes nothing", "[library]") {
+    // Catches a soloOnly that skips the existence check and blindly hides
+    // every entry whose id doesn't match -- a stale id (the trace it named
+    // was just removed) would otherwise blank the whole plot with no error.
+    TraceLibrary lib;
+    lib.add(makeTrace("a"), "A", "g");
+    lib.add(makeTrace("b"), "B", "g");
+    const auto before = lib.revision();
+
+    lib.soloOnly("nope");
+
+    CHECK(lib.revision() == before);
+    CHECK(lib.entry("a")->visible);
+    CHECK(lib.entry("b")->visible);
+}
+
+TEST_CASE("setVisible flipping a real value bumps the revision", "[library]") {
+    // Catches a setVisible that applies the flip but forgets ++revision_ --
+    // the entry would end up correct while Task 6's cache never invalidates.
+    TraceLibrary lib;
+    lib.add(makeTrace("a"), "A", "left");
+    const auto before = lib.revision();
+
+    CHECK(lib.setVisible("a", false));  // was visible by default
+
+    CHECK(lib.revision() == before + 1);
+    CHECK_FALSE(lib.entry("a")->visible);
+}
+
+TEST_CASE("setShadeIndex bumps only on a genuine change", "[library]") {
+    // Catches two opposite defects in one case: a setShadeIndex that silently
+    // no-ops on every call (never applies a real change), and one that bumps
+    // even when the requested index already matches.
+    TraceLibrary lib;
+    lib.add(makeTrace("a"), "A", "left");
+    const auto initialShade = lib.entry("a")->shadeIndex;
+    const auto before = lib.revision();
+
+    CHECK(lib.setShadeIndex("a", initialShade + 1));
+    CHECK(lib.revision() == before + 1);
+    CHECK(lib.entry("a")->shadeIndex == initialShade + 1);
+
+    const auto afterChange = lib.revision();
+    CHECK(lib.setShadeIndex("a", initialShade + 1));  // same value again
+    CHECK(lib.revision() == afterChange);
+}

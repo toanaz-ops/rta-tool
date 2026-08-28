@@ -90,6 +90,12 @@ bool TraceLibrary::setShadeIndex(const std::string& id, int shadeIndex) {
 }
 
 void TraceLibrary::soloOnly(const std::string& id) {
+    // An id that no longer exists (its trace was just removed elsewhere) must
+    // not blank the whole plot: refuse exactly like every other setter does
+    // for an unknown id, rather than "helpfully" hiding everything because
+    // nothing matches.
+    if (findEntry(id) == nullptr) return;
+
     // One sweep, one possible bump: the whole operation is a single user
     // action, however many entries end up flipping visibility.
     bool changed = false;

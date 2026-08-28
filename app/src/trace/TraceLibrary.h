@@ -48,7 +48,10 @@ public:
 
     /// Makes `id` the only visible trace. One user action, so at most one
     /// revision step regardless of how many entries flip -- and none at all
-    /// if `id` was already the sole visible trace.
+    /// if `id` was already the sole visible trace. An unknown id is refused
+    /// like every setter above: nothing changes, revision does not move.
+    /// A stale id (its trace vanished a moment ago) must not blank every
+    /// other trace with no matching entry to explain why.
     void soloOnly(const std::string& id);
 
     [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
