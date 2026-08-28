@@ -5,6 +5,7 @@
 // 300-line house limit.
 #include "trace/SessionCodec.h"
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 
@@ -33,17 +34,26 @@ bool readU32(std::span<const std::byte>& in, std::uint32_t& v) {
     return true;
 }
 
+// Floats go through the SAME explicit little-endian u32 path as the header
+// fields above, via bit_cast to/from their IEEE-754 bit pattern. An earlier
+// draft wrote/read these with as_bytes()/memcpy(), which is host byte order
+// -- silently contradicting the "reads back on a big-endian host too" claim
+// on appendU32 above, since only the header would actually have held it.
+// Routing through appendU32/readU32 makes every word in the blob, header and
+// payload alike, follow the one byte order this file documents.
 void appendFloats(std::vector<std::byte>& out, std::span<const float> values) {
-    auto bytes = std::as_bytes(values);
-    out.insert(out.end(), bytes.begin(), bytes.end());
+    for (float f : values) {
+        appendU32(out, std::bit_cast<std::uint32_t>(f));
+    }
 }
 
 bool readFloats(std::span<const std::byte>& in, std::size_t count, std::vector<float>& out) {
-    std::size_t byteCount = count * sizeof(float);
-    if (in.size() < byteCount) return false;
     out.resize(count);
-    std::memcpy(out.data(), in.data(), byteCount);
-    in = in.subspan(byteCount);
+    for (std::size_t i = 0; i < count; ++i) {
+        std::uint32_t bits = 0;
+        if (!readU32(in, bits)) return false;
+        out[i] = std::bit_cast<float>(bits);
+    }
     return true;
 }
 
@@ -116,6 +126,12 @@ DecodeStatus decodeTraceBlob(std::span<const std::byte> blob, const CaptureMeta&
         if (!readFloats(blob, pointCount, coherence)) return DecodeStatus::Malformed;
         if (!trace->setCoherence(std::move(coherence))) return DecodeStatus::Malformed;
     }
+
+    // Anything left over is data this decoder doesn't know how to attribute
+    // to a field -- accepting it silently would mean a blob truncated to the
+    // wrong length, or one with an extra field from a future schema, reads
+    // back as an ordinary trace instead of failing loudly.
+    if (!blob.empty()) return DecodeStatus::Malformed;
 
     out = std::move(trace);
     return DecodeStatus::Ok;

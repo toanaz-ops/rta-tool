@@ -51,9 +51,25 @@ void writeLine(std::string& out, std::string_view key, std::string_view value) {
     out += '\n';
 }
 
+// std::to_chars gives the shortest decimal string that round-trips back to
+// the exact same bit pattern, and -- unlike sprintf's "%f" underneath
+// std::to_string -- it ignores LC_NUMERIC entirely. Both properties matter
+// here: a fixed six-decimal %f loses precision on a value like
+// 9.523809523809524 (round-trips as 9.52381), and a comma-decimal locale
+// would make "%f" write "9,500000", which a C-locale reader then parses as
+// the integer 9 with no error at all. 64 bytes is ample for every field this
+// format writes (the longest is a full-precision double); to_chars only
+// fails on a too-small buffer.
+template <typename T>
+std::string toChars(T value) {
+    char buf[64];
+    auto res = std::to_chars(buf, buf + sizeof(buf), value);
+    return std::string(buf, res.ptr);
+}
+
 template <typename T>
 void writeNumeric(std::string& out, std::string_view key, T value) {
-    writeLine(out, key, std::to_string(value));
+    writeLine(out, key, toChars(value));
 }
 
 // Splits at the FIRST '=' only, so a value containing '=' survives intact.
@@ -66,24 +82,32 @@ bool splitLine(std::string_view line, std::string_view& key, std::string_view& v
     return true;
 }
 
-// std::from_chars covers the integer fields. Floating point uses std::stod
-// instead, since that is what MSVC 14.51 actually ships for from_chars<double>
-// in this toolchain; a malformed numeric field falls back to 0 rather than
-// aborting decode -- decodeIndex's Malformed/NewerSchema gate already covers
-// the case that matters (a schema line that is missing or unparseable).
-template <typename T>
-T parseInt(std::string_view v) {
-    T result{};
-    std::from_chars(v.data(), v.data() + v.size(), result);
-    return result;
+// A trailing '\r' is what a CRLF-terminated file leaves behind once we split
+// on '\n' alone. Stripping it here -- before the line is treated as a
+// section marker or a key=value pair -- is what lets a session that crossed
+// a Windows/Unix boundary in transit still decode instead of corrupting the
+// last character of whatever key or value it lands on (e.g. "dbspl\r"
+// failing to match "dbspl" and silently defaulting away from the calibration
+// unit the file actually recorded).
+std::string_view stripTrailingCr(std::string_view line) {
+    if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+    return line;
 }
 
-double parseDouble(std::string_view v) {
-    try {
-        return std::stod(std::string(v));
-    } catch (...) {
-        return 0.0;
-    }
+// std::from_chars is the mirror of std::to_chars above: exact, and immune to
+// locale. Verified directly against this toolchain (MSVC 14.51, VS Build
+// Tools 2026) -- floating-point from_chars/to_chars have shipped since
+// VS2019 16.4, contrary to an earlier draft of this file that assumed
+// otherwise and fell back to std::stod. Requiring the WHOLE value to parse
+// (res.ptr reaching the end) is what makes "42xyz" fail instead of silently
+// becoming 42: a field that cannot be parsed must fail the whole decode, not
+// substitute a plausible-looking wrong number -- the exact failure mode this
+// format exists to refuse (spec §3).
+template <typename T>
+bool tryParse(std::string_view v, T& out) {
+    if (v.empty()) return false;
+    auto res = std::from_chars(v.data(), v.data() + v.size(), out);
+    return res.ec == std::errc() && res.ptr == v.data() + v.size();
 }
 
 }  // namespace
@@ -123,16 +147,19 @@ std::string encodeIndex(const SessionDocument& doc) {
 
 DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
     // Split into lines without copying the whole buffer; std::string_view
-    // slices reference `text`, which outlives this function.
+    // slices reference `text`, which outlives this function. `out` is never
+    // touched until the single assignment at the very end of this function,
+    // on the Ok path only -- every Malformed/NewerSchema return above that
+    // point leaves the caller's `out` exactly as they passed it in.
     std::vector<std::string_view> lines;
     std::size_t start = 0;
     while (start <= text.size()) {
         auto nl = text.find('\n', start);
         if (nl == std::string_view::npos) {
-            lines.push_back(text.substr(start));
+            lines.push_back(stripTrailingCr(text.substr(start)));
             break;
         }
-        lines.push_back(text.substr(start, nl - start));
+        lines.push_back(stripTrailingCr(text.substr(start, nl - start)));
         start = nl + 1;
     }
 
@@ -145,7 +172,8 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
     if (!splitLine(lines[0], key, value) || key != "schema") {
         return DecodeStatus::Malformed;
     }
-    int schemaVersion = parseInt<int>(value);
+    int schemaVersion = 0;
+    if (!tryParse(value, schemaVersion)) return DecodeStatus::Malformed;
     if (schemaVersion > kSchemaVersion) return DecodeStatus::NewerSchema;
 
     SessionDocument doc;
@@ -174,18 +202,26 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
             if (doc.captures.empty()) return DecodeStatus::Malformed;
             CaptureMeta& m = doc.captures.back();
             if (key == "id") m.id = v;
-            else if (key == "capturedAtUnixMs") m.capturedAtUnixMs = parseInt<std::int64_t>(v);
+            else if (key == "capturedAtUnixMs") { if (!tryParse(v, m.capturedAtUnixMs)) return DecodeStatus::Malformed; }
             else if (key == "deviceName") m.deviceName = v;
             else if (key == "channelRoles") m.channelRoles = v;
-            else if (key == "sampleRate") m.sampleRate = parseDouble(v);
-            else if (key == "fftSize") m.fftSize = parseInt<int>(v);
+            else if (key == "sampleRate") { if (!tryParse(v, m.sampleRate)) return DecodeStatus::Malformed; }
+            else if (key == "fftSize") { if (!tryParse(v, m.fftSize)) return DecodeStatus::Malformed; }
             else if (key == "window") m.window = v;
             else if (key == "averagingType") m.averagingType = v;
-            else if (key == "averagingDepth") m.averagingDepth = parseInt<int>(v);
-            else if (key == "effectiveAverages") m.effectiveAverages = parseDouble(v);
-            else if (key == "appliedDelaySamples") m.appliedDelaySamples = parseInt<int>(v);
-            else if (key == "calibrationOffsetDb") m.calibrationOffsetDb = static_cast<float>(parseDouble(v));
-            else if (key == "calibrationUnit") m.calibrationUnit = (v == "dbspl") ? LevelUnit::DbSpl : LevelUnit::DbFs;
+            else if (key == "averagingDepth") { if (!tryParse(v, m.averagingDepth)) return DecodeStatus::Malformed; }
+            else if (key == "effectiveAverages") { if (!tryParse(v, m.effectiveAverages)) return DecodeStatus::Malformed; }
+            else if (key == "appliedDelaySamples") { if (!tryParse(v, m.appliedDelaySamples)) return DecodeStatus::Malformed; }
+            else if (key == "calibrationOffsetDb") { if (!tryParse(v, m.calibrationOffsetDb)) return DecodeStatus::Malformed; }
+            else if (key == "calibrationUnit") {
+                // Unknown KEYS fall through to Malformed below; an unknown
+                // VALUE here must too -- silently defaulting to dBFS is the
+                // "94 dB lie" the format exists to refuse, no different from
+                // getting the number itself wrong.
+                if (v == "dbspl") m.calibrationUnit = LevelUnit::DbSpl;
+                else if (v == "dbfs") m.calibrationUnit = LevelUnit::DbFs;
+                else return DecodeStatus::Malformed;
+            }
             else return DecodeStatus::Malformed;
         } else if (section == Section::Entry) {
             if (doc.entries.empty()) return DecodeStatus::Malformed;
@@ -193,7 +229,7 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
             if (key == "traceId") e.traceId = v;
             else if (key == "name") e.name = v;
             else if (key == "group") e.group = v;
-            else if (key == "shadeIndex") e.shadeIndex = parseInt<int>(v);
+            else if (key == "shadeIndex") { if (!tryParse(v, e.shadeIndex)) return DecodeStatus::Malformed; }
             else if (key == "visible") e.visible = (v == "1");
             else return DecodeStatus::Malformed;
         } else {
