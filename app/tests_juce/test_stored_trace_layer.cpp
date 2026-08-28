@@ -274,22 +274,33 @@ TEST_CASE("a hidden trace contributes no ink", "[stored-trace-layer]") {
 }
 
 // CATCHES: relying on yForDb's clamp to draw a below-floor column pinned to
-// the bottom row -- the pre-existing behaviour this task removes. That would
-// still leave ink in `bottomQuarter()` even though no bin in this trace was
-// ever measured inside the plotted dB range: a flat line at the floor asserts
-// a measurement that was never taken. `visible == true` here matters -- if
-// the layer instead skipped the trace for some unrelated reason (e.g. a
-// magnitude-empty short-circuit), this test would pass for the wrong reason,
-// so `-200.0f` is a real, well-formed magnitude value, just one below
-// `kDbBottom` (-90.0).
+// the bottom row -- the pre-existing behaviour this task removes.
+//
+// `plotGeometry()`'s `bottom` is exactly `kPlotHeight` (an integer float), and
+// yForDb's clamp maps anything at or below the floor to y == bottom exactly --
+// the coordinate one PAST the image's last row (valid rows are [0, height)).
+// A rect drawn starting there falls entirely outside the canvas and gets
+// clipped away whether or not the floor-pinning bug is present, which would
+// make this test pass under the OLD code too and prove nothing. So this test
+// uses its own geometry with a fractional bottom (99.5, not 100.0): the
+// clamped y then lands inside row 99, a real pixel, and the old code's pinned
+// dot is actually visible there for this test to catch.
+//
+// `visible == true` here matters -- if the layer instead skipped the trace
+// for some unrelated reason (e.g. a magnitude-empty short-circuit), this test
+// would pass for the wrong reason, so `-200.0f` is a real, well-formed
+// magnitude value, just one below `kDbBottom` (-90.0).
 TEST_CASE("a trace entirely below the plot floor leaves the image at background",
           "[stored-trace-layer]") {
     TraceLibrary library;
     REQUIRE_FALSE(addFlatTrace(library, "t1", -200.0f).empty());
 
     auto image = blankPlot();
+    auto geometry = plotGeometry();
+    geometry.bottom = static_cast<float>(kPlotHeight) - 0.5f;
+
     StoredTraceLayer layer;
-    drawOnto(layer, image, library, plotGeometry());
+    drawOnto(layer, image, library, geometry);
 
     CHECK(inkPixels(image, wholePlot()) == 0);
     // Still a real rebuild -- the layer considered the trace and drew nothing,
