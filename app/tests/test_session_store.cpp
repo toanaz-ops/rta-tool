@@ -69,6 +69,38 @@ TEST_CASE("an interrupted write leaves the previous index intact", "[store]") {
     CHECK(back.captures.front().id == "t1");
 }
 
+TEST_CASE("writeIndex consumes a pre-existing .tmp rather than leaving it untouched", "[store]") {
+    TempDir dir("atomic-write");
+    SessionStore store(dir.path);
+
+    // Plant a stray tmp file BEFORE the write this time -- unlike the test
+    // above, which checks what readIndex does with a leftover tmp AFTER a
+    // successful write. This one aims at writeIndex itself: a
+    // truncate-and-write-directly-to-session.index implementation (no tmp
+    // file at all) would never open or touch session.index.tmp, so this
+    // garbage would still be sitting there completely unmodified afterward.
+    // A real tmp+rename writer necessarily opens session.index.tmp for
+    // writing and then consumes it via rename -- the garbage cannot survive
+    // either step. This cannot stage an actual crash mid-write (no unit test
+    // can kill the process at that instant), but it does distinguish the two
+    // implementations by the trace atomicity leaves behind.
+    const auto tmpPath = dir.path / "session.index.tmp";
+    { std::ofstream stray(tmpPath, std::ios::binary); stray << "GARBAGE-PRE-EXISTING-TMP"; }
+
+    SessionDocument doc;
+    doc.captures.push_back(meta("t9"));
+    REQUIRE(store.writeIndex(doc) == StoreStatus::Ok);
+
+    // The rename step of a tmp+rename writer removes the source path, so the
+    // tmp should be gone entirely -- not merely holding different bytes.
+    CHECK_FALSE(std::filesystem::exists(tmpPath));
+
+    SessionDocument back;
+    REQUIRE(store.readIndex(back) == StoreStatus::Ok);
+    CHECK(back.captures.size() == 1u);
+    CHECK(back.captures.front().id == "t9");
+}
+
 TEST_CASE("a trace blob round-trips through traces/", "[store]") {
     TempDir dir("blob");
     SessionStore store(dir.path);
