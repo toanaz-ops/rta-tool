@@ -9,15 +9,23 @@ pipeline from the current git state."*
 
 ## Ground truth at time of writing
 
-Done on main (103/103 tests): core FFT/RealFft, OctaveBands, SpectrumEngine,
-BandWeights, IEC 61260 FilterBank (class 1 verified on CI), Window, RingBuffer,
-Synthetic signals; platform CaptureBus/ChannelConfig/AudioIo; app measurement
-view model + RtaView plot + PlotAxes; az_ui design system; snapshot tooling.
+*Ground truth re-measured 2026-08-28. The 103/103 figure this section carried
+was two waves out of date; treat any count in a plan as a claim to re-verify,
+not as a fact.*
 
-In flight (do not open new sessions against these): Wave D (AnalysisThread,
-SyntheticInput, DevicePanel, ChannelRoleTable), Meters track (Weighting,
-Detector, Leq), then Generator track and Wave E (T10-T13) — all inside the
-current session's pipeline.
+Done (**159/159 tests**, zero /W4 warnings on a clean rebuild): core
+FFT/RealFft, OctaveBands, SpectrumEngine, BandWeights, IEC 61260 FilterBank
+(class 1 verified on CI), Window, RingBuffer, Synthetic signals; platform
+CaptureBus/ChannelConfig/AudioIo; app measurement view model + RtaView plot +
+PlotAxes + Readouts; az_ui design system; snapshot tooling. Also landed since
+this section was written: Wave D (AnalysisThread, SyntheticInput, DevicePanel,
+ChannelRoleTable), the Meters track (Weighting, Detector, Leq), the Generator
+track (66c770c), and Wave E.
+
+Nothing is in flight on this repo. Phase 1's only open item is **T12's by-hand
+hardware pass**, which needs the owner and an interface — see
+`docs/reports/T12-hardware-run.md`. It does not block L2 or L5: it exercises
+`platform/AudioIo` against real hardware, and neither lane touches that path.
 
 ## Dependency spine
 

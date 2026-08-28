@@ -1,13 +1,14 @@
 # FEAT-phase1-rta-spl-generator — RTA, SPL meter và bộ phát tín hiệu
 
 - status: active
-- phases: P1 ⏳ (90% — còn generator commit + hardware M1-M7)
+- phases: P1 ⏳ (95% — chỉ còn hardware M1-M7, cần tay người)
 - branches: main
-- next: (1) generator coordinator gom vòng tích hợp xong thì commit track
-  từ đĩa; (2) T12: cắm interface ASIO thật, chạy M1-M7 (plan AudioIo §5.8);
-  (3) đóng FEAT theo task-closeout path C. Chi tiết: docs/reports/002 +
-  docs/HANDOFF.md. Shared build 119/119, zero warnings; app chạy thật với
-  SYNTHETIC mode; heap bug snapshot đã diệt gốc.
+- next: (1) T12: cắm interface thật, chạy M1-M7 theo phiếu
+  `docs/reports/T12-hardware-run.md` (bản dựng ASIO đã sẵn ở `build-asio/`);
+  (2) đóng FEAT theo task-closeout path C; (3) mở đợt 1 L2 ∥ L5 theo
+  MASTER-EXECUTION-PLAN. Chi tiết: docs/reports/002 + docs/HANDOFF.md.
+  Shared build **159/159**, zero warnings ở /W4; app chạy thật với SYNTHETIC
+  mode; heap bug snapshot đã diệt gốc; generator đã commit (66c770c).
 
 Module đo được đầu tiên. Chọn làm trước Dual-FFT vì dễ kiểm chứng nhất: phát
 pink noise, đo bằng mic, so số với Smaart hoặc máy đo SPL cầm tay. Xây xong thì
@@ -44,5 +45,18 @@ Cộng một phép thử loopback vật lý: cắm output về input trên cùng
 
 ## Việc chặn
 
-`tools/gen_golden.py` cần **numpy và scipy**, máy này chưa có (Python 3.14.6
-trần). Phải tạo venv trước khi bắt đầu sinh golden vector.
+~~`tools/gen_golden.py` cần numpy và scipy, máy này chưa có.~~ **Đã gỡ.** Venv
+có `numpy 2.5.2` + `scipy 1.18.1` đã được tạo, và sáu golden vector dưới
+`core/tests/golden/` được sinh bằng chính nó (header mỗi file ghi rõ phiên bản).
+
+Cái bẫy còn lại: **venv nằm ở checkout chính và worktree không thấy nó.**
+`.venv` bị gitignore nên `git worktree add` không mang theo.
+
+```
+D:\DEV CAVE EP3\PRJ010-RTA-TOOL\.venv\Scripts\python.exe   ->  numpy 2.5.2, scipy 1.18.1
+python -c "import numpy"   trong worktree bất kỳ            ->  ModuleNotFoundError
+```
+
+Lane nào cần sinh lại golden thì gọi interpreter đó bằng đường dẫn tuyệt đối.
+Đừng tạo venv thứ hai, và đừng từ một worktree mà kết luận máy này thiếu numpy.
+Chi tiết: `memory/build-toolchain-on-this-machine.md`.

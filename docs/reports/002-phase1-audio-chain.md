@@ -1,14 +1,18 @@
 # Report 002 — Phase 1: the audio chain, end to end
 
-*2026-08-28. Covers everything landed since report 001 (Phase 0). 46 commits on
-main; shared build 149/149 green (updated after the generator landed), zero warnings at /W4; 47+ commits after
-the generator landed (66c770c).*
+*2026-08-28. Covers everything landed since report 001 (Phase 0).*
+
+*Numbers below were re-measured on 2026-08-28 by the successor orchestrator, not
+carried forward from the previous session — the counts it inherited were already
+stale. 50 commits on `main`, plus 2 on `claude_desk/orchestrator-ke-nhiem-04b17b`
+awaiting merge. Shared build **159/159** green, **zero** warnings at /W4 on a
+full clean rebuild.*
 
 ## What the human can run, right now
 
 ```
 cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure     # 149/149
+ctest --test-dir build -C Release --output-on-failure     # 159/159
 build/app/rtatool_artefacts/Release/"RTA Tool.exe"        # the app: flip SYNTHETIC, watch a live RTA
 cmd //c "build\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots 1100 760"
                                                           # 6 renders, exit 0
@@ -16,7 +20,14 @@ cmd //c "build\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots
 
 The app opens on the real measurement window: device panel (ASIO/WASAPI),
 channel-role table, live RTA from AnalysisThread. The SYNTHETIC switch runs the
-whole chain with no hardware. F1 shows the design-system specimen.
+whole chain with no hardware. F1 shows the design-system specimen. The plot's
+readout line now carries a third segment — `100 Hz    -28.7 dB    36 FRAMES` —
+so the analysis frame count is visible rather than buried in the snapshot struct.
+
+Those four lines are **Git Bash**. This machine's own terminal is PowerShell,
+where the exe's space needs the call operator: `& "…\RTA Tool.exe"`. Launching
+the app for the hardware pass uses the separate ASIO-enabled build instead —
+see `docs/reports/T12-hardware-run.md`, which carries that command verbatim.
 
 ## What was built (by pipeline station)
 
@@ -76,10 +87,32 @@ snapshot tool exiting 0 with a plain return).
 
 ## Outstanding
 
-- ~~Generator track~~ — LANDED after this report's first writing: commit
-  66c770c, shared build 149/149, goldens byte-identical, scratch build dirs
-  removed. Phase 1's remaining gap is exactly one item:
-- **T12 hardware pass M1-M7** (AudioIo plan §5.8): needs a real ASIO interface
-  plugged in — the owner's hands. Everything else in Phase 1 is done.
+- ~~Generator track~~ — LANDED: commit 66c770c, goldens byte-identical, scratch
+  build dirs removed.
+- **T12 hardware pass M1-M7** (AudioIo plan §5.8) — the one item left, and it
+  needs the owner's hands, not another agent. Everything a machine could do for
+  it is now done and committed:
+  - Its automated half is measured: 159/159 and zero /W4 warnings on a full
+    clean rebuild.
+  - Two of the seven steps were **not observable** and would have been recorded
+    dishonestly. M1 wanted an explanation that was never drawn (JUCE keeps the
+    current device type silently, so no fault is ever recorded); M3 wanted
+    `framesAnalysed`, which no widget displayed. Both are fixed in 9f6dce1,
+    adversarially reviewed, with the logic in a JUCE-free `Readouts.h` under the
+    same guard as `PlotGeometry.h`.
+  - An ASIO-enabled build is prepared at `build-asio/` (SDK already on this
+    machine; `ASIOAudioIODeviceType@juce` confirmed present in the binary, so
+    the TYPE combo really will list ASIO).
+  - The sheet to fill in: `docs/reports/T12-hardware-run.md`. It records that M1
+    has **two** legitimate outcomes, which the plan does not — and that the
+    explanation appears only after START, which is the easiest way to write down
+    a false failure.
+- **Known defect, not introduced here:** the framework-dependency guard's
+  explicit-list variant silently stops guarding a file whose path is misspelled
+  (`file(GLOB_RECURSE)` on a missing path yields nothing, and only an all-empty
+  result fails). Measured: one real path plus one bogus path still reports
+  `OK (1 files scanned)`, exit 0. Coverage is currently proven by the scanned
+  count, not by the guard. Recorded in
+  `memory/core-must-not-include-frameworks.md`.
 - STI needs IEC 60268-16; any Class-1 SLM claim needs the full Table 2 —
   both paywalled, tracked in the weighting decision record.
