@@ -279,7 +279,7 @@ private:
 
 - [ ] **Step 4: Build and run**
 
-Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release -R "trace" --output-on-failure`
+Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release --output-on-failure`
 Expected: 6 new cases pass. Full suite: **175/175**.
 
 - [ ] **Step 5: Confirm the guard actually covers the new header**
@@ -451,7 +451,7 @@ struct ColumnExtent {
 
 - [ ] **Step 4: Build and run**
 
-Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release -R "decimator" --output-on-failure`
+Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release --output-on-failure`
 Expected: 5 cases pass. Full suite **180/180**.
 
 - [ ] **Step 5: Confirm the guard count moved**
@@ -694,7 +694,7 @@ Keep the file under 300 lines. If it grows past that, split the blob codec into
 
 - [ ] **Step 5: Build and run**
 
-Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release -R "codec" --output-on-failure`
+Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release --output-on-failure`
 Expected: 6 cases pass. Full suite **186/186**.
 
 - [ ] **Step 6: Confirm the guard count moved**
@@ -878,7 +878,7 @@ messages to the user.
 
 - [ ] **Step 4: Build and run**
 
-Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release -R "store" --output-on-failure`
+Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release --output-on-failure`
 Expected: 5 cases pass. Full suite **191/191**.
 
 - [ ] **Step 5: Guard count**
@@ -1008,7 +1008,7 @@ sweep and bumps `revision_` at most once.
 
 - [ ] **Step 4: Build and run**
 
-Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release -R "library" --output-on-failure`
+Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release --output-on-failure`
 Expected: 5 cases pass. Full suite **196/196**.
 
 - [ ] **Step 5: Guard count** — expected `OK (17 files scanned)`.
@@ -1129,7 +1129,7 @@ struct GateState {
 
 - [ ] **Step 4: Build and run the gate tests**
 
-Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release -R "gate" --output-on-failure`
+Run: `cmake --build build --config Release --parallel && ctest --test-dir build -C Release --output-on-failure`
 Expected: 4 cases pass. Full suite **200/200**. Guard count: `OK (18 files scanned)`.
 
 - [ ] **Step 5: Commit the gate before touching the view**
