@@ -1197,5 +1197,180 @@ above except "interrupted write", which is Task 4 Step 1's `atomic` case.
 **Not in scope, per spec §7:** targets, corridors, coherence gating, match
 score, Bode layout, workspaces, spectrograph. No task touches them.
 
-**Guard counts** run 9 → 10 → 11 → 13 → 15 → 17 → 18. If any task's count does
-not move as stated, its `GLOBS` path is wrong and the header is unguarded.
+**Guard counts** were planned as 9 → 10 → 11 → 13 → 15 → 17 → 18. They ran
+9 → 10 → 11 → **14** → 16 → 18 → 19, because Task 3 split its codec into a third
+file under the clause that authorised it. If any task's count does not move,
+its `GLOBS` path is wrong and the header is unguarded behind a green test.
+
+---
+
+# Tasks 7 and 8 — added 2026-08-28 after the Task 6 review
+
+Two owner decisions taken during execution, recorded here so the briefs stay
+extracted from one source rather than from a conversation.
+
+**Decision 1.** `StoredTraceLayer` shipped with 166 lines of pixel logic and no
+test, because the app test target builds with `RTA_BUILD_APP=OFF` and cannot
+link JUCE. The Task 6 reviewer established that a JUCE-linked view test target
+IS viable — `platform/tests_juce/` already proves the pattern, and
+`tools/snapshot.cpp` proves `juce::Image` needs no desktop peer. Task 7 builds
+that target.
+
+**Decision 2.** Below roughly 2 kHz there are fewer FFT bins than pixel columns,
+so per-column decimation correctly leaves most low columns empty and a stored
+trace draws as a dotted scatter. Spec §4 only ever addressed the opposite
+regime. A spectrum is continuous and its bins are samples of it, so **connecting
+them asserts less than leaving holes**, which an engineer reads as missing data.
+Task 8 bridges those gaps, and fixes the related defect where a curve below the
+plot floor is clamped onto the floor — asserting a measurement that was never
+taken.
+
+Task 7 comes first: the behaviour change in Task 8 must land against tests that
+can see it.
+
+---
+
+## Task 7: a JUCE-linked test target for the view
+
+**Files:**
+- Create: `app/tests_juce/CMakeLists.txt`, `app/tests_juce/test_stored_trace_layer.cpp`
+- Modify: `CMakeLists.txt` (root — register the directory inside the
+  `RTA_BUILD_APP` block, guarded by `RTA_BUILD_TESTS`, exactly as
+  `platform/tests_juce` is), `app/src/view/StoredTraceLayer.h` (add
+  `rebuildCount()`)
+
+**Interfaces:**
+- Consumes: `StoredTraceLayer`, `TraceLibrary`, `Trace`, `PlotGeometry`.
+- Produces: `StoredTraceLayer::rebuildCount()`.
+
+- [ ] **Step 1: Add the observable the caching property needs**
+
+The whole point of the cached layer is that it does NOT rebuild per frame. That
+property is invisible from outside, so it cannot be tested. Add to
+`StoredTraceLayer`:
+
+```cpp
+    /// How many times the cached image has actually been rebuilt. This exists
+    /// so the caching contract can be TESTED rather than asserted: "the live
+    /// repaint is O(1) in trace count" is a claim about how often this number
+    /// moves, and without it the claim is unfalsifiable.
+    [[nodiscard]] std::uint64_t rebuildCount() const noexcept { return rebuildCount_; }
+```
+
+with `std::uint64_t rebuildCount_ = 0;` incremented at the same place the image
+is rebuilt — not at the entry to the draw call.
+
+- [ ] **Step 2: Create the target**
+
+`app/tests_juce/CMakeLists.txt`, modelled on `platform/tests_juce/CMakeLists.txt`
+— read that file first and follow its comments, including its explanation of why
+it must not call `include(Catch)` itself. The target links `Catch2::Catch2WithMain`,
+the JUCE modules `StoredTraceLayer` needs, and compiles the app sources it
+depends on (`StoredTraceLayer.cpp`, `PlotAxes.cpp`, `TraceLibrary.cpp`,
+`SessionCodec.cpp`, `TraceBlobCodec.cpp`) with `app/src` as an include root.
+
+Register it in the root `CMakeLists.txt` inside the `if(RTA_BUILD_APP)` block,
+wrapped in `if(RTA_BUILD_TESTS)`. It must NOT be registered outside that block:
+it links JUCE, and `app/tests` must stay buildable with `RTA_BUILD_APP=OFF`.
+
+- [ ] **Step 3: Write the failing tests**
+
+`app/tests_juce/test_stored_trace_layer.cpp`. Each test builds a `TraceLibrary`,
+a `juce::Image`, and a plot geometry, then draws. Cover exactly these:
+
+1. **A visible trace puts ink on the image.** Some pixel inside the plot area
+   differs from the background after drawing; before drawing, none does.
+2. **Drawing twice with nothing changed does not rebuild.** `rebuildCount()` is
+   unchanged across the second draw. This is the O(1) claim, made falsifiable.
+3. **A library mutation rebuilds.** `setVisible` on a real flip moves
+   `rebuildCount()` by one.
+4. **A geometry change rebuilds.** Same image, different bounds.
+5. **Swapping to a DIFFERENT library at the same revision rebuilds.** Two fresh
+   libraries both sit at their initial revision; keying on revision alone would
+   blit the first library's picture for the second. This is the Task 6 review's
+   Important finding, now pinned by a test instead of by reading.
+6. **A hidden trace contributes no ink.** Draw with the only trace hidden; the
+   image is unchanged from background.
+
+For each, state in a comment which wrong implementation it catches.
+
+- [ ] **Step 4: Build, run, commit**
+
+Reconfigure, build, run the full suite. Report the new total and confirm the
+guard count is unchanged — `app/tests_juce` sources use JUCE and must NOT enter
+`GLOBS`; if the guard count moves, something was added there by mistake.
+
+Commit as `test(app): a JUCE-linked target, so the cached layer can be tested`.
+
+---
+
+## Task 8: bridge the low-frequency gaps, and stop drawing on the floor
+
+**Files:**
+- Modify: `app/src/view/TraceDecimator.h` (add `bridgeGaps`),
+  `app/tests/test_trace_decimator.cpp`, `app/src/view/StoredTraceLayer.cpp`,
+  `app/tests_juce/test_stored_trace_layer.cpp`, `app/src/trace/TraceLibrary.h`
+  and `.cpp` (generation counter)
+
+**Interfaces:**
+- Produces: `rta::view::bridgeGaps`, `rta::trace::TraceLibrary::generation()`.
+
+- [ ] **Step 1: The gap bridge, as a pure function with its own tests**
+
+Add to `TraceDecimator.h`:
+
+```cpp
+/// Fill columns that no bin landed in by interpolating between the nearest
+/// columns that did.
+///
+/// Below roughly 2 kHz an FFT has fewer bins than the plot has pixel columns,
+/// so `decimateToColumns` correctly reports most low columns as empty and the
+/// trace draws as a dotted scatter. A spectrum is continuous and its bins are
+/// samples of it, so joining them asserts LESS than leaving holes, which an
+/// engineer reads as missing data.
+///
+/// Leading and trailing empty runs are left empty: outside the measured range
+/// there is nothing to interpolate between, and inventing a value there would
+/// be the very assertion this function exists to avoid making.
+[[nodiscard]] std::vector<ColumnExtent> bridgeGaps(std::vector<ColumnExtent> columns);
+```
+
+Tests in `app/tests/test_trace_decimator.cpp`:
+
+- A single empty column between two filled ones is filled with the midpoint of
+  its neighbours, `hasData` true.
+- A run of three empty columns between two filled ones interpolates linearly
+  across the run.
+- **Leading and trailing empty runs stay empty** — this is the honesty
+  requirement, and a naive fill-forward implementation would fail it.
+- Input with no gaps comes back unchanged.
+- Input that is entirely empty comes back entirely empty.
+
+- [ ] **Step 2: Use it, and stop drawing below the floor**
+
+In `StoredTraceLayer.cpp`, call `bridgeGaps` on the decimated columns before
+drawing. Separately: a column whose `maxValue` is below the plot's bottom dB
+must draw **nothing**. Today `yForDb` clamps, so such a column is painted as a
+point on the floor — which asserts a measurement at the floor that was never
+taken, the same class of lie as the gaps.
+
+Add a test in `app/tests_juce/test_stored_trace_layer.cpp`: a trace entirely
+below the plot's bottom leaves the image unchanged from background.
+
+- [ ] **Step 3: Close the cache-key residual**
+
+`StoredTraceLayer` keys its cache on the library's raw pointer. A freed library
+replaced at the same address with the same revision and geometry would still hit
+the cache. Give `TraceLibrary` a construction-time generation number from a
+process-wide counter, expose `generation()`, and key on that instead of the
+address. Test: two libraries constructed in sequence report different
+generations.
+
+- [ ] **Step 4: Build, run, render, commit**
+
+Full suite green, zero warnings on a `--clean-first` build, guard count moved by
+one only if a JUCE-free file was added. Re-render the snapshots and confirm
+`rta-view.png` is unchanged — no library is attached there, so none of this may
+alter it.
+
+Commit as `fix(app): join the bins, and stop painting on the floor`.
