@@ -68,20 +68,24 @@ private:
 
     /// The cache key: EVERY input the rasterised image depends on.
     ///
-    /// `cachedLibrary_` is part of it because a revision alone cannot tell two
-    /// libraries apart -- two of them very plausibly both sit at revision 0,
-    /// and repointing a view between them would otherwise blit the first
-    /// one's picture. Keying on identity means a swap invalidates by
-    /// construction, whoever performs it and from wherever, so no call site
-    /// has to remember a rule.
+    /// `cachedGeneration_` is part of it because a revision alone cannot tell
+    /// two libraries apart -- two of them very plausibly both sit at revision
+    /// 0, and repointing a view between them would otherwise blit the first
+    /// one's picture. This used to key on `&library` instead, but a freed
+    /// library can be replaced by a new one at the very same address (a
+    /// same-sized allocation reusing a freed slot is routine, not exotic), and
+    /// a fresh library at revision 0 with unchanged geometry would then
+    /// false-hit a stale image. `TraceLibrary::generation()` is drawn from a
+    /// process-wide counter that only ever increases, so it cannot repeat the
+    /// way an address can.
     ///
-    /// It doubles as the "never built yet" state: `draw` takes the library by
-    /// REFERENCE, so the address it compares can never be null, and a null
-    /// here can only mean no rebuild has happened. That is why there is no
-    /// separate `primed` flag -- and why a library with nothing visible, which
-    /// caches an EMPTY image on purpose, is still recognised as cached rather
-    /// than rebuilt on every frame.
-    const rta::trace::TraceLibrary* cachedLibrary_ = nullptr;
+    /// `hasCached_` carries the "never built yet" state that the raw pointer
+    /// used to carry for free (a reference has no null address to start
+    /// unequal to). A library with nothing visible still caches an EMPTY image
+    /// on purpose, so this has to be a real flag, not "generation == some
+    /// sentinel" -- generation 0 is a legitimate library.
+    bool hasCached_ = false;
+    std::uint64_t cachedGeneration_ = 0;
     PlotGeometry cachedGeometry_{};
     std::uint64_t cachedRevision_ = 0;
 

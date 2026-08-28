@@ -106,6 +106,17 @@ TEST_CASE("setVisible flipping a real value bumps the revision", "[library]") {
     CHECK_FALSE(lib.entry("a")->visible);
 }
 
+// CATCHES: a cache-key fix that keys on `generation()` but the field is left
+// at a fixed default (e.g. 0) instead of drawn from a real counter -- which
+// would make every instance compare equal and reopen exactly the false-hit
+// this field exists to close. Two DISTINCT libraries built back-to-back must
+// report DISTINCT generations, not merely "a" and "b" each having some value.
+TEST_CASE("libraries constructed in sequence report different generations", "[library]") {
+    TraceLibrary first;
+    TraceLibrary second;
+    CHECK(first.generation() != second.generation());
+}
+
 TEST_CASE("setShadeIndex bumps only on a genuine change", "[library]") {
     // Catches two opposite defects in one case: a setShadeIndex that silently
     // no-ops on every call (never applies a real change), and one that bumps

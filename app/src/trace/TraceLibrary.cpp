@@ -1,7 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "trace/TraceLibrary.h"
 
+#include <atomic>
+
 namespace rta::trace {
+
+namespace {
+// A function-local static: the language guarantees it is initialised before
+// its first use with no separate out-of-line definition to forget, unlike a
+// class-static or `inline` namespace-scope atomic would need. Atomic because
+// "process-wide" makes no promise about which thread constructs a library.
+[[nodiscard]] std::uint64_t nextGeneration() noexcept {
+    static std::atomic<std::uint64_t> counter{ 0 };
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+}  // namespace
+
+TraceLibrary::TraceLibrary() : generation_(nextGeneration()) {}
 
 std::size_t TraceLibrary::indexOf(const std::string& id) const noexcept {
     for (std::size_t i = 0; i < entries_.size(); ++i) {

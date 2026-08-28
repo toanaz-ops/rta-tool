@@ -80,6 +80,13 @@ void strokeExtents(juce::Graphics& g, const std::vector<ColumnExtent>& extents,
         const auto& extent = extents[c];
         if (!extent.hasData) continue;
 
+        // yForDb CLAMPS, so a column whose peak never reaches the plot's
+        // bottom dB would otherwise draw as a point pinned to the floor --
+        // asserting a measurement AT the floor that was never taken. Skip the
+        // whole column instead: nothing in its measured range was visible, so
+        // nothing should be drawn for it.
+        if (static_cast<double>(extent.maxValue) < geometry.dbBottom) continue;
+
         // yForDb is top-down, so the MAXIMUM dB is the SMALLER y.
         const float yTop = geometry.yForDb(static_cast<double>(extent.maxValue))
                            - static_cast<float>(originY);
@@ -97,10 +104,10 @@ void strokeExtents(juce::Graphics& g, const std::vector<ColumnExtent>& extents,
 
 void StoredTraceLayer::draw(juce::Graphics& g, const rta::trace::TraceLibrary& library,
                             const PlotGeometry& geometry) {
-    // Every term of the key, in cost order. `&library != cachedLibrary_` also
-    // covers the first-ever call: a reference has no null address to collide
-    // with the member's initial one.
-    const bool stale = &library != cachedLibrary_ || library.revision() != cachedRevision_
+    // Every term of the key, in cost order. `!hasCached_` also covers the
+    // first-ever call.
+    const bool stale = !hasCached_ || library.generation() != cachedGeneration_
+                       || library.revision() != cachedRevision_
                        || !sameRenderInputs(geometry, cachedGeometry_);
     if (stale) rebuild(library, geometry);
 
@@ -112,7 +119,7 @@ void StoredTraceLayer::draw(juce::Graphics& g, const rta::trace::TraceLibrary& l
 
 void StoredTraceLayer::forget() noexcept {
     image_ = juce::Image();
-    cachedLibrary_ = nullptr;
+    hasCached_ = false;
 }
 
 void StoredTraceLayer::rebuild(const rta::trace::TraceLibrary& library,
@@ -120,7 +127,8 @@ void StoredTraceLayer::rebuild(const rta::trace::TraceLibrary& library,
     // The whole key is written here, in one place, before any early return
     // below can skip part of it and leave the cache describing an image that
     // was never drawn.
-    cachedLibrary_ = &library;
+    hasCached_ = true;
+    cachedGeneration_ = library.generation();
     cachedRevision_ = library.revision();
     cachedGeometry_ = geometry;
     image_ = juce::Image();
@@ -170,7 +178,11 @@ void StoredTraceLayer::rebuild(const rta::trace::TraceLibrary& library,
         if (magnitude.empty() || binHz <= 0.0) continue;
 
         const auto columns = columnsForBins(geometry, binHz, magnitude.size(), originX_, width);
-        const auto extents = decimateToColumns(magnitude, columns, width);
+        // bridgeGaps AFTER decimation, not before: it operates on one extent
+        // per pixel column, which is exactly what a dotted-scatter low end
+        // needs joined -- bridging per-bin would be a different, much bigger
+        // change to what "the bins" even are.
+        const auto extents = bridgeGaps(decimateToColumns(magnitude, columns, width));
         if (extents.empty()) continue;
 
         ig.setColour(colourForShade(entry.shadeIndex));

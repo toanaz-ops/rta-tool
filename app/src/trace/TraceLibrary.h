@@ -27,6 +27,10 @@ namespace rta::trace {
 /// advances it -- see the .cpp for how each setter honours that.
 class TraceLibrary {
 public:
+    /// Assigns this instance the next value of a process-wide counter -- see
+    /// `generation()`.
+    TraceLibrary();
+
     /// Takes the id from `trace.meta().id` rather than generating one: the
     /// capture already has an identity, and a second one invented here would
     /// just be a second name for the same thing. Refuses (returns "", leaves
@@ -56,6 +60,17 @@ public:
 
     [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
 
+    /// A number assigned once, at construction, from a process-wide counter --
+    /// distinct from `revision()`, which counts EDITS to one living library and
+    /// restarts at 0 for every instance. `StoredTraceLayer` used to key its
+    /// cache on `&library`, but a freed library can be replaced by a new one at
+    /// the very same address (allocators reuse addresses for same-sized objects
+    /// routinely), and a fresh library at revision 0 with the same plot
+    /// geometry would then false-hit a stale cached image. A generation counter
+    /// that only ever goes up, shared by every instance that has ever existed,
+    /// cannot repeat the way an address can.
+    [[nodiscard]] std::uint64_t generation() const noexcept { return generation_; }
+
     [[nodiscard]] const LibraryEntry* entry(const std::string& id) const noexcept;
     [[nodiscard]] const Trace* trace(const std::string& id) const noexcept;
     [[nodiscard]] std::span<const LibraryEntry> entries() const noexcept { return entries_; }
@@ -72,6 +87,12 @@ private:
     std::vector<LibraryEntry> entries_;
     std::vector<Trace> traces_;
     std::uint64_t revision_ = 0;
+
+    // Assigned in the .cpp from a function-local static counter, not a class
+    // static: a function-local static is guaranteed initialised before its
+    // first use by the language, with no separate definition to forget in the
+    // .cpp the way `inline std::atomic<...> counter_;` would need.
+    std::uint64_t generation_;
 };
 
 }  // namespace rta::trace

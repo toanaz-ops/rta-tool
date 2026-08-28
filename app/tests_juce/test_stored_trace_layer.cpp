@@ -272,3 +272,27 @@ TEST_CASE("a hidden trace contributes no ink", "[stored-trace-layer]") {
     CHECK(inkPixels(image, wholePlot()) == 0);
     CHECK(layer.rebuildCount() == 1);
 }
+
+// CATCHES: relying on yForDb's clamp to draw a below-floor column pinned to
+// the bottom row -- the pre-existing behaviour this task removes. That would
+// still leave ink in `bottomQuarter()` even though no bin in this trace was
+// ever measured inside the plotted dB range: a flat line at the floor asserts
+// a measurement that was never taken. `visible == true` here matters -- if
+// the layer instead skipped the trace for some unrelated reason (e.g. a
+// magnitude-empty short-circuit), this test would pass for the wrong reason,
+// so `-200.0f` is a real, well-formed magnitude value, just one below
+// `kDbBottom` (-90.0).
+TEST_CASE("a trace entirely below the plot floor leaves the image at background",
+          "[stored-trace-layer]") {
+    TraceLibrary library;
+    REQUIRE_FALSE(addFlatTrace(library, "t1", -200.0f).empty());
+
+    auto image = blankPlot();
+    StoredTraceLayer layer;
+    drawOnto(layer, image, library, plotGeometry());
+
+    CHECK(inkPixels(image, wholePlot()) == 0);
+    // Still a real rebuild -- the layer considered the trace and drew nothing,
+    // it did not skip the library entirely.
+    CHECK(layer.rebuildCount() == 1);
+}

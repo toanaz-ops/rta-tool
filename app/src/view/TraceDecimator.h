@@ -51,4 +51,53 @@ struct ColumnExtent {
     return out;
 }
 
+/// Fill columns that no bin landed in by interpolating between the nearest
+/// columns that did.
+///
+/// Below roughly 2 kHz an FFT has fewer bins than the plot has pixel columns,
+/// so `decimateToColumns` correctly reports most low columns as empty and the
+/// trace draws as a dotted scatter. A spectrum is continuous and its bins are
+/// samples of it, so joining them asserts LESS than leaving holes, which an
+/// engineer reads as missing data.
+///
+/// Leading and trailing empty runs are left empty: outside the measured range
+/// there is nothing to interpolate between, and inventing a value there would
+/// be the very assertion this function exists to avoid making.
+[[nodiscard]] inline std::vector<ColumnExtent> bridgeGaps(std::vector<ColumnExtent> columns) {
+    const std::size_t n = columns.size();
+    std::size_t i = 0;
+    while (i < n) {
+        if (columns[i].hasData) {
+            ++i;
+            continue;
+        }
+
+        // [gapStart, gapEnd) is one run of empty columns. `gapEnd` is either
+        // the index of the next filled column, or `n` if the run reaches the
+        // end -- both cases are detected by the loop below alone, with no
+        // separate bounds check needed.
+        const std::size_t gapStart = i;
+        while (i < n && !columns[i].hasData) ++i;
+        const std::size_t gapEnd = i;
+
+        // A run with nothing filled on one side is leading or trailing: there
+        // is no measured value on that side to interpolate FROM, so filling it
+        // would invent data rather than join two real ones.
+        if (gapStart == 0 || gapEnd == n) continue;
+
+        const ColumnExtent& before = columns[gapStart - 1];
+        const ColumnExtent& after = columns[gapEnd];
+        const auto span = static_cast<float>(gapEnd - gapStart + 1);
+        for (std::size_t k = gapStart; k < gapEnd; ++k) {
+            const float t = static_cast<float>(k - gapStart + 1) / span;
+            ColumnExtent filled;
+            filled.minValue = before.minValue + t * (after.minValue - before.minValue);
+            filled.maxValue = before.maxValue + t * (after.maxValue - before.maxValue);
+            filled.hasData = true;
+            columns[k] = filled;
+        }
+    }
+    return columns;
+}
+
 }  // namespace rta::view
