@@ -51,6 +51,13 @@ target_sources(rtatool PRIVATE
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
+    src/view/StoredTraceLayer.cpp
+    # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
+    # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
+    # the moment the VIEW reads the library, both GUI binaries need the
+    # definitions linked. It pulls in nothing else -- its only include is its
+    # own header.
+    src/trace/TraceLibrary.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
     # AnalysisThread / SyntheticInput are JUCE-owning (plan §3.4) and belong
@@ -123,6 +130,13 @@ target_sources(rtatool_snapshot PRIVATE
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
+    src/view/StoredTraceLayer.cpp
+    # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
+    # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
+    # the moment the VIEW reads the library, both GUI binaries need the
+    # definitions linked. It pulls in nothing else -- its only include is its
+    # own header.
+    src/trace/TraceLibrary.cpp
     # Only what the tool's rta-view.png render (via makeSyntheticSnapshot)
     # needs: the offline, thread-free measurement path.
     src/measure/Analyser.cpp

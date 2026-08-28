@@ -4,6 +4,7 @@
 #include "view/RtaView.h"
 
 #include "measure/Snapshot.h"
+#include "trace/TraceLibrary.h"
 #include "view/MeasureColours.h"
 #include "view/PlotAxes.h"
 #include "view/Readouts.h"
@@ -116,13 +117,20 @@ void RtaView::setSource(const rta::measure::SnapshotSource& source) {
     repaint();
 }
 
+void RtaView::setLibrary(const rta::trace::TraceLibrary* library) {
+    library_ = library;
+    repaint();
+}
+
 void RtaView::timerCallback() {
     const auto snapshot = source_->latest();
-    const auto sequence = snapshot ? snapshot->sequence : 0;
-    if (sequence != lastPaintedSequence_) {
-        lastPaintedSequence_ = sequence;
-        repaint();
-    }
+    const std::uint64_t sequence = snapshot ? snapshot->sequence : 0;
+
+    // No library is revision 0 forever, which collapses the two-part gate back
+    // to exactly the sequence-only behaviour this view had before.
+    const std::uint64_t revision = library_ != nullptr ? library_->revision() : 0;
+
+    if (shouldRepaint(gate_, sequence, revision)) repaint();
 }
 
 void RtaView::paint(juce::Graphics& g) {
@@ -168,6 +176,16 @@ void RtaView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const {
     drawGrid(g, geometry);
     drawFrequencyLabels(g, geometry);
     drawLevelLabels(g, geometry);
+
+    // Stored traces sit above the grid and BELOW the live bars: recalled
+    // captures are history, and the amber bars are what the room is doing
+    // right now. Drawn before the empty-state branch below on purpose -- a
+    // session recalled with no live input still has traces worth looking at,
+    // and "NO SIGNAL" is a statement about the live source, not the plot.
+    //
+    // Guarded on the pointer rather than handled inside the layer, so a view
+    // with no library does not composite an image at all (RtaView.h).
+    if (library_ != nullptr) storedLayer_.draw(g, *library_, geometry);
 
     if (!snapshot || snapshot->bands.empty()) {
         drawEmptyState(g, juce::Rectangle<int>(static_cast<int>(geometry.left), static_cast<int>(geometry.top),

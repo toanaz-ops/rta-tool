@@ -95,6 +95,17 @@ inline const juce::Colour target = az::ui::dim;
 /// enough to tell them apart without spending a second colour meaning.
 inline const juce::Colour secondaryTrace = az::ui::text;
 
+/// A stored trace recalled from the library -- history, not the live read.
+/// Secondary silkscreen, and NOT `trace`'s amber: after an afternoon of tuning
+/// a plot can carry a dozen recalled captures, and the one curve the engineer
+/// must be able to find without thinking is the one measuring right now. The
+/// accent stays spent on that. Individual captures are separated by
+/// multiplying the brightness of this one tone (the library's `shadeIndex`
+/// field, applied in StoredTraceLayer.cpp) rather than by inventing more
+/// colours, which is what keeps the palette a design system instead of a bag
+/// of hues.
+inline const juce::Colour storedTrace = az::ui::dim;
+
 /// A predicted-not-yet-real curve: the freeze-ghost pre-move trace (V1) and
 /// the summation ghost (V2) both draw with this tone, always at reduced
 /// alpha and dashed at the call site -- never solid, because solid-and-dim

@@ -7,8 +7,14 @@
 
 #include "measure/SnapshotSource.h"
 #include "view/PlotGeometry.h"
+#include "view/RepaintGate.h"
+#include "view/StoredTraceLayer.h"
 
 #include <cstdint>
+
+namespace rta::trace {
+class TraceLibrary;
+}
 
 namespace rta::view {
 
@@ -16,12 +22,17 @@ namespace rta::view {
 /// log-frequency / dB grid underneath them (`PlotAxes`), and a one-line
 /// mono readout above.
 ///
-/// Repaint is sequence-gated, not frame-gated: a `juce::Timer` polls
-/// `source.latest()->sequence` at 20 Hz -- the same ceiling the analysis
-/// thread publishes at (plan §1.4) -- and calls `repaint()` only when that
-/// number actually changed. Repainting on every timer tick regardless would
-/// cost CPU during a show for a plot the eye cannot resolve any faster than
-/// the publish rate anyway.
+/// Repaint is gated, not frame-driven: a `juce::Timer` polls at 20 Hz -- the
+/// same ceiling the analysis thread publishes at (plan §1.4) -- and calls
+/// `repaint()` only when something actually changed. Repainting on every
+/// timer tick regardless would cost CPU during a show for a plot the eye
+/// cannot resolve any faster than the publish rate anyway.
+///
+/// The gate watches TWO counters (`RepaintGate.h`), because a sequence-only
+/// gate breaks in both directions once stored traces exist: they carry no
+/// sequence, and editing one -- rename, hide, recolour, regroup -- produces
+/// no sequence change, so the plot would never redraw and the edit would look
+/// ignored.
 class RtaView final : public juce::Component, private juce::Timer {
 public:
     explicit RtaView(const rta::measure::SnapshotSource& source);
@@ -30,6 +41,14 @@ public:
     /// Repoints which source this view reads from -- e.g. switching between
     /// live and synthetic input -- without rebuilding the component.
     void setSource(const rta::measure::SnapshotSource& source);
+
+    /// Points the view at the stored traces to draw underneath the live one.
+    /// NULLABLE, and null is the default: `tools/snapshot.cpp` renders this
+    /// view offline with no library at all, and MainComponent has none yet.
+    /// A null library contributes NOTHING to the render -- not an empty
+    /// cached image composited over the plot, nothing -- so that path stays
+    /// byte-for-byte what it was before stored traces existed.
+    void setLibrary(const rta::trace::TraceLibrary* library);
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -54,7 +73,13 @@ private:
     [[nodiscard]] PlotGeometry layoutGeometry(juce::Rectangle<int> area) const;
 
     const rta::measure::SnapshotSource* source_;
-    std::uint64_t lastPaintedSequence_ = 0;
+    const rta::trace::TraceLibrary* library_ = nullptr;
+    GateState gate_;
+
+    /// Mutable because `renderTo` is const for the snapshot tool's sake and
+    /// this is a rendering cache, not observable state: rebuilding it changes
+    /// what the pixels cost, never what they are.
+    mutable StoredTraceLayer storedLayer_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RtaView)
 };
