@@ -1,13 +1,21 @@
 # FEAT-phase1-rta-spl-generator — RTA, SPL meter và bộ phát tín hiệu
 
 - status: active
-- phases: P1 ⏳ (95% — chỉ còn hardware M1-M7, cần tay người)
-- branches: main
-- next: (1) T12: cắm interface thật, chạy M1-M7 theo phiếu
-  `docs/reports/T12-hardware-run.md` (bản dựng ASIO đã sẵn ở `build-asio/`);
-  (2) đóng FEAT theo task-closeout path C; (3) mở đợt 1 L2 ∥ L5 theo
-  MASTER-EXECUTION-PLAN. Chi tiết: docs/reports/002 + docs/HANDOFF.md.
-  Shared build **159/159**, zero warnings ở /W4; app chạy thật với SYNTHETIC
+- phases: P1 ⏳ (98% — chỉ còn **M2 và M7**, hai bước cần giác quan người)
+- branches: main; `claude_desk/orchestrator-ke-nhiem-04b17b` chờ merge
+- next: (1) chạy tay **M2** (nói vào mic thật) và **M7** (cáp loopback vật lý)
+  theo phiếu `docs/reports/T12-hardware-run.md` — bản dựng ASIO sẵn ở
+  `build-asio/`; (2) đóng FEAT theo task-closeout path C; (3) L2 tiếp từ **trạm
+  3** vì decision record đã có (`docs/dsp/2026-08-28-dual-fft.md`), L5 tiếp với
+  L5b/L5c vì **L5a đã xây xong**. Chi tiết: docs/reports/002 + docs/HANDOFF.md.
+
+  Năm trong bảy bước M **đã được tự động hoá** — lý do chúng từng phải chạy tay
+  không phải phần cứng mà là `AudioIo` chưa có target test nào; nay có
+  `platform/tests_juce/` với thiết bị giả. Nó bắt được một lỗi thật ngay lần
+  chạy đầu (bus không hạ cờ khi thiết bị lỗi) mà phiên chạy tay **không thể**
+  bắt, vì cờ đó không hiện trên màn hình.
+
+  Shared build **226/226**, zero warnings ở /W4; app chạy thật với SYNTHETIC
   mode; heap bug snapshot đã diệt gốc; generator đã commit (66c770c).
 
 Module đo được đầu tiên. Chọn làm trước Dual-FFT vì dễ kiểm chứng nhất: phát

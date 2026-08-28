@@ -13,7 +13,7 @@ pipeline from the current git state."*
 was two waves out of date; treat any count in a plan as a claim to re-verify,
 not as a fact.*
 
-Done (**159/159 tests**, zero /W4 warnings on a clean rebuild): core
+Done (**226/226 tests**, zero /W4 warnings on a clean rebuild): core
 FFT/RealFft, OctaveBands, SpectrumEngine, BandWeights, IEC 61260 FilterBank
 (class 1 verified on CI), Window, RingBuffer, Synthetic signals; platform
 CaptureBus/ChannelConfig/AudioIo; app measurement view model + RtaView plot +
@@ -22,10 +22,19 @@ this section was written: Wave D (AnalysisThread, SyntheticInput, DevicePanel,
 ChannelRoleTable), the Meters track (Weighting, Detector, Leq), the Generator
 track (66c770c), and Wave E.
 
-Nothing is in flight on this repo. Phase 1's only open item is **T12's by-hand
-hardware pass**, which needs the owner and an interface — see
-`docs/reports/T12-hardware-run.md`. It does not block L2 or L5: it exercises
-`platform/AudioIo` against real hardware, and neither lane touches that path.
+**Landed since, on `claude_desk/orchestrator-ke-nhiem-04b17b` and awaiting
+merge:** `platform/AudioIo` gained its first tests at all (a JUCE-linked target
+at `platform/tests_juce/`, covering five of T12's seven by-hand steps and
+finding a real defect on its first run); L2 gained its decision record
+(`docs/dsp/2026-08-28-dual-fft.md`); L5 was split into four records and **L5a is
+built** — trace model, library, session persistence, repaint gate, cached layer
+— plus a second JUCE-linked test target at `app/tests_juce/` for view code.
+
+Phase 1's only open item is **T12's by-hand hardware pass**, and it is now down
+to two steps rather than seven: M2 (speak into a real mic) and M7 (a physical
+loopback cable). Both need a person, not another agent — see
+`docs/reports/T12-hardware-run.md`. Neither blocks L2 or L5: they exercise
+`platform/AudioIo` against real hardware, and no other lane touches that path.
 
 ## Dependency spine
 
@@ -49,10 +58,11 @@ P1 (RTA/SPL/gen, finishing now)
 
 | Lane | Scope (decision records to read first) | Depends on | PARALLEL-SAFE with |
 |---|---|---|---|
-| **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16). Records: spec roadmap, banding doc | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
+| **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16).  **Record: `docs/dsp/2026-08-28-dual-fft.md` — stations 1 and 2 are DONE, start at station 3.** Plus the banding doc | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
 | **L3 — MTW** | P3: decimation cascade, per-band FFT sizes, stitching, CONCURRENT with fixed engine (G2). Needs its own station-1 research pass first | L2 interface | L5, L6a |
 | **L4 — Sweep/IR** | P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
-| **L5 — Traces, targets, tuning visuals V1/V2 (display half)** | P5 + docs/specs/2026-08-28-interactive-tuning-visuals.md: trace library, target curves + X-curve (G5), corridor + judgement colours + match score, Bode layout (G9), multi-plot workspaces (G6), cepstrum/wavelet (G23), spectrograph, session persistence | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
+| **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6), spectrograph**: record not written. L5c is also where the library finally gets wired to `RtaView` — until then the stored-trace path is built but unreached. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
+| **~~cepstrum/wavelet (G23)~~** | **Moved OUT of L5** — it is DSP, not display, and belongs with L2/L3. Putting it beside "draw a trace" confused two layers. | L2 | — |
 | **L6a — SPL-pro** | P6 subset: SPL logging/history/alarms/PDF/web viewer (G7), dose IEC 61252 (G8) | Meters track (in flight — wait for it to land) | everything except L6b |
 | **L6b — Multichannel workflows** | P6 subset: spatial averaging (G14), coherence weighting (G15), sequencing + auto-discard (G20), full routing matrix, presets, remote API | L2 (multi-TF) | L4, L5 |
 | **L7 — Solvers** | P7: auto-EQ + suggestions (both modes), auto-delay + suggestions, virtual processor (G11), alignment wizard (G17), crossover surface (G18), FIR export (G10) | L2 + L4 + L5 | L6a, L8 |
@@ -96,7 +106,7 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
 
 ## Suggested opening order with ~2 concurrent sessions
 
-1. **L2** (the heart — Smaart-class dual-FFT) + **L5** (visuals) in parallel.
+1. **L2** (the heart — Smaart-class dual-FFT), now starting at station 3 since its decision record landed, + **L5b/L5c** (L5a is already built) in parallel.
 2. Then **L4** + continue L5; L8 research lanes fire-and-forget anytime.
 3. Then **L3** + **L6b**; then **L7** once L2/L4/L5 are in; **L6a** after
    meters; **L9** last.

@@ -4,15 +4,15 @@
 
 *Numbers below were re-measured on 2026-08-28 by the successor orchestrator, not
 carried forward from the previous session — the counts it inherited were already
-stale. 50 commits on `main`, plus 2 on `claude_desk/orchestrator-ke-nhiem-04b17b`
-awaiting merge. Shared build **159/159** green, **zero** warnings at /W4 on a
+stale. 50 commits on `main`, plus 23 on `claude_desk/orchestrator-ke-nhiem-04b17b`
+awaiting merge. Shared build **226/226** green, **zero** warnings at /W4 on a
 full clean rebuild.*
 
 ## What the human can run, right now
 
 ```
 cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure     # 159/159
+ctest --test-dir build -C Release --output-on-failure     # 226/226
 build/app/rtatool_artefacts/Release/"RTA Tool.exe"        # the app: flip SYNTHETIC, watch a live RTA
 cmd //c "build\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots 1100 760"
                                                           # 6 renders, exit 0
@@ -89,11 +89,27 @@ snapshot tool exiting 0 with a plain return).
 
 - ~~Generator track~~ — LANDED: commit 66c770c, goldens byte-identical, scratch
   build dirs removed.
-- **T12 hardware pass M1-M7** (AudioIo plan §5.8) — the one item left, and it
-  needs the owner's hands, not another agent. Everything a machine could do for
-  it is now done and committed:
-  - Its automated half is measured: 159/159 and zero /W4 warnings on a full
-    clean rebuild.
+- **T12 hardware pass — now M2 and M7 only** (AudioIo plan §5.8). Five of the
+  seven steps have been automated since this report was first written, and the
+  two that remain need human senses rather than a machine: M2 is speaking into a
+  real microphone and watching the bars move, M7 is a physical loopback cable.
+  - **The real reason those seven were manual was not the hardware.**
+    `platform/src/AudioIo.cpp` had no test coverage at all: `rta_platform_tests`
+    links only `rta::platform_types`, the JUCE-free half, so the half that owns
+    the device API had nowhere to be tested. `AudioIo` publicly implements
+    `juce::AudioIODeviceCallback`, so what M5 describes as "unplug the interface
+    mid-run" is, at the code level, one call to `audioDeviceError()`.
+  - A JUCE-linked target now lives at `platform/tests_juce/`, driving a fake
+    `juce::AudioIODevice` that opens no driver. **It found a real defect on its
+    first run:** `audioDeviceError()` cleared `running_` and recorded the fault
+    but never marked the capture bus inactive, while both of its siblings do. A
+    callback firing after the device died would have been accepted and written
+    into the rings of a device that no longer exists. Fixed in the same commit.
+  - **The by-hand pass would never have caught that.** M5 asks a human to
+    confirm a fault line appears, the app stays alive, and nothing reconnects.
+    All three remained true. The bus's active flag is not on screen.
+  - Its automated half is measured: zero /W4 warnings on a full clean rebuild,
+    and the suite total recorded at the head of this report.
   - Two of the seven steps were **not observable** and would have been recorded
     dishonestly. M1 wanted an explanation that was never drawn (JUCE keeps the
     current device type silently, so no fault is ever recorded); M3 wanted
