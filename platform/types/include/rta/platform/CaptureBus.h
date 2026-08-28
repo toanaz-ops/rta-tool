@@ -110,9 +110,18 @@ public:
     /// rebuild its own analysis state.
     void prepare(double sampleRate, int numChannels);
 
-    /// Message thread. A bus that is not active writes nothing and drops
-    /// nothing -- a block discarded because the device is stopped is not the
-    /// same event as a block discarded because the consumer fell behind.
+    /// Message thread OR device thread -- a relaxed atomic store, so it is
+    /// safe from either, and `AudioIo` calls it from all three of its
+    /// device-death paths (`stop()`, `audioDeviceStopped()`,
+    /// `audioDeviceError()`), two of which are device-thread callbacks. Said
+    /// explicitly because this line read "Message thread" while those callers
+    /// already existed, and a reader who believes it will hesitate to arm or
+    /// disarm the bus from the very thread that learns the device is gone.
+    /// Not for the audio callback: that path only ever reads `isActive()`.
+    ///
+    /// A bus that is not active writes nothing and drops nothing -- a block
+    /// discarded because the device is stopped is not the same event as a
+    /// block discarded because the consumer fell behind.
     void setActive(bool active) noexcept { active_.store(active, std::memory_order_relaxed); }
 
     [[nodiscard]] bool isActive() const noexcept { return active_.load(std::memory_order_relaxed); }

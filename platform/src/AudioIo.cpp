@@ -196,6 +196,14 @@ void AudioIo::audioDeviceStopped() {
 void AudioIo::audioDeviceError(const juce::String& errorMessage) {
     running_.store(false, std::memory_order_release);
 
+    // A device error is the THIRD way the device dies, alongside stop() and
+    // audioDeviceStopped() -- both of those already mark the bus inactive
+    // (see audioDeviceStopped()'s comment above for why that matters), but
+    // this path previously left it armed. Set it here, before recordFault()
+    // takes the mutex, so the window in which a stray callback could still
+    // be accepted is as short as possible.
+    bus_.setActive(false);
+
     // RETAIN the message rather than only logging it -- without this the
     // device panel goes dark with the reason available nowhere in the UI.
     // Runs on the device thread, never the audio callback (trap T-8).

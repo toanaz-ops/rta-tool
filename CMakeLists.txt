@@ -71,6 +71,15 @@ if(RTA_BUILD_APP)
     # rta_platform is the one target allowed to link juce_audio_devices --
     # see platform/CMakeLists.txt and docs/plans/2026-08-27-audioio-rta-impl-plan.md §1.1.
     add_subdirectory(platform)
+
+    # rta_platform_juce_tests needs rta::platform (JUCE), so it can only be
+    # added here, inside RTA_BUILD_APP, unlike platform/tests (JUCE-free,
+    # added unconditionally above). See platform/tests_juce/CMakeLists.txt's
+    # header comment.
+    if(RTA_BUILD_TESTS)
+        add_subdirectory(platform/tests_juce)
+    endif()
+
     add_subdirectory(ui)
     add_subdirectory(app)
 endif()
