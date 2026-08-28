@@ -125,6 +125,13 @@ void StoredTraceLayer::rebuild(const rta::trace::TraceLibrary& library,
     cachedGeometry_ = geometry;
     image_ = juce::Image();
 
+    // Counted HERE, not at the top of `draw`: the number a test reads has to
+    // mean "the raster work happened", and every early return below is still a
+    // rebuild -- it re-derives the origin, re-decides there is nothing to draw,
+    // and rewrites the whole key. A zero-width plot and an all-hidden library
+    // are cached results, not skipped ones.
+    ++rebuildCount_;
+
     originX_ = static_cast<int>(std::floor(geometry.left));
     originY_ = static_cast<int>(std::floor(geometry.top));
     const int width = static_cast<int>(std::ceil(geometry.right)) - originX_;

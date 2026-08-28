@@ -44,6 +44,23 @@ public:
     /// will not draw again.
     void forget() noexcept;
 
+    /// How many times the cached image has actually been rebuilt.
+    ///
+    /// This is production API added purely so the caching contract can be
+    /// TESTED rather than asserted. "The live repaint is O(1) in trace count"
+    /// is entirely a claim about how often this number moves, and every other
+    /// observable of this class -- the pixels on screen -- is identical
+    /// whether the image was reused or re-rasterised from scratch. Without a
+    /// counter the claim is unfalsifiable, so a regression that rebuilds every
+    /// frame would look exactly like correct code and would only ever surface
+    /// as dropped frames at a live show.
+    ///
+    /// That is the trade: one word of state and one accessor, in exchange for
+    /// the one property this class exists for being checkable by a test. It is
+    /// NOT dead code -- `app/tests_juce/test_stored_trace_layer.cpp` is its
+    /// caller. Deleting it deletes the tests.
+    [[nodiscard]] std::uint64_t rebuildCount() const noexcept { return rebuildCount_; }
+
 private:
     void rebuild(const rta::trace::TraceLibrary& library, const PlotGeometry& geometry);
 
@@ -73,6 +90,11 @@ private:
     /// lands back on exactly the pixels it was rasterised for.
     int originX_ = 0;
     int originY_ = 0;
+
+    /// Counts calls to `rebuild`, not calls to `draw`. 64 bits so it cannot
+    /// wrap inside any session a human will sit through, which keeps a test's
+    /// "moved by exactly one" assertion meaningful.
+    std::uint64_t rebuildCount_ = 0;
 };
 
 }  // namespace rta::view
