@@ -3,6 +3,8 @@
 // docs/plans/2026-08-27-audioio-rta-impl-plan.md §3.5 (Wave D / T9).
 #include "view/DevicePanel.h"
 
+#include "view/Readouts.h"
+
 #include <az_ui/az_ui.h>
 
 #include <cmath>
@@ -120,6 +122,14 @@ void DevicePanel::refreshFromState() {
     startStopButton_.setButtonText(running ? "STOP" : "START");
     startStopButton_.setToggleState(running, juce::dontSendNotification);
 
+    // Guarded on isRunning(): if the user picks a type while stopped,
+    // nothing has been attempted yet and state.typeName still holds the
+    // OLD type, so comparing now would report a false mismatch against a
+    // request that has not been tried. Stopped also covers M5 -- an
+    // unplug closes the device, and a notice from before that must not
+    // survive it.
+    deviceTypeNotice_ = running ? deviceTypeNotice(requestedDeviceType_, state.typeName) : std::string{};
+
     populating_ = false;
 
     lastPaintedFaultSequence_ = audioIo_.lastFault().sequence;
@@ -129,7 +139,12 @@ void DevicePanel::refreshFromState() {
 
 void DevicePanel::deviceTypeChanged() {
     if (populating_) return;
-    audioIo_.setDesiredDeviceType(deviceTypeCombo_.getText().toStdString());
+    // Captured before anything below can call refreshFromState(), which
+    // overwrites this combo's text with the truth read back from the
+    // device -- after that call, the user's actual request is gone from
+    // the UI and there would be nothing left to compare against.
+    requestedDeviceType_ = deviceTypeCombo_.getText().toStdString();
+    audioIo_.setDesiredDeviceType(requestedDeviceType_);
 
     // AudioIo.h: applied on the NEXT start(), not immediately. If a device
     // is already open, "next start()" means restarting right now -- or the
@@ -221,6 +236,14 @@ void DevicePanel::paint(juce::Graphics& g) {
         g.setColour(kFaultColour);
         g.setFont(az::ui::monoFont(az::ui::hintFontSize));
         g.drawText(juce::String(fault.message), faultLineArea_, juce::Justification::centredLeft, false);
+    } else if (!deviceTypeNotice_.empty()) {
+        // warn, not kFaultColour: nothing failed here (start() succeeded --
+        // that is exactly why lastFault() is None) -- this is "a thing you
+        // should know" about what got substituted, the same distinction the
+        // DROPS counter above draws between warn and a real fault.
+        g.setColour(az::ui::warn);
+        g.setFont(az::ui::monoFont(az::ui::hintFontSize));
+        g.drawText(juce::String(deviceTypeNotice_), faultLineArea_, juce::Justification::centredLeft, false);
     }
 }
 

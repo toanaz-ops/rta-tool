@@ -6,6 +6,7 @@
 #include "measure/Snapshot.h"
 #include "view/MeasureColours.h"
 #include "view/PlotAxes.h"
+#include "view/Readouts.h"
 
 #include <az_ui/az_ui.h>
 
@@ -86,19 +87,14 @@ void drawEmptyState(juce::Graphics& g, juce::Rectangle<int> area) {
 }
 
 void drawReadout(juce::Graphics& g, juce::Rectangle<int> area, const rta::measure::Snapshot* snapshot) {
-    juce::String line;
-    if (snapshot != nullptr && !snapshot->bands.empty()) {
-        // No band-selection gesture exists yet in this wave (that arrives
-        // with the device panel / channel table), so the readout shows the
-        // one band the snapshot already identifies as noteworthy: its
-        // peak. `Analyser::publish` computes `peakBandCentreHz` /
-        // `peakBandLevelDb` for exactly this.
-        const juce::String hz(static_cast<juce::int64>(std::llround(snapshot->peakBandCentreHz)));
-        const juce::String db(static_cast<double>(snapshot->peakBandLevelDb), 1);
-        line = hz + " Hz    " + db + " dB";
-    } else {
-        line = "-- Hz    -- dB";
-    }
+    // No band-selection gesture exists yet in this wave (that arrives with
+    // the device panel / channel table), so the readout shows the one band
+    // the snapshot already identifies as noteworthy: its peak, plus (M3)
+    // the frame count that lets a human confirm analysis restarted after a
+    // sample-rate change. `readoutLine` carries the three-formats-on-one-
+    // line logic so it can be pinned in test_readouts.cpp instead of
+    // eyeballed here.
+    const juce::String line(rta::view::readoutLine(snapshot));
 
     g.setColour(readoutText);
     g.setFont(az::ui::monoFont(az::ui::tableFontSize));

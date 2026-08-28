@@ -8,6 +8,7 @@
 #include "rta/platform/AudioIo.h"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace rta::view {
@@ -86,6 +87,20 @@ private:
     // that can change here with no user action in between polls.
     std::uint32_t lastPaintedFaultSequence_ = 0;
     std::uint64_t lastPaintedDropCount_ = 0;
+
+    // Captured in deviceTypeChanged() BEFORE refreshFromState() overwrites
+    // the combo with the truth read back from the device -- that overwrite
+    // is refreshFromState()'s entire purpose, so by the time a comparison
+    // could run, comparing against the combo's own text would just compare
+    // the truth to itself. This is the user's INTENT, held here so it
+    // survives long enough to be compared against what the device actually
+    // did (Readouts.h's deviceTypeNotice).
+    std::string requestedDeviceType_;
+
+    // Recomputed by refreshFromState() every call, so a real fault (which
+    // always wins in paint()) and a stale notice from a device that has
+    // since been unplugged (M5) never linger past the next state read.
+    std::string deviceTypeNotice_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DevicePanel)
 };
