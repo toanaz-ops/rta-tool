@@ -39,20 +39,44 @@ loopback cable). Both need a person, not another agent — see
 ## Dependency spine
 
 ```
-P1 (RTA/SPL/gen, finishing now)
- ├─→ P2 dual-FFT  ──→ P3 MTW ─────────────┐
+P1 RTA / SPL / generator            ✅ code done; 2 by-hand steps left (M2, M7)
+ │
+ ├─→ P2 dual-FFT  ──→ P3 MTW ─────────────┐   record ✅, code not started
  │        │                               │
- │        └─→ P4 sweep/IR ──→ P4b THD/STI │
+ │        └─→ P4 sweep/IR ──→ P4b THD/STI │   needs IEC 60268-16 for STI
  │                  │                     │
- ├─→ P5 traces/targets/tuning-visuals ←───┘
+ ├─→ P5 display layer, now four records ←─┘
+ │     ├── L5a trace library + session     ✅ BUILT (8 tasks, this branch)
+ │     ├── L5b targets / corridor / score  ⛔ blocked: ISO 2969 or SMPTE ST 202
+ │     ├── L5c Bode layout, workspaces     ← wires L5a to RtaView; nothing does yet
+ │     └── spectrograph
+ │
+ ├─→ P6 SPL-pro / multichannel workflows
  │                  │
- ├─→ P6 SPL-pro/multichannel workflows    │
- │                  │                     │
  └─→ P7 solvers (auto-EQ, auto-delay, virtual processor, wizard) ← needs P2+P4+P5
                     │
      P8 research lanes (SyncSource-TF, AES-75, network audio, DSP SDK)
      P9 productization (i18n, installers, licensing page, docs)
+
+     cepstrum / wavelet (G23) — moved OUT of P5 into the DSP lanes, because
+     it is DSP. Sitting it beside "draw a trace" confused two layers.
 ```
+
+## Where the critical path actually runs
+
+**P2 is the spine.** P3, P4b, P6b and P7 all wait on it, and it is the one
+thing that makes this a Smaart-class tool rather than an RTA. Its decision
+record is written, so it starts at station 3.
+
+**P5 no longer blocks on P2.** L5a is built and stores measurements without
+caring what produced them — its trace model is presence-based precisely so a
+single-channel capture and a transfer function are the same kind of object. L5c
+can wire the display up before P2 lands.
+
+**Two purchases gate real work**, and neither can be worked around by being
+clever: ISO 2969:2015 or SMPTE ST 202:2010 for the X-curve tolerance band (L5b),
+and IEC 60268-16 for STI (P4b). The curve shapes are public; the tolerances are
+not, and a guessed tolerance is a false Class claim.
 
 ## Lanes the owner can open as separate sessions
 
