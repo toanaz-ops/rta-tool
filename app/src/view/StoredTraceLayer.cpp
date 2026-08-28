@@ -97,7 +97,10 @@ void strokeExtents(juce::Graphics& g, const std::vector<ColumnExtent>& extents,
 
 void StoredTraceLayer::draw(juce::Graphics& g, const rta::trace::TraceLibrary& library,
                             const PlotGeometry& geometry) {
-    const bool stale = !primed_ || library.revision() != cachedRevision_
+    // Every term of the key, in cost order. `&library != cachedLibrary_` also
+    // covers the first-ever call: a reference has no null address to collide
+    // with the member's initial one.
+    const bool stale = &library != cachedLibrary_ || library.revision() != cachedRevision_
                        || !sameRenderInputs(geometry, cachedGeometry_);
     if (stale) rebuild(library, geometry);
 
@@ -107,11 +110,19 @@ void StoredTraceLayer::draw(juce::Graphics& g, const rta::trace::TraceLibrary& l
     if (image_.isValid()) g.drawImageAt(image_, originX_, originY_);
 }
 
+void StoredTraceLayer::forget() noexcept {
+    image_ = juce::Image();
+    cachedLibrary_ = nullptr;
+}
+
 void StoredTraceLayer::rebuild(const rta::trace::TraceLibrary& library,
                                const PlotGeometry& geometry) {
+    // The whole key is written here, in one place, before any early return
+    // below can skip part of it and leave the cache describing an image that
+    // was never drawn.
+    cachedLibrary_ = &library;
     cachedRevision_ = library.revision();
     cachedGeometry_ = geometry;
-    primed_ = true;
     image_ = juce::Image();
 
     originX_ = static_cast<int>(std::floor(geometry.left));

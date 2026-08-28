@@ -119,6 +119,15 @@ void RtaView::setSource(const rta::measure::SnapshotSource& source) {
 
 void RtaView::setLibrary(const rta::trace::TraceLibrary* library) {
     library_ = library;
+
+    // Not what keeps the cache correct -- StoredTraceLayer keys its image on
+    // the library's identity, so a swap already invalidates whether or not
+    // anyone calls this. Dropping it here just returns a plot-sized image to
+    // the allocator now rather than at the next rebuild, which matters most
+    // on setLibrary(nullptr): that layer will never be drawn again, so its
+    // image would otherwise sit there for the life of the view.
+    storedLayer_.forget();
+
     repaint();
 }
 

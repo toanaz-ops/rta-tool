@@ -33,22 +33,40 @@ namespace rta::view {
 /// this image.
 class StoredTraceLayer {
 public:
-    /// Composites the cached image over `g`, rebuilding it first if the
-    /// library or the geometry moved since the last call.
+    /// Composites the cached image over `g`, rebuilding it first if anything
+    /// the image depends on moved since the last call.
     void draw(juce::Graphics& g, const rta::trace::TraceLibrary& library,
               const PlotGeometry& geometry);
+
+    /// Drops the cached image. NOT what makes the cache honest -- the key
+    /// below does that, with no call required from anybody. This only returns
+    /// the memory promptly when a view is repointed away from a library it
+    /// will not draw again.
+    void forget() noexcept;
 
 private:
     void rebuild(const rta::trace::TraceLibrary& library, const PlotGeometry& geometry);
 
     juce::Image image_;
+
+    /// The cache key: EVERY input the rasterised image depends on.
+    ///
+    /// `cachedLibrary_` is part of it because a revision alone cannot tell two
+    /// libraries apart -- two of them very plausibly both sit at revision 0,
+    /// and repointing a view between them would otherwise blit the first
+    /// one's picture. Keying on identity means a swap invalidates by
+    /// construction, whoever performs it and from wherever, so no call site
+    /// has to remember a rule.
+    ///
+    /// It doubles as the "never built yet" state: `draw` takes the library by
+    /// REFERENCE, so the address it compares can never be null, and a null
+    /// here can only mean no rebuild has happened. That is why there is no
+    /// separate `primed` flag -- and why a library with nothing visible, which
+    /// caches an EMPTY image on purpose, is still recognised as cached rather
+    /// than rebuilt on every frame.
+    const rta::trace::TraceLibrary* cachedLibrary_ = nullptr;
     PlotGeometry cachedGeometry_{};
     std::uint64_t cachedRevision_ = 0;
-
-    /// Distinct from "the image is null": a library with nothing visible in it
-    /// caches an EMPTY image, and that result must be reused rather than
-    /// recomputed on every frame.
-    bool primed_ = false;
 
     /// Where the cached image's (0,0) sits in component coordinates. Derived
     /// from the geometry at rebuild time and reused at blit time so the image
