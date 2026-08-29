@@ -8,3 +8,4 @@ One line per memory. Content lives in the linked file, never here.
 - [Build toolchain on this machine](build-toolchain-on-this-machine.md) — MSVC 2026 lives in an unusual path; the venv (main checkout only, not worktrees) has numpy and scipy
 - [RealFft is single precision](float32-fft-precision.md) — why a 1e-9 tolerance on any FFT-derived value fails against correct code, and what shape a correct tolerance has
 - [Dual-FFT conventions that must not be tidied](dual-fft-conventions.md) — the four sign/definition choices a later reader will be tempted to flip, and what flipping each one breaks
+- [Re-verify what the change could have changed](reverify-what-the-change-could-have-changed.md) — after a merge, a name-only diff can prove a rebuild is unnecessary; and when it cannot, it tells you which configuration to run
