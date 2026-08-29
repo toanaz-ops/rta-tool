@@ -1710,7 +1710,10 @@ and is the mockup with better geometry.
 **Files:**
 - Modify: `app/src/measure/Snapshot.h` (add `TransferBlock`)
 - Modify: `app/src/measure/Analyser.h`, `app/src/measure/Analyser.cpp`
-- Modify: `app/tests/test_analyser.cpp`
+- Create: `app/tests/test_analyser_transfer.cpp` — a NEW file, not an addition
+  to `test_analyser.cpp`, which is already 396 lines against a 400-line hard
+  cap. The transfer cases are a coherent group with their own helpers, so the
+  seam is natural rather than arbitrary.
 - Modify: `app/tests/CMakeLists.txt` (nothing new to register — `Analyser.cpp`
   and `Snapshot.h` are already in the guard list; **verify the count does not
   drop**)
@@ -1724,12 +1727,28 @@ and is the mockup with better geometry.
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `app/tests/test_analyser.cpp`:
+Create `app/tests/test_analyser_transfer.cpp`:
 
 ```cpp
-// ---------------------------------------------------------------------------
-// Transfer function -- the app-side bridge to rta::dsp::DualFftEngine.
-// ---------------------------------------------------------------------------
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Part of RTA Tool -- app/tests. The app-side bridge from rta::dsp's dual-FFT
+// engine to measure::Snapshot.
+//
+// Split out of test_analyser.cpp rather than appended to it: that file was
+// already 396 lines against the project's 400-line hard cap, and these cases
+// bring their own helpers.
+#include "measure/Analyser.h"
+
+#include "rta/gen/Synthetic.h"
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <span>
+#include <vector>
 
 namespace {
 
@@ -1838,11 +1857,16 @@ TEST_CASE("an uncompensated delay gives the closed-form phase slope",
 }
 
 TEST_CASE("phase crosses the seam in degrees, not radians", "[analyser][transfer]") {
-    // Cheap, and it genuinely falsifies. core hands out radians, wrapped to
-    // (-pi, pi], so no radian value can exceed 3.15 -- while the case above
-    // expects -120 degrees at 4 kHz. A forgotten conversion turns the whole
-    // phase pane into a flat line at the middle of the axis, which looks like
-    // a perfectly aligned system rather than like a bug.
+    // A cheap backstop for ONE specific bug, not a general check. core hands
+    // out radians wrapped to (-pi, pi], so no radian value can exceed 3.15,
+    // while the case above expects -120 degrees at 4 kHz; a forgotten
+    // conversion turns the phase pane into a flat line at the middle of the
+    // axis, which looks like a perfectly aligned system rather than a bug.
+    //
+    // On its own this proves little -- any large garbage passes it. The
+    // closed-form slope case two above is what pins the actual values; this
+    // one is here because the radians bug is the one a reader is most likely
+    // to reintroduce, and it names that bug at the point of failure.
     auto cfg = transferConfig();
     rta::measure::Analyser analyser(cfg);
     const auto reference = pinkBlock(48000 * 2, 0x5EEDu);
@@ -1890,6 +1914,48 @@ TEST_CASE("coherence is withheld until enough averages exist",
     CHECK(thickSnapshot->transfer->effectiveAverages > 8.0);
 }
 
+TEST_CASE("a paired push still drives the band readouts",
+          "[analyser][transfer]") {
+    // pushPair feeds the two SpectrumEngines as well as the dual-FFT engine,
+    // so a two-channel session still shows bars and a reference. Nothing
+    // asserted that until now: deleting both SpectrumEngine::process calls
+    // from pushPair left every other test in this file green, because they all
+    // read the transfer block and none reads the bands.
+    rta::measure::Analyser analyser(transferConfig());
+    const auto reference = pinkBlock(48000, 0x5EEDu);
+    analyser.pushPair(reference, delayed(reference, 4));
+    const auto snapshot = analyser.publish(0);
+
+    REQUIRE(snapshot != nullptr);
+    CHECK(snapshot->hasReference);
+    CHECK_FALSE(snapshot->referenceBands.empty());
+    CHECK(snapshot->framesAnalysed > 0u);
+    // The bands are a real reading, not a floor: pink noise at -20 dBFS has
+    // energy in every band this analyser covers.
+    CHECK(snapshot->peakBandLevelDb > static_cast<float>(rta::measure::kLevelFloorDb));
+}
+
+TEST_CASE("mismatched spans are refused before anything is fed",
+          "[analyser][transfer]") {
+    // The one precondition a dual-FFT cannot guess about is that its two spans
+    // are the same time instant. Refusing it AFTER feeding the spectrum
+    // engines would leave a half-accepted pair behind: bands advanced,
+    // hasReference latched, from a call whose contract says it was refused. A
+    // caller that catches and carries on would then publish readouts
+    // contaminated by a call it believes never happened.
+    rta::measure::Analyser analyser(transferConfig());
+    const auto reference = pinkBlock(4096, 0x5EEDu);
+    const auto shorter = pinkBlock(2048, 0x5EEDu);
+
+    CHECK_THROWS_AS(analyser.pushPair(reference, shorter), std::invalid_argument);
+
+    const auto snapshot = analyser.publish(0);
+    REQUIRE(snapshot != nullptr);
+    CHECK_FALSE(snapshot->hasReference);
+    CHECK_FALSE(snapshot->transfer.has_value());
+    CHECK(snapshot->framesAnalysed == 0u);
+}
+
 TEST_CASE("reset drops the transfer function with everything else",
           "[analyser][transfer]") {
     // A mid-run device change must not splice frames from two different device
@@ -1905,8 +1971,7 @@ TEST_CASE("reset drops the transfer function with everything else",
 }
 ```
 
-Add `#include "rta/gen/Synthetic.h"`, `<algorithm>`, `<cmath>` and `<span>` to
-the test file's include list if not already present.
+Register the new file in `app/tests/CMakeLists.txt`'s `add_executable`.
 
 - [ ] **Step 2: Run and watch it fail**
 
@@ -1984,8 +2049,18 @@ Add the method and members:
     /// hoping they stay in step is the defect AnalysisThread's paired drain
     /// (task 6) exists to close.
     ///
-    /// Throws `std::invalid_argument` (out of DualFftEngine::process) if the
-    /// two spans differ in length.
+    /// **Also feeds the single-channel spectrum engines**, so a paired push
+    /// still lights up the band bars and sets `hasReference`. A hop therefore
+    /// goes through EXACTLY ONE of `pushPair`, or `pushMeasurement` +
+    /// `pushReference` -- never both. Calling both for the same hop
+    /// double-counts every frame in the spectrum averages and inflates
+    /// `framesAnalysed`, which is a wrong RTA number rather than a crash.
+    ///
+    /// Validates the two lengths ITSELF, before touching any engine, and
+    /// throws `std::invalid_argument` if they differ. Leaving the check to
+    /// `DualFftEngine::process` would let a rejected call still feed both
+    /// spectrum engines and latch `hasReference` on its way to the throw -- a
+    /// half-accepted pair, from a call whose contract says it was refused.
     void pushPair(std::span<const float> reference, std::span<const float> measurement);
 ```
 
@@ -1999,8 +2074,10 @@ Add the method and members:
 ```
 
 In `Analyser.cpp`, build the engine config in the constructor's init list from
-`Config`, implement `pushPair` (feed both spectrum engines *and* `dual_`), clear
-`dual_` and `dualEngaged_` in `reset()`, and in `publish()`:
+`Config` -- **including `timeConstantSeconds`**, or `TransferAveraging::
+Exponential` is a mode the config exposes and cannot tune -- implement
+`pushPair` (validate lengths FIRST, then feed both spectrum engines *and*
+`dual_`), clear `dual_` and `dualEngaged_` in `reset()`, and in `publish()`:
 
 ```cpp
     if (dualEngaged_ && dual_.frameCount() > 0) {
