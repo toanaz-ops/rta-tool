@@ -1491,6 +1491,14 @@ TEST_CASE("alpha is monotone in coherence", "[coherence-alpha]") {
         CHECK(alpha <= 1.0f);
         previous = alpha;
     }
+
+    // Linearity pinned by an interior point, because the sweep above only
+    // forbids a DIP. A monotone STEP at 0.95 -- a threshold wearing a fade's
+    // clothes -- passes every other assertion in this file, and thresholds
+    // belong to L5b. If that lane ever wants a different curve it must edit
+    // this line too, which is the point: the shape becomes a deliberate change
+    // rather than a drift.
+    CHECK(rta::view::alphaForCoherence(0.5f) == Catch::Approx(0.625f));
 }
 
 TEST_CASE("nonsense trust is treated as no trust", "[coherence-alpha]") {
@@ -1524,6 +1532,31 @@ TEST_CASE("a column takes the MINIMUM trust of its bins", "[coherence-alpha]") {
     const auto again = rta::view::columnAlpha(reversed, columnForBin, 2);
     CHECK(again[0] == Catch::Approx(alpha[0]));
     CHECK(again[1] == Catch::Approx(alpha[1]));
+}
+
+TEST_CASE("an unmeasurable bin cannot be hidden by its neighbours",
+          "[coherence-alpha]") {
+    // The scalar guard in alphaForCoherence is not enough on its own, and this
+    // is the case that proves it. decimateToColumns' min accumulation asks
+    // `v < extent.minValue`, which is FALSE for NaN, so a NaN arriving after a
+    // good bin is dropped and the column reports the good bin's trust.
+    //
+    // Both orders must floor. If only one does, the rendered trust depends on
+    // which end of a column a corrupted sample happens to sit at -- and the
+    // order that paints full confidence is the one that puts an unmeasurable
+    // reading on screen looking like a solid measurement.
+    const float notMeasured = std::numeric_limits<float>::quiet_NaN();
+    const std::vector<int> columnForBin{ 0, 0 };
+
+    const auto nanFirst =
+        rta::view::columnAlpha(std::vector<float>{ notMeasured, 1.0f }, columnForBin, 1);
+    const auto nanLast =
+        rta::view::columnAlpha(std::vector<float>{ 1.0f, notMeasured }, columnForBin, 1);
+
+    REQUIRE(nanFirst.size() == 1u);
+    REQUIRE(nanLast.size() == 1u);
+    CHECK(nanFirst[0] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+    CHECK(nanLast[0] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
 }
 
 TEST_CASE("a column with no bins reports no trust", "[coherence-alpha]") {
@@ -1569,6 +1602,7 @@ Expected: no such file `view/CoherenceAlpha.h`.
 #include "view/TraceDecimator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <span>
 #include <vector>
@@ -1604,12 +1638,33 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
 /// see PhaseDecimator.h for why that is a real difference and not an
 /// inconsistency.) Columns no bin landed in get the floor; whether such a
 /// column draws at all is decided by its extent's `hasData`, not here.
+///
+/// NaN is sanitised BEFORE the reduction, and that ordering is the whole point.
+/// `decimateToColumns` cannot see a NaN: its min accumulation asks
+/// `v < extent.minValue`, which is false for NaN, so a NaN arriving AFTER a
+/// good bin is silently dropped and the column reports the good bin's trust.
+/// The answer would then depend on bin order -- {NaN, 1.0} floors, {1.0, NaN}
+/// paints FULL CONFIDENCE -- and the second is precisely the "unmeasurable bin
+/// drawn as trustworthy" this file exists to refuse. Sanitising afterwards
+/// cannot work either: by then the NaN is gone.
+///
+/// NaN maps to 0 rather than being filtered out, so the bin stays COUNTED: a
+/// column whose bins are all unmeasurable must read as untrusted, not as a
+/// column nothing landed in.
+///
+/// The copy costs one allocation per call. This runs when a cached layer is
+/// rebuilt -- on a library edit or a geometry change -- never per frame, so
+/// the cost buys an invariant at a price nothing measures.
 [[nodiscard]] inline std::vector<float> columnAlpha(std::span<const float> coherence,
                                                     std::span<const int> columnForBin,
                                                     int columnCount) {
-    const auto columns = decimateToColumns(coherence, columnForBin, columnCount);
-    if (columns.empty()) return {};
+    std::vector<float> measurable;
+    measurable.reserve(coherence.size());
+    for (const float v : coherence) {
+        measurable.push_back(std::isnan(v) ? 0.0f : v);
+    }
 
+    const auto columns = decimateToColumns(measurable, columnForBin, columnCount);
     std::vector<float> out(columns.size(), kUntrustedAlphaFloor);
     for (std::size_t c = 0; c < columns.size(); ++c) {
         if (columns[c].hasData) out[c] = alphaForCoherence(columns[c].minValue);
