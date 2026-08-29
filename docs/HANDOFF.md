@@ -182,9 +182,8 @@ chiều cao có đọc ra "không phân giải nổi" thay vì "hỏng" không.
 
 ## Nợ kỹ thuật L5c để lại — đã phân loại, không có cái nào chặn merge
 
-Lượt review toàn nhánh đã xét từng khoản. Đầy đủ ở
-`.superpowers/sdd/2026-08-29-L5c-display-layer-impl-plan/progress.md` (thư mục
-đó bị gitignore — chép ra nếu cần giữ).
+Lượt review toàn nhánh đã xét từng khoản. Bản đầy đủ, cùng các bẫy và chín
+tuyên bố-test-sai mà lane này tìm ra, nằm ở `docs/reports/004-display-layer-l5c.md`.
 
 - **`MainComponent.cpp` không link vào target test nào**, nên phép reset vai trò
   kênh khi rời SYNTHETIC không có test tự động. Reviewer đã xét cả phương án
