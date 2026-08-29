@@ -1559,15 +1559,38 @@ TEST_CASE("an unmeasurable bin cannot be hidden by its neighbours",
     CHECK(nanLast[0] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
 }
 
-TEST_CASE("a column with no bins reports no trust", "[coherence-alpha]") {
-    // The extent's own hasData decides whether the column draws at all; this
-    // only has to avoid handing back a confident alpha for a column nothing
-    // measured.
-    const std::vector<float> coherence{ 0.9f, 0.9f };
-    const std::vector<int> columnForBin{ 0, 2 };
-    const auto alpha = rta::view::columnAlpha(coherence, columnForBin, 3);
-    REQUIRE(alpha.size() == 3u);
-    CHECK(alpha[1] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+TEST_CASE("an interior gap is bridged; the ends are not", "[coherence-alpha]") {
+    // Below roughly 2 kHz there are fewer bins than pixel columns, so most low
+    // columns have no bin at all. Left at the floor they turn a bridged trace
+    // into a barcode -- near-opaque on measured columns, dim between them. An
+    // empty column means "not sampled at this resolution", not "measured and
+    // found untrustworthy".
+    //
+    // Interior: bins at columns 0 and 3, both fully coherent, so the two
+    // columns between them must interpolate to full trust rather than drop to
+    // the floor.
+    const std::vector<float> coherence{ 1.0f, 1.0f };
+    const std::vector<int> columnForBin{ 0, 3 };
+    const auto alpha = rta::view::columnAlpha(coherence, columnForBin, 6);
+    REQUIRE(alpha.size() == 6u);
+    CHECK(alpha[1] == Catch::Approx(1.0f));
+    CHECK(alpha[2] == Catch::Approx(1.0f));
+
+    // Trailing: columns 4 and 5 are past the last bin. There is nothing to
+    // interpolate BETWEEN out there, and inventing trust beyond the measured
+    // range is the assertion this whole mechanism refuses to make.
+    CHECK(alpha[4] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+    CHECK(alpha[5] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+
+    // And a bridged interior gap between UNEQUAL trust interpolates rather
+    // than taking either end: a mid-gap column between 1.0 and 0.2 must sit
+    // strictly between the two alphas, which pins interpolation rather than
+    // nearest-neighbour.
+    const std::vector<float> uneven{ 1.0f, 0.2f };
+    const auto ramp = rta::view::columnAlpha(uneven, std::vector<int>{ 0, 4 }, 5);
+    REQUIRE(ramp.size() == 5u);
+    CHECK(ramp[2] > rta::view::alphaForCoherence(0.2f));
+    CHECK(ramp[2] < rta::view::alphaForCoherence(1.0f));
 }
 
 TEST_CASE("no coherence at all means full confidence is never assumed",
@@ -1633,6 +1656,16 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
 /// Per-column alpha, the column taking the MINIMUM gamma^2 of its bins:
 /// trust shown never exceeds trust measured.
 ///
+/// **Interior gaps are bridged**, exactly as the magnitude extents are, and for
+/// the same stated reason: below roughly 2 kHz an FFT has fewer bins than the
+/// plot has pixel columns, so most low columns are empty. Left at the floor
+/// they made a bridged trace alternate near-opaque and dim column by column --
+/// a barcode at the LF end, and the same on the coherence ribbon. An empty
+/// column means "not sampled at this resolution", not "measured and found
+/// untrustworthy", and painting it as the latter is the false assertion the
+/// floor exists to avoid. Leading and trailing runs stay at the floor: outside
+/// the measured range there is nothing to interpolate between.
+///
 /// Reuses `decimateToColumns` rather than growing a second reduction -- its
 /// `minValue` is exactly the quantity wanted here. (Phase could not reuse it;
 /// see PhaseDecimator.h for why that is a real difference and not an
@@ -1652,9 +1685,11 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
 /// column whose bins are all unmeasurable must read as untrusted, not as a
 /// column nothing landed in.
 ///
-/// The copy costs one allocation per call. This runs when a cached layer is
-/// rebuilt -- on a library edit or a geometry change -- never per frame, so
-/// the cost buys an invariant at a price nothing measures.
+/// The copy costs one allocation per call. For a STORED trace that is once per
+/// cached-layer rebuild -- a library edit or a geometry change. The LIVE trace
+/// is a different matter: `TransferView` calls this on every render, at up to
+/// 20 Hz, so compute it once per render and share it between the ribbon and the
+/// panes rather than calling this three times for the same coherence.
 [[nodiscard]] inline std::vector<float> columnAlpha(std::span<const float> coherence,
                                                     std::span<const int> columnForBin,
                                                     int columnCount) {
@@ -1664,7 +1699,7 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
         measurable.push_back(std::isnan(v) ? 0.0f : v);
     }
 
-    const auto columns = decimateToColumns(measurable, columnForBin, columnCount);
+    const auto columns = bridgeGaps(decimateToColumns(measurable, columnForBin, columnCount));
     std::vector<float> out(columns.size(), kUntrustedAlphaFloor);
     for (std::size_t c = 0; c < columns.size(); ++c) {
         if (columns[c].hasData) out[c] = alphaForCoherence(columns[c].minValue);
@@ -2817,14 +2852,36 @@ form, same identity as task 5); the coherence dip is present and inside
    image-level check, one level above task 7's: build a synthetic transfer
    whose coherence is high at 1 kHz and low at 100 Hz, render, and compare the
    painted pixels in the two columns.
-5. **`a stored trace's phase renders through the cached layer`** — construct a
+5. **`advancing the live snapshot rebuilds neither cached layer`** — the
+   record's §8 repaint-cost check, and the test the header has been promising.
+   Set a library, render, note both layers' `rebuildCount()`; publish several
+   new snapshots and render again, asserting **neither** count moved; then bump
+   the library's revision and assert **each** moved by exactly one. Without
+   this, a composite that re-rasterises every stored trace on every frame is
+   indistinguishable from correct code — the pixels are identical, and the only
+   symptom is dropped frames during a show.
+6. **`a stored trace's phase renders through the cached layer`** — construct a
    `StoredTraceLayer(rta::trace::Field::Phase)` over a library holding one
    trace with phase, render, and assert ink lands where the phase values say it
    should. Task 7 tested `TraceStroke` **directly**; nothing yet executes
    `StoredTraceLayer`'s phase dispatch — the branch that must not call
    `bridgeGaps` and must feed coherence through. That dispatch is currently
    code no test runs, and this is where it gets covered.
-6. **`unwrapping changes the axis, not the stored data`** — call
+
+   **The fixture has to be able to fail.** A flat phase trace is invariant
+   under `bridgeGaps` — interpolating between equal values yields those values,
+   so a branch that wrongly bridged would still paint the expected row. Use a
+   **two-level** phase trace spanning a bin gap, so bridging paints a row at an
+   intermediate degree that no honest implementation produces. And give the
+   trace a **low coherence**, so "forgets to feed coherence through" is
+   detectable: with coherence unset, the opaque and the faded implementations
+   draw identically.
+7. **`a low-coherence ribbon column is dimmer than a midband one`** — the
+   ribbon has no pixel test at all today. Decision 3 gives it one job: show the
+   LIVE capture's trust, in the accent colour, fading continuously. Assert a
+   column at the fixture's coherence dip is dimmer than one in the midband, and
+   that the dim one is still visible.
+8. **`unwrapping changes the axis, not the stored data`** — call
    `setPhaseUnwrapped(true)`; assert the phase pane's dB range grows to whole
    multiples of 360 and that a second `renderTo` after `setPhaseUnwrapped(false)`
    reproduces the first image exactly.
@@ -2895,6 +2952,18 @@ public:
     /// deleting it deletes the test.
     [[nodiscard]] const BodePanes& panes() const noexcept { return panes_; }
 
+    /// The two cached layers, exposed for the same reason and no other: the
+    /// O(1)-in-trace-count property L5a bought has to survive multiplication by
+    /// panes, and that property is entirely a claim about how often
+    /// `rebuildCount()` moves. Every other observable -- the pixels -- is
+    /// identical whether the images were reused or re-rasterised, so a
+    /// composite that rebuilt both layers on every frame would look exactly
+    /// like correct code and surface only as dropped frames at a live show.
+    [[nodiscard]] const StoredTraceLayer& magnitudeLayer() const noexcept {
+        return storedMagnitude_;
+    }
+    [[nodiscard]] const StoredTraceLayer& phaseLayer() const noexcept { return storedPhase_; }
+
 private:
     void timerCallback() override;
 
@@ -2944,6 +3013,13 @@ does. Structure:
 7. When `snapshot->transfer` is absent: draw the grid and one line of
    `emptyStateText` reading `NO REFERENCE CHANNEL`, and return. Do not draw a
    flat trace.
+8. **While `unwrapped_`, stored phase traces are hidden — and the pane says
+   so.** Drawing them still-wrapped onto an extended axis would put their ink
+   at literal degree rows the axis no longer means, which is worse than
+   absence. But hiding them silently is the failure this codebase names for the
+   alpha floor: the display must never quietly delete data. Draw one line of
+   `emptyStateText` in the phase pane reading `STORED PHASE HIDDEN — UNWRAPPED`.
+   Record §5a carries the reasoning and the owner question it leaves open.
 
 Keep the file under 300 lines. If it crosses, split the ribbon into
 `view/TransferRibbon.{h,cpp}` — that is the seam.

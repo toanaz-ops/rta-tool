@@ -202,6 +202,55 @@ which are never modified.
 
 ---
 
+## 5a. Coherence bridges interior gaps, and stored phase is hidden while unwrapped
+
+*Added 2026-08-29 during implementation (station 4). Both are interactions
+decision 3 and decision 4 did not decide, found by building them.*
+
+**Coherence is bridged across interior column gaps, exactly as magnitude is.**
+Below roughly 2 kHz an FFT has fewer bins than the plot has pixel columns, so
+`decimateToColumns` correctly reports most low columns as empty. `bridgeGaps`
+already fills those for the magnitude *extents*, on the stated argument that a
+spectrum is continuous and its bins are samples of it, so joining them asserts
+LESS than leaving holes. Coherence was not bridged, and the alpha for an empty
+column fell to the 0.25 floor — so at the LF end a bridged trace alternated
+near-opaque and floor-dim column by column, a barcode. The ribbon showed the
+same, more visibly.
+
+The fix follows the same argument: an empty column means "not sampled at this
+resolution", not "measured and found untrustworthy", and painting it as the
+latter is precisely the false assertion the alpha floor exists to avoid.
+Interior gaps interpolate; **leading and trailing runs stay at the floor**,
+because outside the measured range there is nothing to interpolate between and
+inventing trust there would be the assertion this whole mechanism refuses to
+make.
+
+*What this costs:* the "a column with no bins reports no trust" property is now
+narrower than it was — it holds at the ends, not in the middle. That is the
+correct trade, but it means a reader can no longer assume a dim column means a
+measured-untrustworthy one anywhere on the axis.
+
+**Stored phase traces are hidden while the phase pane is unwrapped, and the
+pane says so.** Decision 4 made unwrap a view toggle; decision 5 put the running
+unwrap inside the cached-layer rebuild. Neither says what a *stored* trace does
+when the live one is unwrapped, and the three options are not equal: drawing
+stored traces still-wrapped onto an extended axis puts their ink at literal
+degree rows on an axis that no longer means that, which is actively misleading;
+unwrapping them too is architecturally available (`StoredTraceLayer`'s cache key
+already contains `dbTop`/`dbBottom`, so an extended axis already forces a
+rebuild) but raises a question this record cannot answer alone — whether the
+axis should then *enclose* stored traces, whose different delays could stretch
+it over thousands of degrees.
+
+So: hidden, **with a visible note in the pane**. The display must never silently
+delete data — that is stated here for the alpha floor and applies with more
+force to an entire trace. Hiding loudly is honest; hiding quietly is the failure
+mode. Making unwrap show stored traces properly stays open, and is an owner
+question rather than an implementation detail, because it is really a question
+about whether one pane can hold two delays.
+
+---
+
 ## 6. Workspace: a vertical stack of at most three panes, one workspace per session
 
 **Decision.** A workspace is an **ordered vertical stack of 1–3 panes**, each
@@ -374,6 +423,14 @@ judgement is human, and no test output will be pasted as proof of it.
    SODIUM-amber intensity ramp that keeps the rack aesthetic at the cost of
    less discriminable levels? The `az_ui` primitive is generic either way;
    this only chooses its default.
-3. **No purchase is required for L5c** — recorded so this lane is not held
+3. **Unwrapped phase and stored traces (product).** While the phase pane is
+   unwrapped, stored traces are hidden and the pane says so (§5a). Showing them
+   means unwrapping each stored trace too, and then deciding whether the axis
+   stretches to enclose them — with several stored captures at different
+   delays that range can run to thousands of degrees, at which point the live
+   trace is a flat line at the middle. Is "unwrap shows only the live trace"
+   the product, or should unwrap be per-trace, or should the axis clamp and let
+   stored traces run off it?
+4. **No purchase is required for L5c** — recorded so this lane is not held
    waiting on the ISO 2969 / SMPTE ST 202 / IEC 60268-16 purchases that block
    parts of L5b.
