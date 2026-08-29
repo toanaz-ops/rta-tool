@@ -9,6 +9,7 @@
 #include "view/TraceDecimator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <span>
 #include <vector>
@@ -44,12 +45,33 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
 /// see PhaseDecimator.h for why that is a real difference and not an
 /// inconsistency.) Columns no bin landed in get the floor; whether such a
 /// column draws at all is decided by its extent's `hasData`, not here.
+///
+/// NaN is sanitised BEFORE the reduction, and that ordering is the whole point.
+/// `decimateToColumns` cannot see a NaN: its min accumulation asks
+/// `v < extent.minValue`, which is false for NaN, so a NaN arriving AFTER a
+/// good bin is silently dropped and the column reports the good bin's trust.
+/// The answer would then depend on bin order -- {NaN, 1.0} floors, {1.0, NaN}
+/// paints FULL CONFIDENCE -- and the second is precisely the "unmeasurable bin
+/// drawn as trustworthy" this file exists to refuse. Sanitising afterwards
+/// cannot work either: by then the NaN is gone.
+///
+/// NaN maps to 0 rather than being filtered out, so the bin stays COUNTED: a
+/// column whose bins are all unmeasurable must read as untrusted, not as a
+/// column nothing landed in.
+///
+/// The copy costs one allocation per call. This runs when a cached layer is
+/// rebuilt -- on a library edit or a geometry change -- never per frame, so
+/// the cost buys an invariant at a price nothing measures.
 [[nodiscard]] inline std::vector<float> columnAlpha(std::span<const float> coherence,
                                                     std::span<const int> columnForBin,
                                                     int columnCount) {
-    const auto columns = decimateToColumns(coherence, columnForBin, columnCount);
-    if (columns.empty()) return {};
+    std::vector<float> measurable;
+    measurable.reserve(coherence.size());
+    for (const float v : coherence) {
+        measurable.push_back(std::isnan(v) ? 0.0f : v);
+    }
 
+    const auto columns = decimateToColumns(measurable, columnForBin, columnCount);
     std::vector<float> out(columns.size(), kUntrustedAlphaFloor);
     for (std::size_t c = 0; c < columns.size(); ++c) {
         if (columns[c].hasData) out[c] = alphaForCoherence(columns[c].minValue);

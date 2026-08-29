@@ -35,6 +35,14 @@ TEST_CASE("alpha is monotone in coherence", "[coherence-alpha]") {
         CHECK(alpha <= 1.0f);
         previous = alpha;
     }
+
+    // Linearity pinned by an interior point, because the sweep above only
+    // forbids a DIP. A monotone STEP at 0.95 -- a threshold wearing a fade's
+    // clothes -- passes every other assertion in this file, and thresholds
+    // belong to L5b. If that lane ever wants a different curve it must edit
+    // this line too, which is the point: the shape becomes a deliberate change
+    // rather than a drift.
+    CHECK(rta::view::alphaForCoherence(0.5f) == Catch::Approx(0.625f));
 }
 
 TEST_CASE("nonsense trust is treated as no trust", "[coherence-alpha]") {
@@ -68,6 +76,31 @@ TEST_CASE("a column takes the MINIMUM trust of its bins", "[coherence-alpha]") {
     const auto again = rta::view::columnAlpha(reversed, columnForBin, 2);
     CHECK(again[0] == Catch::Approx(alpha[0]));
     CHECK(again[1] == Catch::Approx(alpha[1]));
+}
+
+TEST_CASE("an unmeasurable bin cannot be hidden by its neighbours",
+          "[coherence-alpha]") {
+    // The scalar guard in alphaForCoherence is not enough on its own, and this
+    // is the case that proves it. decimateToColumns' min accumulation asks
+    // `v < extent.minValue`, which is FALSE for NaN, so a NaN arriving after a
+    // good bin is dropped and the column reports the good bin's trust.
+    //
+    // Both orders must floor. If only one does, the rendered trust depends on
+    // which end of a column a corrupted sample happens to sit at -- and the
+    // order that paints full confidence is the one that puts an unmeasurable
+    // reading on screen looking like a solid measurement.
+    const float notMeasured = std::numeric_limits<float>::quiet_NaN();
+    const std::vector<int> columnForBin{ 0, 0 };
+
+    const auto nanFirst =
+        rta::view::columnAlpha(std::vector<float>{ notMeasured, 1.0f }, columnForBin, 1);
+    const auto nanLast =
+        rta::view::columnAlpha(std::vector<float>{ 1.0f, notMeasured }, columnForBin, 1);
+
+    REQUIRE(nanFirst.size() == 1u);
+    REQUIRE(nanLast.size() == 1u);
+    CHECK(nanFirst[0] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+    CHECK(nanLast[0] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
 }
 
 TEST_CASE("a column with no bins reports no trust", "[coherence-alpha]") {
