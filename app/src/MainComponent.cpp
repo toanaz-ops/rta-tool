@@ -3,6 +3,11 @@
 // docs/plans/2026-08-27-audioio-rta-impl-plan.md §3.6 (Wave E / T10).
 #include "MainComponent.h"
 
+#include "trace/Workspace.h"
+#include "view/PaneRegistry.h"
+#include "view/RtaView.h"
+#include "view/TransferView.h"
+
 namespace {
 
 // The legend gutter's own column, per Metrics.h: every panel that shares a
@@ -26,13 +31,36 @@ constexpr int kDevicePanelHeight = 300;
 // role(s) the table below assigns to them.
 const std::vector<std::string> kSyntheticChannelNames{"Synthetic L", "Synthetic R"};
 
+// The pane factory `workspace_` is built with -- the one place in the whole
+// lane that names both `RtaView` and `TransferView` alongside the
+// `AnalysisThread` reference they both read from, because that wiring is
+// this composition root's job and no one else's (WorkspaceView.h's own
+// class comment: including both pane headers there would make it a second
+// composition root). `source` is captured by reference, not copied -- both
+// pane constructors already take `const SnapshotSource&` and hold onto that
+// reference themselves (RtaView.h, TransferView.h), so this factory outlives
+// nothing they do not already outlive.
+rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSource& source) {
+    return [&source](rta::view::PaneView view) -> std::unique_ptr<juce::Component> {
+        if (view == rta::view::PaneView::Transfer) {
+            return std::make_unique<rta::view::TransferView>(source);
+        }
+        return std::make_unique<rta::view::RtaView>(source);
+    };
+}
+
 }  // namespace
 
 MainComponent::MainComponent()
     : analysisThread_(audioIo_.bus(), rta::measure::Analyser::Config{}),
       devicePanel_(audioIo_),
       channelRoleTable_(audioIo_.bus().config()),
-      rtaView_(analysisThread_) {
+      // The default workspace when none has been loaded: exactly one `rta`
+      // pane, so the app's opening screen stays byte-for-byte what it was
+      // before this task (task brief, step 3). Nothing in this class loads
+      // a session yet -- that is a different seam -- so this is the only
+      // workspace shape MainComponent ever builds today.
+      workspace_({rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_)) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };
@@ -40,14 +68,18 @@ MainComponent::MainComponent()
 
     addAndMakeVisible(devicePanel_);
     addAndMakeVisible(channelRoleTable_);
-    addAndMakeVisible(rtaView_);
+
+    addAndMakeVisible(workspace_);
+    // The seam this whole task exists for (docs/HANDOFF.md): a library was
+    // built in L5a, a view could draw one, and nothing ever called this.
+    workspace_.setLibrary(&library_);
 
     refreshChannelNamesFromDevice();
 
     // Slow poll: only watches for the device's own channel list changing
     // (a device opened, closed or swapped from devicePanel_) -- DevicePanel
-    // and RtaView already run their own faster timers for the state that
-    // actually needs one.
+    // and every pane in workspace_ already run their own faster timers for
+    // the state that actually needs one.
     startTimerHz(2);
 }
 
@@ -66,26 +98,36 @@ void MainComponent::setSyntheticMode(bool enabled) {
         audioIo_.stop();
         devicePanel_.setEnabled(false);
 
-        syntheticInput_ = std::make_unique<rta::measure::SyntheticInput>(
-            audioIo_.bus(), rta::measure::SyntheticInput::Config{});
+        // The synthetic knobs, ON: task 6 built `measurementDelaySamples` /
+        // `measurementNoiseDb` and left both at their inert defaults, which
+        // made the hardware-free path show H = 1 forever -- flat 0.0 dB,
+        // 0 degrees, coherence 1.00, the single most misleading picture this
+        // app can display (it is what a perfectly working measurement of
+        // nothing looks like, AND what several broken engines look like).
+        // 4 samples at 48 kHz gives a closed form that is readable on
+        // screen: phi(f) = -360*f*D/fs is -30 degrees at 1 kHz and -120 at
+        // 4 kHz; -30 dB of independent noise on the measurement channel
+        // pulls coherence down visibly wherever the noise floor dominates,
+        // without erasing the transfer function entirely.
+        rta::measure::SyntheticInput::Config syntheticConfig;
+        syntheticConfig.measurementDelaySamples = 4;
+        syntheticConfig.measurementNoiseDb = -30.0;
+        syntheticInput_ = std::make_unique<rta::measure::SyntheticInput>(audioIo_.bus(), syntheticConfig);
 
-        // A default role so the plot has something to show the instant
-        // synthetic mode engages, with no extra click needed on
-        // channelRoleTable_ -- this IS the "the app demonstrably runs with
-        // no hardware" requirement (plan §0 item 4). Channel index 0 is as
-        // good a choice as index 1 ONLY because the `Config{}` passed above
-        // is the impairment-free default (no delay, noise held at
-        // `kNoiseOffDb`; see SyntheticInput.h) -- with that default,
-        // SyntheticInput still writes bit-identical content to both
-        // channels, so Measurement on either is equivalent. That stops being
-        // true the moment a caller passes a non-default `measurementDelaySamples`
-        // or `measurementNoiseDb`: then the Measurement-role channel differs
-        // from the Reference-role one by construction, and this "either
-        // channel" default would need to become a real role assignment
-        // instead. Nothing here does that yet -- plan Wave E's later task
-        // that wires a real delay/noise floor into this Config is where that
-        // assumption gets revisited.
+        // A real role assignment, not the "either channel" default that was
+        // sound only while the Config above was impairment-free: with a
+        // real delay and a real noise floor, the Measurement-role channel no
+        // longer matches the Reference-role one by construction (comment
+        // this replaced said as much), and `AnalysisThread` needs an
+        // explicit `Reference` channel to compute a transfer function at all
+        // -- `firstChannelWithRole(ChannelRole::Reference)` finds nothing on
+        // a channel left at its `Unused` default (ChannelConfig.h). Channel
+        // 0 carries the impaired signal, channel 1 the clean one
+        // (`SyntheticInput::runBody` writes by role, not by a fixed index,
+        // so which physical channel gets which role is this call's choice
+        // alone).
         audioIo_.bus().config().setRole(0, rta::platform::ChannelRole::Measurement);
+        audioIo_.bus().config().setRole(1, rta::platform::ChannelRole::Reference);
 
         lastChannelNames_ = kSyntheticChannelNames;
         channelRoleTable_.setChannelNames(lastChannelNames_);
@@ -167,5 +209,5 @@ void MainComponent::resized() {
     // the bottom of the channel list before it ever touches the plot.
     channelRoleTable_.setBounds(rail);
 
-    rtaView_.setBounds(area);
+    workspace_.setBounds(area);
 }

@@ -33,10 +33,14 @@
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 #include "measure/SyntheticSnapshot.h"
+#include "trace/Workspace.h"
+#include "view/PaneRegistry.h"
 #include "view/RtaView.h"
 #include "view/TransferView.h"
+#include "view/WorkspaceView.h"
 
 #include <memory>
+#include <vector>
 
 namespace
 {
@@ -143,6 +147,32 @@ int main (int argc, char** argv)
 
         rta::view::TransferView component (source);
         if (! renderComponent (component, outDir, "transfer.png", width, height))
+            ++failures;
+    }
+
+    {
+        // workspace.png: the 1..3 pane vertical stack (record decision 6) --
+        // an `rta` pane above a `transfer` composite, both reading the SAME
+        // snapshot, so the picture is one coherent (if synthetic)
+        // measurement rather than two unrelated fixtures sharing a window.
+        // Bands come from makeSyntheticSnapshot (same fixture rta-view.png
+        // renders), transfer from makeSyntheticTransfer (same fixture
+        // transfer.png renders) -- both deterministic, so this is the same
+        // picture every run, same precondition as every other snapshot here.
+        const rta::measure::SyntheticSpec spec;
+        auto snapshot = std::make_shared<rta::measure::Snapshot> (*rta::measure::makeSyntheticSnapshot (spec));
+        snapshot->transfer = rta::measure::makeSyntheticTransfer (snapshot->fftSize, snapshot->sampleRate, 18);
+        const rta::measure::StaticSnapshotSource source (snapshot);
+
+        rta::view::WorkspaceView component (
+            std::vector<rta::trace::PaneSpec>{ { "rta", 1.0f }, { "transfer", 1.0f } },
+            [&source] (rta::view::PaneView view) -> std::unique_ptr<juce::Component>
+            {
+                if (view == rta::view::PaneView::Transfer)
+                    return std::make_unique<rta::view::TransferView> (source);
+                return std::make_unique<rta::view::RtaView> (source);
+            });
+        if (! renderComponent (component, outDir, "workspace.png", width, height))
             ++failures;
     }
 

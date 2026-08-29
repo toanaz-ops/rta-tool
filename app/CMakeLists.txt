@@ -60,6 +60,12 @@ target_sources(rtatool PRIVATE
     # length cap (see that file's own header comment for why).
     src/view/TransferView.cpp
     src/view/TransferRibbon.cpp
+    # WorkspaceView.cpp is task 10's pane container (decision 6) -- the file
+    # that finally attaches TraceLibrary to a real pane. Deliberately does
+    # NOT include RtaView.h/TransferView.h itself (see its own class
+    # comment); those two are still needed here for MainComponent.cpp's pane
+    # factory, which is why they are already above.
+    src/view/WorkspaceView.cpp
     # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
     # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
     # the moment the VIEW reads the library, both GUI binaries need the
@@ -151,6 +157,10 @@ target_sources(rtatool_snapshot PRIVATE
     # length cap. Needed here for transfer.png below.
     src/view/TransferView.cpp
     src/view/TransferRibbon.cpp
+    # WorkspaceView.cpp is task 10's pane container (decision 6), needed here
+    # for workspace.png. Deliberately does NOT include RtaView.h/
+    # TransferView.h itself -- see its own class comment.
+    src/view/WorkspaceView.cpp
     # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
     # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
     # the moment the VIEW reads the library, both GUI binaries need the

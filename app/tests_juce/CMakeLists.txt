@@ -27,6 +27,7 @@ add_executable(rtatool_view_tests
     test_stored_trace_layer.cpp
     test_trace_stroke.cpp
     test_transfer_view.cpp
+    test_workspace_view.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)
     #   trace/TraceLibrary.h    -> needs TraceLibrary.cpp linked (entries/revision/setVisible)
@@ -64,6 +65,15 @@ add_executable(rtatool_view_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
+    # test_workspace_view.cpp's own additional dependency set (task 10):
+    #   view/WorkspaceView.h/.cpp -> the pane container under test; needs
+    #     az::ui::splitVertically, already linked in through az_ui below.
+    #   view/RtaView.h/.cpp       -> one of the two concrete pane types the
+    #     test builds through the factory and dynamic_casts back to, to read
+    #     library()/storedLayer() -- not needed by any OTHER file in this
+    #     target, hence not listed until now.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/WorkspaceView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RtaView.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:

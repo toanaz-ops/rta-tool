@@ -7,10 +7,9 @@
 
 #include "measure/SnapshotSource.h"
 #include "view/BodeLayout.h"
+#include "view/PaneRegistry.h"
 #include "view/RepaintGate.h"
 #include "view/StoredTraceLayer.h"
-
-namespace rta::trace { class TraceLibrary; }
 
 namespace rta::view {
 
@@ -22,7 +21,7 @@ namespace rta::view {
 /// or two, and with dozens every wrapped phase trace crosses every magnitude
 /// trace several times per decade with nothing but memory to say which axis
 /// each belongs to.
-class TransferView final : public juce::Component, private juce::Timer {
+class TransferView final : public juce::Component, public LibraryConsumer, private juce::Timer {
 public:
     explicit TransferView(const rta::measure::SnapshotSource& source);
     ~TransferView() override;
@@ -30,7 +29,15 @@ public:
     void setSource(const rta::measure::SnapshotSource& source);
 
     /// Nullable, null by default -- same contract RtaView::setLibrary states.
-    void setLibrary(const rta::trace::TraceLibrary* library);
+    /// `override`: implements `LibraryConsumer` (view/PaneRegistry.h), the
+    /// seam `WorkspaceView` reaches this through without including this
+    /// header.
+    void setLibrary(const rta::trace::TraceLibrary* library) override;
+
+    /// What `setLibrary` last stored -- same reason RtaView::library()
+    /// exists: a test needs to read back "did the library reach this pane"
+    /// without inferring it from pixels.
+    [[nodiscard]] const rta::trace::TraceLibrary* library() const noexcept { return library_; }
 
     /// Wrapped +-180 is the default (decision 4): unwrap is ambiguous wherever
     /// coherence is low, and one bad bin steps every bin above it by 360 -- the
