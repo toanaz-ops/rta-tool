@@ -209,13 +209,22 @@ def section_h():
             if taps is not None:
                 driven = np.convolve(driven, taps)[:len(sweep)]
             elif "allpass" in label:
-                b, a = scipy.signal.iirfilter(2, [400.0, 600.0], btype='bandstop',
-                                              ftype='butter', fs=FS)
-                # A true allpass: flat magnitude, non-minimum phase. Built as the
-                # ratio of a polynomial to its own reversal.
-                a_ap = np.array([1.0, -1.6, 0.81])
-                b_ap = a_ap[::-1]
-                driven = scipy.signal.lfilter(b_ap, a_ap, driven)
+                # A true allpass: flat magnitude, non-minimum phase, built as a
+                # denominator paired with its own reversal. Written as ONE SOS
+                # section, [b0 b1 b2 a0 a1 a2], and filtered with sosfilt.
+                #
+                # Not as (b, a) with lfilter, which is what a first version did
+                # and which core/tests/check_no_polynomial_form.cmake correctly
+                # refused: the transfer-function polynomial is not a less
+                # convenient spelling of the same filter, it is a wrong one --
+                # for the lowest third-octave band at 48 kHz its denominator has
+                # a root outside the unit circle and the impulse response
+                # diverges to 7.4e+130, where the identical filter as SOS stays
+                # at 2.0e-06. The guard scans tools/ as well as core/, which is
+                # how it caught this.
+                den = np.array([1.0, -1.6, 0.81])
+                sos_ap = np.concatenate([den[::-1], den])[np.newaxis, :]
+                driven = scipy.signal.sosfilt(sos_ap, driven)
             elif "reflection" in label:
                 # Direct arrival plus a LARGER inverted arrival 3 ms later, so the
                 # dominant peak carries the opposite sign to the direct sound.
