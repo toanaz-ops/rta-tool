@@ -85,7 +85,8 @@ Every task's requirements implicitly include this section.
   nothing" table, entry 1: that guard globs a caller-supplied path list and only
   FATALs when the *whole* list resolves to nothing, so one mistyped path makes
   the guard silently stop watching a file while still reporting OK. The count is
-  21 today; after this lane it should be 28. **Run the guard and read the
+  21 today, and this lane adds eight JUCE-free files, so it should finish at
+  29. **Run the guard and read the
   number** — do not write the expected number anywhere as though it were
   measured.
 - **Build directory for this lane is `build-l5c`**, and it needs
@@ -151,6 +152,7 @@ guard):
 
 | File | Responsibility |
 |---|---|
+| `app/src/view/AxisMetrics.h` | axis-furniture constants, split out of `PlotAxes.h` so a framework-free caller can read them |
 | `app/src/view/BodeLayout.h` | pane split + the ONE shared frequency axis (decisions 1, 2) |
 | `app/src/view/PhaseDecimator.h` | bin-axis unwrap, column min/max, wrap-for-draw (decision 5) |
 | `app/src/view/CoherenceAlpha.h` | γ² → alpha, per-column minimum (decision 3) |
@@ -178,7 +180,9 @@ guard):
 | `app/src/measure/SyntheticInput.{h,cpp}` | delay + noise on the measurement channel |
 | `app/src/measure/SyntheticSnapshot.{h,cpp}` | `makeSyntheticTransfer` |
 | `app/src/view/StoredTraceLayer.{h,cpp}` | draws a chosen `Field`, with per-column alpha |
-| `app/src/trace/SessionCodec.{h,cpp}` | `[pane]` sections in the index |
+| `app/src/view/PlotAxes.h` | includes `AxisMetrics.h` instead of declaring the three constants |
+| `app/src/trace/SessionCodec.{h,cpp}` | `[pane]` sections; `kSchemaVersion` → 2 |
+| `app/src/trace/SessionStore.cpp` | stamps the schema version on write |
 | `app/src/MainComponent.{h,cpp}` | owns the library + workspace; wires them in |
 | `tools/snapshot.cpp` | `transfer.png`, `workspace.png` |
 | `app/tests/CMakeLists.txt` | new test files, new sources, **new guard paths** |
@@ -527,17 +531,60 @@ Record decisions 1 and 2. JUCE-free so the geometry is testable with no
 component, no peer and no screen — the same reason `PlotGeometry.h` is.
 
 **Files:**
+- Create: `app/src/view/AxisMetrics.h` (extracted, see step 0)
 - Create: `app/src/view/BodeLayout.h`
 - Create: `app/tests/test_bode_layout.cpp`
-- Modify: `app/tests/CMakeLists.txt` (test file + guard path)
+- Modify: `app/src/view/PlotAxes.h` (include the extracted header)
+- Modify: `app/tests/CMakeLists.txt` (test file + two guard paths)
 
 **Interfaces:**
-- Consumes: `rta::view::PlotGeometry` (`view/PlotGeometry.h`),
-  `rta::view::kFrequencyLabelHeight`, `kLevelLabelWidth`,
-  `kFrequencyLabelHalfWidth` (`view/PlotAxes.h` — but see step 3: those
-  constants are re-declared, NOT included, because `PlotAxes.h` includes JUCE).
+- Consumes: `rta::view::PlotGeometry` (`view/PlotGeometry.h`) and the three
+  axis-furniture constants, after step 0 moves them somewhere this file is
+  allowed to include from.
 - Produces: `PaneRect`, `BodePanes`, `FrequencyAxis`, `bodePanes()`,
   `frequencyAxis()`, `paneGeometry()`. Used by tasks 8 and 10.
+
+- [ ] **Step 0: Extract the axis constants so nothing has to duplicate them**
+
+`BodeLayout.h` needs `kFrequencyLabelHeight`, `kLevelLabelWidth` and
+`kFrequencyLabelHalfWidth`. They live in `view/PlotAxes.h`, which includes
+`juce_gui_basics` — an include this file's own guard forbids.
+
+Copying the three values into `BodeLayout.h` with a test asserting they still
+match would work, and it is what an earlier draft of this plan called for. It
+is the wrong answer: two constants that must agree are two constants that will
+eventually disagree, and a test that catches the disagreement is a smaller
+version of the same problem. Move them instead.
+
+Create `app/src/view/AxisMetrics.h` — JUCE-free, carrying the three constants
+and **their existing comments verbatim** — and make `view/PlotAxes.h` include
+it rather than declare them. `PlotAxes.h`'s own users are unaffected: the names
+stay in `rta::view` and stay visible through the same include.
+
+```cpp
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Part of RTA Tool -- app/src/view. No JUCE: enforced by the
+// measure_has_no_framework_deps ctest.
+//
+// The plot's axis furniture, split out of PlotAxes.h so a framework-free
+// caller can have the numbers without the drawing. PlotAxes.h includes
+// juce_gui_basics because it draws; BodeLayout.h only needs to know how much
+// room the labels take, and the guard forbids it the framework. One
+// definition, two readers -- not two definitions and a test hoping they agree.
+#pragma once
+
+namespace rta::view {
+
+inline constexpr int kFrequencyLabelHeight = 18;
+inline constexpr int kLevelLabelWidth = 40;
+inline constexpr float kFrequencyLabelHalfWidth = 26.0f;
+
+}  // namespace rta::view
+```
+
+Register `AxisMetrics.h` in the guard's `GLOBS` alongside `BodeLayout.h`, and
+confirm the whole tree still builds — `PlotAxes.cpp`, `RtaView.cpp` and the
+three preview mockups all read these names.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -707,6 +754,7 @@ Build `rtatool_analysis_tests`. Expected: compile error, no such file
 // docs/dsp/2026-08-29-display-layer-l5c.md.
 #pragma once
 
+#include "view/AxisMetrics.h"
 #include "view/PlotGeometry.h"
 
 #include <algorithm>
@@ -764,15 +812,6 @@ inline constexpr int kRibbonHeight = 34;
 /// splitter ever ships it moves the weight, not the rule.
 inline constexpr int kMagnitudeWeight = 5;
 inline constexpr int kPhaseWeight = 3;
-
-/// Re-declared rather than included from `view/PlotAxes.h`, which includes
-/// juce_gui_basics and would fail this file's own guard. The values are
-/// asserted equal in `app/tests_juce/test_transfer_view.cpp` (task 8) so the
-/// duplication cannot drift unnoticed -- two constants that must agree, with a
-/// test that says so, beats a framework dependency in a framework-free file.
-inline constexpr int kFrequencyLabelHeight = 18;
-inline constexpr int kLevelLabelWidth = 40;
-inline constexpr float kFrequencyLabelHalfWidth = 26.0f;
 
 /// Split `content` into ribbon / magnitude / phase.
 ///
@@ -2417,11 +2456,14 @@ form, same identity as task 5); the coherence dip is present and inside
    that the ribbon stays 34 px. **Geometry read back from the component, not
    from pixels** — the record says so, and a pixel test here would pass for a
    view that drew the right shape in the wrong place.
-2. **`the duplicated axis constants agree with PlotAxes`** — assert
-   `rta::view::kFrequencyLabelHeight == 18` etc. against the values in
-   `view/PlotAxes.h` by including both headers in this JUCE-linked test. This
-   is the check that makes `BodeLayout.h`'s deliberate duplication safe; the
-   guard forbids the include, so a test asserts the equality instead.
+2. **`renderTo draws without resized() ever having run`** — render into a
+   `juce::Image` on a view that was constructed and never given a size or a
+   desktop peer, and assert the image is not blank. Project CLAUDE.md records
+   this as one of the two reasons an offscreen snapshot comes out empty:
+   `setSize()` does not call `resized()` on a component with no peer. The
+   snapshot tool depends on `renderTo` computing its own layout, and a view
+   that only lays out in `resized()` produces a blank `transfer.png` while
+   every other test passes.
 3. **`a snapshot with no transfer draws an empty state, not an empty Bode`** —
    render a `StaticSnapshotSource` holding an RTA-only snapshot; assert the
    image is not blank (the empty-state text is drawn) and that no ink appears
@@ -2596,8 +2638,11 @@ Record decision 6, the model and the format. No components yet.
 **Files:**
 - Create: `app/src/trace/Workspace.h`, `app/src/view/PaneRegistry.h`
 - Create: `app/tests/test_workspace.cpp`
-- Modify: `app/src/trace/SessionCodec.h`, `.cpp`
-- Modify: `app/tests/test_session_codec.cpp`, `app/tests/CMakeLists.txt`
+- Modify: `app/src/trace/SessionCodec.h`, `.cpp` (the `[pane]` section, and
+  `kSchemaVersion` → 2)
+- Modify: `app/src/trace/SessionStore.cpp` (stamp the schema version on write)
+- Modify: `app/tests/test_session_codec.cpp`, `app/tests/test_session_store.cpp`,
+  `app/tests/CMakeLists.txt`
 
 **Interfaces:**
 - Produces: `PaneSpec`, `kMaxPanes`, `normalisePanes()`,
@@ -2635,6 +2680,21 @@ In `app/tests/test_session_codec.cpp`:
    `Malformed`. The tolerance in case 6 is for an unknown *view name*, not a
    licence to guess at numbers; without this test somebody will "simplify" the
    codec into accepting anything in a `[pane]` block.
+8. **`a version-1 session still opens`** — decode an index whose first line is
+   `schema=1` and which carries captures and entries but no panes. Assert `Ok`,
+   and that `normalisePanes` on the empty pane list yields the single default
+   `rta` pane. This is the assertion that makes the bump safe, and it must
+   exist before the bump lands, not after.
+
+In `app/tests/test_session_store.cpp`:
+
+9. **`a loaded v1 session is written back as v2`** — read a document whose
+   `schemaVersion` is 1, add a pane, `writeIndex`, and read the raw first line.
+   Assert it says `schema=2`. Without the stamp this writes a v1 file carrying
+   v2 content — the one file this change must never produce, because an older
+   build would then report it as `Malformed` ("your session is corrupt")
+   instead of `NewerSchema` ("this needs a newer version"), which is the whole
+   reason the version was bumped.
 
 - [ ] **Step 2: Run and watch them fail**
 
@@ -2736,11 +2796,26 @@ parse failure is `Malformed`. Write the asymmetry into the code as a comment —
 it is the single most likely thing for a later reader to "tidy" into
 consistency.
 
-Do **not** bump `kSchemaVersion`. A version-1 reader meeting a `[pane]` section
-would return `Malformed`, but no version-1 file with panes exists and none can:
-panes are only ever written by code that also reads them. Bumping would make
-every existing session file refuse to open, to protect against a file that
-cannot exist.
+**Bump `kSchemaVersion` to 2**, and stamp it on write.
+
+An earlier draft of this plan said not to bump, on the grounds that bumping
+"would make every existing session file refuse to open". **That was wrong.**
+`decodeIndex` refuses only a schema NEWER than its own constant
+(`if (schemaVersion > kSchemaVersion) return NewerSchema`), so raising the
+constant to 2 keeps every existing `schema=1` file readable. Nothing is lost by
+bumping, and something real is gained: an older build meeting a `[pane]`
+section would otherwise fall through to `Malformed` — telling the user their
+session is *corrupt*, which is a lie — where a version bump makes it say
+`NewerSchema`, which is true and actionable. That is the format's own stated
+philosophy applied to itself.
+
+Also: `SessionStore::writeIndex` must stamp `doc.schemaVersion = kSchemaVersion`
+before encoding. Without it, a document decoded from a v1 file keeps
+`schemaVersion = 1`, and saving it after adding panes writes a v1 file
+containing v2 content — the one file this change must never produce. Stamp it
+in `writeIndex`, not in `encodeIndex`: `test_session_codec.cpp` encodes a
+deliberately-future document to test the refusal path, and stamping inside the
+codec would destroy that test's premise.
 
 - [ ] **Step 6: Register, run, prove failure**
 
@@ -2753,7 +2828,8 @@ ctest --test-dir build-l5c -C Release -R "workspace|session|framework_deps" -V
 
 Then break `resolvePaneView` to return `Malformed`-equivalent behaviour by
 making `decodeIndex` reject unknown view names, and watch case 6 go red.
-Restore. Paste both, plus the guard count — which should now read **28**.
+Restore. Paste both, plus the guard count — this is the last task that adds to
+it, so read the final number here and report it.
 
 - [ ] **Step 7: Commit** — `feat(app): a layout that survives a word it does not know`.
 
