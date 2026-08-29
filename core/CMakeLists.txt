@@ -28,6 +28,7 @@ add_library(rta_core STATIC
     src/gen/Oscillator.cpp
     src/gen/Sweep.cpp
     src/gen/Synthetic.cpp
+    src/ir/Deconvolver.cpp
     src/meter/Detector.cpp
     src/meter/Leq.cpp
 )
