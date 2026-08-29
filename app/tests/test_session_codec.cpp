@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "trace/SessionCodec.h"
+#include "view/PaneRegistry.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -247,4 +248,88 @@ TEST_CASE("a blob with trailing bytes after its last field is refused", "[codec]
     CHECK(decodeTraceBlob(blob, sampleMeta(), back) == DecodeStatus::Malformed);
     REQUIRE(back.has_value());
     CHECK(back->field(Field::Magnitude)[0] == 9.f);
+}
+
+TEST_CASE("a workspace round-trips through the index", "[codec]") {
+    SessionDocument doc;
+    doc.panes.push_back(PaneSpec{"rta", 0.25f});
+    doc.panes.push_back(PaneSpec{"transfer", 0.75f});
+
+    const std::string encoded = encodeIndex(doc);
+    // Pin the text itself, not just decode(encode(x)) == x -- an encoder that
+    // wrote the wrong key name (or a decoder that read a different one) could
+    // still round-trip correctly if BOTH sides used the same wrong key, and a
+    // round-trip-only assertion would never catch that.
+    CHECK(encoded.find("[pane]\n") != std::string::npos);
+    CHECK(encoded.find("view=rta\n") != std::string::npos);
+    CHECK(encoded.find("view=transfer\n") != std::string::npos);
+
+    SessionDocument back;
+    REQUIRE(decodeIndex(encoded, back) == DecodeStatus::Ok);
+    REQUIRE(back.panes.size() == 2u);
+    CHECK(back.panes[0].view == "rta");
+    CHECK(back.panes[1].view == "transfer");
+    CHECK(back.panes[0].weight == 0.25f);
+    CHECK(back.panes[1].weight == 0.75f);
+}
+
+TEST_CASE("an unknown view name does not refuse the session", "[codec]") {
+    // THE DELIBERATE ASYMMETRY with the refuse-newer-schema rule: a guessed
+    // MEASUREMENT (calibrationUnit, visible) is a plausible lie about what
+    // was captured, so decodeIndex refuses those outright. A guessed LAYOUT
+    // is, at worst, a wrong arrangement of data that is still true -- and
+    // refusing a whole session of real captures over one unfamiliar layout
+    // word would destroy value (every capture, every entry) to protect
+    // nothing. So the codec stores the view name verbatim and lets
+    // view/PaneRegistry.h fall back to it -- and REPORT the fallback --
+    // instead of the codec refusing the session outright.
+    SessionDocument back = sentinelDocument();
+    REQUIRE(decodeIndex("schema=2\n[pane]\nview=spectrograph\nweight=1\n", back) == DecodeStatus::Ok);
+    REQUIRE(back.panes.size() == 1u);
+    CHECK(back.panes.front().view == "spectrograph");
+
+    const auto resolved = rta::view::resolvePaneView(back.panes.front().view);
+    CHECK(resolved.view == rta::view::PaneView::Rta);
+    CHECK(resolved.fellBack);
+    CHECK(resolved.requested == "spectrograph");
+}
+
+TEST_CASE("a malformed weight still refuses the session", "[codec]") {
+    // The tolerance case 6 grants above is for an unknown view NAME, not a
+    // licence to guess at NUMBERS -- `weight` still goes through tryParse
+    // like every other numeric field, and a value that doesn't parse is
+    // Malformed, exactly like a bad fftSize or sampleRate. Without this test,
+    // somebody "simplifying" the asymmetry comment above could make the
+    // [pane] section accept anything at all, weight included.
+    SessionDocument back = sentinelDocument();
+    CHECK(decodeIndex("schema=2\n[pane]\nview=rta\nweight=abc\n", back) == DecodeStatus::Malformed);
+    REQUIRE(back.captures.size() == 1u);
+    CHECK(back.captures.front().id == "SENTINEL");
+}
+
+TEST_CASE("a version-1 session still opens", "[codec]") {
+    // This is the assertion that makes the kSchemaVersion bump to 2 safe, and
+    // it must exist before the bump lands: a v1 file has captures and
+    // entries but no [pane] section at all, and decoding it must still
+    // succeed with an empty pane list -- which normalisePanes then turns
+    // into the single default `rta` pane, not zero panes.
+    SessionDocument back;
+    const std::string v1 =
+        "schema=1\n"
+        "[capture]\n"
+        "id=abc-123\n"
+        "sampleRate=48000\n"
+        "fftSize=8\n"
+        "[entry]\n"
+        "traceId=abc-123\n"
+        "name=FOH\n";
+    REQUIRE(decodeIndex(v1, back) == DecodeStatus::Ok);
+    CHECK(back.schemaVersion == 1);
+    REQUIRE(back.captures.size() == 1u);
+    REQUIRE(back.entries.size() == 1u);
+    CHECK(back.panes.empty());
+
+    auto normalised = normalisePanes(back.panes);
+    REQUIRE(normalised.size() == 1u);
+    CHECK(normalised.front().view == kDefaultPaneView);
 }

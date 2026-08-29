@@ -117,12 +117,56 @@ TEST_CASE("a trace blob round-trips through traces/", "[store]") {
 }
 
 TEST_CASE("a newer schema on disk is refused", "[store]") {
+    // writeIndex now stamps kSchemaVersion unconditionally on every write
+    // (see below), so it can no longer be used to PRODUCE a newer-than-
+    // current file -- any doc handed to it comes back out at the current
+    // schema regardless of what schemaVersion it went in with. To still
+    // exercise readIndex's refusal of a file a future build wrote, place the
+    // bytes on disk directly, mirroring how "an interrupted write leaves the
+    // previous index intact" above stages a scenario writeIndex itself
+    // cannot produce.
     TempDir dir("newer");
     SessionStore store(dir.path);
-    SessionDocument doc;
-    doc.schemaVersion = kSchemaVersion + 1;
-    REQUIRE(store.writeIndex(doc) == StoreStatus::Ok);
+    {
+        std::ofstream out(dir.path / "session.index", std::ios::binary);
+        out << "schema=" << (kSchemaVersion + 1) << "\n";
+    }
 
     SessionDocument back;
     CHECK(store.readIndex(back) == StoreStatus::NewerSchema);
+}
+
+TEST_CASE("a loaded v1 session is written back as v2", "[store]") {
+    // Without the stamp in writeIndex, a document decoded from a v1 file
+    // keeps schemaVersion == 1 in memory, and saving it after adding a pane
+    // would write a v1 file carrying v2 [pane] content -- the one file this
+    // change must never produce, because an older build meeting that
+    // section would report Malformed ("your session is corrupt", a lie)
+    // instead of NewerSchema ("this needs a newer version", true).
+    TempDir dir("v1-to-v2");
+    SessionStore store(dir.path);
+
+    // Plant a v1 file directly -- SessionStore has no API that produces one
+    // any more now that writeIndex always stamps kSchemaVersion, so this
+    // simulates "a session saved by an earlier build" the only way left.
+    {
+        std::ofstream out(dir.path / "session.index", std::ios::binary);
+        out << "schema=1\n[capture]\nid=t1\nsampleRate=48000\nfftSize=8\n";
+    }
+
+    SessionDocument doc;
+    REQUIRE(store.readIndex(doc) == StoreStatus::Ok);
+    REQUIRE(doc.schemaVersion == 1);
+
+    doc.panes.push_back(PaneSpec{"rta", 1.0f});
+    REQUIRE(store.writeIndex(doc) == StoreStatus::Ok);
+
+    // Read the raw bytes back -- not through readIndex, which would parse
+    // "schema=2" into an int and hide a bug where writeIndex wrote the wrong
+    // literal text (e.g. "schema=1" verbatim, or a stray whitespace that
+    // still happens to parse as 2).
+    std::ifstream in(dir.path / "session.index", std::ios::binary);
+    std::string firstLine;
+    std::getline(in, firstLine);
+    CHECK(firstLine == "schema=2");
 }

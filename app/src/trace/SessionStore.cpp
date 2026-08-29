@@ -39,13 +39,27 @@ StoreStatus SessionStore::writeIndex(const SessionDocument& doc) const {
     const auto tmpPath = root_ / kIndexTmpName;
     const auto finalPath = root_ / kIndexName;
 
+    // Stamp the CURRENT schema on every write, unconditionally. A document
+    // read back from a v1 file keeps schemaVersion == 1 in memory; without
+    // this stamp, saving it after adding panes would write a v1 file
+    // carrying v2 content -- the one file this change must never produce,
+    // because an older build meeting that [pane] section would report
+    // Malformed ("your session is corrupt", a lie) instead of NewerSchema
+    // ("this needs a newer version", true). Deliberately NOT done inside
+    // encodeIndex: test_session_codec.cpp encodes a document with a
+    // deliberately-future schemaVersion to exercise decodeIndex's refusal
+    // path, and stamping in the codec would silently rewrite that field out
+    // from under the test.
+    SessionDocument stamped = doc;
+    stamped.schemaVersion = kSchemaVersion;
+
     // Binary mode so the bytes written are exactly what encodeIndex produced
     // -- no CRLF translation to reason about on top of the format's own
     // newline escaping.
     {
         std::ofstream out(tmpPath, std::ios::binary | std::ios::trunc);
         if (!out) return StoreStatus::IoError;
-        const std::string encoded = encodeIndex(doc);
+        const std::string encoded = encodeIndex(stamped);
         out.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
         if (!out) return StoreStatus::IoError;
     }
