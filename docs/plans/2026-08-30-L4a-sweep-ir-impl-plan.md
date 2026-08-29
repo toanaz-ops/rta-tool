@@ -102,6 +102,155 @@ sweep travel*. Measured (`tools/probe_sweep_fade.py`): 0.5 octave gives −75.4 
 seconds. Under today's clamp a **longer** sweep gets a **narrower** fade in
 octaves, so lengthening the sweep makes the band edges worse.
 
+### Step 0 comes first, and without it every later step is a regression
+
+**`buildInverseFilter()` fades the inverse filter twice, and the fade-in clamp
+cannot land until it stops.** Record decision 5's blocker section carries the
+numbers: with a two-octave fade-in the shipped construction reads 51–72 dB of
+in-band unflatness where the intended one reads 0.17–0.27 dB. The second layer
+is also costing 13.75 dB at the default configuration **today**.
+
+The strongest argument for removing it is not the measurement. It is that
+**two specifications in this repo contradict each other, and the code follows
+the older one**:
+
+| | says |
+|---|---|
+| `docs/plans/2026-08-27-generator-impl-plan.md:317` | "normalised so the envelope's maximum is 1, then Tukey fades at both ends" — **mandates** the second layer |
+| `core/include/rta/gen/Sweep.h:44-50` | `inv[m] = x[n] * (instantaneousFrequency(n)/endHz)`, "the already-rendered, **already-faded** sweep, reversed" — **inheritance only** |
+
+So `Sweep.h` is currently a false description of `Sweep.cpp`. Removing the layer
+does not change a documented design; it makes the code match the header it
+already ships with. (A third divergence sits in the same lines: the old plan
+mandates normalising the inverse to unit peak, `tools/gen_generator.py` does it,
+and the C++ does not. It cancels in every ratio this lane takes, so it is noted
+and not acted on.)
+
+- [ ] **Step 0a: Remove the second Tukey layer**
+
+Delete the two loops at `core/src/gen/Sweep.cpp:151-162`. Their stated reason —
+"without this the inverse filter starts/ends with a step" — is false in the
+ordinary case: `forward[]` is multiplied by `fadeEnvelope`, which is zero at
+both ends, and the reversal carries those zeros.
+
+- [ ] **Step 0b: Give the fade-out a floor, so the reason stops being true at all**
+
+The layer is load-bearing in exactly one configuration: `fadeOutSec == 0`, where
+the *forward* sweep ends with a step. Fix that where it happens rather than
+compensating on the kernel. In the constructor, beside the existing
+`2/startHz` fade-in floor:
+
+```cpp
+    // Two cycles at the END frequency, the mirror of the fade-in's two cycles
+    // at the start frequency, and for the same reason: an unfaded switch-off is
+    // a broadband click, and after reversal it lands at the very start of the
+    // deconvolution kernel where the +6 dB/oct envelope is at its maximum.
+    // 5 samples at 20 kHz -- inaudible, spectrally invisible (0.02 octave is
+    // already measured harmless), and dormant at every default, where
+    // fadeOutSec = 0.02 s gives 960 samples.
+    const double fadeOutSec = std::max(config.fadeOutSec, 2.0 / endHz_);
+    fadeOutSamples_ = roundToSamples(fadeOutSec, sampleRate_);
+```
+
+Four alternatives were weighed and rejected: keeping the layer with its widths
+swapped (diverges from every measured number, all of which would need re-taking);
+removing it with no floor (leaves a real click at `fadeOutSec == 0`, in the
+emitted signal as well as the kernel); fading inside `buildInverseFilter` only
+when `fadeOutSamples_ == 0` (special-case logic that patches the kernel and
+leaves the loudspeaker clicking); and rejecting `fadeOutSec == 0` outright
+(over-strict — zero is a legitimate request under the sweep-to-Nyquist option in
+the record's open decisions).
+
+- [ ] **Step 0c: Test it with an ASYMMETRIC fade, or the test proves nothing**
+
+**Under a symmetric fade every candidate construction agrees.** That is exactly
+why this defect survived: no fixture in the suite uses different fade-in and
+fade-out widths. The assertion that has teeth is a spec-level one — that the
+inverse filter IS the element-wise inheritance, at a configuration where the two
+fades differ:
+
+```cpp
+TEST_CASE("The inverse filter is the faded sweep reversed and shaped, and nothing else",
+          "[sweep]") {
+    Sweep::Config cfg;
+    cfg.sampleRate = 48000.0;
+    cfg.startHz = 100.0;
+    cfg.endHz = 10000.0;
+    cfg.durationSec = 2.0;
+    cfg.fadeInSec = 0.30;      // ASYMMETRIC on purpose: under equal fades every
+    cfg.fadeOutSec = 0.02;     // construction agrees, which is how a second,
+    Sweep sweep(cfg);          // undocumented fade layer stayed invisible.
+
+    const auto n = sweep.lengthSamples();
+    std::vector<float> forward(n);
+    sweep.process(forward);
+    const auto inv = sweep.buildInverseFilter();
+    REQUIRE(inv.size() == n);
+
+    // Sweep.h specifies inv[m] = x[N-1-m] * (instantaneousFrequency(N-1-m)/endHz)
+    // -- the already-faded sweep, reversed, shaped. No further windowing. This
+    // locks that as the spec, so any later "helpful" extra layer goes red.
+    for (std::size_t m = 0; m < n; ++m) {
+        const std::size_t original = n - 1 - m;
+        const double expected = static_cast<double>(forward[original])
+                              * (sweep.instantaneousFrequency(original) / cfg.endHz);
+        CAPTURE(m, original);
+        REQUIRE_THAT(static_cast<double>(inv[m]), WithinAbs(expected, 1.0e-6));
+    }
+}
+```
+
+- [ ] **Step 0d: Fix the statements this makes false, and the one it makes true**
+
+- `core/include/rta/gen/Sweep.h:71-72` — "`fadeOutSec` ... NOT clamped against
+  endHz — only the start fade is mandated a minimum" becomes **false**. Rewrite.
+- `core/src/gen/Sweep.cpp:76` — `if (fadeOutSamples_ != 0 && fadeOutSamples_ < 2)`
+  becomes **dead**: the floor guarantees at least `2*fs/endHz` samples, which is
+  5 at 20 kHz. Remove the `!= 0` half, or say why it stays.
+- `docs/plans/2026-08-27-generator-impl-plan.md:317` — **mark superseded, with a
+  pointer to this plan and to record decision 5.** This is the highest-value
+  line in Step 0. A future session reading that plan will otherwise restore the
+  second layer in good faith, exactly as it was added in good faith the first
+  time; the code comment even cites "§2.4 of the plan" as its authority.
+- `core/include/rta/gen/Sweep.h:44-50` needs no change and becomes **correct**.
+
+- [ ] **Step 0e: Now the flatness span can be asserted, and Task 3 unblocks**
+
+With the layer gone, `bandFlatness` over the valid band measures the analysis
+pulse rather than the defect. Add to `test_ir_deconvolver.cpp`'s normalisation
+case, which currently asserts only that the range is finite:
+
+```cpp
+    // REGRESSION LOCK, labelled as one. Record decision 4's table, last row:
+    // this fixture measures -0.03..+0.14 dB, a span of 0.17. 0.30 leaves room
+    // for the float32 transform without admitting the 10.65 dB a narrow
+    // fade-in produces. Could not be asserted before the second Tukey layer
+    // was removed, because it measured that layer.
+    CHECK(flat.maxDb - flat.minDb < 0.30);
+```
+
+- [ ] **Step 0f: Full suite, then commit Step 0 on its own**
+
+```
+ctest --test-dir build-l2 -C Release --output-on-failure
+```
+
+`sweep_deconv`'s `peak_index` must stay **96999** — the closed form `Ninv−1`
+does not depend on the fade layer, so any movement means something else broke.
+`snr_db` may move; if it does, regenerate in Step 8, not here.
+
+```bash
+git add core/include/rta/gen/Sweep.h core/src/gen/Sweep.cpp core/tests/test_generator_sweep.cpp core/tests/test_ir_deconvolver.cpp docs/plans/2026-08-27-generator-impl-plan.md
+git commit -m "fix(core): the inverse filter was faded twice, and the header said otherwise"
+```
+
+> **The 144.9 dB prediction in Step 8 is only valid after Step 0.** The NumPy
+> model that produced it uses the inherited construction, so it describes the
+> corrected code, not the code as it stands. Running Step 8 before Step 0 would
+> compare against a figure for a different filter.
+
+---
+
 - [ ] **Step 1: Write the failing test**
 
 Add to `core/tests/test_generator_sweep.cpp`. The literals are derived, not
