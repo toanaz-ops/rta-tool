@@ -30,7 +30,11 @@ public:
     explicit DelayLine(int delaySamples)
         : history_(static_cast<std::size_t>(std::max(0, delaySamples)), 0.0f) {}
 
-    /// `out` and `in` must be the same length; `out` may not alias `in`.
+    /// Processes `min(in.size(), out.size())` samples -- the loop is bounded by
+    /// both rather than trusting a precondition it cannot check. `out` may not
+    /// alias `in`. Call sites here always pass equal-sized buffers; the bound
+    /// exists so a future caller that does not gets a short result rather than
+    /// a walk off the end.
     void process(std::span<const float> in, std::span<float> out) noexcept {
         const std::size_t d = history_.size();
         for (std::size_t i = 0; i < in.size() && i < out.size(); ++i) {

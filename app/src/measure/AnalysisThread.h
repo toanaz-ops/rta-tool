@@ -5,7 +5,6 @@
 #pragma once
 
 #include "measure/Analyser.h"
-#include "measure/PairedDrain.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 

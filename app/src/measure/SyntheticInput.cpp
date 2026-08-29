@@ -107,7 +107,15 @@ void SyntheticInput::runBody() {
         // history and the noise generator's state carry across this call;
         // see SyntheticImpairment.h.
         measurementDelay_.process(block_, measurementBlock_);
-        addNoise(measurementBlock_, static_cast<float>(noiseRms), noiseState_);
+
+        // kNoiseOffDb is a genuine OFF, not just a very small level: below it
+        // (or at it -- the default) the generator is not called at all, so a
+        // caller who never touches measurementNoiseDb gets bit-identical
+        // channels exactly as before this class had an impairment knob.
+        // "Inaudibly small" is not the same promise as "unchanged".
+        if (config_.measurementNoiseDb > Config::kNoiseOffDb) {
+            addNoise(measurementBlock_, static_cast<float>(noiseRms), noiseState_);
+        }
 
         // By ROLE, not by a fixed channel index: bus_.config() is the
         // device-panel-owned table of "what is channel N for". A fixed

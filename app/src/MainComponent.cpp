@@ -20,8 +20,10 @@ constexpr int kRailWidth = 360;
 // the bottom costs nothing.
 constexpr int kDevicePanelHeight = 300;
 
-// SyntheticInput always writes two identical channels (see its header); a
-// device panel is not involved, so this class names them itself.
+// SyntheticInput has no device of its own to name channels after (a device
+// panel is not involved), so this class names them itself. Two names, not
+// one per role: SyntheticInput writes two channels regardless of which
+// role(s) the table below assigns to them.
 const std::vector<std::string> kSyntheticChannelNames{"Synthetic L", "Synthetic R"};
 
 }  // namespace
@@ -70,10 +72,19 @@ void MainComponent::setSyntheticMode(bool enabled) {
         // A default role so the plot has something to show the instant
         // synthetic mode engages, with no extra click needed on
         // channelRoleTable_ -- this IS the "the app demonstrably runs with
-        // no hardware" requirement (plan §0 item 4). Channel index 0 carries
-        // the same pink noise as index 1 (SyntheticInput writes identical
-        // content to both channels; see its header), so Measurement on
-        // either is equivalent.
+        // no hardware" requirement (plan §0 item 4). Channel index 0 is as
+        // good a choice as index 1 ONLY because the `Config{}` passed above
+        // is the impairment-free default (no delay, noise held at
+        // `kNoiseOffDb`; see SyntheticInput.h) -- with that default,
+        // SyntheticInput still writes bit-identical content to both
+        // channels, so Measurement on either is equivalent. That stops being
+        // true the moment a caller passes a non-default `measurementDelaySamples`
+        // or `measurementNoiseDb`: then the Measurement-role channel differs
+        // from the Reference-role one by construction, and this "either
+        // channel" default would need to become a real role assignment
+        // instead. Nothing here does that yet -- plan Wave E's later task
+        // that wires a real delay/noise floor into this Config is where that
+        // assumption gets revisited.
         audioIo_.bus().config().setRole(0, rta::platform::ChannelRole::Measurement);
 
         lastChannelNames_ = kSyntheticChannelNames;

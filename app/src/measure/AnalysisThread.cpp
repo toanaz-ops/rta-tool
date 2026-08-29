@@ -3,6 +3,8 @@
 // docs/plans/2026-08-27-audioio-rta-impl-plan.md §3.4, §6 Wave D.
 #include "measure/AnalysisThread.h"
 
+#include "measure/PairedDrain.h"
+
 #include <exception>
 #include <utility>
 

@@ -51,6 +51,10 @@ public:
         double amplitude = 0.1;
         std::uint32_t seed = 0x5EEDu;
 
+        /// Below this, noise is OFF -- the generator is not called and the
+        /// channels stay bit-identical.
+        static constexpr double kNoiseOffDb = -120.0;
+
         /// Applied to the MEASUREMENT channel only, so the two channels stop
         /// being identical and the transfer function stops being H = 1. The
         /// display then has an answer that can be checked by eye against the
@@ -62,7 +66,13 @@ public:
         /// reason about -- gamma^2 = S/(S+N) per bin -- which is what makes the
         /// coherence ribbon and the trace fade visible at all without a room,
         /// a microphone, and somebody talking.
-        double measurementNoiseDb = -120.0;
+        ///
+        /// `kNoiseOffDb` is a genuine OFF, not merely a very small level: at or
+        /// below it the generator is not called at all and the two channels
+        /// stay bit-identical. A default must not change behaviour for a caller
+        /// that did not opt in, and "inaudibly small" is not the same promise
+        /// as "unchanged".
+        double measurementNoiseDb = kNoiseOffDb;
     };
 
     /// Calls `bus.prepare()` and `bus.setActive(true)` here, on the message
