@@ -30,9 +30,13 @@
 #include "dev/preview/PhaseAlignPreview.h"
 #include "dev/preview/TargetMatchPreview.h"
 #include "dev/preview/TransferFunctionPreview.h"
+#include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 #include "measure/SyntheticSnapshot.h"
 #include "view/RtaView.h"
+#include "view/TransferView.h"
+
+#include <memory>
 
 namespace
 {
@@ -115,6 +119,23 @@ int main (int argc, char** argv)
 
         rta::view::RtaView component (source);
         if (! renderComponent (component, outDir, "rta-view.png", width, height))
+            ++failures;
+    }
+
+    {
+        // transfer.png: the Bode composite (task 8), fed a deterministic
+        // synthetic transfer (fixed fftSize/sampleRate/delay -- no threads,
+        // no timing) so this is the same picture every run, the same
+        // precondition rta-view.png already relies on.
+        auto snapshot = std::make_shared<rta::measure::Snapshot> ();
+        snapshot->sequence = 1;
+        snapshot->sampleRate = 48000.0;
+        snapshot->fftSize = 4096;
+        snapshot->transfer = rta::measure::makeSyntheticTransfer (snapshot->fftSize, snapshot->sampleRate, 18);
+        const rta::measure::StaticSnapshotSource source (snapshot);
+
+        rta::view::TransferView component (source);
+        if (! renderComponent (component, outDir, "transfer.png", width, height))
             ++failures;
     }
 
