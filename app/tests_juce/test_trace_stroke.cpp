@@ -107,6 +107,21 @@ TEST_CASE("a low-trust column is dimmer than a high-trust one, and still visible
     REQUIRE(highTrust != kBackground);
     CHECK(lowTrust != kBackground);  // the floor, not zero -- still visible
     CHECK(lowTrust.getRed() < highTrust.getRed());
+
+    // TraceStroke.h's contract: "a shorter span draws the remainder opaque
+    // rather than reading past its end." A 1-element span covers column 0
+    // only; column 1 must draw fully opaque despite being the "low-trust"
+    // column in the 2-element span above -- an implementation that read past
+    // the span's end (UB) or that defaulted the missing entry to the floor
+    // (misreading "not covered" as "untrusted") would both diverge from
+    // `highTrust` here.
+    auto shortSpan = blankImage(kWidth, kHeight);
+    {
+        juce::Graphics g(shortSpan);
+        const std::vector<float> oneEntryAlpha = { alphaForCoherence(1.0f) };
+        strokeMagnitudeExtents(g, extents, geometry, 0, oneEntryAlpha, kBase);
+    }
+    CHECK(shortSpan.getPixelAt(1, 5) == highTrust);
 }
 
 // CATCHES: treating a missing alpha span as "coherence zero" (defaulting to

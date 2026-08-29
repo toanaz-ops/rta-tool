@@ -2571,6 +2571,11 @@ live and stored, magnitude and phase — has to fade with its own coherence.
 - Create: `app/tests_juce/test_trace_stroke.cpp`
 - Modify: `app/src/view/StoredTraceLayer.h`, `.cpp`
 - Modify: `app/tests_juce/CMakeLists.txt`
+- Modify: `app/CMakeLists.txt` — `TraceStroke.cpp` must be added to **every**
+  target that already lists `StoredTraceLayer.cpp`: `rtatool`,
+  `rtatool_snapshot`, and `rtatool_view_tests`. Building only the test target
+  hides the other two; build the app binaries before believing this compiles.
+- Modify: `app/tests/test_trace.cpp` — one assertion, see step 4 below.
 
 **Interfaces:**
 - Consumes: `ColumnExtent` (`view/TraceDecimator.h`), `DrawnPhaseColumn`
@@ -2663,7 +2668,40 @@ must not be lost in the move** — and adds the alpha lookup and the phase
 variant. Alpha is applied as `base.withMultipliedAlpha(a)`, per column, before
 each `fillRect`.
 
-- [ ] **Step 4: Teach `StoredTraceLayer` about fields**
+- [ ] **Step 4: Pin the invariant the paint path relies on**
+
+`columnAlpha` returns an empty vector both when no coherence was supplied and
+when the caller's spans have mismatched lengths, and an empty alpha span draws
+**opaque**. So a caller length bug renders as a fully-trusted trace rather than
+failing visibly — the finding Task 4's review parked for this task.
+
+At this call site the mismatch is structurally unreachable: `Trace`'s
+constructor is private, `make()` refuses a magnitude whose length disagrees with
+`meta.fftSize`, and `setPhase`/`setCoherence` refuse any length disagreeing with
+the magnitude. Every path to a `Trace`, codecs included, goes through those
+gates.
+
+That argument is only as good as the gates, and **one of them is untested**:
+`test_trace.cpp` pins `setPhase`'s refusal and says nothing about
+`setCoherence`'s. Add it beside the existing one:
+
+```cpp
+    // setCoherence's refusal, pinned for the same reason setPhase's is -- and
+    // for one more: view/StoredTraceLayer.cpp's paint path treats an empty
+    // alpha span as "this trace has no coherence, draw opaque". Delete this
+    // refusal and a wrong-length coherence reaches columnAlpha, comes back
+    // empty, and paints an untrusted trace at FULL confidence with nothing on
+    // screen to say so.
+    CHECK_FALSE(t->setCoherence(std::vector<float>(4, 0.0f)));
+```
+
+Do **not** add a runtime branch to the paint path instead. An `assert` is not
+enough on its own either: this project builds and tests `Release`, where it
+compiles out entirely, so it would be a guard in a configuration nobody makes.
+Keep an assert if you want it as documentation; the test is what enforces the
+invariant.
+
+- [ ] **Step 5: Teach `StoredTraceLayer` about fields**
 
 `StoredTraceLayer.h`: include `trace/Trace.h`, add
 
@@ -2689,7 +2727,7 @@ reasoning into the code as a comment; it is the kind of thing a later reader
 Both paths compute `columnAlpha` from the trace's own coherence field when it
 has one, and pass an empty span when it does not.
 
-- [ ] **Step 5: Run, then prove test 3 can fail**
+- [ ] **Step 6: Run, then prove test 3 can fail**
 
 ```bash
 ctest --test-dir build-l5c -C Release -R "^view/" --output-on-failure
@@ -2699,7 +2737,7 @@ Then make `strokePhaseColumns` ignore `straddlesWrap` and draw min→max as one
 rect. The straddle case must go red (it would paint the middle). Restore, paste
 both.
 
-- [ ] **Step 6: Check the file lengths**
+- [ ] **Step 7: Check the file lengths**
 
 ```bash
 wc -l app/src/view/StoredTraceLayer.cpp app/src/view/TraceStroke.cpp
@@ -2708,7 +2746,7 @@ wc -l app/src/view/StoredTraceLayer.cpp app/src/view/TraceStroke.cpp
 Both under 300. If `StoredTraceLayer.cpp` is still over, the next seam is the
 per-entry loop; report it rather than leaving a 350-line file.
 
-- [ ] **Step 7: Commit** — `feat(app): ink that dims with trust, and lifts at the wrap`.
+- [ ] **Step 8: Commit** — `feat(app): ink that dims with trust, and lifts at the wrap`.
 
 ---
 
@@ -2779,7 +2817,14 @@ form, same identity as task 5); the coherence dip is present and inside
    image-level check, one level above task 7's: build a synthetic transfer
    whose coherence is high at 1 kHz and low at 100 Hz, render, and compare the
    painted pixels in the two columns.
-5. **`unwrapping changes the axis, not the stored data`** — call
+5. **`a stored trace's phase renders through the cached layer`** — construct a
+   `StoredTraceLayer(rta::trace::Field::Phase)` over a library holding one
+   trace with phase, render, and assert ink lands where the phase values say it
+   should. Task 7 tested `TraceStroke` **directly**; nothing yet executes
+   `StoredTraceLayer`'s phase dispatch — the branch that must not call
+   `bridgeGaps` and must feed coherence through. That dispatch is currently
+   code no test runs, and this is where it gets covered.
+6. **`unwrapping changes the axis, not the stored data`** — call
    `setPhaseUnwrapped(true)`; assert the phase pane's dB range grows to whole
    multiples of 360 and that a second `renderTo` after `setPhaseUnwrapped(false)`
    reproduces the first image exactly.
