@@ -81,9 +81,25 @@ def section_c():
     default_l = 10.0 / np.log(1000.0)
     default_in = 0.1 / (np.log(2.0) * default_l)
     default_out = 0.02 / (np.log(2.0) * default_l)
-    cases = ((2.0, 0.5, 0.5), (2.0, 2.0, 0.5), (10.0, default_in, default_out))
-    for duration, fade_in_oct, fade_out_oct in cases:
-        f1, f2 = 20.0, 20000.0
+    # The fourth row is the configuration that will SHIP once the fade-in clamp
+    # moves to octaves: fadeInOctaves 2.0, fadeOutSec left at 0.02 s. A record
+    # whose flatness table lacks the row for the shipped default cannot be used
+    # to write the test that asserts it.
+    shipping_out = 0.02 / (np.log(2.0) * default_l)
+    # The fifth row is the fixture the C++ tests use (100 Hz - 10 kHz, 2 s), so
+    # the tolerance those tests assert has a measured row behind it rather than
+    # being borrowed from a configuration with a different fade-out.
+    fixture_l = 2.0 / np.log(100.0)
+    fixture_out = 0.02 / (np.log(2.0) * fixture_l)
+    # (duration, f1, f2, fade-in octaves, fade-out octaves). f1/f2 are per-case:
+    # an earlier version held them at 20 Hz - 20 kHz for every row, so the row
+    # labelled "the C++ fixture" described a sweep the fixture never renders.
+    cases = ((2.0, 20.0, 20000.0, 0.5, 0.5),
+             (2.0, 20.0, 20000.0, 2.0, 0.5),
+             (10.0, 20.0, 20000.0, default_in, default_out),
+             (10.0, 20.0, 20000.0, 2.0, shipping_out),
+             (2.0, 100.0, 10000.0, 2.0, fixture_out))
+    for duration, f1, f2, fade_in_oct, fade_out_oct in cases:
         sweep, inverse, length_l = sweep_and_inverse(duration, f1, f2, fade_in_oct, fade_out_oct)
         pulse = linear_convolve(sweep, inverse)
         size = 1 << int(np.ceil(np.log2(len(pulse))))
@@ -93,7 +109,8 @@ def section_c():
         f_hi = f2 * np.exp(-fade_out_oct * np.log(2.0))
         sel = (freqs >= f_lo) & (freqs <= f_hi)
         db = 20 * np.log10(mag[sel] / mag[sel].mean())
-        print(f"   T={duration:4.1f}s  fade {fade_in_oct:5.2f}/{fade_out_oct:4.2f} oct"
+        print(f"   T={duration:4.1f}s {f1:6.0f}-{f2:5.0f} Hz"
+              f"  fade {fade_in_oct:5.2f}/{fade_out_oct:4.2f} oct"
               f"   band {f_lo:7.1f}-{f_hi:8.1f} Hz"
               f"   deviation {db.min():+.2f} .. {db.max():+.2f} dB")
 

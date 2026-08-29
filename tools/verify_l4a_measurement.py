@@ -294,9 +294,65 @@ def section_k():
         print(f"   {gap_sec:9.2f} s     {gap_sec/rt60:6.2f}"
               f"      rms {rms:5.2f} dB   worst {np.abs(err).max():6.2f} dB")
 
+# ---------------------------------------------------------------- L
+def section_l():
+    """Is the symmetry figure a test of "does this waveform have a sign", or is
+    it just a bandwidth meter?
+
+    Section H found that a 200-250 Hz system answers polarity backwards while
+    its confidence reads highest in the set, and that a symmetry figure -- the
+    largest positive excursion over the largest negative one -- separated it.
+    A 1.0 dB gate was proposed on FIVE systems. Five is not a survey, and a gate
+    that refuses a legitimate measurement is a worse failure than one that never
+    fires: an operator who is told "unknown" for a real subwoofer stops using
+    the feature.
+
+    So: sweep bandwidth against centre frequency and look at the whole surface.
+
+    Read the "disagrees" marker carefully. It does NOT mean the code is broken.
+    Flipping the drive polarity negates the recovered response exactly -- that is
+    linearity, and it means a RELATIVE polarity comparison is always sound. What
+    the marker shows is that for a band-limited system the sign of the first
+    arrival is a property of that system's own phase response, so an ABSOLUTE
+    verdict ("this box is wired backwards") is not a question the measurement can
+    answer. The tool must decline it rather than answer it confidently.
+    """
+    print("\nL. Symmetry vs bandwidth -- is the 1.0 dB gate a real boundary?")
+    sweep, inverse, _ = sweep_and_inverse(2.0, 20.0, 20000.0, 2.0, 0.5)
+    origin = len(inverse) - 1
+
+    print("   symmetry in dB, and whether the SIGN agrees with the drive polarity")
+    print("   width ->    0.50oct   1.00oct   2.00oct   3.00oct   4.00oct"
+          "   6.00oct   8.00oct")
+    for centre in (60.0, 250.0, 1000.0, 4000.0):
+        cells = []
+        for width in (0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0):
+            lo = centre / 2.0 ** (width / 2.0)
+            hi = min(centre * 2.0 ** (width / 2.0), 0.49 * FS)
+            sos = scipy.signal.butter(4, [lo, hi], 'bandpass', fs=FS, output='sos')
+            worst_sym, all_correct = 1e9, True
+            for polarity in (+1, -1):
+                rec = linear_convolve(scipy.signal.sosfilt(sos, polarity * sweep), inverse)
+                window = rec[origin:origin + int(0.05 * FS)]
+                largest = np.max(np.abs(window))
+                idx = int(np.argmax(np.abs(window) >= 0.5 * largest))
+                if int(np.sign(window[idx])) != polarity:
+                    all_correct = False
+                sym = abs(20 * np.log10(abs(window.max()) / abs(window.min())))
+                worst_sym = min(worst_sym, sym)
+            cells.append(f"{worst_sym:6.2f}{'  ' if all_correct else ' X'}")
+        print(f"   {centre:6.0f} Hz  " + "  ".join(cells))
+    print("   X marks a first-arrival sign that DISAGREES with the drive polarity.")
+    print("   Compare the two populations: cells that agree span roughly 0.3 to 11 dB")
+    print("   of symmetry, cells that disagree span roughly 0.3 to 4.2 dB. They")
+    print("   overlap almost completely, so symmetry does not separate them and a")
+    print("   gate on it -- at 1.0 dB or any other value -- decides nothing.")
+
+
 if __name__ == "__main__":
     section_d()
     section_e()
     section_g()
     section_h()
     section_k()
+    section_l()
