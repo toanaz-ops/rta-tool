@@ -98,6 +98,17 @@ inline constexpr int kPhaseWeight = 3;
     FrequencyAxis axis;
     axis.left = static_cast<float>(content.x + kLevelLabelWidth);
     axis.right = static_cast<float>(content.right() - static_cast<int>(kFrequencyLabelHalfWidth));
+    // Content narrower than the furniture it has to carry (kLevelLabelWidth
+    // + kFrequencyLabelHalfWidth, 66 px) would otherwise yield `right <
+    // left` -- an INVERTED axis, the horizontal cousin of the negative-pane-
+    // height case `bodePanes` above already guards. `xForHz`'s log ratio
+    // divides by `log(fHighHz/fLowHz)`, never by `right - left`, so an
+    // inverted axis does not crash there -- it silently flips every x
+    // pixel's sense, which is worse than a crash because nothing downstream
+    // notices. Clamped to a single point rather than swapped: a swapped
+    // axis would still be usable-looking (frequency would just run
+    // backwards), and this is the one case where usable-looking is the bug.
+    axis.right = std::max(axis.right, axis.left);
     axis.fLowHz = fLowHz;
     axis.fHighHz = fHighHz;
     return axis;

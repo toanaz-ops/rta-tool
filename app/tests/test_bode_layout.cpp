@@ -97,6 +97,21 @@ TEST_CASE("a window too short for the furniture yields no negative pane",
     }
 }
 
+TEST_CASE("content too narrow for the furniture yields no inverted axis", "[bode-layout]") {
+    // The horizontal cousin of "a window too short for the furniture yields
+    // no negative pane" above. `frequencyAxis` reserves kLevelLabelWidth (40)
+    // on the left and kFrequencyLabelHalfWidth (26) on the right; content
+    // narrower than that sum (66) would otherwise produce `right < left`,
+    // which `xForHz` does not crash on -- it just flips every pixel's sense
+    // silently, since its ratio divides by `log(fHighHz/fLowHz)`, never by
+    // `right - left`. Swept across and either side of the 66 px threshold.
+    for (const int width : { 0, 1, 20, 40, 50, 65, 66, 67, 100 }) {
+        const PaneRect content{ 0, 0, width, 760 };
+        const auto axis = rta::view::frequencyAxis(content);
+        CHECK(axis.right >= axis.left);
+    }
+}
+
 TEST_CASE("every pane maps frequency to the same pixel column", "[bode-layout]") {
     // Decision 1's load-bearing half. Stacking costs half the vertical
     // resolution per quantity, and the ONLY thing that buys back is a dip and

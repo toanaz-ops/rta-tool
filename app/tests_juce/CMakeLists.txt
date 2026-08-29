@@ -27,6 +27,13 @@ add_executable(rtatool_view_tests
     test_stored_trace_layer.cpp
     test_trace_stroke.cpp
     test_transfer_view.cpp
+    # Split out of test_transfer_view.cpp (task 10's final-review fix), the
+    # same way test_analyser_transfer.cpp split off test_analyser.cpp: that
+    # file was at the project's 400-line hard cap, so the unwrap-toggle case
+    # -- self-contained, needing no fixture the helpers header does not
+    # already provide -- moved here to make room for the new margin-overpaint
+    # case.
+    test_transfer_view_unwrap.cpp
     test_workspace_view.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)

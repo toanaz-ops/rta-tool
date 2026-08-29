@@ -99,11 +99,23 @@ void drawStoredPhaseHiddenState(juce::Graphics& g, const PlotGeometry& geometry)
 std::vector<int> absoluteColumnsForBins(const PlotGeometry& geometry, double binHz,
                                         std::size_t bins, int columnCount) {
     std::vector<int> columns(bins, -1);
+    // `xForHz` is not clamped below `fLowHz` (PlotGeometry.h's own contract
+    // comment: a caller can ask "what's past the edge"), so a bin between
+    // `hzForX(0)` and `fLowHz` maps to a column LEFT of the plot's own left
+    // edge -- inside the level-label gutter reserved by kLevelLabelWidth.
+    // `geometry.left` is the same axis.left every pane's geometry carries
+    // (BodeLayout.h's paneGeometry, decision 1), and StoredTraceLayer.cpp's
+    // `columnsForBins` floors that identical value into its own `originX_`
+    // and rejects anything below it -- this floor is that same rejection,
+    // so the live and stored paths agree on where the axis starts by
+    // construction, not by two implementations happening to compute the
+    // same number.
+    const double leftEdge = std::floor(static_cast<double>(geometry.left));
     for (std::size_t i = 0; i < bins; ++i) {
         const double hz = static_cast<double>(i) * binHz;
         if (hz <= 0.0) continue;
         const double column = std::floor(static_cast<double>(geometry.xForHz(hz)));
-        if (column >= 0.0 && column < static_cast<double>(columnCount)) {
+        if (column >= leftEdge && column < static_cast<double>(columnCount)) {
             columns[i] = static_cast<int>(column);
         }
     }
