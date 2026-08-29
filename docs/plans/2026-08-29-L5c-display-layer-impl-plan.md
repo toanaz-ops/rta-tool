@@ -668,7 +668,14 @@ TEST_CASE("magnitude and phase split the remaining height 5:3", "[bode-layout]")
     // magnitude pane happened to give ~62/38 at 1100x760 and collapsed the
     // phase pane at any shorter height; this asserts the proportion holds
     // across a 6x range of window heights.
-    for (const int height : { 300, 500, 760, 1200, 2000 }) {
+    //
+    // 307 is in the list on purpose and must stay: it is the height at which
+    // a CORRECT implementation produces |cross| = 7 (available = 243,
+    // magnitude = 151, phase = 92, cross = -7). Every other height here lands
+    // on a residue that keeps |cross| at 0 or 4, so without 307 the bound
+    // below is asserted by nothing and can be quietly tightened back to a
+    // number that fails on correct code.
+    for (const int height : { 300, 307, 500, 760, 1200, 2000 }) {
         const PaneRect content{ 0, 0, 1000, height };
         const BodePanes panes = rta::view::bodePanes(content, kGap);
 
