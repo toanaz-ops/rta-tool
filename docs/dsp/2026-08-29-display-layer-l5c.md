@@ -2,10 +2,18 @@
 
 *2026-08-29. Lane L5c, station 2. Written from the station-1 research pass;
 sources are cited where a decision rests on them, and marked unverified where
-station 1 could not confirm them. Nothing in `app/` implements any of this yet —
-the existing `TransferFunctionPreview.cpp` is a mockup with synthetic curves,
-and this record exists so the real implementation cannot silently inherit the
-mockup's accidents as decisions.*
+station 1 could not confirm them.*
+
+*The paragraph below is **kept as written, as the record of that day**. Its
+"nothing in `app/` implements any of this yet" was true when the decisions were
+made and stopped being true on 2026-08-29, when the lane was built — see
+`docs/HANDOFF.md`. Section **5a** is the one later addition, marked as such,
+covering two interactions this record left undecided and the build discovered.*
+
+> Nothing in `app/` implements any of this yet — the existing
+> `TransferFunctionPreview.cpp` is a mockup with synthetic curves, and this
+> record exists so the real implementation cannot silently inherit the mockup's
+> accidents as decisions.
 
 Each decision records what the rejected option would have cost, because a
 decision without its reasoning is a decision the next session reverses by
