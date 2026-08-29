@@ -263,6 +263,11 @@ TEST_CASE("a workspace round-trips through the index", "[codec]") {
     CHECK(encoded.find("[pane]\n") != std::string::npos);
     CHECK(encoded.find("view=rta\n") != std::string::npos);
     CHECK(encoded.find("view=transfer\n") != std::string::npos);
+    // Without this, a matched-pair rename of the weight key in BOTH
+    // encodeIndex and decodeIndex (e.g. "weight" -> "w") would still pass
+    // every assertion above and every round-trip check below: the two sides
+    // agree with each other, just not with the format they're supposed to be.
+    CHECK(encoded.find("weight=") != std::string::npos);
 
     SessionDocument back;
     REQUIRE(decodeIndex(encoded, back) == DecodeStatus::Ok);

@@ -4,6 +4,7 @@
 // docs/dsp/2026-08-29-display-layer-l5c.md.
 #pragma once
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -30,10 +31,33 @@ struct PaneSpec {
     float weight = 1.0f;
 };
 
-/// Clamp to `kMaxPanes`, drop non-positive weights to equal shares, normalise
-/// the rest to sum to 1. An empty input yields exactly one default pane: a
-/// session saved before workspaces existed and a brand-new one are the same
-/// case, and both must open.
+/// Clamp to `kMaxPanes` and normalise the weights. An empty input yields exactly
+/// one default pane: a session saved before workspaces existed and a brand-new
+/// one are the same case, and both must open.
+///
+/// **A non-positive weight stays zero.** It is not redistributed, not floored,
+/// not turned into an equal share. `az::ui::splitVertically` -- the only
+/// consumer of these numbers -- already decided what a non-positive weight
+/// means: that child gets zero height, and equal shares happen only when NOBODY
+/// expressed a preference. Any other rule here would silently reopen a pane the
+/// user collapsed, and the two functions would disagree about the same number.
+///
+/// So: positive weights are scaled to sum to 1 among themselves; non-positive
+/// ones are set to exactly 0; and if there are no positive weights at all,
+/// every pane gets `1/n`, which is the same fallback `splitVertically` makes
+/// for the same reason.
+///
+/// **The result must not depend on the scale of the input.** `{1, 1, 0}` and
+/// `{2, 2, 0}` express the identical preference and must produce identical
+/// shares -- an earlier draft normalised the whole set jointly after replacing
+/// zeros with `1/n`, which gave the collapsed pane 0.143 in the first case and
+/// 0.077 in the second. Two inputs meaning the same thing produced different
+/// layouts, which is the property `weights are normalised on read` exists to
+/// forbid and only tested for the all-positive case.
+///
+/// A non-finite weight (`inf`, `nan`) counts as non-positive. `std::from_chars`
+/// accepts both from a hand-edited file, and either one turns joint
+/// normalisation into `NaN` shares -- a layout with no geometry at all.
 [[nodiscard]] inline std::vector<PaneSpec> normalisePanes(std::vector<PaneSpec> panes) {
     // A session saved before workspaces existed and a brand-new session both
     // decode to zero panes -- they are the same case and must both open to
@@ -46,20 +70,36 @@ struct PaneSpec {
         panes.resize(static_cast<std::size_t>(kMaxPanes));
     }
 
-    // A non-positive weight (zero, negative, or the whole set at once from a
-    // hand-edited file) expresses no usable preference. Privileging pane 0
-    // for no stated reason would be inventing one, so every such pane is
-    // given the same starting point any of them would get if nobody had an
-    // opinion at all: an equal share of the total.
-    const float equalShare = 1.0f / static_cast<float>(panes.size());
-    for (auto& p : panes) {
-        if (!(p.weight > 0.0f)) p.weight = equalShare;
+    // "Positive and finite" is the only weight that expresses a real
+    // preference. inf/nan reach here from a hand-edited file via
+    // std::from_chars, which parses both -- treat them the same as zero or a
+    // negative: not a usable opinion about this pane's share.
+    auto isUsable = [](float w) { return w > 0.0f && std::isfinite(w); };
+
+    double positiveSum = 0.0;
+    for (const auto& p : panes) {
+        if (isUsable(p.weight)) positiveSum += p.weight;
     }
 
-    double sum = 0.0;
-    for (const auto& p : panes) sum += p.weight;
+    if (positiveSum <= 0.0) {
+        // Nobody expressed a preference at all (every weight zero, negative,
+        // or non-finite): the only case where an equal share is the right
+        // fallback, matching splitVertically's own fallback for the same
+        // input.
+        const float equalShare = 1.0f / static_cast<float>(panes.size());
+        for (auto& p : panes) p.weight = equalShare;
+        return panes;
+    }
+
+    // Scale positive weights to sum to 1 AMONG THEMSELVES -- not among the
+    // full set including the zeroed panes -- so {1,1,0} and {2,2,0} both
+    // land on {0.5, 0.5, 0.0} regardless of the input's absolute scale. A
+    // non-positive/non-finite weight becomes exactly 0: the pane the user
+    // collapsed stays collapsed, it does not silently reopen.
     for (auto& p : panes) {
-        p.weight = static_cast<float>(static_cast<double>(p.weight) / sum);
+        p.weight = isUsable(p.weight)
+                       ? static_cast<float>(static_cast<double>(p.weight) / positiveSum)
+                       : 0.0f;
     }
     return panes;
 }
