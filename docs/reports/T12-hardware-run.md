@@ -1,7 +1,9 @@
 # T12 — phiếu chạy tay M1–M7 (cần chủ máy + interface thật)
 
 *Soạn 2026-08-27 bởi orchestrator kế nhiệm, trên worktree
-`.claude/worktrees/orchestrator-ke-nhiem-04b17b`, commit nền `c573d47` cộng bản
+`.claude/worktrees/orchestrator-ke-nhiem-04b17b` (worktree ĐÃ XOÁ 2026-08-29 sau
+khi merge; **exe đã được giữ lại** ở `build-asio/` trong checkout chính, cùng
+kích thước 10.181.120 byte), commit nền `c573d47` cộng bản
 vá quan sát M1/M3 chưa commit.*
 
 Đây là bảy bước cuối cùng của Phase 1. Chúng nằm ngoài CI **không phải vì tuỳ
@@ -28,7 +30,7 @@ Bản dựng dành riêng cho phiên chạy tay, đã bật ASIO:
 Bấm `Esc` để xoá dòng lệnh đang dở trước khi chạy, rồi:
 
 ```bash
-& "D:\DEV CAVE EP3\PRJ010-RTA-TOOL\.claude\worktrees\orchestrator-ke-nhiem-04b17b\build-asio\app\rtatool_artefacts\Release\RTA Tool.exe"
+& "D:\DEV CAVE EP3\PRJ010-RTA-TOOL\build-asio\app\rtatool_artefacts\Release\RTA Tool.exe"
 ```
 
 Cửa sổ mở ra là màn hình đo thật. Công tắc `SYNTHETIC` ở trên cùng chạy toàn

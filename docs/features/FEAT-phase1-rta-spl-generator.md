@@ -2,7 +2,7 @@
 
 - status: active
 - phases: P1 ⏳ (98% — chỉ còn **M2 và M7**, hai bước cần giác quan người)
-- branches: main; `claude_desk/orchestrator-ke-nhiem-04b17b` chờ merge
+- branches: `main` (mọi nhánh phiên trước ĐÃ merge và đã push, 2026-08-29)
 - next: (1) chạy tay **M2** (nói vào mic thật) và **M7** (cáp loopback vật lý)
   theo phiếu `docs/reports/T12-hardware-run.md` — bản dựng ASIO sẵn ở
   `build-asio/`; (2) đóng FEAT theo task-closeout path C; (3) **L2 đã xây xong**

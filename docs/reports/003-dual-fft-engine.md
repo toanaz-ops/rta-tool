@@ -127,17 +127,20 @@ Two more that are not test holes but belong here:
   bracketed by |H1| and |H2|, by Cauchy-Schwarz) but only across the bins of one
   fixture.
 
-## Nothing here is committed
+## How this landed
 
-Every file above is untracked or modified-unstaged. That is deliberate — this
-session had no instruction to commit, and the project rule requires approval
-naming the action. Two consequences a reader should know:
+Committed and merged to `main` later the same day, on the owner's instruction,
+as **nine commits** — one per task plus the docs — and pushed to `origin/main`
+(`c573d47..78ef14f`, 34 commits, since local `main` was well ahead of GitHub).
 
-1. The plan's per-task step "paste the red output into the commit message body"
-   did not happen. **This report is where that evidence lives instead**, and the
-   verifiers independently reproduced the mutations they could.
-2. `git status --porcelain | wc -l` is **39**: 28 new, 11 modified — across
-   `core/` (22), `docs/` (8), `memory/` (4), `app/` (4) and `tools/` (1). One
-   lane's worth, not a partial state. (An earlier draft of this line guessed
-   "~25" from memory rather than measuring. Pitfall #10 does not spare the
-   person writing the warning.)
+Two things a reader should know about the shape of that history:
+
+1. The work was built across seven tasks **before** any of it was committed, so
+   the plan's per-task step "paste the red output into the commit message body"
+   could not happen as written. The mutation evidence went into the commit
+   messages retrospectively and into this report; the verifiers also reproduced
+   independently the mutations they were able to.
+2. The lane touched **39 files**: 28 new, 11 modified — `core/` (22),
+   `docs/` (8), `memory/` (4), `app/` (4), `tools/` (1). (An earlier draft of
+   this line guessed "~25" from memory rather than measuring. Pitfall #10 does
+   not spare the person writing the warning.)

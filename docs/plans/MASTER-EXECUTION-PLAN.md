@@ -22,15 +22,15 @@ this section was written: Wave D (AnalysisThread, SyntheticInput, DevicePanel,
 ChannelRoleTable), the Meters track (Weighting, Detector, Leq), the Generator
 track (66c770c), and Wave E.
 
-**Landed since, on `claude_desk/orchestrator-ke-nhiem-04b17b` and awaiting
-merge:** `platform/AudioIo` gained its first tests at all (a JUCE-linked target
+**Landed on `claude_desk/orchestrator-ke-nhiem-04b17b`, merged into `main` and
+pushed 2026-08-29:** `platform/AudioIo` gained its first tests at all (a JUCE-linked target
 at `platform/tests_juce/`, covering five of T12's seven by-hand steps and
 finding a real defect on its first run); L2 gained its decision record
 (`docs/dsp/2026-08-28-dual-fft.md`); L5 was split into four records and **L5a is
 built** — trace model, library, session persistence, repaint gate, cached layer
 — plus a second JUCE-linked test target at `app/tests_juce/` for view code.
 
-**Landed since that, uncommitted in this worktree (2026-08-29): L2 is BUILT.**
+**Landed since that (2026-08-29), committed and pushed: L2 is BUILT.**
 See `docs/reports/003-dual-fft-engine.md` for the numbers and what the
 verifiers refuted; L5c also gained its decision record
 (`docs/dsp/2026-08-29-display-layer-l5c.md`).
@@ -111,7 +111,7 @@ not, and a guessed tolerance is a false Class claim.
 
 | Lane | Scope (decision records to read first) | Depends on | PARALLEL-SAFE with |
 |---|---|---|---|
-| **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16). **✅ BUILT (2026-08-29), see `docs/reports/003-dual-fft-engine.md`.** Record: `docs/dsp/2026-08-28-dual-fft.md`. Uncommitted — see the report's "Nothing here is committed" section | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
+| **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16). **✅ BUILT (2026-08-29), see `docs/reports/003-dual-fft-engine.md`.** Record: `docs/dsp/2026-08-28-dual-fft.md`. Merged into `main` and pushed 2026-08-29 | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
 | **L3 — MTW** | P3: decimation cascade, per-band FFT sizes, stitching, CONCURRENT with fixed engine (G2). Needs its own station-1 research pass first | L2 interface | L5, L6a |
 | **L4 — Sweep/IR** | P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
 | **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6), spectrograph**: record now written, `docs/dsp/2026-08-29-display-layer-l5c.md` (station 2 done, so this lane starts at station 3, not station 1). Nothing in `app/` implements it yet. L5c is also where the library finally gets wired to `RtaView` — until then the stored-trace path is built but unreached. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
