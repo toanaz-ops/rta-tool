@@ -7,12 +7,12 @@
 namespace az::ui {
 
 std::vector<juce::Rectangle<int>> splitVertically(juce::Rectangle<int> area,
-                                                  std::span<const float> weights, int gap) {
+                                                  std::span<const float> weights, int gapPx) {
     std::vector<juce::Rectangle<int>> out;
     if (weights.empty()) return out;
     out.reserve(weights.size());
 
-    const int gapTotal = gap * (static_cast<int>(weights.size()) - 1);
+    const int gapTotal = gapPx * (static_cast<int>(weights.size()) - 1);
     const int usable = std::max(0, area.getHeight() - gapTotal);
 
     double weightTotal = 0.0;
@@ -39,7 +39,7 @@ std::vector<juce::Rectangle<int>> splitVertically(juce::Rectangle<int> area,
         const int height = std::max(0, bottom - top);
 
         out.emplace_back(area.getX(), y, area.getWidth(), height);
-        y += height + gap;
+        y += height + gapPx;
     }
     return out;
 }

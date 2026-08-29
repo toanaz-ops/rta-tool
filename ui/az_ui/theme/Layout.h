@@ -13,7 +13,12 @@
 namespace az::ui {
 
 /// Divide `area` into `weights.size()` stacked children, heights in proportion
-/// to `weights`, separated by `gap` pixels.
+/// to `weights`, separated by `gapPx` pixels.
+///
+/// Named `gapPx` rather than `gap` because `az::ui::gap` is a namespace-scope
+/// metric in theme/Metrics.h and is the value most callers will pass here; a
+/// parameter of the same name inside this namespace hides it (MSVC C4459), and
+/// this project builds warning-free at /W4.
 ///
 /// Positions are accumulated rather than each child being rounded on its own:
 /// independent rounding leaves a one-pixel unpainted row between two panes at
@@ -27,6 +32,6 @@ namespace az::ui {
 /// the result against its own child list, and a silently shorter result
 /// misaligns every child after it.
 [[nodiscard]] std::vector<juce::Rectangle<int>> splitVertically(
-    juce::Rectangle<int> area, std::span<const float> weights, int gap);
+    juce::Rectangle<int> area, std::span<const float> weights, int gapPx);
 
 }  // namespace az::ui
