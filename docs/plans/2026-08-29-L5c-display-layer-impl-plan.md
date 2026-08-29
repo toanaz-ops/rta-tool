@@ -305,8 +305,14 @@ TEST_CASE("splitVertically consumes the area exactly, gaps included",
     // unpainted between two panes, and no pane overhangs the bottom. Asserted
     // over heights that do NOT divide evenly, which is where a naive
     // round-each-independently implementation leaks a row.
+    //
+    // The origin is deliberately NOT (0, 0). With it at the origin, every
+    // assertion below holds for an implementation that ignores area.getY()
+    // entirely and stacks from zero -- the whole vertical placement of the
+    // split would be asserted by nothing. A nonzero y costs one character and
+    // makes every assertion in this case cover the origin too.
     for (const int height : { 199, 200, 201, 333, 761 }) {
-        const juce::Rectangle<int> area(0, 0, 100, height);
+        const juce::Rectangle<int> area(7, 13, 100, height);
         const std::vector<float> weights{ 5.0f, 3.0f, 2.0f };
         const int gap = 4;
         const auto rects = az::ui::splitVertically(area, weights, gap);
@@ -330,10 +336,27 @@ TEST_CASE("splitVertically refuses to invent a pane out of nothing",
     // the caller asked for N children and must get N back, or its own indexing
     // into the result silently shifts by one. A zero-height child is a visible
     // nothing; a missing child is a wrong arrangement.
-    const std::vector<float> weights{ 1.0f, 0.0f, 1.0f };
+    //
+    // NEGATIVE, not just zero: the implementation clamps with
+    // std::max(0.0f, w), and with only a 0.0f in the vector that clamp can be
+    // deleted with every test still green. A negative weight is also what a
+    // normalised-on-read layout file can actually deliver.
+    const std::vector<float> weights{ 1.0f, -1.0f, 1.0f };
     const auto rects = az::ui::splitVertically(area, weights, 0);
     REQUIRE(rects.size() == 3u);
     CHECK(rects[1].getHeight() == 0);
+    // The two real panes still split the whole area between them -- a negative
+    // weight must not leak height out of the total.
+    CHECK(rects[0].getHeight() + rects[2].getHeight() == area.getHeight());
+
+    // Every weight non-positive: nobody expressed a preference, so equal
+    // shares. Untested, this branch is a comment with an implementation
+    // attached.
+    const std::vector<float> noPreference{ 0.0f, 0.0f };
+    const auto equal = az::ui::splitVertically(area, noPreference, 0);
+    REQUIRE(equal.size() == 2u);
+    CHECK(equal[0].getHeight() == equal[1].getHeight());
+    CHECK(equal[0].getHeight() + equal[1].getHeight() == area.getHeight());
 
     // Area shorter than the gaps alone: every child clamps to zero height and
     // none goes negative. juce::Rectangle happily holds a negative height and
@@ -395,6 +418,13 @@ namespace az::ui {
 /// yields a zero-height child rather than a dropped one: the caller indexes
 /// the result against its own child list, and a silently shorter result
 /// misaligns every child after it.
+///
+/// One degenerate case is worth knowing about: when `area` is shorter than the
+/// gaps alone, every child clamps to zero height but the y cursor still
+/// advances one gap per child, so the trailing zero-height rectangles sit
+/// BELOW `area.getBottom()`. Nothing draws -- they have no height -- but a
+/// caller positioning something from a returned rectangle's y should not
+/// assume the result is contained in `area` at sizes that small.
 [[nodiscard]] std::vector<juce::Rectangle<int>> splitVertically(
     juce::Rectangle<int> area, std::span<const float> weights, int gapPx);
 
@@ -898,11 +928,16 @@ In `app/tests/CMakeLists.txt`, add `test_bode_layout.cpp` to
 - [ ] **Step 5: Run the tests and the guard**
 
 ```bash
-ctest --test-dir build-l5c -C Release -R "bode-layout|framework_deps" -V
+build-l5c/app/tests/Release/rtatool_analysis_tests.exe "[bode-layout]"
+```
+
+```bash
+ctest --test-dir build-l5c -C Release -R "framework_deps" -V
 ```
 
 Expected: the bode-layout cases pass, and `measure_has_no_framework_deps`
-reports **22** files scanned rather than 21. **If the number did not move, the
+reports **two more** files scanned than before (this task registers two:
+`AxisMetrics.h` and `BodeLayout.h`). **If the number did not move, the
 path in `GLOBS` is wrong and the guard has silently stopped watching your new
 file while still printing OK.** Paste the scanned count.
 
@@ -1282,7 +1317,11 @@ Add `test_phase_decimator.cpp` to `rtatool_analysis_tests` and
 `app/src/view/PhaseDecimator.h` to the guard's `GLOBS`.
 
 ```bash
-ctest --test-dir build-l5c -C Release -R "phase-decimator|framework_deps" -V
+build-l5c/app/tests/Release/rtatool_analysis_tests.exe "[phase-decimator]"
+```
+
+```bash
+ctest --test-dir build-l5c -C Release -R "framework_deps" -V
 ```
 
 Expected: 8 cases pass; the guard's scanned count moves again. Paste the count.
@@ -1497,7 +1536,11 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
 Add the test file and the guard path. Run:
 
 ```bash
-ctest --test-dir build-l5c -C Release -R "coherence-alpha|framework_deps" -V
+build-l5c/app/tests/Release/rtatool_analysis_tests.exe "[coherence-alpha]"
+```
+
+```bash
+ctest --test-dir build-l5c -C Release -R "framework_deps" -V
 ```
 
 Then break it: change `columnAlpha` to use `maxValue`. The minimum test must go
@@ -1844,7 +1887,7 @@ screen.
 - [ ] **Step 5: Run the tests**
 
 ```bash
-ctest --test-dir build-l5c -C Release -R "analyser" --output-on-failure
+build-l5c/app/tests/Release/rtatool_analysis_tests.exe "[analyser][transfer]"
 ```
 
 All six new cases pass. Paste the output.
@@ -2251,7 +2294,11 @@ nothing on screen would explain why.
 - [ ] **Step 7: Run everything and prove the drain test can fail**
 
 ```bash
-ctest --test-dir build-l5c -C Release -R "paired-drain|synthetic-impairment|framework_deps" -V
+build-l5c/app/tests/Release/rtatool_analysis_tests.exe "[paired-drain],[synthetic-impairment]"
+```
+
+```bash
+ctest --test-dir build-l5c -C Release -R "framework_deps" -V
 ```
 
 Then break `pairedHopCount` to use `std::max`, re-run, watch the first case go
@@ -2835,7 +2882,11 @@ Add `test_workspace.cpp`, and `Workspace.h` + `PaneRegistry.h` to the guard's
 `GLOBS`. Run:
 
 ```bash
-ctest --test-dir build-l5c -C Release -R "workspace|session|framework_deps" -V
+build-l5c/app/tests/Release/rtatool_analysis_tests.exe "[workspace]"
+```
+
+```bash
+ctest --test-dir build-l5c -C Release -R "framework_deps" -V
 ```
 
 Then break `resolvePaneView` to return `Malformed`-equivalent behaviour by
@@ -3017,8 +3068,25 @@ looking cheap and repeatable. The looking is still yours.
 1. **The guard can stop watching while still reporting OK.** It globs a
    caller-supplied path list and only FATALs when the *whole* list is empty.
    Every task that adds a JUCE-free file must read the scanned-file count back.
-2. **`ctest -R` does not search Catch2 tags.** A tag matches zero tests and
-   reports success. Select by the test *name* prefixes this plan uses.
+2. **`ctest -R` does not search Catch2 tags. A tag matches zero tests and
+   reports success** — this plan shipped with that very mistake in six of its
+   own verification steps, caught by the Task 2 implementer, and the commands
+   below are the corrected form.
+
+   `catch_discover_tests` registers one ctest case per `TEST_CASE`, named by
+   its **sentence**, not its tag. `ctest -R "[bode-layout]"` therefore matches
+   nothing and exits 0. Two things do work:
+
+   - **A tag: run the Catch2 binary directly.** Tag filtering is a Catch2
+     feature, not a ctest one.
+     `build-l5c/app/tests/Release/rtatool_analysis_tests.exe "[phase-decimator]"`
+     (comma-separate for OR: `"[paired-drain],[synthetic-impairment]"`).
+   - **A ctest `-R` selector** for the guards, which are plain `add_test`
+     entries with explicit names (`framework_deps`, `coherence_gate`), and for
+     the two targets that set `TEST_PREFIX` — `^ui/` and `^view/`.
+
+   Whichever you use, **read the case count in the output**. "0 tests passed"
+   is the shape of this failure, and it looks exactly like success.
 3. **Build incrementally, report from `--clean-first`.**
 4. **`cmd //c` to run an exe from Git Bash**; a running app holds a lock on its
    own `.exe`, so `taskkill` before rebuilding.
