@@ -20,7 +20,7 @@ ordered by dependency:
 |---|---|---|
 | **L5a** | Trace model, library, session persistence, the repaint architecture | **this record** |
 | L5b | Targets, corridor, coherence gate, match score | not written; partly blocked (see §8) |
-| L5c | Bode layout, multi-plot workspaces | not written |
+| L5c | Bode layout, multi-plot workspaces | record written 2026-08-29, `docs/dsp/2026-08-29-display-layer-l5c.md` (station 2 done, starts at station 3); nothing in `app/` implements it yet |
 | ~~L5d~~ | Cepstrum, wavelet | **moved out of L5** — it is DSP, and belongs with L2/L3 |
 
 Everything below is L5a. Where a decision constrains a later record, it says so.

@@ -3,6 +3,13 @@
 *2026-08-28, cuối phiên orchestrator kế nhiệm. Đọc file này + `docs/reports/002`
 + `docs/plans/MASTER-EXECUTION-PLAN.md` trước khi đọc bất kỳ dòng code nào.*
 
+**Cập nhật 2026-08-29:** lane L2 (xương sống P2) đã xây xong ở phiên sau file
+này được viết — xem `docs/reports/003-dual-fft-engine.md`. Phần bên dưới là ảnh
+chụp cuối phiên 2026-08-28 và giữ nguyên như lịch sử của ngày đó (mục "Hôm nay
+hạ cánh" nói L2 "bắt đầu từ trạm 3" — đúng tại thời điểm viết, không còn đúng
+hiện tại). "Việc còn mở" và "Lane tiếp theo" bên dưới đã được sửa để phản ánh
+trạng thái hiện tại; baseline đo được có thêm một mục cho cấu hình đo ở lane L2.
+
 ## Baseline đo được (dán từ lệnh, không từ trí nhớ)
 
 Đo lại cuối phiên, trên đúng cây đã commit:
@@ -15,15 +22,37 @@ rtatool_snapshot shots 1100 760          -> exit 0, 6 PNG
 shots/rta-view.png (md5)                 -> d3e698964c8ffd7bcf2148b154f96e3d
 ```
 
+**226 ở trên là cấu hình `RTA_BUILD_APP=ON`, đo cuối phiên 2026-08-28 trên cây
+đã commit.** Lane L2 (2026-08-29) đo lại cấu hình `RTA_BUILD_APP=OFF` trên cây
+CHƯA COMMIT của phiên đó và ra một số khác — con số đó, lệnh đo, và lý do hai
+cấu hình không cộng gộp được nằm ở đúng MỘT chỗ:
+`docs/reports/003-dual-fft-engine.md`. Cấu hình ON **chưa được đo lại** trong
+phiên L2; không đoán số đó ở đây hay bất cứ đâu khác.
+
 **Có BA guard framework khác nhau, đừng nhầm chúng với nhau:**
 
 ```
-core_has_no_framework_deps            -> OK (53 files scanned)
-measure_has_no_framework_deps         -> OK (19 files scanned)   <- app/src/trace + view
+core_has_no_framework_deps            -> OK (70 files scanned)
+measure_has_no_framework_deps         -> OK (21 files scanned)   <- app/src/trace + view + measure
 platform_types_has_no_framework_deps  -> OK (5 files scanned)
 ```
 
 Nói "guard đếm bao nhiêu" mà không nói guard nào là một cái bẫy nhỏ của chính nó.
+
+**Đo lại 2026-08-29** (`ctest -R "framework_deps|coherence_gate|polynomial|class_1" -V`):
+53 -> 70 và 19 -> 21. Số cũ đã mục nát đúng như bẫy #10 cảnh báo — L2 thêm
+file vào `core/`, và `PhaseUnwrap.*` được thêm vào danh sách của
+`measure_has_no_framework_deps` sau khi phát hiện guard đó KHÔNG canh chúng.
+
+**Từ 2026-08-29, tổng số guard framework/representation là SÁU, không phải BA**
+— ba guard trên, cộng thêm
+`filter_design_has_no_polynomial_form`, `core_makes_no_class_1_claim` (đã có từ
+trước, không nằm trong danh sách "BA guard" ở trên vì chúng canh biểu diễn DSP
+chứ không phải include framework), và guard mới `coherence_gate_is_not_bypassed`.
+Danh sách đầy đủ và guard nào canh gì ở `docs/reports/003-dual-fft-engine.md`.
+Báo cáo đó cũng ghi `measure_has_no_framework_deps` từng bỏ sót
+`PhaseUnwrap.*` khỏi danh sách file quét trước khi được vá — nên số **19 file
+quét ở trên có thể đã lỗi thời**; số mới chưa được đo lại, không đoán ở đây.
 
 ## Hôm nay hạ cánh những gì
 
@@ -66,10 +95,17 @@ ASIO sẵn ở `build-asio/`. Không chặn lane nào.
 **Đường stored-trace được xây nhưng CHƯA NỐI.** Không chỗ nào gắn `TraceLibrary`
 vào `RtaView`. Đây là điểm dừng có chủ ý, không phải nợ — nhánh null của
 `RtaView` chứng minh được là giống hệt bản cũ, và băm `rta-view.png` khớp xác
-nhận điều đó. **L5c là lane nối nó vào.**
+nhận điều đó. **L5c là lane nối nó vào — record của lane đó nay đã viết**
+(`docs/dsp/2026-08-29-display-layer-l5c.md`, 2026-08-29; trạm 2 xong nên lane
+bắt đầu ở trạm 3, không phải trạm 1), nhưng chưa có dòng code nào nối nó vào
+`app/`.
 
-**Lane tiếp theo, theo thứ tự:** L2 từ trạm 3 (nó là xương sống — P3, P4b, P6b,
-P7 đều chờ nó) song song L5c (nối hiển thị). L5b chờ mua chuẩn.
+**L2 đã xây xong (2026-08-29), không còn ở trạm 3.** Tám nhiệm vụ, xem
+`docs/reports/003-dual-fft-engine.md` cho số liệu — không lặp lại số ở đây,
+xem block baseline phía trên. P3, P4b, P6b, P7 vốn chờ P2 nay hết bị chặn ở
+lane này. **Lane tiếp theo, theo thứ tự** (chi tiết và lý do ở mục "Suggested
+opening order" đã cập nhật trong `docs/plans/MASTER-EXECUTION-PLAN.md`): L4 +
+L5c song song (L5b vẫn chờ mua chuẩn), rồi L3 + L6b, rồi L7 giờ L2 đã vào.
 
 ## Quyết định CHỜ NGƯỜI — không tự quyết
 

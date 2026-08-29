@@ -30,6 +30,11 @@ finding a real defect on its first run); L2 gained its decision record
 built** — trace model, library, session persistence, repaint gate, cached layer
 — plus a second JUCE-linked test target at `app/tests_juce/` for view code.
 
+**Landed since that, uncommitted in this worktree (2026-08-29): L2 is BUILT.**
+See `docs/reports/003-dual-fft-engine.md` for the numbers and what the
+verifiers refuted; L5c also gained its decision record
+(`docs/dsp/2026-08-29-display-layer-l5c.md`).
+
 Phase 1's only open item is **T12's by-hand hardware pass**, and it is now down
 to two steps rather than seven: M2 (speak into a real mic) and M7 (a physical
 loopback cable). Both need a person, not another agent — see
@@ -41,7 +46,7 @@ loopback cable). Both need a person, not another agent — see
 ```
 P1 RTA / SPL / generator            ✅ code done; 2 by-hand steps left (M2, M7)
  │
- ├─→ P2 dual-FFT  ──→ P3 MTW ─────────────┐   record ✅, code not started
+ ├─→ P2 dual-FFT  ──→ P3 MTW ─────────────┐   ✅ BUILT (8 tasks, docs/reports/003-dual-fft-engine.md)
  │        │                               │
  │        └─→ P4 sweep/IR ──→ P4b THD/STI │   needs IEC 60268-16 for STI
  │                  │                     │
@@ -64,9 +69,12 @@ P1 RTA / SPL / generator            ✅ code done; 2 by-hand steps left (M2, M7)
 
 ## Where the critical path actually runs
 
-**P2 is the spine.** P3, P4b, P6b and P7 all wait on it, and it is the one
-thing that makes this a Smaart-class tool rather than an RTA. Its decision
-record is written, so it starts at station 3.
+**P2 was the spine; it is now built.** `docs/reports/003-dual-fft-engine.md`
+(2026-08-29): 8 tasks, 261/261 tests on a clean `RTA_BUILD_APP=OFF` rebuild, 0
+warnings. P3, P4b, P6b and P7 all waited on it and are now unblocked — the
+thing that made this a Smaart-class tool rather than an RTA is in the tree.
+The `RTA_BUILD_APP=ON` test count was not re-measured in that session; see
+`docs/HANDOFF.md`'s baseline block for the one place that number lives.
 
 **P5 no longer blocks on P2.** L5a is built and stores measurements without
 caring what produced them — its trace model is presence-based precisely so a
@@ -82,10 +90,10 @@ not, and a guessed tolerance is a false Class claim.
 
 | Lane | Scope (decision records to read first) | Depends on | PARALLEL-SAFE with |
 |---|---|---|---|
-| **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16).  **Record: `docs/dsp/2026-08-28-dual-fft.md` — stations 1 and 2 are DONE, start at station 3.** Plus the banding doc | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
+| **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16). **✅ BUILT (2026-08-29), see `docs/reports/003-dual-fft-engine.md`.** Record: `docs/dsp/2026-08-28-dual-fft.md`. Uncommitted — see the report's "Nothing here is committed" section | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
 | **L3 — MTW** | P3: decimation cascade, per-band FFT sizes, stitching, CONCURRENT with fixed engine (G2). Needs its own station-1 research pass first | L2 interface | L5, L6a |
 | **L4 — Sweep/IR** | P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
-| **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6), spectrograph**: record not written. L5c is also where the library finally gets wired to `RtaView` — until then the stored-trace path is built but unreached. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
+| **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6), spectrograph**: record now written, `docs/dsp/2026-08-29-display-layer-l5c.md` (station 2 done, so this lane starts at station 3, not station 1). Nothing in `app/` implements it yet. L5c is also where the library finally gets wired to `RtaView` — until then the stored-trace path is built but unreached. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
 | **~~cepstrum/wavelet (G23)~~** | **Moved OUT of L5** — it is DSP, not display, and belongs with L2/L3. Putting it beside "draw a trace" confused two layers. | L2 | — |
 | **L6a — SPL-pro** | P6 subset: SPL logging/history/alarms/PDF/web viewer (G7), dose IEC 61252 (G8) | Meters track (in flight — wait for it to land) | everything except L6b |
 | **L6b — Multichannel workflows** | P6 subset: spatial averaging (G14), coherence weighting (G15), sequencing + auto-discard (G20), full routing matrix, presets, remote API | L2 (multi-TF) | L4, L5 |
@@ -130,7 +138,10 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
 
 ## Suggested opening order with ~2 concurrent sessions
 
-1. **L2** (the heart — Smaart-class dual-FFT), now starting at station 3 since its decision record landed, + **L5b/L5c** (L5a is already built) in parallel.
-2. Then **L4** + continue L5; L8 research lanes fire-and-forget anytime.
-3. Then **L3** + **L6b**; then **L7** once L2/L4/L5 are in; **L6a** after
-   meters; **L9** last.
+1. ~~**L2** (the heart — Smaart-class dual-FFT), now starting at station 3 since
+   its decision record landed~~ — **done, 2026-08-29** (`docs/reports/003-dual-fft-engine.md`).
+2. **Now**: **L4** + **L5c** (record landed, starts at station 3) + **L5b** (still
+   blocked on the standards purchase) in parallel; L8 research lanes
+   fire-and-forget anytime.
+3. Then **L3** + **L6b**; then **L7** now that L2 is in and once L4/L5 land too;
+   **L6a** after meters; **L9** last.

@@ -30,4 +30,12 @@ really covered is the scanned-file COUNT the test prints — when
 `app/src/view/Readouts.h` was added the count went 8 → 9, which is what proved
 it. If you add a file to that list, check the count moved.
 
+**Recurred 2026-08-29 (lane L2, `docs/reports/003-dual-fft-engine.md`):** a
+worker added `app/src/measure/PhaseUnwrap.*` without adding it to
+`measure_has_no_framework_deps`'s `-DGLOBS=` list in `app/tests/CMakeLists.txt`
+— the exact mistake this note describes, found again only by a verifier
+counting scanned files, not by the guard going red. The list-based mechanism
+itself is still not fixed; adding a file to `app/src/measure/` or
+`app/src/trace/` still requires a manual, unenforced second edit.
+
 Related: [[juce-is-agplv3-not-gplv3]]

@@ -5,9 +5,10 @@
 - branches: main; `claude_desk/orchestrator-ke-nhiem-04b17b` chờ merge
 - next: (1) chạy tay **M2** (nói vào mic thật) và **M7** (cáp loopback vật lý)
   theo phiếu `docs/reports/T12-hardware-run.md` — bản dựng ASIO sẵn ở
-  `build-asio/`; (2) đóng FEAT theo task-closeout path C; (3) L2 tiếp từ **trạm
-  3** vì decision record đã có (`docs/dsp/2026-08-28-dual-fft.md`), L5 tiếp với
-  L5b/L5c vì **L5a đã xây xong**. Chi tiết: docs/reports/002 + docs/HANDOFF.md.
+  `build-asio/`; (2) đóng FEAT theo task-closeout path C; (3) **L2 đã xây xong**
+  (2026-08-29, `docs/reports/003-dual-fft-engine.md`) — lane tiếp theo là L4 +
+  L5c (record đã có, `docs/dsp/2026-08-29-display-layer-l5c.md`), L5b vẫn chờ
+  mua chuẩn. Chi tiết: docs/reports/002 + docs/HANDOFF.md.
 
   Năm trong bảy bước M **đã được tự động hoá** — lý do chúng từng phải chạy tay
   không phải phần cứng mà là `AudioIo` chưa có target test nào; nay có
