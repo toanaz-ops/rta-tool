@@ -9,13 +9,18 @@
 # test in core/tests -- not by this comment.
 
 add_library(rta_core STATIC
+    src/dsp/AverageCount.cpp
     src/dsp/BandWeights.cpp
     src/dsp/ButterworthDesign.cpp
+    src/dsp/DelayFinder.cpp
+    src/dsp/DualFftEngine.cpp
     src/dsp/Fft.cpp
     src/dsp/FilterBank.cpp
+    src/dsp/GroupDelay.cpp
     src/dsp/OctaveBands.cpp
     src/dsp/RealFft.cpp
     src/dsp/SpectrumEngine.cpp
+    src/dsp/TransferEstimator.cpp
     src/dsp/Weighting.cpp
     src/dsp/Window.cpp
     src/gen/Mls.cpp

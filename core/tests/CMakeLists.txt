@@ -9,6 +9,12 @@ FetchContent_Declare(Catch2
 FetchContent_MakeAvailable(Catch2)
 
 add_executable(rta_core_tests
+    test_average_count.cpp
+    test_delay_finder.cpp
+    test_dualfft.cpp
+    test_transfer_estimator.cpp
+    test_transfer_golden.cpp
+    test_group_delay.cpp
     test_window.cpp
     test_ringbuffer.cpp
     test_fft.cpp
@@ -71,4 +77,15 @@ add_test(NAME core_makes_no_class_1_claim
     COMMAND ${CMAKE_COMMAND}
             -DCORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_conformance_claim.cmake
+)
+
+# --- Coherence-gate guard -------------------------------------------------
+# The coherence gate (docs/dsp/2026-08-28-dual-fft.md §3) is only real if
+# something enforces it: TransferEstimator.cpp's makeSnapshot() must stay the
+# ONE place TransferSnapshot::coherence is assigned. See
+# core/tests/check_coherence_gate.cmake.
+add_test(NAME coherence_gate_is_not_bypassed
+    COMMAND ${CMAKE_COMMAND}
+            -DCORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_coherence_gate.cmake
 )
