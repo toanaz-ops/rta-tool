@@ -5,26 +5,10 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "view/AxisMetrics.h"
 #include "view/PlotGeometry.h"
 
 namespace rta::view {
-
-/// The margin `RtaView` must reserve below `PlotGeometry::bottom` for
-/// `drawFrequencyLabels` to draw into. A single source of truth: the
-/// component that lays out the geometry and the function that draws text
-/// outside it must agree on this figure, or the labels either get no room
-/// or the plot area shrinks for nothing.
-inline constexpr int kFrequencyLabelHeight = 18;
-
-/// The margin `RtaView` must reserve to the left of `PlotGeometry::left`
-/// for `drawLevelLabels` -- wide enough for "-90.0" in the axis mono face.
-inline constexpr int kLevelLabelWidth = 40;
-
-/// Half the width of a frequency label's cell either side of its tick's x
-/// (`drawFrequencyLabels`). `RtaView` reserves this much again to the right
-/// of `PlotGeometry::right`, or the "20000" label at the top of the range
-/// draws half off the edge of the component.
-inline constexpr float kFrequencyLabelHalfWidth = 26.0f;
 
 /// Hairline grid: one vertical line per `decadeTicks(fLowHz, fHighHz)`, one
 /// horizontal line per 10 dB step within `[dbBottom, dbTop]`. Drawn INSIDE
