@@ -122,10 +122,10 @@ TEST_CASE("the pen lifts on the column AFTER a straddle or a band",
     // leaves the whole file green.
     //
     // Both halves below are built so the midpoint-jump term CANNOT be what
-    // lifts the pen: the second column's drawn midpoint is one degree from the
-    // first's. If the reset is removed, `penLift` goes false and the trace
-    // draws a line straight across the pane, through the wrap, as though the
-    // phase had swept the whole range.
+    // lifts the pen: the midpoints the mutated code would compare are a few
+    // degrees apart, far inside the 180 threshold. If the reset is removed,
+    // `penLift` goes false and the trace draws a line straight across the
+    // pane, through the wrap, as though the phase had swept the whole range.
     SECTION("after a straddle") {
         // Unwrapped 179, 181 | 180, 178. Column 0 straddles (179 -> +179,
         // 181 -> -179). Column 1 does not, and its midpoint 179 sits one
@@ -142,23 +142,41 @@ TEST_CASE("the pen lifts on the column AFTER a straddle or a band",
     }
 
     SECTION("after a band") {
-        // Column 0 spans 400 degrees unwrapped, so it is a band; column 1
-        // continues the same ramp. A band records no midpoint at all, so the
-        // only thing that can lift column 1's pen is the reset.
+        // The band must NOT be column 0. `havePrevious` starts false, so at
+        // column 0 the band branch's `havePrevious = false` is a no-op and
+        // deleting it changes nothing -- an earlier draft of this section put
+        // the band first and was therefore insensitive to the very line it
+        // existed to guard. A plain column has to come first, to set
+        // `havePrevious` true, before the band can be seen to clear it.
+        //
+        // Three columns, built from one unwrapped ramp (every step at most
+        // 180 degrees, so the running unwrap recovers it exactly):
+        //   col 0  bins  0-1   0, -10                 extent  10, mid   -5
+        //   col 1  bins  2-6   -110 .. -510           extent 400  -> band
+        //   col 2  bins  7-9   -650, -720, -730       extent  80, mid -690
+        //
+        // A band records no midpoint (it `continue`s before previousMid is
+        // written), so with the reset deleted column 2 would compare against
+        // COLUMN 0's midpoint. Those two wrap to -5 and +30 -- 35 degrees
+        // apart, far inside the 180 threshold -- so the midpoint term cannot
+        // lift column 2's pen. Only the reset can. Delete it and this section
+        // goes red; that is the whole point of choosing -690 rather than any
+        // convenient value.
+        const std::vector<int> unwrapped{ 0, -10, -110, -210, -310, -410, -510, -650, -720, -730 };
         std::vector<float> wrapped;
-        for (int i = 0; i < 5; ++i) {
-            wrapped.push_back(rta::view::wrapTo180(static_cast<float>(-100 * i)));
+        for (const int v : unwrapped) {
+            wrapped.push_back(rta::view::wrapTo180(static_cast<float>(v)));
         }
-        wrapped.push_back(rta::view::wrapTo180(-410.0f));
-        wrapped.push_back(rta::view::wrapTo180(-420.0f));
-        const std::vector<int> columnForBin{ 0, 0, 0, 0, 0, 1, 1 };
+        const std::vector<int> columnForBin{ 0, 0, 1, 1, 1, 1, 1, 2, 2, 2 };
 
         const auto drawn =
-            rta::view::wrapForDrawing(rta::view::decimatePhaseToColumns(wrapped, columnForBin, 2));
-        REQUIRE(drawn.size() == 2u);
-        REQUIRE(drawn[0].fullBand);
-        CHECK_FALSE(drawn[1].fullBand);
-        CHECK(drawn[1].penLift);
+            rta::view::wrapForDrawing(rta::view::decimatePhaseToColumns(wrapped, columnForBin, 3));
+        REQUIRE(drawn.size() == 3u);
+        REQUIRE_FALSE(drawn[0].fullBand);
+        REQUIRE(drawn[1].fullBand);
+        CHECK_FALSE(drawn[2].fullBand);
+        CHECK_FALSE(drawn[2].straddlesWrap);
+        CHECK(drawn[2].penLift);
     }
 }
 
