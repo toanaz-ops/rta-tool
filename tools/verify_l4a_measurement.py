@@ -322,11 +322,11 @@ def section_l():
     origin = len(inverse) - 1
 
     print("   symmetry in dB, and whether the SIGN agrees with the drive polarity")
-    print("   width ->    0.50oct   1.00oct   2.00oct   3.00oct   4.00oct"
-          "   6.00oct   8.00oct")
+    print("   width ->    0.50oct   1.00oct   2.00oct   2.50oct   3.00oct"
+          "   4.00oct   8.00oct")
     for centre in (60.0, 250.0, 1000.0, 4000.0):
         cells = []
-        for width in (0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0):
+        for width in (0.5, 1.0, 2.0, 2.5, 3.0, 4.0, 8.0):
             lo = centre / 2.0 ** (width / 2.0)
             hi = min(centre * 2.0 ** (width / 2.0), 0.49 * FS)
             sos = scipy.signal.butter(4, [lo, hi], 'bandpass', fs=FS, output='sos')
@@ -342,7 +342,33 @@ def section_l():
                 worst_sym = min(worst_sym, sym)
             cells.append(f"{worst_sym:6.2f}{'  ' if all_correct else ' X'}")
         print(f"   {centre:6.0f} Hz  " + "  ".join(cells))
-    print("   X marks a first-arrival sign that DISAGREES with the drive polarity.")
+    # A 3-octave minimum refuses every real subwoofer -- a 30-120 Hz sub is two
+    # octaves -- and the coarse grid above has 2 oct at 60 Hz reading CORRECTLY.
+    # One cell is not a licence to carve an exception, so the low corner gets
+    # its own grid: is the bass region reliable at two octaves, or was that cell
+    # lucky? This is the measurement the product decision needs.
+    print("\n   low-frequency corner, where a polarity checker earns its keep:")
+    print("   width ->    1.00oct   1.50oct   2.00oct   2.50oct   3.00oct")
+    for centre in (30.0, 45.0, 60.0, 90.0, 120.0):
+        cells = []
+        for width in (1.0, 1.5, 2.0, 2.5, 3.0):
+            lo = centre / 2.0 ** (width / 2.0)
+            hi = centre * 2.0 ** (width / 2.0)
+            sos = scipy.signal.butter(4, [lo, hi], 'bandpass', fs=FS, output='sos')
+            worst_sym, all_correct = 1e9, True
+            for polarity in (+1, -1):
+                rec = linear_convolve(scipy.signal.sosfilt(sos, polarity * sweep), inverse)
+                window = rec[origin:origin + int(0.05 * FS)]
+                largest = np.max(np.abs(window))
+                idx = int(np.argmax(np.abs(window) >= 0.5 * largest))
+                if int(np.sign(window[idx])) != polarity:
+                    all_correct = False
+                worst_sym = min(worst_sym,
+                                abs(20 * np.log10(abs(window.max()) / abs(window.min()))))
+            cells.append(f"{worst_sym:6.2f}{'  ' if all_correct else ' X'}")
+        print(f"   {centre:6.0f} Hz  " + "  ".join(cells))
+
+    print("\n   X marks a first-arrival sign that DISAGREES with the drive polarity.")
     print("   Compare the two populations: cells that agree span roughly 0.3 to 11 dB")
     print("   of symmetry, cells that disagree span roughly 0.3 to 4.2 dB. They")
     print("   overlap almost completely, so symmetry does not separate them and a")

@@ -1249,7 +1249,7 @@ git commit -m "feat(core): a spectrum window that starts before the impulse, not
       double arrivalFraction   = 0.5;
       double searchSeconds     = 0.05;
       double minConfidenceDb   = 20.0;
-      double minBandwidthOctaves = 3.0;
+      double minBandwidthOctaves = 2.5;
   };
   struct PolarityResult {
       Sign        sign = Sign::Unknown;
@@ -1275,8 +1275,9 @@ withdrawn version is the one an implementer would reinvent. In short:
   4 octaves at 4 kHz reads **0.09 dB and is correct**, 2 octaves at 250 Hz reads
   **4.18 dB and is wrong**. No threshold separates them. **Do not add a
   symmetry gate.**
-- What does separate them is **bandwidth**: at 3 octaves and above, all sixteen
-  surveyed cells agree; at 2 octaves and below, eleven of twelve disagree.
+- What does separate them is **bandwidth**: at 2.5 octaves and above every
+  surveyed cell agrees; at 2 octaves it agrees at 4 of 5 bass centres and only
+  1 of 4 wideband ones, with nothing on screen distinguishing them.
 
 And the reason, which belongs in the header comment: for a band-limited system
 the sign of the first arrival is a property of that system's phase response, not
@@ -1284,8 +1285,9 @@ of how it is wired. Relative polarity — this box against that one, or before
 against after — is sound at any bandwidth, because negating the drive negates
 the response exactly. Only the **absolute** verdict needs the bandwidth.
 
-`minBandwidthOctaves = 3.0` is a boundary **observed in one survey, not
-derived**: one filter family, one order, four centre frequencies. Say so in the
+`minBandwidthOctaves = 2.5` is a boundary **observed, not derived**: it is the
+lowest width measured clean at all nine centre frequencies, with one filter
+family and one order. Say so in the
 comment. It is exposed for the same reason `arrivalFraction` is.
 
 - [ ] **Step 1: Write the failing test**
@@ -1314,12 +1316,12 @@ rta::ir::PolarityResult readPolarity(double lowHz, double highHz, float polarity
 
 TEST_CASE("Polarity reads correctly through a wideband passband", "[ir][polarity]") {
     // 60 Hz to 15 kHz is about 8 octaves, comfortably past the boundary. Every
-    // surveyed cell at 3 octaves and above agreed with the drive polarity.
+    // surveyed cell at 2.5 octaves and above agreed with the drive polarity.
     for (float polarity : {+1.0f, -1.0f}) {
         const auto got = readPolarity(60.0, 15000.0, polarity);
         CHECK(got.sign == (polarity > 0 ? rta::ir::Sign::Positive : rta::ir::Sign::Negative));
         CHECK(got.confidenceDb > 20.0);
-        CHECK(got.bandwidthOctaves > 3.0);
+        CHECK(got.bandwidthOctaves > 2.5);
     }
 }
 
@@ -1331,7 +1333,7 @@ TEST_CASE("Polarity refuses a narrowband system rather than guessing", "[ir][pol
     for (float polarity : {+1.0f, -1.0f}) {
         const auto got = readPolarity(200.0, 250.0, polarity);
         CHECK(got.sign == rta::ir::Sign::Unknown);
-        CHECK(got.bandwidthOctaves < 3.0);
+        CHECK(got.bandwidthOctaves < 2.5);
         CHECK(got.confidenceDb > 20.0);   // and confidence did NOT notice
     }
 }
@@ -1339,7 +1341,7 @@ TEST_CASE("Polarity refuses a narrowband system rather than guessing", "[ir][pol
 TEST_CASE("Polarity pins its behaviour at the boundary, on a real subwoofer",
           "[ir][polarity]") {
     // 40-100 Hz is 1.3 octaves: an ordinary subwoofer pass band, sitting just
-    // under the 3-octave minimum. This case exists so that moving the boundary
+    // under the 2.5-octave minimum. It exists so that moving the boundary
     // cannot move it THROUGH a real use case with nothing going red. If the
     // chosen behaviour ever changes, change it here deliberately.
     //
@@ -1349,7 +1351,7 @@ TEST_CASE("Polarity pins its behaviour at the boundary, on a real subwoofer",
     for (float polarity : {+1.0f, -1.0f}) {
         const auto got = readPolarity(40.0, 100.0, polarity);
         CHECK(got.sign == rta::ir::Sign::Unknown);
-        CHECK(got.bandwidthOctaves < 3.0);
+        CHECK(got.bandwidthOctaves < 2.5);
     }
 }
 
