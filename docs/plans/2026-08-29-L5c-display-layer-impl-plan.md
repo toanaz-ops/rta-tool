@@ -247,8 +247,15 @@ rule — so it gets built first, alone, with its own test target.
 **Interfaces:**
 - Consumes: nothing.
 - Produces: `az::ui::splitVertically(juce::Rectangle<int> area,
-  std::span<const float> weights, int gap) -> std::vector<juce::Rectangle<int>>`.
+  std::span<const float> weights, int gapPx) -> std::vector<juce::Rectangle<int>>`.
   Used by task 10's `WorkspaceView`.
+
+  **The parameter is `gapPx`, not `gap`.** `az::ui::gap` is already a
+  namespace-scope constant in `theme/Metrics.h`, and a parameter of that name
+  inside `namespace az::ui` hides it — MSVC C4459, which breaks this project's
+  zero-warning-at-/W4 baseline. Callers passing `az::ui::gap` as the argument
+  are the normal case, which is exactly why the collision is easy to write and
+  easy to miss.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -370,7 +377,12 @@ compiled into the module — check `az_ui.cpp`.
 namespace az::ui {
 
 /// Divide `area` into `weights.size()` stacked children, heights in proportion
-/// to `weights`, separated by `gap` pixels.
+/// to `weights`, separated by `gapPx` pixels.
+///
+/// Named `gapPx` rather than `gap` because `az::ui::gap` is a namespace-scope
+/// metric in theme/Metrics.h and is the value most callers will pass here; a
+/// parameter of the same name inside this namespace hides it (MSVC C4459), and
+/// this project builds warning-free at /W4.
 ///
 /// Positions are accumulated rather than each child being rounded on its own:
 /// independent rounding leaves a one-pixel unpainted row between two panes at
@@ -384,7 +396,7 @@ namespace az::ui {
 /// the result against its own child list, and a silently shorter result
 /// misaligns every child after it.
 [[nodiscard]] std::vector<juce::Rectangle<int>> splitVertically(
-    juce::Rectangle<int> area, std::span<const float> weights, int gap);
+    juce::Rectangle<int> area, std::span<const float> weights, int gapPx);
 
 }  // namespace az::ui
 ```
@@ -403,12 +415,12 @@ namespace az::ui {
 namespace az::ui {
 
 std::vector<juce::Rectangle<int>> splitVertically(juce::Rectangle<int> area,
-                                                  std::span<const float> weights, int gap) {
+                                                  std::span<const float> weights, int gapPx) {
     std::vector<juce::Rectangle<int>> out;
     if (weights.empty()) return out;
     out.reserve(weights.size());
 
-    const int gapTotal = gap * (static_cast<int>(weights.size()) - 1);
+    const int gapTotal = gapPx * (static_cast<int>(weights.size()) - 1);
     const int usable = std::max(0, area.getHeight() - gapTotal);
 
     double weightTotal = 0.0;
@@ -435,7 +447,7 @@ std::vector<juce::Rectangle<int>> splitVertically(juce::Rectangle<int> area,
         const int height = std::max(0, bottom - top);
 
         out.emplace_back(area.getX(), y, area.getWidth(), height);
-        y += height + gap;
+        y += height + gapPx;
     }
     return out;
 }
