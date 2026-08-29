@@ -128,7 +128,7 @@ Task implementers see only their own task. These are the exact spellings.
 | Transfer payload | `rta::measure::TransferBlock` | `measure/Snapshot.h` |
 | Paired feed | `rta::measure::Analyser::pushPair()` | `measure/Analyser.h` |
 | Lock-step hop count | `rta::measure::pairedHopCount()` | `measure/PairedDrain.h` |
-| Synthetic impairment | `rta::measure::applyDelay()`, `addNoise()` | `measure/SyntheticImpairment.h` |
+| Synthetic impairment | `rta::measure::DelayLine`, `addNoise()` | `measure/SyntheticImpairment.h` |
 | Stroking helpers | `rta::view::strokeMagnitudeExtents()`, `strokePhaseColumns()` | `view/TraceStroke.h` |
 | Bode composite | `rta::view::TransferView` | `view/TransferView.h` |
 | Pane on disk | `rta::trace::PaneSpec`, `normalisePanes()` | `trace/Workspace.h` |
