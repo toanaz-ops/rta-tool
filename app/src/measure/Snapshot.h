@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace rta::measure {
@@ -25,6 +26,35 @@ struct BandReading {
     /// it at the configured size. See plan §3.5.1 for how the view must
     /// draw this (a boundary line, not just a tint).
     bool underResolved = false;
+};
+
+/// The transfer function of measurement against reference, per bin, when a
+/// reference channel was actually being fed. Built from
+/// `rta::dsp::TransferSnapshot` in `Analyser::publish`.
+///
+/// Degrees, not radians: core wraps to (-pi, pi] because that is the natural
+/// output of a complex division, and every consumer in `view/` works in
+/// degrees because `PlotGeometry`'s phase pane runs +180 to -180. The
+/// conversion happens exactly once, at that one seam, so no file downstream
+/// has to know which unit it is holding.
+struct TransferBlock {
+    std::vector<float> magnitudeDb;
+    std::vector<float> phaseDeg;
+
+    /// Absent -- not empty, not a vector of 1.0 -- below the engine's
+    /// effective-average gate. dual-FFT record section 3: a single frame
+    /// gives coherence identically 1.0 at every frequency, so a broken
+    /// engine looks perfect, and a sentinel would be plotted.
+    std::optional<std::vector<float>> coherence;
+
+    /// Effective, never a raw frame count: overlapped frames are not
+    /// independent, and a gate that trusts a raw count opens too early.
+    double effectiveAverages = 0.0;
+
+    /// What was compensated BEFORE the transform, carried so a readout can
+    /// state it. Not applied to the phase after the fact -- that is the
+    /// mistake dual-FFT record section 4 exists to refuse.
+    int appliedDelaySamples = 0;
 };
 
 /// One immutable measurement, published by the analysis thread and read by
@@ -52,6 +82,10 @@ struct Snapshot {
     /// reads. Optional in the sense that a caller uninterested in it can
     /// ignore the vector; it is always populated by `Analyser::publish`.
     std::vector<float> spectrumDb;
+
+    /// Absent when no reference was fed. A single-channel capture has no
+    /// transfer function; it does not have a flat one.
+    std::optional<TransferBlock> transfer;
 
     bool hasReference = false;
     std::vector<BandReading> referenceBands;

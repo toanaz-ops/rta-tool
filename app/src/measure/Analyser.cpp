@@ -8,6 +8,7 @@
 #include "rta/dsp/OctaveBands.h"
 
 #include <algorithm>
+#include <numbers>
 #include <utility>
 
 namespace rta::measure {
@@ -23,6 +24,18 @@ rta::dsp::SpectrumEngine::Config toEngineConfig(const Analyser::Config& config) 
     engineConfig.averaging = config.averaging;
     engineConfig.timeConstantSeconds = config.timeConstantSeconds;
     return engineConfig;
+}
+
+rta::dsp::DualFftEngine::Config toDualConfig(const Analyser::Config& config) {
+    rta::dsp::DualFftEngine::Config dualConfig;
+    dualConfig.fftSize = config.fftSize;
+    dualConfig.hopSize = config.hopSize;
+    dualConfig.sampleRate = config.sampleRate;
+    dualConfig.window = config.window;
+    dualConfig.averaging = config.transferAveraging;
+    dualConfig.fifoDepth = config.transferFifoDepth;
+    dualConfig.referenceDelaySamples = config.referenceDelaySamples;
+    return dualConfig;
 }
 
 /// Fills `out` from one role's engine + the shared band weights, in the
@@ -60,7 +73,11 @@ Analyser::Analyser(const Config& config)
     , measurementEngine_(toEngineConfig(config))
     , referenceEngine_(toEngineConfig(config))
     , bandPowerScratch_(weights_.size(), 0.0f)
-    , referencePowerScratch_(weights_.size(), 0.0f) {}
+    , referencePowerScratch_(weights_.size(), 0.0f)
+    // DualFftEngine has no default constructor, so it must be built here from
+    // Config rather than assigned later -- see the Config field comments for
+    // why an RTA-only session still pays for these buffers.
+    , dual_(toDualConfig(config)) {}
     // latest_ default-constructs to an empty atomic<shared_ptr>, i.e. latest()
     // returns nullptr until the first publish().
 
@@ -73,10 +90,24 @@ void Analyser::pushReference(std::span<const float> samples) {
     referencePushed_ = true;
 }
 
+void Analyser::pushPair(std::span<const float> reference, std::span<const float> measurement) {
+    // Feed the single-channel RTA path too, so a paired push still lights up
+    // the band/spectrum readouts -- pushPair is additional to
+    // pushMeasurement/pushReference, not a substitute for what they publish.
+    referenceEngine_.process(reference);
+    referencePushed_ = true;
+    measurementEngine_.process(measurement);
+
+    dual_.process(reference, measurement);
+    dualEngaged_ = true;
+}
+
 void Analyser::reset() noexcept {
     measurementEngine_.reset();
     referenceEngine_.reset();
     referencePushed_ = false;
+    dual_.reset();
+    dualEngaged_ = false;
 }
 
 SnapshotPtr Analyser::publish(std::uint64_t droppedSamples) {
@@ -116,6 +147,27 @@ SnapshotPtr Analyser::publish(std::uint64_t droppedSamples) {
     snapshot->hasReference = referencePushed_;
     if (referencePushed_) {
         readBands(weights_, referenceEngine_, referencePowerScratch_, snapshot->referenceBands);
+    }
+
+    if (dualEngaged_ && dual_.frameCount() > 0) {
+        const auto tf = rta::dsp::makeSnapshot(dual_, config_.estimator);
+        TransferBlock block;
+        block.magnitudeDb = tf.magnitudeDb;
+        block.phaseDeg.resize(tf.phaseRadians.size());
+        // The one radians -> degrees crossing in the whole application: core
+        // wraps to (-pi, pi] because that is the natural output of a complex
+        // division, but every consumer in view/ works in degrees because
+        // PlotGeometry's phase pane runs +180 to -180.
+        for (std::size_t i = 0; i < tf.phaseRadians.size(); ++i) {
+            block.phaseDeg[i] =
+                tf.phaseRadians[i] * static_cast<float>(180.0 / std::numbers::pi);
+        }
+        // Copies the optional itself, not its value -- absence of coherence
+        // (below the effective-average gate) must survive this hop unchanged.
+        block.coherence = tf.coherence;
+        block.effectiveAverages = tf.effectiveAverages;
+        block.appliedDelaySamples = config_.referenceDelaySamples;
+        snapshot->transfer = std::move(block);
     }
 
     SnapshotPtr result(snapshot);
