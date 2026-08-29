@@ -43,29 +43,50 @@ loopback cable). Both need a person, not another agent — see
 
 ## Dependency spine
 
-```
-P1 RTA / SPL / generator            ✅ code done; 2 by-hand steps left (M2, M7)
- │
- ├─→ P2 dual-FFT  ──→ P3 MTW ─────────────┐   ✅ BUILT (8 tasks, docs/reports/003-dual-fft-engine.md)
- │        │                               │
- │        └─→ P4 sweep/IR ──→ P4b THD/STI │   needs IEC 60268-16 for STI
- │                  │                     │
- ├─→ P5 display layer, now four records ←─┘
- │     ├── L5a trace library + session     ✅ BUILT (8 tasks, this branch)
- │     ├── L5b targets / corridor / score  ⛔ blocked: ISO 2969 or SMPTE ST 202
- │     ├── L5c Bode layout, workspaces     ← wires L5a to RtaView; nothing does yet
- │     └── spectrograph
- │
- ├─→ P6 SPL-pro / multichannel workflows
- │                  │
- └─→ P7 solvers (auto-EQ, auto-delay, virtual processor, wizard) ← needs P2+P4+P5
-                    │
-     P8 research lanes (SyncSource-TF, AES-75, network audio, DSP SDK)
-     P9 productization (i18n, installers, licensing page, docs)
+```mermaid
+graph LR
+    P1["<b>P1</b> · RTA / SPL / generator<br/><i>built — M2 + M7 by hand</i>"]
+    P2["<b>P2</b> · dual-FFT engine<br/><i>BUILT 2026-08-29 · report 003</i>"]
+    P3["<b>P3</b> · MTW<br/><i>band stitching</i>"]
+    P4["<b>P4</b> · sweep / IR<br/><i>Farina, Schroeder, RT60</i>"]
+    P4b["<b>P4b</b> · THD / STI<br/><i>needs IEC 60268-16</i>"]
+    L5a["<b>L5a</b> · trace library + session<br/><i>BUILT — not yet wired</i>"]
+    L5b["<b>L5b</b> · targets / corridor / score<br/><i>needs ISO 2969 or SMPTE ST 202</i>"]
+    L5c["<b>L5c</b> · Bode, workspaces, spectrograph<br/><i>record written — build next</i>"]
+    P6["<b>P6</b> · SPL-pro + multichannel"]
+    P7["<b>P7</b> · solvers<br/><i>auto-EQ, auto-delay, wizard</i>"]
+    P8["<b>P8</b> · research lanes<br/><i>read-only, safe anytime</i>"]
+    P9["<b>P9</b> · productization<br/><i>i18n, installers, manual</i>"]
 
-     cepstrum / wavelet (G23) — moved OUT of P5 into the DSP lanes, because
-     it is DSP. Sitting it beside "draw a trace" confused two layers.
+    P1 --> P2 --> P3
+    P2 --> P4 --> P4b
+    P1 --> L5a --> L5c
+    L5a --> L5b
+    P2 -.->|"traces to draw"| L5c
+    P1 --> P6
+    P2 --> P6
+    P2 --> P7
+    P4 --> P7
+    L5c --> P7
+    P7 --> P9
+    P8 --> P9
+
+    classDef done fill:#1f3d2b,stroke:#4ade80,stroke-width:2px,color:#e8f5ec
+    classDef next fill:#3d3418,stroke:#fbbf24,stroke-width:2px,color:#fdf6e3
+    classDef blocked fill:#3d1f1f,stroke:#f87171,stroke-width:2px,color:#fde8e8
+    classDef later fill:#26262b,stroke:#71717a,stroke-width:1px,color:#d4d4d8
+
+    class P1,P2,L5a done
+    class L5c,P4 next
+    class L5b,P4b blocked
+    class P3,P6,P7,P8,P9 later
 ```
+
+**Green** is built. **Amber** is what to open next. **Red** is blocked on a
+purchase, not on engineering. **Grey** is later.
+
+`cepstrum / wavelet (G23)` moved OUT of P5 into the DSP lanes, because it is
+DSP. Sitting it beside "draw a trace" confused two layers.
 
 ## Where the critical path actually runs
 
