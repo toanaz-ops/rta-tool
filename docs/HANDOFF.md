@@ -3,8 +3,16 @@
 *2026-08-28, cuối phiên orchestrator kế nhiệm. Đọc file này + `docs/reports/002`
 + `docs/plans/MASTER-EXECUTION-PLAN.md` trước khi đọc bất kỳ dòng code nào.*
 
-**Cập nhật 2026-08-29:** lane L2 (xương sống P2) đã xây xong ở phiên sau file
-này được viết — xem `docs/reports/003-dual-fft-engine.md`. Phần bên dưới là ảnh
+**Cập nhật 2026-08-29 (lần hai — lane L5c ĐÃ XÂY XONG).** Mười nhiệm vụ, 35
+commit, `78ef14f..e14d0a0`. Hợp thể Bode (ribbon coherence + pane biên độ +
+pane pha trên MỘT trục tần số dùng chung), workspace 1–3 pane lưu xuống đĩa, và
+**cầu nối đầu tiên từ `app/` tới engine dual-FFT** — thứ đã xây và test xong
+trong `core/` nhưng chưa từng có ai gọi. Số đo ở block baseline bên dưới. Mục
+"Việc còn mở" đã viết lại: khoản nợ mà file này mang suốt hai phiên
+("stored-trace CHƯA NỐI") **nay đã đóng**.
+
+**Cập nhật 2026-08-29 (lần một):** lane L2 (xương sống P2) đã xây xong ở phiên
+sau file này được viết — xem `docs/reports/003-dual-fft-engine.md`. Phần bên dưới là ảnh
 chụp cuối phiên 2026-08-28 và giữ nguyên như lịch sử của ngày đó (mục "Hôm nay
 hạ cánh" nói L2 "bắt đầu từ trạm 3" — đúng tại thời điểm viết, không còn đúng
 hiện tại). "Việc còn mở" và "Lane tiếp theo" bên dưới đã được sửa để phản ánh
@@ -29,11 +37,27 @@ cấu hình không cộng gộp được nằm ở đúng MỘT chỗ:
 `docs/reports/003-dual-fft-engine.md`. Cấu hình ON **chưa được đo lại** trong
 phiên L2; không đoán số đó ở đây hay bất cứ đâu khác.
 
+**Đo lại cuối lane L5c (2026-08-29), trên cây ĐÃ COMMIT tại `e14d0a0`.** Hai
+cấu hình, đo riêng, **không cộng gộp** — chúng phủ hai tập target khác nhau:
+
+```
+ctest --test-dir build-l5c     -C Release   -> 357/357   (RTA_BUILD_APP=ON)
+ctest --test-dir build-l5c-off -C Release   -> 317/317   (RTA_BUILD_APP=OFF)
+measure_has_no_framework_deps               -> OK, 29 file quét (trước lane: 21)
+shots/rta-view.png (md5)                    -> d3e698964c8ffd7bcf2148b154f96e3d
+```
+
+`rta-view.png` **không đổi** qua cả lane — đó là bằng chứng `RtaView` vẫn vẽ
+đúng như cũ. `shots/transfer.png` và `shots/workspace.png` là hai ảnh mới và
+đều tất định; `main-live.png` đổi như dự kiến (bảng kênh giờ có MEAS/REF) và
+**không tất định theo thiết kế** — nó render từ một thread thời gian thực, nên
+đừng ghim băm cho nó.
+
 **Có BA guard framework khác nhau, đừng nhầm chúng với nhau:**
 
 ```
 core_has_no_framework_deps            -> OK (70 files scanned)
-measure_has_no_framework_deps         -> OK (21 files scanned)   <- app/src/trace + view + measure
+measure_has_no_framework_deps         -> OK (29 files scanned)   <- app/src/trace + view + measure
 platform_types_has_no_framework_deps  -> OK (5 files scanned)
 ```
 
@@ -92,20 +116,94 @@ JUCE cho lớp view, và một lượt nối liền các bin ở dải thấp.
 M7 (cáp loopback vật lý). Phiếu ở `docs/reports/T12-hardware-run.md`, bản dựng
 ASIO sẵn ở `build-asio/`. Không chặn lane nào.
 
-**Đường stored-trace được xây nhưng CHƯA NỐI.** Không chỗ nào gắn `TraceLibrary`
-vào `RtaView`. Đây là điểm dừng có chủ ý, không phải nợ — nhánh null của
-`RtaView` chứng minh được là giống hệt bản cũ, và băm `rta-view.png` khớp xác
-nhận điều đó. **L5c là lane nối nó vào — record của lane đó nay đã viết**
-(`docs/dsp/2026-08-29-display-layer-l5c.md`, 2026-08-29; trạm 2 xong nên lane
-bắt đầu ở trạm 3, không phải trạm 1), nhưng chưa có dòng code nào nối nó vào
-`app/`.
+**~~Đường stored-trace được xây nhưng CHƯA NỐI~~ — ĐÃ NỐI (2026-08-29, L5c
+nhiệm vụ 10).** `MainComponent` giờ sở hữu một `TraceLibrary` và trao nó cho mọi
+pane qua `WorkspaceView`. Test `"the library reaches every pane"` khẳng định
+**định danh** (`rta->library() == &library` và `transfer->library() == &library`),
+không phải khác-null, và khẳng định `library() == nullptr` *trước* lời gọi để
+phép khẳng định sau đó có thể sai được. Đó đúng là phép khẳng định lẽ ra đã bắt
+được khoảng trống này hai phiên trước.
 
-**L2 đã xây xong (2026-08-29), không còn ở trạm 3.** Tám nhiệm vụ, xem
-`docs/reports/003-dual-fft-engine.md` cho số liệu — không lặp lại số ở đây,
-xem block baseline phía trên. P3, P4b, P6b, P7 vốn chờ P2 nay hết bị chặn ở
-lane này. **Lane tiếp theo, theo thứ tự** (chi tiết và lý do ở mục "Suggested
-opening order" đã cập nhật trong `docs/plans/MASTER-EXECUTION-PLAN.md`): L4 +
-L5c song song (L5b vẫn chờ mua chuẩn), rồi L3 + L6b, rồi L7 giờ L2 đã vào.
+**~~`app/` chưa bao giờ gọi engine dual-FFT~~ — ĐÃ NỐI (L5c nhiệm vụ 5 và 6).**
+`measure::Snapshot` giờ mang `std::optional<TransferBlock>`;
+`Analyser::pushPair` lái `DualFftEngine` và chuyển radian sang **độ đúng một
+lần**, tại đúng một chỗ. `AnalysisThread` rút hai ring **đồng bộ** —
+`drainRole` cũ rút cạn từng ring độc lập, và một callback rơi vào giữa hai lần
+gọi sẽ ghép reference *t* với measurement *t*−hop, tức 42 ms lệch vĩnh viễn
+giết coherence ở tần số cao trước, đúng triệu chứng mà người vận hành sẽ đọc
+thành loa hỏng.
+
+**L2 (2026-08-29) và L5c (2026-08-29) đều đã xây xong.** L2: tám nhiệm vụ,
+`docs/reports/003-dual-fft-engine.md`. L5c: mười nhiệm vụ, số liệu ở block
+baseline phía trên — không lặp lại ở đây. **Lane tiếp theo, theo thứ tự**
+(chi tiết ở "Suggested opening order" trong
+`docs/plans/MASTER-EXECUTION-PLAN.md`): **L4** (sweep/IR — cần một lượt nghiên
+cứu trạm 1 trước, nó chưa có decision record), rồi **L3** + **L6b**, rồi **L7**
+giờ cả L2 và L5c đã vào. **L5b** vẫn chờ mua chuẩn.
+
+## Người có thể tự chạy gì, và sẽ thấy gì
+
+Không cần phần cứng nào cả.
+
+```
+cmake --build build-l5c --config Release --target rtatool_snapshot --parallel
+```
+
+```
+build-l5c/app/rtatool_snapshot_artefacts/Release/rtatool_snapshot.exe shots 1100 760
+```
+
+(Từ Git Bash phải gọi qua `cmd //c`; gọi thẳng trả 127.) Đọc `shots/`:
+
+- **`transfer.png`** — hợp thể Bode: ribbon coherence, pane biên độ, pane pha,
+  cả ba thẳng hàng trên cùng những cột pixel tần số.
+- **`workspace.png`** — đồ thị dải tần trên, hợp thể Bode dưới, trong một
+  workspace hai pane.
+- **`rta-view.png`** — **phải không đổi**; đó là phép kiểm rằng lane này không
+  đụng vào thứ vốn đã chạy.
+
+**Chạy app và xem một hàm truyền được ĐO thật.** Mở `rtatool.exe`, bật
+SYNTHETIC. Kênh 0 là Measurement, kênh 1 là Reference, đặt tự động. Kênh đo
+mang một delay 4 mẫu và một nền nhiễu −30 dB, nên:
+
+- pane biên độ nằm phẳng quanh 0 dB,
+- pane pha dốc xuống rồi wrap — **−30° tại 1 kHz, −120° tại 4 kHz**, đúng dạng
+  đóng φ(f) = −360·f·D/fs,
+- ribbon coherence sáng ở dải giữa và tối đi nơi nhiễu lấn át,
+- và các đường trace cũng mờ đi ở đúng những chỗ đó.
+
+Nếu pane pha là một vạch phẳng ở 0°, phép đổi radian→độ đã mất. Nếu coherence
+sập ở tần số cao mà chỗ khác không sao, phép rút hai ring không còn đồng bộ.
+
+**Ba điều không test nào chứng minh được — phải nhìn bằng mắt** (record §8):
+một đường ở alpha 0.25 có đọc ra là *thứ yếu nhưng vẫn hiện diện* trên nền
+graphite không; tỉ lệ 5:3 có đúng ở khoảng cách hai mét không; một dải pha kín
+chiều cao có đọc ra "không phân giải nổi" thay vì "hỏng" không.
+
+## Nợ kỹ thuật L5c để lại — đã phân loại, không có cái nào chặn merge
+
+Lượt review toàn nhánh đã xét từng khoản. Bản đầy đủ, cùng các bẫy và chín
+tuyên bố-test-sai mà lane này tìm ra, nằm ở `docs/reports/004-display-layer-l5c.md`.
+
+- **`MainComponent.cpp` không link vào target test nào**, nên phép reset vai trò
+  kênh khi rời SYNTHETIC không có test tự động. Reviewer đã xét cả phương án
+  tách hàm tự do và kết luận nó *không* đóng được lỗ: rủi ro nằm ở **chỗ gọi**,
+  không ở logic reset. Đóng thật thì cần một target test dựng được
+  `MainComponent` mà không có thiết bị âm thanh. **Đây là khoản đáng làm nhất.**
+- `frequencyAxis()` trả trục đảo ngược với bề rộng dưới ~66 px — **đã vá** ở
+  `e14d0a0` cùng lỗi mực tràn lề.
+- Không có gì khẳng định dòng chữ `STORED PHASE HIDDEN` tồn tại; xoá dòng đó
+  vẫn xanh. Nó cũng vẽ khi thư viện rỗng, tức không giấu gì cả.
+- Nhãn **và lưới** pane pha chen nhau khi unwrap lớn: `drawGrid` vẽ một đường
+  mỗi 10 đơn vị, nên delay 100 mẫu (~15000°) thành ~1500 đường mỗi lần paint.
+  Bước nhảy phải thích ứng theo `(dbTop−dbBottom)/paneHeight`, cho cả hai.
+- `Layout.cpp` còn một phép kẹp trọng số **bất khả quan sát** — không test dựa
+  trên đầu ra nào bắt được. Xoá nó, hoặc để lại kèm comment nói rõ là phòng thủ
+  và không quan sát được. **Đừng cố viết test cho nó** — test đó không tồn tại.
+- `coherence_gate_is_not_bypassed` chỉ quét `core/`. Reviewer kết luận **chấp
+  nhận được**: phía `app/` đã có test hành vi (`"coherence is withheld until
+  enough averages exist"`), mạnh hơn một phép grep. Ghi lại để không ai "sửa"
+  guard theo phản xạ.
 
 ## Quyết định CHỜ NGƯỜI — không tự quyết
 
@@ -114,6 +212,14 @@ L5c song song (L5b vẫn chờ mua chuẩn), rồi L3 + L6b, rồi L7 giờ L2 �
   sai đoán ra là một tuyên bố Class sai.
 - **Mua IEC 60268-16** — STI cho P4b. Cùng lý do.
 - Tên sản phẩm chính thức (đang là "RTA Tool" working name).
+- **Unwrap có nên hiện các trace pha đã lưu không?** (record §5a, câu hỏi 3.)
+  Hiện tại: ẩn, và pane nói ra là đang ẩn. Muốn hiện thì phải unwrap từng trace
+  lưu, rồi quyết trục có giãn ra để ôm chúng không — với vài capture ở các delay
+  khác nhau, dải đó chạy tới hàng nghìn độ và đường live thành một vạch phẳng
+  giữa pane. Đây là câu hỏi "một pane có chứa nổi hai delay không", không phải
+  chi tiết cài đặt.
+- **Cap 3 pane và workspace có tên** (record câu hỏi 1) và **dải màu cho
+  spectrograph** (câu hỏi 2) vẫn đang chờ.
 
 ## Bẫy đã trả học phí (đừng trả lần hai)
 

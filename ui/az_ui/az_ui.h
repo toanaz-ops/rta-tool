@@ -23,6 +23,7 @@
 
 #include "theme/Palette.h"
 #include "theme/Metrics.h"
+#include "theme/Layout.h"
 #include "theme/Typography.h"
 #include "theme/Primitives.h"
 #include "theme/AzLookAndFeel.h"

@@ -6,6 +6,7 @@
 #include "measure/Analyser.h"
 #include "measure/Snapshot.h"
 
+#include <cstddef>
 #include <cstdint>
 
 namespace rta::measure {
@@ -37,5 +38,16 @@ struct SyntheticSpec {
 /// construction and seeded deterministically; see rta/gen/Synthetic.h) --
 /// that is the precondition for `rta-view.png` being reviewable as a diff.
 [[nodiscard]] SnapshotPtr makeSyntheticSnapshot(const SyntheticSpec& spec);
+
+/// A deterministic transfer function: a pure delay, a notch, and a coherence
+/// dip. Built from the same closed forms the preview mockup uses so the
+/// picture stays recognisable, but as PER-BIN ARRAYS rather than a function
+/// sampled once per pixel -- which is the fourth mockup accident the L5c
+/// record names, and the one that composes with nothing.
+///
+/// Deterministic for the same reason makeSyntheticSnapshot is: `transfer.png`
+/// has to be reviewable as a byte-for-byte diff.
+[[nodiscard]] TransferBlock makeSyntheticTransfer(std::size_t fftSize, double sampleRate,
+                                                  int delaySamples);
 
 }  // namespace rta::measure

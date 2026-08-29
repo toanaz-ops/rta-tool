@@ -12,9 +12,10 @@
 #include "measure/Analyser.h"
 #include "measure/SyntheticInput.h"
 #include "rta/platform/AudioIo.h"
+#include "trace/TraceLibrary.h"
 #include "view/ChannelRoleTable.h"
 #include "view/DevicePanel.h"
-#include "view/RtaView.h"
+#include "view/WorkspaceView.h"
 
 #include <memory>
 #include <string>
@@ -23,9 +24,11 @@
 /// The real measurement window's contents: composition root for one screen,
 /// not a DSP class and not a drawing class beyond its own masthead and
 /// background. Left rail carries a LIVE/SYNTHETIC mode switch, the device
-/// panel and the channel role table; the rest of the window is the band
-/// plot, fed by `analysisThread_` regardless of which source is currently
-/// writing into the bus underneath it.
+/// panel and the channel role table; the rest of the window is `workspace_`,
+/// a 1..3 pane stack fed by `analysisThread_` regardless of which source is
+/// currently writing into the bus underneath it, plus `library_`, the
+/// stored-trace library every pane in it can draw from (task 10: the seam
+/// that stayed unreached for a whole session -- docs/HANDOFF.md).
 ///
 /// ## Trap T-1: member declaration order is load-bearing
 ///
@@ -37,6 +40,15 @@
 /// second, independent guarantee of the same thing (belt and braces, per the
 /// plan): getting this wrong is a crash that happens only at shutdown, on a
 /// customer's machine, once.
+///
+/// The same rule extends to `library_` and `workspace_`: `workspace_` holds
+/// a raw, non-owning pointer into `library_` (handed over by `setLibrary`
+/// below), so `library_` must be declared BEFORE `workspace_`. Declared
+/// earlier means destroyed LATER (reverse declaration order again):
+/// `workspace_` -- and every child pane torn down inside it -- unwinds
+/// first, while `library_` is still alive, and only then does `library_`
+/// itself go. Reversing the two would leave a child pane's destructor
+/// holding a pointer into an already-destroyed library.
 ///
 /// ## One bus, one reader, two possible writers
 ///
@@ -87,7 +99,12 @@ private:
     juce::TextButton modeSwitch_{"SYNTHETIC"};
     rta::view::DevicePanel devicePanel_;
     rta::view::ChannelRoleTable channelRoleTable_;
-    rta::view::RtaView rtaView_;
+
+    // --- library_ before workspace_ is load-bearing too. See the class
+    // comment's extension of trap T-1.
+    rta::trace::TraceLibrary library_;
+    rta::view::WorkspaceView workspace_;
+    // -------------------------------------------------------------------
 
     juce::Rectangle<int> mastheadArea_;
 

@@ -142,6 +142,16 @@ std::string encodeIndex(const SessionDocument& doc) {
         writeLine(out, "visible", e.visible ? "1" : "0");
     }
 
+    for (const auto& p : doc.panes) {
+        out += "[pane]\n";
+        // `view` is written verbatim, whatever string PaneSpec holds -- the
+        // codec does not know or care what a valid pane view name is (see
+        // Workspace.h). `weight` is a plain number and goes through the same
+        // to_chars path as every other numeric field.
+        writeLine(out, "view", p.view);
+        writeNumeric(out, "weight", p.weight);
+    }
+
     return out;
 }
 
@@ -179,7 +189,7 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
     SessionDocument doc;
     doc.schemaVersion = schemaVersion;
 
-    enum class Section { None, Capture, Entry };
+    enum class Section { None, Capture, Entry, Pane };
     Section section = Section::None;
 
     for (std::size_t i = 1; i < lines.size(); ++i) {
@@ -193,6 +203,11 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
         if (line == "[entry]") {
             doc.entries.emplace_back();
             section = Section::Entry;
+            continue;
+        }
+        if (line == "[pane]") {
+            doc.panes.emplace_back();
+            section = Section::Pane;
             continue;
         }
         if (!splitLine(line, key, value)) return DecodeStatus::Malformed;
@@ -241,6 +256,24 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
                 else if (v == "0") e.visible = false;
                 else return DecodeStatus::Malformed;
             }
+            else return DecodeStatus::Malformed;
+        } else if (section == Section::Pane) {
+            if (doc.panes.empty()) return DecodeStatus::Malformed;
+            PaneSpec& p = doc.panes.back();
+            // THE ASYMMETRY: `view` is a layout word, not a measurement, so it
+            // is stored verbatim with NO validation here -- an unrecognised
+            // name is resolved (and reported) by view/PaneRegistry.h at read
+            // time, never refused by the codec. Do not "tidy" this to match
+            // calibrationUnit/visible above: those guard against a guessed
+            // NUMBER masquerading as a real measurement, which is the one
+            // thing this format exists to refuse; a pane layout carries no
+            // such risk, and refusing a whole session of real captures over
+            // an unfamiliar layout word would destroy value to protect
+            // nothing. `weight`, by contrast, IS a number, so it keeps the
+            // same tryParse-or-Malformed treatment as every other numeric
+            // field -- the tolerance above is for the view name only.
+            if (key == "view") p.view = v;
+            else if (key == "weight") { if (!tryParse(v, p.weight)) return DecodeStatus::Malformed; }
             else return DecodeStatus::Malformed;
         } else {
             return DecodeStatus::Malformed;

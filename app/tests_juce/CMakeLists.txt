@@ -25,11 +25,28 @@
 
 add_executable(rtatool_view_tests
     test_stored_trace_layer.cpp
+    test_trace_stroke.cpp
+    test_transfer_view.cpp
+    # Split out of test_transfer_view.cpp (task 10's final-review fix), the
+    # same way test_analyser_transfer.cpp split off test_analyser.cpp: that
+    # file was at the project's 400-line hard cap, so the unwrap-toggle case
+    # -- self-contained, needing no fixture the helpers header does not
+    # already provide -- moved here to make room for the new margin-overpaint
+    # case.
+    test_transfer_view_unwrap.cpp
+    test_workspace_view.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)
     #   trace/TraceLibrary.h    -> needs TraceLibrary.cpp linked (entries/revision/setVisible)
     #   view/MeasureColours.h   -> az_ui (aliases only, but the module must link)
     #   view/TraceDecimator.h   -> header only, all inline
+    #   view/TraceStroke.h      -> needs TraceStroke.cpp linked (the stroking half, task 7)
+    #   view/PhaseDecimator.h,
+    #   view/CoherenceAlpha.h   -> header only, all inline
+    #   view/PlotAxes.h         -> needs PlotAxes.cpp linked (drawGrid /
+    #                              drawFrequencyLabels / drawLevelLabels,
+    #                              needed once test_transfer_view.cpp calls
+    #                              through TransferView.cpp)
     # Nothing else. SessionCodec.cpp / TraceBlobCodec.cpp are NOT listed even
     # though TraceLibrary.h includes SessionCodec.h: that include supplies the
     # LibraryEntry STRUCT, and no function defined in those translation units
@@ -37,7 +54,33 @@ add_executable(rtatool_view_tests
     # into a view test for no reason and hide a real link dependency behind a
     # source list that is wider than the code.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/StoredTraceLayer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TraceStroke.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.cpp
+    # test_transfer_view.cpp's own additional dependency set (task 8):
+    #   view/TransferView.h/.cpp    -> the composite under test
+    #   view/TransferRibbon.h/.cpp  -> its ribbon half (file-length split)
+    #   measure/PhaseUnwrap.h/.cpp  -> the unwrap toggle (decision 4)
+    #   measure/SyntheticSnapshot.h/.cpp, measure/Analyser.h/.cpp ->
+    #     makeSyntheticTransfer's own dependency chain (SyntheticSnapshot.h
+    #     includes Analyser.h for makeSyntheticSnapshot; Analyser.cpp must
+    #     link even though this target never calls it, for the same
+    #     one-translation-unit reason app/CMakeLists.txt names it explicitly
+    #     in both GUI binaries).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferRibbon.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PlotAxes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
+    # test_workspace_view.cpp's own additional dependency set (task 10):
+    #   view/WorkspaceView.h/.cpp -> the pane container under test; needs
+    #     az::ui::splitVertically, already linked in through az_ui below.
+    #   view/RtaView.h/.cpp       -> one of the two concrete pane types the
+    #     test builds through the factory and dynamic_casts back to, to read
+    #     library()/storedLayer() -- not needed by any OTHER file in this
+    #     target, hence not listed until now.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/WorkspaceView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RtaView.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:
@@ -53,6 +96,10 @@ target_include_directories(rtatool_view_tests PRIVATE
 # neighbour that happens to need the same ones today.
 target_link_libraries(rtatool_view_tests PRIVATE
     az_ui
+    # rta::core: Analyser.cpp (pulled in for makeSyntheticTransfer's own
+    # dependency chain, see the target_sources comment above) links against
+    # rta_core's DSP engines.
+    rta::core
     juce::juce_gui_basics
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags

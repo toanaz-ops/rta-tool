@@ -6,15 +6,12 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "measure/SnapshotSource.h"
+#include "view/PaneRegistry.h"
 #include "view/PlotGeometry.h"
 #include "view/RepaintGate.h"
 #include "view/StoredTraceLayer.h"
 
 #include <cstdint>
-
-namespace rta::trace {
-class TraceLibrary;
-}
 
 namespace rta::view {
 
@@ -33,7 +30,7 @@ namespace rta::view {
 /// sequence, and editing one -- rename, hide, recolour, regroup -- produces
 /// no sequence change, so the plot would never redraw and the edit would look
 /// ignored.
-class RtaView final : public juce::Component, private juce::Timer {
+class RtaView final : public juce::Component, public LibraryConsumer, private juce::Timer {
 public:
     explicit RtaView(const rta::measure::SnapshotSource& source);
     ~RtaView() override;
@@ -48,7 +45,26 @@ public:
     /// A null library contributes NOTHING to the render -- not an empty
     /// cached image composited over the plot, nothing -- so that path stays
     /// byte-for-byte what it was before stored traces existed.
-    void setLibrary(const rta::trace::TraceLibrary* library);
+    ///
+    /// `override`: implements `LibraryConsumer` (view/PaneRegistry.h), which
+    /// is how `WorkspaceView` reaches this without including this header.
+    void setLibrary(const rta::trace::TraceLibrary* library) override;
+
+    /// What `setLibrary` last stored -- production API added purely so
+    /// "the library reaches this pane" is a fact a test can read back
+    /// (`library() != nullptr`) rather than infer from pixels. This is the
+    /// exact seam L5a's stored-trace path sat unreached at for a whole
+    /// session (docs/HANDOFF.md): a library was built, a view could draw
+    /// one, and nothing called this setter. `app/tests_juce/
+    /// test_workspace_view.cpp` is its caller; deleting it deletes that
+    /// test's ability to say so.
+    [[nodiscard]] const rta::trace::TraceLibrary* library() const noexcept { return library_; }
+
+    /// The cached layer, exposed for the same reason `TransferView` exposes
+    /// its two: the O(1)-in-trace-count property is entirely a claim about
+    /// `rebuildCount()`, and multiplying this view by panes (`WorkspaceView`)
+    /// has to leave that claim true per pane, not just per view.
+    [[nodiscard]] const StoredTraceLayer& storedLayer() const noexcept { return storedLayer_; }
 
     void paint(juce::Graphics&) override;
     void resized() override;

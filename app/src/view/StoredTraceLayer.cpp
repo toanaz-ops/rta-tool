@@ -4,10 +4,13 @@
 #include "view/StoredTraceLayer.h"
 
 #include "trace/TraceLibrary.h"
+#include "view/CoherenceAlpha.h"
 #include "view/MeasureColours.h"
+#include "view/PhaseDecimator.h"
 #include "view/TraceDecimator.h"
+#include "view/TraceStroke.h"
 
-#include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <vector>
 
@@ -71,36 +74,9 @@ constexpr float kShadeBrightness[kShadeCount] = { 1.00f, 0.82f, 0.66f, 0.53f };
     return columns;
 }
 
-/// One vertical extent per column that has data. Min AND max, never a single
-/// representative sample: a narrow null between two representatives simply
-/// disappears, and a null is the thing the engineer is hunting.
-void strokeExtents(juce::Graphics& g, const std::vector<ColumnExtent>& extents,
-                   const PlotGeometry& geometry, int originY) {
-    for (std::size_t c = 0; c < extents.size(); ++c) {
-        const auto& extent = extents[c];
-        if (!extent.hasData) continue;
-
-        // yForDb CLAMPS, so a column whose peak never reaches the plot's
-        // bottom dB would otherwise draw as a point pinned to the floor --
-        // asserting a measurement AT the floor that was never taken. Skip the
-        // whole column instead: nothing in its measured range was visible, so
-        // nothing should be drawn for it.
-        if (static_cast<double>(extent.maxValue) < geometry.dbBottom) continue;
-
-        // yForDb is top-down, so the MAXIMUM dB is the SMALLER y.
-        const float yTop = geometry.yForDb(static_cast<double>(extent.maxValue))
-                           - static_cast<float>(originY);
-        const float yBottom = geometry.yForDb(static_cast<double>(extent.minValue))
-                              - static_cast<float>(originY);
-
-        // A column whose min and max coincide is a flat span, not an absence.
-        // Give it a full pixel or the trace vanishes wherever it is level.
-        const float height = std::max(1.0f, yBottom - yTop);
-        g.fillRect(static_cast<float>(c), yTop, 1.0f, height);
-    }
-}
-
 }  // namespace
+
+StoredTraceLayer::StoredTraceLayer(rta::trace::Field field) : field_(field) {}
 
 void StoredTraceLayer::draw(juce::Graphics& g, const rta::trace::TraceLibrary& library,
                             const PlotGeometry& geometry) {
@@ -170,23 +146,54 @@ void StoredTraceLayer::rebuild(const rta::trace::TraceLibrary& library,
         const auto* stored = library.trace(entry.traceId);
         if (stored == nullptr) continue;
 
-        // An entry whose trace has no magnitude is not an error to report from
-        // a paint path -- a trace can legitimately carry phase or coherence
-        // alone. There is simply no curve to draw for it here.
-        const auto magnitude = stored->field(rta::trace::Field::Magnitude);
+        // An entry whose trace has no data for THIS instance's field is not an
+        // error to report from a paint path -- a trace can legitimately carry
+        // phase or coherence alone, or magnitude alone. There is simply no
+        // curve to draw for it here.
+        const auto values = stored->field(field_);
         const double binHz = stored->binHz();
-        if (magnitude.empty() || binHz <= 0.0) continue;
+        if (values.empty() || binHz <= 0.0) continue;
 
-        const auto columns = columnsForBins(geometry, binHz, magnitude.size(), originX_, width);
-        // bridgeGaps AFTER decimation, not before: it operates on one extent
-        // per pixel column, which is exactly what a dotted-scatter low end
-        // needs joined -- bridging per-bin would be a different, much bigger
-        // change to what "the bins" even are.
-        const auto extents = bridgeGaps(decimateToColumns(magnitude, columns, width));
-        if (extents.empty()) continue;
+        const auto columns = columnsForBins(geometry, binHz, values.size(), originX_, width);
 
-        ig.setColour(colourForShade(entry.shadeIndex));
-        strokeExtents(ig, extents, geometry, originY_);
+        // Both fields' alpha comes from the trace's OWN coherence, when it has
+        // one -- an empty span otherwise, which strokeMagnitudeExtents and
+        // strokePhaseColumns both read as "no coherence measured", not "zero
+        // trust" (TraceStroke.h's contract comment).
+        const auto coherence = stored->field(rta::trace::Field::Coherence);
+        // `coherence` and `columns` can only disagree in length if a future
+        // change removes Trace::setCoherence's own size check against
+        // magnitude_ -- which is what currently makes the two always equal
+        // whenever coherence is non-empty. columnAlpha() would silently
+        // return {} (drawing opaque) if that ever broke; this assert turns
+        // that into a loud failure in a debug build instead of a trace that
+        // quietly stops fading.
+        assert(coherence.empty() || coherence.size() == columns.size());
+        const auto alpha = coherence.empty() ? std::vector<float>{}
+                                             : columnAlpha(coherence, columns, width);
+
+        const auto base = colourForShade(entry.shadeIndex);
+
+        if (field_ == rta::trace::Field::Phase) {
+            const auto phaseColumns = decimatePhaseToColumns(values, columns, width);
+            if (phaseColumns.empty()) continue;
+            // bridgeGaps is NOT applied to phase: it interpolates between two
+            // extents, and interpolating ACROSS A WRAP invents a sweep through
+            // the whole pane that nothing measured. Magnitude's gaps are a
+            // continuous curve sampled too coarsely; a phase straddle is a
+            // discontinuity, and joining across it would draw the exact
+            // 358-degree artefact wrapForDrawing exists to refuse.
+            const auto drawn = wrapForDrawing(phaseColumns);
+            strokePhaseColumns(ig, drawn, geometry, originY_, alpha, base);
+        } else {
+            // bridgeGaps AFTER decimation, not before: it operates on one
+            // extent per pixel column, which is exactly what a dotted-scatter
+            // low end needs joined -- bridging per-bin would be a different,
+            // much bigger change to what "the bins" even are.
+            const auto extents = bridgeGaps(decimateToColumns(values, columns, width));
+            if (extents.empty()) continue;
+            strokeMagnitudeExtents(ig, extents, geometry, originY_, alpha, base);
+        }
         drewAnything = true;
     }
 

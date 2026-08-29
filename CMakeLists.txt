@@ -81,6 +81,16 @@ if(RTA_BUILD_APP)
     endif()
 
     add_subdirectory(ui)
+
+    # az_ui_tests links az_ui and juce_gui_basics, so like rta_platform_juce_tests
+    # above it can only be added inside RTA_BUILD_APP -- there is no JUCE-free
+    # half of az_ui to test with RTA_BUILD_APP=OFF. Added AFTER
+    # add_subdirectory(ui) so the az_ui module target is defined before
+    # anything links it. Same pattern as app/tests_juce below.
+    if(RTA_BUILD_TESTS)
+        add_subdirectory(ui/tests)
+    endif()
+
     add_subdirectory(app)
 
     # rtatool_view_tests links az_ui and juce_gui_basics, so like

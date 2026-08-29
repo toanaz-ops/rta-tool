@@ -76,6 +76,8 @@ private:
     void runBody();
 
     void rebuildAnalyserIfEpochChanged();
+    void drain();
+    void drainPaired(int referenceChannel, int measurementChannel);
     void drainRole(rta::platform::ChannelRole role, bool isReference);
     void publishIfDue();
     void recordFault(rta::platform::Fault::Kind kind, const std::string& message);
@@ -87,8 +89,17 @@ private:
 
     /// Exactly one hop's worth of scratch, allocated once here rather than
     /// per drain call -- the analysis thread may allocate (T-4 says so
-    /// explicitly for `publish()`), but there is no reason to here.
+    /// explicitly for `publish()`), but there is no reason to here. Shared by
+    /// `drainRole` for whichever single role it is called with (reference or
+    /// measurement, one at a time), and by `drainPaired` for the measurement
+    /// half of a paired hop.
     std::vector<float> hopScratch_;
+
+    /// The reference channel's half of a paired hop, sized alongside
+    /// `hopScratch_` in the constructor. Kept separate rather than reused
+    /// because `drainPaired` needs both channels' current hop live at once
+    /// (peek both before discarding either -- see PairedDrain.h).
+    std::vector<float> referenceScratch_;
 
     std::atomic<SnapshotPtr> latest_;
     std::uint32_t lastPublishMs_ = 0;

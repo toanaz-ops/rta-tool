@@ -5,6 +5,7 @@
 #pragma once
 
 #include "trace/Trace.h"
+#include "trace/Workspace.h"
 
 #include <cstddef>
 #include <optional>
@@ -15,7 +16,14 @@
 
 namespace rta::trace {
 
-inline constexpr int kSchemaVersion = 1;
+// 2 adds the [pane] section (PaneSpec, below). decodeIndex refuses only a
+// schema NEWER than this constant, so raising it does not stop a schema=1
+// file from opening -- it only turns what an older build would see as an
+// unrecognised [pane] section (Malformed, "your session is corrupt": a lie)
+// into a schema=2 file that build correctly reports as NewerSchema ("this
+// needs a newer version": true and actionable). See docs/dsp/2026-08-29-
+// display-layer-l5c.md decision 6.
+inline constexpr int kSchemaVersion = 2;
 
 /// How the user has organised a capture. Every field editable -- unlike
 /// CaptureMeta, which records what the measurement was (spec §2).
@@ -31,6 +39,7 @@ struct SessionDocument {
     int schemaVersion = kSchemaVersion;
     std::vector<CaptureMeta> captures;
     std::vector<LibraryEntry> entries;
+    std::vector<PaneSpec> panes;
 };
 
 enum class DecodeStatus { Ok, Malformed, NewerSchema };

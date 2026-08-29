@@ -3,6 +3,8 @@
 // docs/plans/2026-08-27-audioio-rta-impl-plan.md §3.4, §6 Wave D.
 #include "measure/AnalysisThread.h"
 
+#include "measure/PairedDrain.h"
+
 #include <exception>
 #include <utility>
 
@@ -26,7 +28,8 @@ AnalysisThread::AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::C
     , bus_(bus)
     , baseConfig_(config)
     , analyser_(std::make_unique<Analyser>(config))
-    , hopScratch_(config.hopSize, 0.0f) {
+    , hopScratch_(config.hopSize, 0.0f)
+    , referenceScratch_(config.hopSize, 0.0f) {
     startThread();
 }
 
@@ -75,8 +78,7 @@ void AnalysisThread::runBody() {
 
         rebuildAnalyserIfEpochChanged();
 
-        drainRole(rta::platform::ChannelRole::Measurement, false);
-        drainRole(rta::platform::ChannelRole::Reference, true);
+        drain();
 
         publishIfDue();
     }
@@ -103,6 +105,45 @@ void AnalysisThread::rebuildAnalyserIfEpochChanged() {
     // would splice onto the
     // new one and mislabel every bin-to-Hz conversion.
     analyser_ = std::make_unique<Analyser>(cfg);
+}
+
+void AnalysisThread::drain() {
+    const int reference = bus_.config().firstChannelWithRole(rta::platform::ChannelRole::Reference);
+    const int measurement =
+        bus_.config().firstChannelWithRole(rta::platform::ChannelRole::Measurement);
+
+    // Both roles present means a transfer function is being measured, and the
+    // two streams must advance together -- see PairedDrain.h for what
+    // independent drains cost. With only one role assigned there is no pairing
+    // to preserve and the original path is both correct and cheaper.
+    if (reference >= 0 && measurement >= 0) {
+        drainPaired(reference, measurement);
+        return;
+    }
+    drainRole(rta::platform::ChannelRole::Measurement, false);
+    drainRole(rta::platform::ChannelRole::Reference, true);
+}
+
+void AnalysisThread::drainPaired(int referenceChannel, int measurementChannel) {
+    auto* referenceRing = bus_.ring(referenceChannel);
+    auto* measurementRing = bus_.ring(measurementChannel);
+    if (referenceRing == nullptr || measurementRing == nullptr) return;
+
+    const std::size_t hop = hopScratch_.size();
+    const std::size_t hops = pairedHopCount(referenceRing->availableToRead(),
+                                            measurementRing->availableToRead(), hop);
+
+    for (std::size_t i = 0; i < hops; ++i) {
+        // peek both BEFORE discarding either: a short read on the second ring
+        // after the first has already been discarded would drop a hop from one
+        // channel only -- creating the very misalignment this function exists
+        // to prevent, and doing it under the code that prevents it.
+        if (referenceRing->peek(referenceScratch_) != hop) break;
+        if (measurementRing->peek(hopScratch_) != hop) break;
+        referenceRing->discard(hop);
+        measurementRing->discard(hop);
+        analyser_->pushPair(referenceScratch_, hopScratch_);
+    }
 }
 
 void AnalysisThread::drainRole(rta::platform::ChannelRole role, bool isReference) {

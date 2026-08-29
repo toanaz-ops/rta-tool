@@ -3,6 +3,7 @@
 // docs/plans/2026-08-27-audioio-rta-impl-plan.md §3.4, §6 Wave D.
 #pragma once
 
+#include "measure/SyntheticImpairment.h"
 #include "rta/gen/Synthetic.h"
 #include "rta/platform/CaptureBus.h"
 
@@ -49,6 +50,29 @@ public:
         /// one dB definition this app uses everywhere.
         double amplitude = 0.1;
         std::uint32_t seed = 0x5EEDu;
+
+        /// Below this, noise is OFF -- the generator is not called and the
+        /// channels stay bit-identical.
+        static constexpr double kNoiseOffDb = -120.0;
+
+        /// Applied to the MEASUREMENT channel only, so the two channels stop
+        /// being identical and the transfer function stops being H = 1. The
+        /// display then has an answer that can be checked by eye against the
+        /// readout: phi(f) = -360*f*D/fs.
+        int measurementDelaySamples = 0;
+
+        /// Independent noise on the measurement channel, dB relative to
+        /// `amplitude`. Drives coherence below 1 in a way an operator can
+        /// reason about -- gamma^2 = S/(S+N) per bin -- which is what makes the
+        /// coherence ribbon and the trace fade visible at all without a room,
+        /// a microphone, and somebody talking.
+        ///
+        /// `kNoiseOffDb` is a genuine OFF, not merely a very small level: at or
+        /// below it the generator is not called at all and the two channels
+        /// stay bit-identical. A default must not change behaviour for a caller
+        /// that did not opt in, and "inaudibly small" is not the same promise
+        /// as "unchanged".
+        double measurementNoiseDb = kNoiseOffDb;
     };
 
     /// Calls `bus.prepare()` and `bus.setActive(true)` here, on the message
@@ -80,12 +104,20 @@ private:
     std::unique_ptr<rta::gen::SyntheticPink> pink_;
     std::unique_ptr<rta::gen::SyntheticSine> sine_;
 
-    /// One block, regenerated in place every iteration. Written into BOTH
-    /// requested channels (bus.prepare(rate, 2, ...): the same content on
-    /// each, since this class has no notion of measurement vs. reference --
-    /// which channel is analysed as which is a `ChannelConfig` decision the
-    /// device panel makes, not this class's.
+    /// The clean block, regenerated in place every iteration and written to
+    /// whichever channel `bus_.config()` reports as Reference.
     std::vector<float> block_;
+
+    /// The MEASUREMENT channel's block: a copy of `block_` run through
+    /// `delay_` and `addNoise` -- see SyntheticImpairment.h for why an
+    /// identity transfer function (both channels bit-identical) is the one
+    /// picture this class must not put on screen. Which physical channel
+    /// this is written to is a `ChannelConfig` role lookup, not a fixed
+    /// index -- see runBody().
+    std::vector<float> measurementBlock_;
+
+    DelayLine measurementDelay_;
+    std::uint32_t noiseState_;
 };
 
 }  // namespace rta::measure

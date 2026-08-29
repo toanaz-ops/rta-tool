@@ -30,9 +30,17 @@
 #include "dev/preview/PhaseAlignPreview.h"
 #include "dev/preview/TargetMatchPreview.h"
 #include "dev/preview/TransferFunctionPreview.h"
+#include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 #include "measure/SyntheticSnapshot.h"
+#include "trace/Workspace.h"
+#include "view/PaneRegistry.h"
 #include "view/RtaView.h"
+#include "view/TransferView.h"
+#include "view/WorkspaceView.h"
+
+#include <memory>
+#include <vector>
 
 namespace
 {
@@ -115,6 +123,56 @@ int main (int argc, char** argv)
 
         rta::view::RtaView component (source);
         if (! renderComponent (component, outDir, "rta-view.png", width, height))
+            ++failures;
+    }
+
+    {
+        // transfer.png: the Bode composite (task 8), fed a deterministic
+        // synthetic transfer (fixed fftSize/sampleRate/delay -- no threads,
+        // no timing) so this is the same picture every run, the same
+        // precondition rta-view.png already relies on. delaySamples=18 is
+        // picked to review, not derived from a spec: at fftSize=4096 it
+        // carries the phase trace through 7.5 wraps by 20 kHz (360*20000*18/
+        // 48000 = 2700 degrees) -- enough to show the wrap/pen-lift machinery
+        // repeatedly without collapsing into solid full-band columns -- and
+        // both of makeSyntheticTransfer's coherence dips (LF, and the 2 kHz
+        // notch) land inside the plotted 20-20000 Hz range. Changing either
+        // number changes what the eyes-only review below is judging.
+        auto snapshot = std::make_shared<rta::measure::Snapshot> ();
+        snapshot->sequence = 1;
+        snapshot->sampleRate = 48000.0;
+        snapshot->fftSize = 4096;
+        snapshot->transfer = rta::measure::makeSyntheticTransfer (snapshot->fftSize, snapshot->sampleRate, 18);
+        const rta::measure::StaticSnapshotSource source (snapshot);
+
+        rta::view::TransferView component (source);
+        if (! renderComponent (component, outDir, "transfer.png", width, height))
+            ++failures;
+    }
+
+    {
+        // workspace.png: the 1..3 pane vertical stack (record decision 6) --
+        // an `rta` pane above a `transfer` composite, both reading the SAME
+        // snapshot, so the picture is one coherent (if synthetic)
+        // measurement rather than two unrelated fixtures sharing a window.
+        // Bands come from makeSyntheticSnapshot (same fixture rta-view.png
+        // renders), transfer from makeSyntheticTransfer (same fixture
+        // transfer.png renders) -- both deterministic, so this is the same
+        // picture every run, same precondition as every other snapshot here.
+        const rta::measure::SyntheticSpec spec;
+        auto snapshot = std::make_shared<rta::measure::Snapshot> (*rta::measure::makeSyntheticSnapshot (spec));
+        snapshot->transfer = rta::measure::makeSyntheticTransfer (snapshot->fftSize, snapshot->sampleRate, 18);
+        const rta::measure::StaticSnapshotSource source (snapshot);
+
+        rta::view::WorkspaceView component (
+            std::vector<rta::trace::PaneSpec>{ { "rta", 1.0f }, { "transfer", 1.0f } },
+            [&source] (rta::view::PaneView view) -> std::unique_ptr<juce::Component>
+            {
+                if (view == rta::view::PaneView::Transfer)
+                    return std::make_unique<rta::view::TransferView> (source);
+                return std::make_unique<rta::view::RtaView> (source);
+            });
+        if (! renderComponent (component, outDir, "workspace.png", width, height))
             ++failures;
     }
 

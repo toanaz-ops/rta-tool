@@ -5,6 +5,7 @@
 // given SyntheticSpec must always produce the same Snapshot -- that is the
 // precondition for the PNG being reviewable as a byte-for-byte diff.
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -73,5 +74,121 @@ TEST_CASE("The default synthetic spec is a usable picture", "[synthetic-snapshot
         if (band.centreHz >= 50.0f && band.centreHz <= 10000.0f) {
             CHECK(band.levelDb > -120.0f);
         }
+    }
+}
+
+// ---------------------------------------------------------------------
+// makeSyntheticTransfer: the per-bin fixture behind transfer.png. Every
+// claim below is independently checkable (a closed form or a length/range
+// fact) rather than pinning whatever the implementation happens to print --
+// project CLAUDE.md's verification standard applies to a fixture exactly as
+// much as to production DSP, because a wrong fixture would make transfer.png
+// look right for the wrong reason.
+// ---------------------------------------------------------------------
+
+namespace {
+
+/// A copy of the fixture's own (-180, 180] wrap (SyntheticSnapshot.cpp's
+/// `wrapDegrees180`), NOT an independent implementation: a bug shared by both
+/// copies of the wrap convention itself would still agree here. What this
+/// copy actually buys is not having to include the production header for one
+/// static function; the real assertion below is the closed-form phase slope
+/// (`-360*hz*D/fs`), which this function only wraps into the same range the
+/// fixture's output is already in -- any sign, scale, or unit error in the
+/// slope itself has nothing to do with the wrap and is what the test
+/// actually catches.
+float wrapDeg(double deg) {
+    double w = std::fmod(deg + 180.0, 360.0);
+    if (w <= 0.0) w += 360.0;
+    return static_cast<float>(w - 180.0);
+}
+
+}  // namespace
+
+// CATCHES: an off-by-one in the bin count (fftSize/2 instead of fftSize/2+1,
+// or vice versa), which would desync every downstream column-mapping index
+// against the coherence/phase arrays by one bin.
+TEST_CASE("makeSyntheticTransfer's arrays are fftSize/2 + 1 long", "[synthetic-transfer]") {
+    constexpr std::size_t kFftSize = 2048;
+    const auto block = makeSyntheticTransfer(kFftSize, 48000.0, 20);
+
+    const std::size_t expected = kFftSize / 2 + 1;
+    CHECK(block.magnitudeDb.size() == expected);
+    CHECK(block.phaseDeg.size() == expected);
+    REQUIRE(block.coherence.has_value());
+    CHECK(block.coherence->size() == expected);
+}
+
+// CATCHES: a phase generator that used radians where Snapshot.h's contract
+// is degrees, one that forgot the minus sign (measurement LEADING the
+// reference instead of lagging it), or one that wrapped with the wrong
+// convention (e.g. [0, 360) instead of (-180, 180]) -- any of those would
+// diverge from the closed form at bins far enough out to have wrapped at
+// least once.
+TEST_CASE("makeSyntheticTransfer's phase matches the pure-delay closed form", "[synthetic-transfer]") {
+    constexpr std::size_t kFftSize = 4096;
+    constexpr double kSampleRate = 48000.0;
+    constexpr int kDelaySamples = 25;
+    const auto block = makeSyntheticTransfer(kFftSize, kSampleRate, kDelaySamples);
+
+    const double binHz = kSampleRate / static_cast<double>(kFftSize);
+    // A handful of bins spread across the range, including some past the
+    // point where -360*f*D/fs has wrapped more than once (kDelaySamples=25
+    // over a 4096-point FFT wraps well before Nyquist).
+    for (const std::size_t k : { std::size_t{0}, std::size_t{10}, std::size_t{100}, std::size_t{500},
+                                 std::size_t{1000}, kFftSize / 2 }) {
+        CAPTURE(k);
+        const double hz = static_cast<double>(k) * binHz;
+        const double exact = -360.0 * hz * static_cast<double>(kDelaySamples) / kSampleRate;
+        CHECK(block.phaseDeg[k] == Catch::Approx(wrapDeg(exact)).margin(1e-3));
+    }
+}
+
+// CATCHES: a coherence curve that is flat (no dip modelled at all -- the
+// fixture would then never exercise the ribbon's fade or the alpha-differs
+// test in test_transfer_view.cpp), and one that leaks outside [0, 1] (which
+// alphaForCoherence's own contract assumes never happens for a sane
+// producer).
+TEST_CASE("makeSyntheticTransfer's coherence dips at the notch and stays in [0, 1]",
+          "[synthetic-transfer]") {
+    constexpr std::size_t kFftSize = 4096;
+    constexpr double kSampleRate = 48000.0;
+    const auto block = makeSyntheticTransfer(kFftSize, kSampleRate, 20);
+    REQUIRE(block.coherence.has_value());
+
+    const double binHz = kSampleRate / static_cast<double>(kFftSize);
+    const auto bandCoherenceAt = [&](double targetHz) {
+        const auto k = static_cast<std::size_t>(std::llround(targetHz / binHz));
+        return (*block.coherence)[k];
+    };
+
+    const float midbandCoherence = bandCoherenceAt(1000.0);   // flat region
+    const float notchCoherence = bandCoherenceAt(2000.0);     // the dip's centre
+
+    CHECK(notchCoherence < midbandCoherence);
+
+    for (const float g : *block.coherence) {
+        CHECK(g >= 0.0f);
+        CHECK(g <= 1.0f);
+    }
+}
+
+// CATCHES: any hidden state -- an uninitialised scratch buffer, a static
+// counter, an RNG seeded from wall-clock time -- that would make transfer.png
+// non-reproducible across two runs of rtatool_snapshot on the same machine.
+TEST_CASE("makeSyntheticTransfer is deterministic", "[synthetic-transfer]") {
+    const auto a = makeSyntheticTransfer(2048, 48000.0, 17);
+    const auto b = makeSyntheticTransfer(2048, 48000.0, 17);
+
+    REQUIRE(a.magnitudeDb.size() == b.magnitudeDb.size());
+    for (std::size_t i = 0; i < a.magnitudeDb.size(); ++i) {
+        CHECK(a.magnitudeDb[i] == b.magnitudeDb[i]);
+        CHECK(a.phaseDeg[i] == b.phaseDeg[i]);
+    }
+    REQUIRE(a.coherence.has_value());
+    REQUIRE(b.coherence.has_value());
+    REQUIRE(a.coherence->size() == b.coherence->size());
+    for (std::size_t i = 0; i < a.coherence->size(); ++i) {
+        CHECK((*a.coherence)[i] == (*b.coherence)[i]);
     }
 }

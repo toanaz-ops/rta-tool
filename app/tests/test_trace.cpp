@@ -49,6 +49,18 @@ TEST_CASE("a second field must match the magnitude's length", "[trace]") {
     CHECK(t->setPhase(std::vector<float>(5, 1.5f)));
     CHECK(t->has(Field::Phase));
     CHECK(t->field(Field::Phase).size() == 5u);
+
+    // setCoherence's own length refusal, mirrored -- this is what pins the
+    // invariant app/src/view/StoredTraceLayer.cpp leans on (coherence, once
+    // set, can only ever be empty or exactly magnitude_.size()). Without this
+    // half of the test, deleting setCoherence's length check leaves the whole
+    // 328-test suite green while CoherenceAlpha.h's columnAlpha() silently
+    // starts drawing a mismatched trace as fully trusted.
+    CHECK_FALSE(t->setCoherence(std::vector<float>(4, 0.0f)));
+    CHECK_FALSE(t->has(Field::Coherence));
+    CHECK(t->setCoherence(std::vector<float>(5, 0.9f)));
+    CHECK(t->has(Field::Coherence));
+    CHECK(t->field(Field::Coherence).size() == 5u);
 }
 
 TEST_CASE("binHz comes from the stored rate and size, not a stored axis", "[trace]") {

@@ -52,6 +52,20 @@ target_sources(rtatool PRIVATE
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
     src/view/StoredTraceLayer.cpp
+    # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
+    # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
+    src/view/TraceStroke.cpp
+    # TransferView.cpp is the Bode composite (task 8); TransferRibbon.cpp is
+    # its ribbon half, split out to keep TransferView.cpp under the file-
+    # length cap (see that file's own header comment for why).
+    src/view/TransferView.cpp
+    src/view/TransferRibbon.cpp
+    # WorkspaceView.cpp is task 10's pane container (decision 6) -- the file
+    # that finally attaches TraceLibrary to a real pane. Deliberately does
+    # NOT include RtaView.h/TransferView.h itself (see its own class
+    # comment); those two are still needed here for MainComponent.cpp's pane
+    # factory, which is why they are already above.
+    src/view/WorkspaceView.cpp
     # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
     # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
     # the moment the VIEW reads the library, both GUI binaries need the
@@ -74,6 +88,10 @@ target_sources(rtatool PRIVATE
     # rtatool_snapshot): one static library would not receive the
     # JUCE_MODULE_AVAILABLE_* defines juce_add_gui_app injects.
     src/measure/Analyser.cpp
+    # PhaseUnwrap.cpp is what TransferView.cpp's unwrap toggle (decision 4)
+    # calls into -- JUCE-free, but the same one-static-library caveat above
+    # applies, so it is named explicitly in both GUI binaries' source lists.
+    src/measure/PhaseUnwrap.cpp
 )
 
 # app/src as an include root: app/src/measure and app/src/view headers
@@ -131,16 +149,32 @@ target_sources(rtatool_snapshot PRIVATE
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
     src/view/StoredTraceLayer.cpp
+    # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
+    # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
+    src/view/TraceStroke.cpp
+    # TransferView.cpp is the Bode composite (task 8); TransferRibbon.cpp is
+    # its ribbon half, split out to keep TransferView.cpp under the file-
+    # length cap. Needed here for transfer.png below.
+    src/view/TransferView.cpp
+    src/view/TransferRibbon.cpp
+    # WorkspaceView.cpp is task 10's pane container (decision 6), needed here
+    # for workspace.png. Deliberately does NOT include RtaView.h/
+    # TransferView.h itself -- see its own class comment.
+    src/view/WorkspaceView.cpp
     # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
     # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
     # the moment the VIEW reads the library, both GUI binaries need the
     # definitions linked. It pulls in nothing else -- its only include is its
     # own header.
     src/trace/TraceLibrary.cpp
-    # Only what the tool's rta-view.png render (via makeSyntheticSnapshot)
-    # needs: the offline, thread-free measurement path.
+    # Only what the tool's rta-view.png / transfer.png renders (via
+    # makeSyntheticSnapshot / makeSyntheticTransfer) need: the offline,
+    # thread-free measurement path. PhaseUnwrap.cpp is TransferView's unwrap
+    # toggle (decision 4), JUCE-free but named explicitly for the same
+    # one-static-library reason as Analyser.cpp above it.
     src/measure/Analyser.cpp
     src/measure/SyntheticSnapshot.cpp
+    src/measure/PhaseUnwrap.cpp
     # main-live.png additionally renders the real MainComponent in synthetic
     # mode (T10/T11's own composition root, plan §0 item 4's "no hardware at
     # all, on CI, and offscreen" made literal) -- which needs the live-device

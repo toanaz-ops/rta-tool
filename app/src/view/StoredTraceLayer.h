@@ -7,6 +7,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "trace/Trace.h"
 #include "view/PlotGeometry.h"
 
 #include <cstdint>
@@ -33,6 +34,12 @@ namespace rta::view {
 /// this image.
 class StoredTraceLayer {
 public:
+    /// Which field this instance rasterises. Fixed at construction, NOT part of
+    /// the cache key: one instance draws one field for its whole life, so a key
+    /// term for it could never differ between two calls. The Bode composite
+    /// owns two instances, one per pane.
+    explicit StoredTraceLayer(rta::trace::Field field = rta::trace::Field::Magnitude);
+
     /// Composites the cached image over `g`, rebuilding it first if anything
     /// the image depends on moved since the last call.
     void draw(juce::Graphics& g, const rta::trace::TraceLibrary& library,
@@ -63,6 +70,10 @@ public:
 
 private:
     void rebuild(const rta::trace::TraceLibrary& library, const PlotGeometry& geometry);
+
+    /// See the constructor's comment: fixed for the instance's whole life,
+    /// deliberately absent from the cache key below.
+    const rta::trace::Field field_;
 
     juce::Image image_;
 
