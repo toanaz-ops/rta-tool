@@ -41,8 +41,14 @@ TEST_CASE("splitVertically consumes the area exactly, gaps included",
     // unpainted between two panes, and no pane overhangs the bottom. Asserted
     // over heights that do NOT divide evenly, which is where a naive
     // round-each-independently implementation leaks a row.
+    //
+    // The origin is deliberately NOT (0, 0). With it at the origin, every
+    // assertion below holds for an implementation that ignores area.getY()
+    // entirely and stacks from zero -- the whole vertical placement of the
+    // split would be asserted by nothing. A nonzero y costs one character and
+    // makes every assertion in this case cover the origin too.
     for (const int height : { 199, 200, 201, 333, 761 }) {
-        const juce::Rectangle<int> area(0, 0, 100, height);
+        const juce::Rectangle<int> area(7, 13, 100, height);
         const std::vector<float> weights{ 5.0f, 3.0f, 2.0f };
         const int gap = 4;
         const auto rects = az::ui::splitVertically(area, weights, gap);
@@ -66,10 +72,27 @@ TEST_CASE("splitVertically refuses to invent a pane out of nothing",
     // the caller asked for N children and must get N back, or its own indexing
     // into the result silently shifts by one. A zero-height child is a visible
     // nothing; a missing child is a wrong arrangement.
-    const std::vector<float> weights{ 1.0f, 0.0f, 1.0f };
+    //
+    // NEGATIVE, not just zero: the implementation clamps with
+    // std::max(0.0f, w), and with only a 0.0f in the vector that clamp can be
+    // deleted with every test still green. A negative weight is also what a
+    // normalised-on-read layout file can actually deliver.
+    const std::vector<float> weights{ 1.0f, -1.0f, 1.0f };
     const auto rects = az::ui::splitVertically(area, weights, 0);
     REQUIRE(rects.size() == 3u);
     CHECK(rects[1].getHeight() == 0);
+    // The two real panes still split the whole area between them -- a negative
+    // weight must not leak height out of the total.
+    CHECK(rects[0].getHeight() + rects[2].getHeight() == area.getHeight());
+
+    // Every weight non-positive: nobody expressed a preference, so equal
+    // shares. Untested, this branch is a comment with an implementation
+    // attached.
+    const std::vector<float> noPreference{ 0.0f, 0.0f };
+    const auto equal = az::ui::splitVertically(area, noPreference, 0);
+    REQUIRE(equal.size() == 2u);
+    CHECK(equal[0].getHeight() == equal[1].getHeight());
+    CHECK(equal[0].getHeight() + equal[1].getHeight() == area.getHeight());
 
     // Area shorter than the gaps alone: every child clamps to zero height and
     // none goes negative. juce::Rectangle happily holds a negative height and

@@ -31,6 +31,13 @@ namespace az::ui {
 /// yields a zero-height child rather than a dropped one: the caller indexes
 /// the result against its own child list, and a silently shorter result
 /// misaligns every child after it.
+///
+/// One degenerate case is worth knowing about: when `area` is shorter than the
+/// gaps alone, every child clamps to zero height but the y cursor still
+/// advances one gap per child, so the trailing zero-height rectangles sit
+/// BELOW `area.getBottom()`. Nothing draws -- they have no height -- but a
+/// caller positioning something from a returned rectangle's y should not
+/// assume the result is contained in `area` at sizes that small.
 [[nodiscard]] std::vector<juce::Rectangle<int>> splitVertically(
     juce::Rectangle<int> area, std::span<const float> weights, int gapPx);
 
