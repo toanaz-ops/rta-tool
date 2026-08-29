@@ -71,8 +71,9 @@ public:
     void pushMeasurement(std::span<const float> samples);
 
     /// Feed samples for the reference role. A `Snapshot` only carries
-    /// `referenceBands` (and sets `hasReference`) once this has been called
-    /// at least once since construction or the last `reset()`.
+    /// `referenceBands` (and sets `hasReference`) once this or `pushPair`
+    /// has been called at least once since construction or the last
+    /// `reset()`.
     void pushReference(std::span<const float> samples);
 
     /// Feed one hop of BOTH channels, same time instant.
@@ -84,8 +85,18 @@ public:
     /// hoping they stay in step is the defect AnalysisThread's paired drain
     /// (task 6) exists to close.
     ///
-    /// Throws `std::invalid_argument` (out of DualFftEngine::process) if the
-    /// two spans differ in length.
+    /// **Also feeds the single-channel spectrum engines**, so a paired push
+    /// still lights up the band bars and sets `hasReference`. A hop therefore
+    /// goes through EXACTLY ONE of `pushPair`, or `pushMeasurement` +
+    /// `pushReference` -- never both. Calling both for the same hop
+    /// double-counts every frame in the spectrum averages and inflates
+    /// `framesAnalysed`, which is a wrong RTA number rather than a crash.
+    ///
+    /// Validates the two lengths ITSELF, before touching any engine, and
+    /// throws `std::invalid_argument` if they differ. Leaving the check to
+    /// `DualFftEngine::process` would let a rejected call still feed both
+    /// spectrum engines and latch `hasReference` on its way to the throw -- a
+    /// half-accepted pair, from a call whose contract says it was refused.
     void pushPair(std::span<const float> reference, std::span<const float> measurement);
 
     /// Discards both engines' buffered samples and running averages. Does

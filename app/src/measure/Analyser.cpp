@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <numbers>
+#include <stdexcept>
 #include <utility>
 
 namespace rta::measure {
@@ -34,6 +35,10 @@ rta::dsp::DualFftEngine::Config toDualConfig(const Analyser::Config& config) {
     dualConfig.window = config.window;
     dualConfig.averaging = config.transferAveraging;
     dualConfig.fifoDepth = config.transferFifoDepth;
+    // TransferAveraging::Exponential needs this too, same as
+    // toEngineConfig() -- without it, Exponential is a mode Config exposes
+    // and nobody can tune.
+    dualConfig.timeConstantSeconds = config.timeConstantSeconds;
     dualConfig.referenceDelaySamples = config.referenceDelaySamples;
     return dualConfig;
 }
@@ -91,6 +96,17 @@ void Analyser::pushReference(std::span<const float> samples) {
 }
 
 void Analyser::pushPair(std::span<const float> reference, std::span<const float> measurement) {
+    // Validated HERE, before touching any engine -- not left to
+    // DualFftEngine::process, whose own check runs only after the two
+    // SpectrumEngine::process calls below. Refusing the pair AFTER already
+    // feeding those would leave a half-accepted call behind: bands advanced,
+    // hasReference latched, from a call whose contract says it never
+    // happened.
+    if (reference.size() != measurement.size()) {
+        throw std::invalid_argument(
+            "Analyser::pushPair: reference and measurement spans must be the same length");
+    }
+
     // Feed the single-channel RTA path too, so a paired push still lights up
     // the band/spectrum readouts -- pushPair is additional to
     // pushMeasurement/pushReference, not a substitute for what they publish.

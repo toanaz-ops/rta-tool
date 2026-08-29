@@ -10,6 +10,7 @@
 add_executable(rtatool_analysis_tests
     test_levels.cpp
     test_analyser.cpp
+    test_analyser_transfer.cpp
     test_synthetic_snapshot.cpp
     test_plot_geometry.cpp
     test_readouts.cpp
