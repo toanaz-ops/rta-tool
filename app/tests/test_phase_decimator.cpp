@@ -8,9 +8,6 @@
 
 #include <vector>
 
-using rta::view::DrawnPhaseColumn;
-using rta::view::PhaseColumn;
-
 TEST_CASE("wrapTo180 uses core's own half-open convention", "[phase-decimator]") {
     // rta::dsp::TransferSnapshot::phaseRadians is documented as wrapped to
     // (-pi, pi]. Matching that here -- rather than [-180, 180) -- means a
@@ -114,6 +111,55 @@ TEST_CASE("the pen lifts exactly where the drawn trace wraps", "[phase-decimator
     CHECK_FALSE(drawn[1].penLift);
     CHECK(drawn[2].penLift);        // -125 -> +135 is the wrap
     CHECK_FALSE(drawn[3].penLift);
+}
+
+TEST_CASE("the pen lifts on the column AFTER a straddle or a band",
+          "[phase-decimator]") {
+    // `wrapForDrawing` clears `havePrevious` in three places -- a hole, a band,
+    // and a straddle -- and every other case in this file uses a SINGLE column
+    // for the band and the straddle, so two of those three resets are asserted
+    // by nothing. Deleting the negation in `havePrevious = !d.straddlesWrap`
+    // leaves the whole file green.
+    //
+    // Both halves below are built so the midpoint-jump term CANNOT be what
+    // lifts the pen: the second column's drawn midpoint is one degree from the
+    // first's. If the reset is removed, `penLift` goes false and the trace
+    // draws a line straight across the pane, through the wrap, as though the
+    // phase had swept the whole range.
+    SECTION("after a straddle") {
+        // Unwrapped 179, 181 | 180, 178. Column 0 straddles (179 -> +179,
+        // 181 -> -179). Column 1 does not, and its midpoint 179 sits one
+        // degree from column 0's 180.
+        const std::vector<float> wrapped{ 179.0f, -179.0f, 180.0f, 178.0f };
+        const std::vector<int> columnForBin{ 0, 0, 1, 1 };
+
+        const auto drawn =
+            rta::view::wrapForDrawing(rta::view::decimatePhaseToColumns(wrapped, columnForBin, 2));
+        REQUIRE(drawn.size() == 2u);
+        REQUIRE(drawn[0].straddlesWrap);
+        CHECK_FALSE(drawn[1].straddlesWrap);
+        CHECK(drawn[1].penLift);
+    }
+
+    SECTION("after a band") {
+        // Column 0 spans 400 degrees unwrapped, so it is a band; column 1
+        // continues the same ramp. A band records no midpoint at all, so the
+        // only thing that can lift column 1's pen is the reset.
+        std::vector<float> wrapped;
+        for (int i = 0; i < 5; ++i) {
+            wrapped.push_back(rta::view::wrapTo180(static_cast<float>(-100 * i)));
+        }
+        wrapped.push_back(rta::view::wrapTo180(-410.0f));
+        wrapped.push_back(rta::view::wrapTo180(-420.0f));
+        const std::vector<int> columnForBin{ 0, 0, 0, 0, 0, 1, 1 };
+
+        const auto drawn =
+            rta::view::wrapForDrawing(rta::view::decimatePhaseToColumns(wrapped, columnForBin, 2));
+        REQUIRE(drawn.size() == 2u);
+        REQUIRE(drawn[0].fullBand);
+        CHECK_FALSE(drawn[1].fullBand);
+        CHECK(drawn[1].penLift);
+    }
 }
 
 TEST_CASE("a column no bin lands in draws nothing", "[phase-decimator]") {
