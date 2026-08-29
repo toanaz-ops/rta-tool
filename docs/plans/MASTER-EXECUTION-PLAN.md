@@ -52,7 +52,7 @@ graph LR
     P4b["<b>P4b</b> · THD / STI<br/><i>needs IEC 60268-16</i>"]
     L5a["<b>L5a</b> · trace library + session<br/><i>BUILT — not yet wired</i>"]
     L5b["<b>L5b</b> · targets / corridor / score<br/><i>needs ISO 2969 or SMPTE ST 202</i>"]
-    L5c["<b>L5c</b> · Bode, workspaces, spectrograph<br/><i>record written — build next</i>"]
+    L5c["<b>L5c</b> · Bode layout + workspaces<br/><i>plan written — build next</i>"]
     P6["<b>P6</b> · SPL-pro + multichannel"]
     P7["<b>P7</b> · solvers<br/><i>auto-EQ, auto-delay, wizard</i>"]
     P8["<b>P8</b> · research lanes<br/><i>read-only, safe anytime</i>"]
@@ -114,7 +114,7 @@ not, and a guessed tolerance is a false Class claim.
 | **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16). **✅ BUILT (2026-08-29), see `docs/reports/003-dual-fft-engine.md`.** Record: `docs/dsp/2026-08-28-dual-fft.md`. Uncommitted — see the report's "Nothing here is committed" section | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
 | **L3 — MTW** | P3: decimation cascade, per-band FFT sizes, stitching, CONCURRENT with fixed engine (G2). Needs its own station-1 research pass first | L2 interface | L5, L6a |
 | **L4 — Sweep/IR** | P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
-| **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6), spectrograph**: record now written, `docs/dsp/2026-08-29-display-layer-l5c.md` (station 2 done, so this lane starts at station 3, not station 1). Nothing in `app/` implements it yet. L5c is also where the library finally gets wired to `RtaView` — until then the stored-trace path is built but unreached. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
+| **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6), spectrograph**: record written (`docs/dsp/2026-08-29-display-layer-l5c.md`) and **station 3 done — the ten-task implementation plan is at `docs/plans/2026-08-29-L5c-display-layer-impl-plan.md`**, so this lane now starts at station 4 (build). The spectrograph is explicitly OUT of that plan's scope: record §7 fixes three constraints and does not design it. The plan also absorbs, on the owner's 2026-08-29 ruling, the one thing no lane owned — **`app/` never called L2's dual-FFT engine at all**, so `measure::Snapshot` had no transfer function to draw. Nothing in `app/` implements any of it yet. L5c is also where the library finally gets wired to `RtaView` — until then the stored-trace path is built but unreached. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
 | **~~cepstrum/wavelet (G23)~~** | **Moved OUT of L5** — it is DSP, not display, and belongs with L2/L3. Putting it beside "draw a trace" confused two layers. | L2 | — |
 | **L6a — SPL-pro** | P6 subset: SPL logging/history/alarms/PDF/web viewer (G7), dose IEC 61252 (G8) | Meters track (in flight — wait for it to land) | everything except L6b |
 | **L6b — Multichannel workflows** | P6 subset: spatial averaging (G14), coherence weighting (G15), sequencing + auto-discard (G20), full routing matrix, presets, remote API | L2 (multi-TF) | L4, L5 |
@@ -161,8 +161,10 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
 
 1. ~~**L2** (the heart — Smaart-class dual-FFT), now starting at station 3 since
    its decision record landed~~ — **done, 2026-08-29** (`docs/reports/003-dual-fft-engine.md`).
-2. **Now**: **L4** + **L5c** (record landed, starts at station 3) + **L5b** (still
-   blocked on the standards purchase) in parallel; L8 research lanes
-   fire-and-forget anytime.
+2. **Now**: **L4** + **L5c** (**plan landed 2026-08-29, starts at station 4 —
+   build**) + **L5b** (still blocked on the standards purchase) in parallel;
+   L8 research lanes fire-and-forget anytime. L5c touches `app/`, `ui/`,
+   `tools/` and one line of root `CMakeLists.txt` and **does not touch `core/`
+   at all**, so it does not contend with L4 on the two core CMake files.
 3. Then **L3** + **L6b**; then **L7** now that L2 is in and once L4/L5 land too;
    **L6a** after meters; **L9** last.

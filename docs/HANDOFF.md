@@ -95,10 +95,20 @@ ASIO sẵn ở `build-asio/`. Không chặn lane nào.
 **Đường stored-trace được xây nhưng CHƯA NỐI.** Không chỗ nào gắn `TraceLibrary`
 vào `RtaView`. Đây là điểm dừng có chủ ý, không phải nợ — nhánh null của
 `RtaView` chứng minh được là giống hệt bản cũ, và băm `rta-view.png` khớp xác
-nhận điều đó. **L5c là lane nối nó vào — record của lane đó nay đã viết**
-(`docs/dsp/2026-08-29-display-layer-l5c.md`, 2026-08-29; trạm 2 xong nên lane
-bắt đầu ở trạm 3, không phải trạm 1), nhưng chưa có dòng code nào nối nó vào
-`app/`.
+nhận điều đó. **L5c là lane nối nó vào — record VÀ kế hoạch thi công nay đã viết**
+(`docs/dsp/2026-08-29-display-layer-l5c.md` cho quyết định,
+`docs/plans/2026-08-29-L5c-display-layer-impl-plan.md` cho mười nhiệm vụ; trạm
+2 và trạm 3 đều xong nên lane bắt đầu ở TRẠM 4 — thi công), nhưng vẫn **chưa có
+dòng code nào** nối nó vào `app/`.
+
+**Và một khoảng trống không lane nào nhận, phát hiện khi đọc code thật cho kế
+hoạch đó: `app/` chưa bao giờ gọi engine dual-FFT của L2.**
+`core/include/rta/dsp/{DualFftEngine,TransferEstimator}.h` đã xây và đã test,
+nhưng `grep -rn "DualFftEngine" app/` không ra gì, và `measure::Snapshot` chỉ
+mang band level + phổ thô, không có magnitude/phase/coherence của hàm truyền.
+Chủ dự án đã quyết ngày 2026-08-29: phần nối đó nằm trong L5c (nhiệm vụ 5 và 6
+của kế hoạch), vì không có nó thì pane transfer lại vẽ đường tổng hợp — đúng
+cái bẫy mà phần mở đầu của decision record dựng lên để tránh.
 
 **L2 đã xây xong (2026-08-29), không còn ở trạm 3.** Tám nhiệm vụ, xem
 `docs/reports/003-dual-fft-engine.md` cho số liệu — không lặp lại số ở đây,
