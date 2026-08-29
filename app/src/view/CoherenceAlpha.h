@@ -43,8 +43,23 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
 /// Reuses `decimateToColumns` rather than growing a second reduction -- its
 /// `minValue` is exactly the quantity wanted here. (Phase could not reuse it;
 /// see PhaseDecimator.h for why that is a real difference and not an
-/// inconsistency.) Columns no bin landed in get the floor; whether such a
-/// column draws at all is decided by its extent's `hasData`, not here.
+/// inconsistency.)
+///
+/// Columns no bin landed in are BRIDGED across interior gaps -- record §5a,
+/// added after a bridged magnitude/ribbon column-by-column comparison showed
+/// a barcode: below roughly 2 kHz an FFT has fewer bins than pixel columns,
+/// `bridgeGaps` already fills those holes for the magnitude extent on the
+/// argument that a spectrum is continuous and its bins are samples of it, and
+/// leaving coherence unbridged meant a bridged trace alternated near-opaque
+/// (a real bin) and floor-dim (no bin, defaulting to "untrusted") column by
+/// column -- painting "not sampled here" as "measured and found
+/// untrustworthy", exactly the false assertion the floor exists to refuse.
+/// Reusing `bridgeGaps` on a degenerate (min == max) `ColumnExtent` per
+/// column is what applies its own leading/trailing-stays-empty rule here for
+/// free: a column with no bin on ONE side (nothing to interpolate from)
+/// keeps the floor, so "a column with no bins reports no trust" still holds
+/// at the ends of the axis -- it no longer holds in the middle, which is the
+/// trade §5a records.
 ///
 /// NaN is sanitised BEFORE the reduction, and that ordering is the whole point.
 /// `decimateToColumns` cannot see a NaN: its min accumulation asks
@@ -59,9 +74,11 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
 /// column whose bins are all unmeasurable must read as untrusted, not as a
 /// column nothing landed in.
 ///
-/// The copy costs one allocation per call. This runs when a cached layer is
-/// rebuilt -- on a library edit or a geometry change -- never per frame, so
-/// the cost buys an invariant at a price nothing measures.
+/// Three short vectors and one `bridgeGaps` pass -- more than the single copy
+/// this function used to cost, but still bounded by column count and still
+/// paid only when a cached layer is rebuilt (a library edit or a geometry
+/// change), never per frame. The extra allocation buys the same invariant
+/// `bridgeGaps` already buys magnitude, at a price nothing per-frame measures.
 [[nodiscard]] inline std::vector<float> columnAlpha(std::span<const float> coherence,
                                                     std::span<const int> columnForBin,
                                                     int columnCount) {
@@ -72,9 +89,24 @@ inline constexpr float kUntrustedAlphaFloor = 0.25f;
     }
 
     const auto columns = decimateToColumns(measurable, columnForBin, columnCount);
-    std::vector<float> out(columns.size(), kUntrustedAlphaFloor);
+
+    // Each column's own alpha, as a degenerate (min == max) extent, so
+    // `bridgeGaps`' interior-gap interpolation and leading/trailing-stays-
+    // empty rule both apply to TRUST exactly as they already apply to
+    // magnitude's dB extent -- see this function's own comment for why that
+    // is the correct reuse rather than a second gap-filling implementation.
+    std::vector<ColumnExtent> alphaExtents(columns.size());
     for (std::size_t c = 0; c < columns.size(); ++c) {
-        if (columns[c].hasData) out[c] = alphaForCoherence(columns[c].minValue);
+        if (columns[c].hasData) {
+            const float a = alphaForCoherence(columns[c].minValue);
+            alphaExtents[c] = { a, a, true };
+        }
+    }
+    const auto bridged = bridgeGaps(std::move(alphaExtents));
+
+    std::vector<float> out(columns.size(), kUntrustedAlphaFloor);
+    for (std::size_t c = 0; c < bridged.size(); ++c) {
+        if (bridged[c].hasData) out[c] = bridged[c].minValue;
     }
     return out;
 }

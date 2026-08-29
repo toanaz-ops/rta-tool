@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Part of RTA Tool -- rtatool_view_tests. Decisions 1-5 of
+// Part of RTA Tool -- rtatool_view_tests. Decisions 1-5 and 5a of
 // docs/dsp/2026-08-29-display-layer-l5c.md.
 //
 // TransferView is the largest component in the lane, so this file is
@@ -7,43 +7,32 @@
 // names, in its own comment, the wrong implementation it is built to catch
 // (project CLAUDE.md, "what wrong implementation would make this red?").
 // Pixel checks distinguish the LIVE trace's warm sodium-amber ink from the
-// grid's cool grey hairlines and the STORED trace's cool grey ink by channel
-// balance (R-B), grounded in ui/az_ui/theme/Palette.h's actual token values
-// (accentArgb 0xffff9f1c, borderArgb 0xff2b2f37, dimArgb 0xff868d98) rather
-// than by re-deriving the alpha blending arithmetic TraceStroke.cpp owns --
-// a golden-image compare would lock in today's antialiasing and fail on the
-// next unrelated palette tweak (test_stored_trace_layer.cpp's own reasoning).
+// grid's cool grey and the STORED trace's cool grey by channel balance,
+// grounded in ui/az_ui/theme/Palette.h's actual token values (accentArgb
+// 0xffff9f1c, borderArgb 0xff2b2f37, dimArgb 0xff868d98) rather than by
+// re-deriving TraceStroke.cpp's own alpha blending -- a golden-image compare
+// would lock in today's antialiasing and fail the next unrelated palette
+// tweak (test_stored_trace_layer.cpp's own reasoning). Fixtures and pixel
+// predicates live in test_transfer_view_helpers.h, split out to keep this
+// file under the project's 400-line hard cap.
 //
 // No window, no desktop peer, no message loop -- the same headless software-
 // renderer path tools/snapshot.cpp already proves runs offscreen.
 #include <catch2/catch_test_macros.hpp>
 
-#include <juce_gui_basics/juce_gui_basics.h>
+#include "test_transfer_view_helpers.h"
 
-#include <az_ui/az_ui.h>
-
-#include "measure/Snapshot.h"
-#include "measure/SnapshotSource.h"
-#include "measure/SyntheticSnapshot.h"
 #include "trace/Trace.h"
 #include "trace/TraceLibrary.h"
 #include "view/BodeLayout.h"
 #include "view/MeasureColours.h"
 #include "view/PlotGeometry.h"
-#include "view/TransferView.h"
 
-#include <algorithm>
 #include <cmath>
-#include <functional>
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace {
-
-using rta::measure::Snapshot;
-using rta::measure::SnapshotPtr;
 using rta::measure::StaticSnapshotSource;
 using rta::trace::CaptureMeta;
 using rta::trace::Trace;
@@ -52,95 +41,12 @@ using rta::view::BodePanes;
 using rta::view::FrequencyAxis;
 using rta::view::PaneRect;
 using rta::view::PlotGeometry;
-using rta::view::TransferView;
 
-const juce::Colour kBackground = az::ui::background;
-
-/// A snapshot carrying a real, deterministic transfer block -- the fixture
-/// every test below except the empty-state one renders.
-SnapshotPtr snapshotWithTransfer(std::size_t fftSize, double sampleRate, int delaySamples) {
-    auto snap = std::make_shared<Snapshot>();
-    snap->sequence = 1;
-    snap->sampleRate = sampleRate;
-    snap->fftSize = fftSize;
-    snap->transfer = rta::measure::makeSyntheticTransfer(fftSize, sampleRate, delaySamples);
-    return snap;
-}
-
-/// An RTA-only snapshot -- bands present, no reference channel ever fed, so
-/// `transfer` is genuinely absent rather than empty. Matches how `Analyser`
-/// itself would leave the field before the first `pushPair`.
-SnapshotPtr rtaOnlySnapshot() {
-    auto snap = std::make_shared<Snapshot>();
-    snap->sequence = 1;
-    snap->sampleRate = 48000.0;
-    snap->fftSize = 4096;
-    return snap;
-}
-
-/// True for a pixel that could only be the LIVE trace's sodium-amber ink
-/// (accentArgb 0xffff9f1c, R=255 B=28), never the grid's cool grey
-/// (borderArgb 0xff2b2f37, R=43 B=55) or the stored trace's cool grey
-/// (dimArgb 0xff868d98, R=134 B=152) -- both of the latter have R <= B.
-/// True even at the alpha floor (0.25): blended 25% over the near-black
-/// background (0x0a0b0d) still lands at roughly R=71 B=17, R-B=54.
-bool isLiveTraceish(juce::Colour c) {
-    return static_cast<int>(c.getRed()) - static_cast<int>(c.getBlue()) > 30;
-}
-
-/// Within a small per-channel tolerance of `target`. A 1px-tall extent (a
-/// flat trace: min == max, so `fillColumn`'s height is exactly one row) is
-/// still drawn through the software renderer's float-coordinate `fillRect`,
-/// which shaves a few levels off an otherwise-opaque fill even at an
-/// integer-aligned position -- an exact `==` would fail on every such pixel
-/// though the fill is visibly, unambiguously the target colour. A taller
-/// extent (a real dB range, several pixels high) has interior rows an exact
-/// match WOULD catch; a degenerate one has none, so the tolerance is what
-/// makes the assertion test the colour rather than the renderer's rounding.
-bool closeTo(juce::Colour c, juce::Colour target, int tolerance) {
-    return std::abs(static_cast<int>(c.getRed()) - static_cast<int>(target.getRed())) <= tolerance
-        && std::abs(static_cast<int>(c.getGreen()) - static_cast<int>(target.getGreen())) <= tolerance
-        && std::abs(static_cast<int>(c.getBlue()) - static_cast<int>(target.getBlue())) <= tolerance;
-}
-
-bool anyPixelDiffers(const juce::Image& image, juce::Rectangle<int> area, juce::Colour from) {
-    for (int y = area.getY(); y < area.getBottom(); ++y) {
-        for (int x = area.getX(); x < area.getRight(); ++x) {
-            if (image.getPixelAt(x, y) != from) return true;
-        }
-    }
-    return false;
-}
-
-bool anyPixelMatches(const juce::Image& image, juce::Rectangle<int> area,
-                     const std::function<bool(juce::Colour)>& predicate) {
-    for (int y = std::max(0, area.getY()); y < std::min(image.getHeight(), area.getBottom()); ++y) {
-        for (int x = std::max(0, area.getX()); x < std::min(image.getWidth(), area.getRight()); ++x) {
-            if (predicate(image.getPixelAt(x, y))) return true;
-        }
-    }
-    return false;
-}
-
-juce::Image renderView(TransferView& view, int width, int height) {
-    juce::Image image(juce::Image::ARGB, width, height, true);
-    juce::Graphics g(image);
-    view.renderTo(g, juce::Rectangle<int>(0, 0, width, height));
-    return image;
-}
-
-}  // namespace
-
-// CATCHES: a pane split that stopped tracking 5:3 (a regression in
-// bodePanes itself, or TransferView.cpp calling it with the wrong content
-// rectangle -- e.g. forgetting to reserve the ribbon or the gap before
-// splitting), and a ribbon that scales with the window instead of staying
-// furniture. Reads geometry back from `panes()`, not pixels, per the
-// record's own instruction: a pixel test here would pass for a view that
-// drew the right shape in the wrong place. `resized()` is called
-// EXPLICITLY (mirroring tools/snapshot.cpp) because `setSize()` alone does
-// not call it on a component with no desktop peer -- the exact trap this
-// task's own brief names.
+// CATCHES: a pane split that stopped tracking 5:3, and a ribbon that scales
+// with the window instead of staying furniture. Reads geometry back from
+// `panes()`, not pixels -- a pixel test would pass for a view that drew the
+// right shape in the wrong place. `resized()` is called EXPLICITLY because
+// `setSize()` alone does not call it on a component with no desktop peer.
 TEST_CASE("the phase pane keeps 3/8 of the shared area at every window size", "[transfer-view]") {
     const StaticSnapshotSource source;
     TransferView view(source);
@@ -186,12 +92,9 @@ TEST_CASE("renderTo draws without resized() ever having run", "[transfer-view]")
 }
 
 // CATCHES: a missing-transfer branch that draws a flat trace anyway (e.g. a
-// magnitude of 0 dB drawn for every column because a stale/default
-// TransferBlock leaked through), which the record calls out explicitly: "A
-// Bode plot of nothing looks like a measurement." The magnitude pane's own
-// rectangle is read from panes() (resized() called explicitly, same reason
-// as the first test), so this does not depend on this file's own layout
-// arithmetic agreeing with the implementation's.
+// stale/default TransferBlock leaked through) -- "A Bode plot of nothing
+// looks like a measurement." The magnitude rectangle is read from panes(),
+// so this does not depend on this file's own layout arithmetic agreeing.
 TEST_CASE("a snapshot with no transfer draws an empty state, not an empty Bode", "[transfer-view]") {
     const StaticSnapshotSource source(rtaOnlySnapshot());
     TransferView view(source);
@@ -222,11 +125,9 @@ TEST_CASE("a snapshot with no transfer draws an empty state, not an empty Bode",
 // already covers that).
 TEST_CASE("low coherence draws dimmer than high coherence", "[transfer-view]") {
     // makeSyntheticTransfer's own closed form: flat, high coherence through
-    // the midband (~0.97 at 1 kHz) and a deep LF dip that has not yet
-    // recovered at 30 Hz (~0.38) -- see SyntheticSnapshot.cpp's
-    // `coherenceAt`. Picking frequencies from the fixture's ACTUAL curve
-    // rather than an assumed shape is what keeps this test honest about
-    // what it is measuring.
+    // the midband (~0.97 at 1 kHz) and a deep LF dip not yet recovered at
+    // 30 Hz (~0.38) -- see SyntheticSnapshot.cpp's `coherenceAt`. Frequencies
+    // taken from the fixture's ACTUAL curve, not an assumed shape.
     constexpr std::size_t kFftSize = 8192;
     constexpr double kSampleRate = 48000.0;
     const auto snap = snapshotWithTransfer(kFftSize, kSampleRate, 5);
@@ -239,46 +140,90 @@ TEST_CASE("low coherence draws dimmer than high coherence", "[transfer-view]") {
     const FrequencyAxis axis = rta::view::frequencyAxis(PaneRect{ 0, 0, 1100, 760 });
     const PlotGeometry magnitudeGeometry =
         rta::view::paneGeometry(axis, view.panes().magnitude, 18.0, -18.0);
+    const int top = static_cast<int>(magnitudeGeometry.top);
+    const int bottom = static_cast<int>(magnitudeGeometry.bottom);
 
     const int xHighTrust = static_cast<int>(magnitudeGeometry.xForHz(1000.0));
     const int xLowTrust = static_cast<int>(magnitudeGeometry.xForHz(30.0));
 
-    // Scan each column's full magnitude-pane height for the brightest
-    // live-trace pixel actually drawn there, rather than guessing a row --
-    // the fixture's magnitude curve puts the two columns at different dB,
-    // hence different rows, and only the RED channel (alpha strength) is
-    // being compared, not position.
-    const auto brightestRed = [&](int x) {
-        juce::uint8 best = 0;
-        for (int y = static_cast<int>(magnitudeGeometry.top); y < static_cast<int>(magnitudeGeometry.bottom); ++y) {
-            const auto c = image.getPixelAt(x, y);
-            if (isLiveTraceish(c)) best = std::max(best, c.getRed());
-        }
-        return best;
-    };
-
-    const auto highTrustRed = brightestRed(xHighTrust);
-    const auto lowTrustRed = brightestRed(xLowTrust);
+    // The magnitude curve puts the two columns at different dB, hence
+    // different rows -- brightestLiveTraceRed scans the whole column so only
+    // the RED channel (alpha strength) is compared, not position.
+    const auto highTrustRed = brightestLiveTraceRed(image, xHighTrust, top, bottom);
+    const auto lowTrustRed = brightestLiveTraceRed(image, xLowTrust, top, bottom);
 
     REQUIRE(highTrustRed > 0);
     REQUIRE(lowTrustRed > 0);
     CHECK(lowTrustRed < highTrustRed);
 }
 
-// CATCHES: StoredTraceLayer's phase dispatch never being exercised by any
-// existing test (task 7 tested TraceStroke directly, not
-// StoredTraceLayer::draw with Field::Phase) -- specifically a `field_ ==
-// Field::Phase` branch that accidentally calls `bridgeGaps` (decision 5
-// forbids it: interpolating across a wrap invents a sweep nothing measured),
-// forgets to feed coherence through, or never composites at all. A flat
-// phase trace with no coherence set makes the expected pixel PREDICTABLE
-// (a 1px-tall row at `paneGeometry(..., 180, -180).yForDb(90)`, opaque
-// `storedTrace`) with no wrap-straddle uncertainty to account for; the match
-// is a tolerance, not `==` (see `closeTo`'s own comment) because a 1px-tall
-// fill has no antialiasing-free interior pixel the way a taller extent does.
-TEST_CASE("a stored trace's phase renders through the cached layer", "[transfer-view]") {
+// CATCHES: a composite that re-rasterises a stored layer every frame
+// regardless of what changed -- invisible to every pixel test above (a
+// rebuilt image and a reused one are bit-identical), surfacing only as
+// dropped frames at a live show.
+TEST_CASE("advancing the live snapshot rebuilds neither cached layer", "[transfer-view]") {
     constexpr std::size_t kFftSize = 2048;
     constexpr double kSampleRate = 48000.0;
+
+    TraceLibrary library;
+    CaptureMeta meta;
+    meta.id = "stored-1";
+    meta.sampleRate = kSampleRate;
+    meta.fftSize = static_cast<int>(kFftSize);
+    const auto bins = rta::trace::pointCountFor(static_cast<int>(kFftSize));
+    auto trace = Trace::make(meta, std::vector<float>(bins, -6.0f));
+    REQUIRE(trace.has_value());
+    REQUIRE(trace->setPhase(std::vector<float>(bins, 45.0f)));
+    const auto id = library.add(std::move(*trace), "stored", "A");
+    REQUIRE_FALSE(id.empty());
+
+    StaticSnapshotSource source(snapshotWithTransfer(kFftSize, kSampleRate, 10));
+    TransferView view(source);
+    view.setLibrary(&library);
+    view.setSize(1100, 760);
+    view.resized();
+
+    renderView(view, 1100, 760);
+    const auto magAfterFirst = view.magnitudeLayer().rebuildCount();
+    const auto phaseAfterFirst = view.phaseLayer().rebuildCount();
+    REQUIRE(magAfterFirst >= 1);
+    REQUIRE(phaseAfterFirst >= 1);
+
+    // Advancing the LIVE snapshot several times, library untouched, must not
+    // move either count -- the pixels a stored layer produces are identical
+    // whether the image was reused or re-rasterised, so only this counter
+    // can tell the two apart.
+    for (int i = 0; i < 3; ++i) {
+        source.set(snapshotWithTransfer(kFftSize, kSampleRate, 10 + i));
+        renderView(view, 1100, 760);
+    }
+    CHECK(view.magnitudeLayer().rebuildCount() == magAfterFirst);
+    CHECK(view.phaseLayer().rebuildCount() == phaseAfterFirst);
+
+    // A REAL library edit -- TraceLibrary setters no-op when the value is
+    // unchanged, so this renames to something actually different.
+    REQUIRE(library.rename(id, "renamed"));
+    renderView(view, 1100, 760);
+    CHECK(view.magnitudeLayer().rebuildCount() == magAfterFirst + 1);
+    CHECK(view.phaseLayer().rebuildCount() == phaseAfterFirst + 1);
+}
+
+// CATCHES: StoredTraceLayer's phase dispatch, never exercised before this
+// lane (task 7 tested TraceStroke directly): a `field_ == Field::Phase`
+// branch that wrongly calls `bridgeGaps` (decision 5 forbids it -- bridging
+// a gap invents a value nothing measured) or that forgets to feed coherence
+// through. A FLAT fixture catches neither: interpolating between two EQUAL
+// values reproduces those values, and with coherence unset the opaque and
+// the faded implementations draw identically. So: two distinct phase levels
+// either side of a genuine bin gap (the log axis's own sparse low-frequency
+// density, TraceDecimator.h's "dotted scatter"), and a LOW coherence.
+TEST_CASE("a stored trace's phase renders through the cached layer, gap and trust intact",
+          "[transfer-view]") {
+    constexpr std::size_t kFftSize = 2048;
+    constexpr double kSampleRate = 48000.0;
+    constexpr float kLevelA = 0.0f;
+    constexpr float kLevelB = 90.0f;
+    constexpr float kLowGammaSquared = 0.3f;
 
     TraceLibrary library;
     CaptureMeta meta;
@@ -289,12 +234,15 @@ TEST_CASE("a stored trace's phase renders through the cached layer", "[transfer-
 
     auto trace = Trace::make(meta, std::vector<float>(bins, -6.0f));
     REQUIRE(trace.has_value());
-    // Flat 90 degrees everywhere: no wrap along the bin axis is possible (a
-    // constant has zero delta between neighbours), so the expected drawn
-    // row is exactly `paneGeometry(..., 180, -180).yForDb(90)`.
-    REQUIRE(trace->setPhase(std::vector<float>(bins, 90.0f)));
-    // Coherence deliberately NOT set: TraceStroke.h's empty-span contract
-    // ("no coherence measured") draws fully opaque.
+
+    // Bins 0-5 (DC through ~117 Hz) at kLevelA, bins 6+ at kLevelB. At this
+    // fftSize/sampleRate the log axis maps bin 5 and bin 6 roughly 25 pixel
+    // columns apart with nothing between them -- verified below with the
+    // SAME xForHz the implementation itself uses, not a hand count.
+    std::vector<float> phase(bins, kLevelB);
+    for (std::size_t i = 0; i <= 5 && i < bins; ++i) phase[i] = kLevelA;
+    REQUIRE(trace->setPhase(phase));
+    REQUIRE(trace->setCoherence(std::vector<float>(bins, kLowGammaSquared)));
     REQUIRE_FALSE(library.add(std::move(*trace), "stored", "A").empty());
 
     const auto snap = snapshotWithTransfer(kFftSize, kSampleRate, 10);
@@ -308,40 +256,74 @@ TEST_CASE("a stored trace's phase renders through the cached layer", "[transfer-
 
     const FrequencyAxis axis = rta::view::frequencyAxis(PaneRect{ 0, 0, 1100, 760 });
     const PlotGeometry phaseGeometry = rta::view::paneGeometry(axis, view.panes().phase, 180.0, -180.0);
-    const int expectedY = static_cast<int>(std::lround(phaseGeometry.yForDb(90.0)));
+    const double binHz = kSampleRate / static_cast<double>(kFftSize);
 
-    // Scanned across most of the pane's WIDTH, not one column: bins are
-    // sparse at the log axis's low-frequency end (TraceDecimator.h's own
-    // "dotted scatter" comment), so a single x position could legitimately
-    // land in a column no bin mapped to. A flat trace at 90 degrees has to
-    // paint SOMEWHERE across a 1000-pixel-wide pane if the dispatch works at
-    // all -- this is the width-independent version of that claim.
-    bool found = false;
-    for (int y = expectedY - 2; y <= expectedY + 2 && !found; ++y) {
-        for (int x = static_cast<int>(phaseGeometry.left) + 10; x < static_cast<int>(phaseGeometry.right) - 10; ++x) {
-            if (closeTo(image.getPixelAt(x, y), rta::view::storedTrace, 6)) {
-                found = true;
-                break;
-            }
-        }
-    }
-    CHECK(found);
+    const int xLastA = static_cast<int>(phaseGeometry.xForHz(5.0 * binHz));   // bin 5
+    const int xFirstB = static_cast<int>(phaseGeometry.xForHz(6.0 * binHz));  // bin 6
+    REQUIRE(xFirstB > xLastA + 4);  // a REAL gap, not adjacent columns
+
+    const int yLevelA = static_cast<int>(std::lround(phaseGeometry.yForDb(kLevelA)));
+    const int yLevelB = static_cast<int>(std::lround(phaseGeometry.yForDb(kLevelB)));
+
+    // Both levels render AND at LOW-coherence dimness: green capped well
+    // below opaque `storedTrace`'s 141 -- `anyPixelMatches` alone would also
+    // pass for a branch that forgets to feed coherence through and draws
+    // fully opaque, since opaque ink still matches `isStoredTraceish`.
+    constexpr juce::uint8 kOpaqueGreen = 141;
+    const auto greenA =
+        brightestMatchingGreen(image, juce::Rectangle<int>(xLastA - 2, yLevelA - 2, 5, 5), isStoredTraceish);
+    const auto greenB =
+        brightestMatchingGreen(image, juce::Rectangle<int>(xFirstB - 2, yLevelB - 2, 5, 5), isStoredTraceish);
+    REQUIRE(greenA > 0);
+    REQUIRE(greenB > 0);
+    CHECK(greenA < kOpaqueGreen - 25);
+    CHECK(greenB < kOpaqueGreen - 25);
+
+    // Nothing at all in the gap, at ANY row: a bridged implementation would
+    // paint an interpolated degree there; a correct one leaves it untouched.
+    juce::Rectangle<int> gapArea(xLastA + 2, static_cast<int>(phaseGeometry.top), xFirstB - xLastA - 4,
+                                 static_cast<int>(phaseGeometry.bottom - phaseGeometry.top));
+    CHECK_FALSE(anyPixelMatches(image, gapArea, isStoredTraceish));
 }
 
-// CATCHES: an unwrap toggle that changes the DRAWING path but leaves the
-// axis fixed at +-180 (every value beyond that clamps to the floor, so a
-// long, multi-turn delay would collapse to a flat line hugging the pane's
-// bottom edge instead of a curve spanning the whole extended range) --
-// exactly the failure "the axis extends in whole multiples of 360" (decision
-// 4) exists to name. Verified by predicting where ONE bin's phase must land
-// under the CORRECT extended axis (0 to -360, both exact multiples of 360
-// for this delay -- worked out by hand in the comment below) versus where
-// that same bin would land under the fixed +-180 axis, and confirming the
-// live trace's ink follows the axis that was actually supposed to be in
-// force. The second half proves unwrap is non-destructive: toggling back
-// reproduces the ORIGINAL wrapped image exactly, byte for byte -- decision 4
-// promises this is a display-only, non-destructive operation on the stored
-// wrapped values.
+// CATCHES: a ribbon that ignores coherence (every column drawn at the same
+// alpha) or reads gamma^2 backwards -- the ribbon had no pixel test at all
+// before this lane, and decision 3 gives it exactly one job to check.
+TEST_CASE("a low-coherence ribbon column is dimmer than a midband one", "[transfer-view]") {
+    // Same fixture/frequencies as "low coherence draws dimmer" above.
+    constexpr std::size_t kFftSize = 8192;
+    constexpr double kSampleRate = 48000.0;
+    const auto snap = snapshotWithTransfer(kFftSize, kSampleRate, 5);
+    const StaticSnapshotSource source(snap);
+    TransferView view(source);
+    view.setSize(1100, 760);
+    view.resized();
+    const auto image = renderView(view, 1100, 760);
+
+    const FrequencyAxis axis = rta::view::frequencyAxis(PaneRect{ 0, 0, 1100, 760 });
+    const PlotGeometry ribbonGeometry = rta::view::paneGeometry(axis, view.panes().ribbon, 1.0, 0.0);
+
+    const int xHighTrust = static_cast<int>(ribbonGeometry.xForHz(1000.0));
+    const int xLowTrust = static_cast<int>(ribbonGeometry.xForHz(30.0));
+    const int yMid = view.panes().ribbon.y + view.panes().ribbon.height / 2;
+
+    const auto highTrust = image.getPixelAt(xHighTrust, yMid);
+    const auto lowTrust = image.getPixelAt(xLowTrust, yMid);
+
+    // Still visible, not deleted -- the alpha floor's own promise.
+    CHECK(lowTrust != kBackground);
+    CHECK(lowTrust.getRed() < highTrust.getRed());
+}
+
+// CATCHES: an unwrap toggle that changes the DRAWING path but leaves the axis
+// fixed at +-180 (every value beyond that clamps to the floor, collapsing a
+// long delay to a flat line at the pane's bottom edge) -- the failure
+// "the axis extends in whole multiples of 360" (decision 4) exists to name.
+// Verified by predicting where ONE bin's phase lands under the CORRECT
+// extended axis versus the fixed +-180 one (worked out by hand below), and
+// confirming the ink follows the axis actually in force. The second half
+// proves unwrap is non-destructive: toggling back reproduces the ORIGINAL
+// wrapped image byte for byte, per decision 4's promise.
 TEST_CASE("unwrapping changes the axis, not the stored data", "[transfer-view]") {
     // fftSize=1024, sampleRate=48000, delaySamples=2: binHz=46.875,
     // per-bin step = 360*2/1024 = 0.7 degrees (comfortably under 180, so

@@ -103,15 +103,45 @@ TEST_CASE("an unmeasurable bin cannot be hidden by its neighbours",
     CHECK(nanLast[0] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
 }
 
-TEST_CASE("a column with no bins reports no trust", "[coherence-alpha]") {
-    // The extent's own hasData decides whether the column draws at all; this
-    // only has to avoid handing back a confident alpha for a column nothing
-    // measured.
+// Record §5a: bridging narrowed this property to the ends of the axis. It
+// used to hold everywhere a bin was missing; now it holds only where there is
+// no measured column on one side to interpolate from at all.
+TEST_CASE("a column with no bins at either end of the axis reports no trust",
+          "[coherence-alpha]") {
+    // Bins land only in the MIDDLE column (1); columns 0 and 2 have nothing
+    // on their outward side to bridge from -- a leading and a trailing gap
+    // in the same three-column axis.
     const std::vector<float> coherence{ 0.9f, 0.9f };
+    const std::vector<int> columnForBin{ 1, 1 };
+    const auto alpha = rta::view::columnAlpha(coherence, columnForBin, 3);
+    REQUIRE(alpha.size() == 3u);
+    CHECK(alpha[0] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+    CHECK(alpha[2] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+}
+
+// CATCHES: the exact barcode record §5a describes -- an unbridged
+// implementation would paint column 1 at the floor (0.25) instead of the
+// midpoint between its two measured neighbours, because that column has no
+// bin of its own.
+TEST_CASE("a column with no bins BETWEEN two measured columns bridges their trust",
+          "[coherence-alpha]") {
+    // Column 0: gamma^2 = 1.0 -> alpha 1.0. Column 2: gamma^2 = 0.0 -> alpha
+    // at the floor, 0.25. Column 1 has no bin at all. bridgeGaps' own
+    // single-gap formula (TraceDecimator.h) puts a one-column gap exactly
+    // halfway between its neighbours.
+    const std::vector<float> coherence{ 1.0f, 0.0f };
     const std::vector<int> columnForBin{ 0, 2 };
     const auto alpha = rta::view::columnAlpha(coherence, columnForBin, 3);
     REQUIRE(alpha.size() == 3u);
-    CHECK(alpha[1] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+    CHECK(alpha[0] == Catch::Approx(1.0f));
+    CHECK(alpha[2] == Catch::Approx(rta::view::kUntrustedAlphaFloor));
+    const float expectedMidpoint = 0.5f * (1.0f + rta::view::kUntrustedAlphaFloor);
+    CHECK(alpha[1] == Catch::Approx(expectedMidpoint));
+    // And it is genuinely bridged, not just "not the floor": the midpoint
+    // must sit strictly between the two neighbours, not merely differ from
+    // the floor by accident.
+    CHECK(alpha[1] > rta::view::kUntrustedAlphaFloor);
+    CHECK(alpha[1] < 1.0f);
 }
 
 TEST_CASE("no coherence at all means full confidence is never assumed",

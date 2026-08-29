@@ -18,12 +18,18 @@ namespace rta::view {
 
 /// Draws the coherence ribbon for the LIVE capture only (decision 3): a
 /// border and a "COH" caption -- furniture, drawn regardless of whether there
-/// is data -- and, when `coherence` is non-empty, one filled pixel column per
-/// column with alpha from the per-column MINIMUM gamma^2 (`columnAlpha`,
-/// CoherenceAlpha.h), in the amber accent so the strip visually belongs to
-/// the trace whose trust it reports.
+/// is data -- and, when `alpha` is non-empty, one filled pixel column per
+/// column, in the amber accent so the strip visually belongs to the trace
+/// whose trust it reports.
 ///
-/// `coherence` empty means "nothing was measured yet" (Snapshot.h:
+/// `alpha` is the composite's OWN precomputed `columnAlpha(coherence,
+/// columnForBin, columnCount)` (CoherenceAlpha.h), indexed by the same
+/// absolute pixel column every pane in the composite shares (decision 1) --
+/// passed in rather than recomputed here so the one coherence array is
+/// reduced ONCE per render and shared with the magnitude and phase panes,
+/// not once per pane for an answer that cannot differ between them.
+///
+/// Empty `alpha` means "nothing was measured yet" (Snapshot.h:
 /// `TransferBlock::coherence` is absent below the engine's effective-average
 /// gate) -- NOT the same "no trust information, draw opaque" contract
 /// TraceStroke.h documents for a magnitude/phase trace. A magnitude/phase
@@ -31,12 +37,7 @@ namespace rta::view {
 /// content IS the trust. Painting it solid amber when there is nothing to
 /// report would assert a confidence that was never measured, so this
 /// function draws the frame alone and leaves the strip blank instead.
-///
-/// `columnForBin` and `columnCount` come from the SAME shared frequency axis
-/// every other pane in the composite uses (decision 1, BodeLayout.h) -- this
-/// function never computes its own x mapping.
 void drawTransferRibbon(juce::Graphics& g, const PlotGeometry& geometry, PaneRect ribbonArea,
-                        std::span<const float> coherence, std::span<const int> columnForBin,
-                        int columnCount);
+                        std::span<const float> alpha);
 
 }  // namespace rta::view

@@ -67,6 +67,22 @@ void drawNoReferenceState(juce::Graphics& g, PaneRect area) {
               juce::Justification::centred, false);
 }
 
+/// Record §5a: hiding stored phase traces while unwrapped must never be
+/// SILENT -- that is the alpha floor's own rule ("the display must never
+/// quietly delete data"), applying with more force to a whole trace than to
+/// one dimmed column. One line, top-left of the phase pane's own plot area,
+/// same legend style RtaView's "RESOLUTION LIMIT" note uses for the same
+/// job: a fact about what is NOT being drawn, stated where the reader is
+/// already looking.
+void drawStoredPhaseHiddenState(juce::Graphics& g, const PlotGeometry& geometry) {
+    g.setColour(rta::view::emptyStateText);
+    g.setFont(az::ui::legendFont(az::ui::columnFontSize, true, az::ui::trackingColumn));
+    juce::Rectangle<int> line(static_cast<int>(geometry.left) + az::ui::spacing,
+                              static_cast<int>(geometry.top) + az::ui::spacing, 400,
+                              az::ui::captionHeight);
+    g.drawText("STORED PHASE HIDDEN  --  UNWRAPPED", line, juce::Justification::centredLeft, false);
+}
+
 /// Which ABSOLUTE pixel column each FFT bin lands in, using the composite's
 /// own shared log mapping (`geometry.xForHz`) rather than a second one
 /// derived here -- any pane's geometry works for this, because decision 1
@@ -221,14 +237,25 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
     const std::vector<int> columnForBin =
         bins > 0 ? absoluteColumnsForBins(magnitudeGeometry, binHz, bins, columnCount) : std::vector<int>{};
 
+    // The ONE per-column trust vector every pane in the composite reads --
+    // computed here exactly once, not once per pane, because it cannot
+    // differ between them: same coherence, same shared columnForBin/
+    // columnCount (decision 1). Empty coherence (nothing measured yet) means
+    // an empty alpha vector, which the ribbon reads as "no fill" and
+    // strokeMagnitudeExtents/strokePhaseColumns read as "draw opaque" --
+    // two different, both correct, contracts for the same empty span
+    // (TransferRibbon.h and TraceStroke.h each document their own).
+    const std::span<const float> coherenceSource =
+        hasTransfer && snapshot->transfer->coherence.has_value()
+            ? std::span<const float>(*snapshot->transfer->coherence)
+            : std::span<const float>{};
+    const std::vector<float> liveAlpha =
+        coherenceSource.empty() ? std::vector<float>{} : columnAlpha(coherenceSource, columnForBin, columnCount);
+
     // The ribbon shows the LIVE capture's coherence only (decision 3) -- an
-    // absent optional draws the frame alone, never a solid "fully trusted"
-    // fill (TransferRibbon.h's own contract comment).
-    drawTransferRibbon(g, ribbonGeometry, panes.ribbon,
-                      hasTransfer && snapshot->transfer->coherence.has_value()
-                          ? std::span<const float>(*snapshot->transfer->coherence)
-                          : std::span<const float>{},
-                      columnForBin, columnCount);
+    // empty alpha draws the frame alone, never a solid "fully trusted" fill
+    // (TransferRibbon.h's own contract comment).
+    drawTransferRibbon(g, ribbonGeometry, panes.ribbon, liveAlpha);
 
     drawGrid(g, magnitudeGeometry);
     drawLevelLabels(g, magnitudeGeometry);
@@ -245,17 +272,12 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
     }
 
     const auto& transfer = *snapshot->transfer;
-    const std::span<const float> coherenceAlphaSource =
-        transfer.coherence.has_value() ? std::span<const float>(*transfer.coherence) : std::span<const float>{};
 
     if (library_ != nullptr) storedMagnitude_.draw(g, *library_, magnitudeGeometry);
 
     {
         const auto extents = bridgeGaps(decimateToColumns(transfer.magnitudeDb, columnForBin, columnCount));
-        const auto alpha = coherenceAlphaSource.empty()
-                              ? std::vector<float>{}
-                              : columnAlpha(coherenceAlphaSource, columnForBin, columnCount);
-        strokeMagnitudeExtents(g, extents, magnitudeGeometry, 0, alpha, rta::view::trace);
+        strokeMagnitudeExtents(g, extents, magnitudeGeometry, 0, liveAlpha, rta::view::trace);
     }
 
     // Stored traces are always drawn WRAPPED (StoredTraceLayer's own
@@ -265,16 +287,21 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
     // contains -- a stored -170 degree reading would land near the axis's
     // new top rather than near its own -170 gridline. Skipping the stored
     // layer in unwrapped mode is what keeps every pixel honest; recalled
-    // captures come back the moment the toggle returns to wrapped.
-    if (library_ != nullptr && !unwrapped_) storedPhase_.draw(g, *library_, phaseGeometry);
+    // captures come back the moment the toggle returns to wrapped. Record
+    // §5a: the skip must not be SILENT, so the pane says so whenever there is
+    // a library that could otherwise have something to hide.
+    if (library_ != nullptr) {
+        if (!unwrapped_) {
+            storedPhase_.draw(g, *library_, phaseGeometry);
+        } else {
+            drawStoredPhaseHiddenState(g, phaseGeometry);
+        }
+    }
 
     if (!unwrapped_) {
         const auto phaseColumns = decimatePhaseToColumns(transfer.phaseDeg, columnForBin, columnCount);
         const auto drawn = wrapForDrawing(phaseColumns);
-        const auto alpha = coherenceAlphaSource.empty()
-                              ? std::vector<float>{}
-                              : columnAlpha(coherenceAlphaSource, columnForBin, columnCount);
-        strokePhaseColumns(g, drawn, phaseGeometry, 0, alpha, rta::view::trace);
+        strokePhaseColumns(g, drawn, phaseGeometry, 0, liveAlpha, rta::view::trace);
     } else {
         // Unwrapped: a continuous curve with no discontinuity to draw around,
         // so it is decimated and stroked exactly like magnitude rather than
@@ -282,10 +309,7 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
         // default; there is nothing for it to do once the trace no longer
         // wraps).
         const auto extents = bridgeGaps(decimateToColumns(unwrapped.unwrappedDeg, columnForBin, columnCount));
-        const auto alpha = coherenceAlphaSource.empty()
-                              ? std::vector<float>{}
-                              : columnAlpha(coherenceAlphaSource, columnForBin, columnCount);
-        strokeMagnitudeExtents(g, extents, phaseGeometry, 0, alpha, rta::view::trace);
+        strokeMagnitudeExtents(g, extents, phaseGeometry, 0, liveAlpha, rta::view::trace);
     }
 }
 

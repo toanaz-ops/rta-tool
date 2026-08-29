@@ -126,7 +126,14 @@ int main (int argc, char** argv)
         // transfer.png: the Bode composite (task 8), fed a deterministic
         // synthetic transfer (fixed fftSize/sampleRate/delay -- no threads,
         // no timing) so this is the same picture every run, the same
-        // precondition rta-view.png already relies on.
+        // precondition rta-view.png already relies on. delaySamples=18 is
+        // picked to review, not derived from a spec: at fftSize=4096 it
+        // carries the phase trace through 7.5 wraps by 20 kHz (360*20000*18/
+        // 48000 = 2700 degrees) -- enough to show the wrap/pen-lift machinery
+        // repeatedly without collapsing into solid full-band columns -- and
+        // both of makeSyntheticTransfer's coherence dips (LF, and the 2 kHz
+        // notch) land inside the plotted 20-20000 Hz range. Changing either
+        // number changes what the eyes-only review below is judging.
         auto snapshot = std::make_shared<rta::measure::Snapshot> ();
         snapshot->sequence = 1;
         snapshot->sampleRate = 48000.0;

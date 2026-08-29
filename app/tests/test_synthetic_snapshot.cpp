@@ -88,10 +88,15 @@ TEST_CASE("The default synthetic spec is a usable picture", "[synthetic-snapshot
 
 namespace {
 
-/// Independent reimplementation of the (-180, 180] wrap -- test_phase_unwrap.cpp
-/// and PhaseDecimator.h both wrap in-tree; a THIRD copy here, rather than
-/// including either, is what lets this test catch a bug shared between the
-/// fixture and one of those two, not just a bug in the fixture alone.
+/// A copy of the fixture's own (-180, 180] wrap (SyntheticSnapshot.cpp's
+/// `wrapDegrees180`), NOT an independent implementation: a bug shared by both
+/// copies of the wrap convention itself would still agree here. What this
+/// copy actually buys is not having to include the production header for one
+/// static function; the real assertion below is the closed-form phase slope
+/// (`-360*hz*D/fs`), which this function only wraps into the same range the
+/// fixture's output is already in -- any sign, scale, or unit error in the
+/// slope itself has nothing to do with the wrap and is what the test
+/// actually catches.
 float wrapDeg(double deg) {
     double w = std::fmod(deg + 180.0, 360.0);
     if (w <= 0.0) w += 360.0;

@@ -3,7 +3,6 @@
 // docs/dsp/2026-08-29-display-layer-l5c.md.
 #include "view/TransferRibbon.h"
 
-#include "view/CoherenceAlpha.h"
 #include "view/MeasureColours.h"
 
 #include <az_ui/az_ui.h>
@@ -14,8 +13,7 @@
 namespace rta::view {
 
 void drawTransferRibbon(juce::Graphics& g, const PlotGeometry& geometry, PaneRect ribbonArea,
-                        std::span<const float> coherence, std::span<const int> columnForBin,
-                        int columnCount) {
+                        std::span<const float> alpha) {
     // "COH" caption in the same label-margin column drawLevelLabels reserves
     // for the panes below it -- one strip of furniture reading consistently
     // top to bottom.
@@ -24,17 +22,15 @@ void drawTransferRibbon(juce::Graphics& g, const PlotGeometry& geometry, PaneRec
     juce::Rectangle<int> caption(ribbonArea.x, ribbonArea.y, kLevelLabelWidth, ribbonArea.height);
     g.drawText("COH", caption, juce::Justification::centredRight, false);
 
-    if (!coherence.empty()) {
-        // One filled pixel column per pixel, alpha set by the per-column
-        // MINIMUM gamma^2 -- trust shown never exceeds trust measured
-        // (CoherenceAlpha.h). `columnAlpha` already applies
-        // `alphaForCoherence`'s floor/monotone mapping; this loop only picks
-        // the colour and paints.
-        const auto alpha = columnAlpha(coherence, columnForBin, columnCount);
+    if (!alpha.empty()) {
+        // One filled pixel column per pixel -- `alpha` already carries the
+        // per-column MINIMUM gamma^2 mapped through `alphaForCoherence`'s
+        // floor/monotone curve (CoherenceAlpha.h); this loop only picks the
+        // colour and paints.
         const int left = static_cast<int>(std::floor(geometry.left));
         const int right = static_cast<int>(std::ceil(geometry.right));
         for (int x = left; x < right; ++x) {
-            if (x < 0 || x >= columnCount) continue;
+            if (x < 0 || static_cast<std::size_t>(x) >= alpha.size()) continue;
             g.setColour(rta::view::trace.withAlpha(alpha[static_cast<std::size_t>(x)]));
             g.fillRect(x, ribbonArea.y, 1, ribbonArea.height);
         }

@@ -61,6 +61,18 @@ public:
     /// deleting it deletes the test.
     [[nodiscard]] const BodePanes& panes() const noexcept { return panes_; }
 
+    /// The two cached layers, exposed for the same reason and no other: the
+    /// O(1)-in-trace-count property L5a bought has to survive multiplication by
+    /// panes, and that property is entirely a claim about how often
+    /// `rebuildCount()` moves. Every other observable -- the pixels -- is
+    /// identical whether the images were reused or re-rasterised, so a
+    /// composite that rebuilt both layers on every frame would look exactly
+    /// like correct code and surface only as dropped frames at a live show.
+    [[nodiscard]] const StoredTraceLayer& magnitudeLayer() const noexcept {
+        return storedMagnitude_;
+    }
+    [[nodiscard]] const StoredTraceLayer& phaseLayer() const noexcept { return storedPhase_; }
+
 private:
     void timerCallback() override;
 
