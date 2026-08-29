@@ -675,11 +675,23 @@ TEST_CASE("magnitude and phase split the remaining height 5:3", "[bode-layout]")
         REQUIRE(panes.magnitude.height > 0);
         REQUIRE(panes.phase.height > 0);
 
-        // 5:3 as an integer cross-multiplication, tolerant of exactly one
-        // pixel of rounding and no more. Writing it as a float ratio with a
-        // loose epsilon would pass for 6:3 at small heights.
+        // 5:3 as an integer cross-multiplication rather than a float ratio
+        // with a loose epsilon, which would pass for 6:3 at small heights.
+        //
+        // The bound is 7, and that number is derived, not chosen. With
+        // magnitude = floor(5a/8) and phase = a - magnitude over an available
+        // height a:
+        //     cross = 3*magnitude - 5*phase = 8*floor(5a/8) - 5a = -(5a mod 8)
+        // which ranges over 0..-7. A CORRECT implementation therefore produces
+        // |cross| = 7 whenever 5a is 1 (mod 8). A tighter bound is not a
+        // stricter test, it is a test that fails on correct code at heights
+        // nobody happened to pick -- an earlier draft used 5, which survives
+        // only because these five heights all land on residues {0, 4}.
+        //
+        // Discrimination is unaffected: a 6:3 split gives |cross| near 76 at
+        // height 300, two orders away from the bound.
         const int cross = panes.magnitude.height * 3 - panes.phase.height * 5;
-        CHECK(std::abs(cross) <= 5);
+        CHECK(std::abs(cross) <= 7);
     }
 }
 
@@ -711,6 +723,12 @@ TEST_CASE("a window too short for the furniture yields no negative pane",
         CHECK(panes.ribbon.height >= 0);
         CHECK(panes.magnitude.height >= 0);
         CHECK(panes.phase.height >= 0);
+        // The ribbon is a FIXED height, which at these sizes means it must
+        // still be clamped to what the content actually has. Without this,
+        // `std::min(kRibbonHeight, ...)` can be deleted with every other
+        // assertion here still green -- an unclamped 34 satisfies `>= 0` just
+        // as happily as a correct 10 does.
+        CHECK(panes.ribbon.height <= content.height);
     }
 }
 
