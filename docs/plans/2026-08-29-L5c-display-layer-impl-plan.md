@@ -2163,6 +2163,13 @@ loudspeaker.
 - Create: `app/tests/test_paired_drain.cpp`, `app/tests/test_synthetic_impairment.cpp`
 - Modify: `app/src/measure/AnalysisThread.h`, `.cpp`
 - Modify: `app/src/measure/SyntheticInput.h`, `.cpp`
+- Modify: `app/src/MainComponent.cpp` — **comments only.** Two of them assert
+  that "SyntheticInput always writes two identical channels", citing a header
+  this task rewrites to say the opposite. The second is load-bearing: it
+  justifies "Measurement on either is equivalent", which stops being true the
+  moment any caller sets a non-zero delay. Project rule 12: after a change,
+  grep for the statements it made false and fix those too. A stale comment is
+  not a tidiness issue — it is a wrong instruction the next session will act on.
 - Modify: `app/tests/CMakeLists.txt` (two test files, two guard paths)
 
 **Interfaces:**
@@ -2384,7 +2391,11 @@ public:
     explicit DelayLine(int delaySamples)
         : history_(static_cast<std::size_t>(std::max(0, delaySamples)), 0.0f) {}
 
-    /// `out` and `in` must be the same length; `out` may not alias `in`.
+    /// Processes `min(in.size(), out.size())` samples -- the loop is bounded by
+    /// both rather than trusting a precondition it cannot check. `out` may not
+    /// alias `in`. Call sites here always pass equal-sized buffers; the bound
+    /// exists so a future caller that does not gets a short result rather than
+    /// a walk off the end.
     void process(std::span<const float> in, std::span<float> out) noexcept {
         const std::size_t d = history_.size();
         for (std::size_t i = 0; i < in.size() && i < out.size(); ++i) {
@@ -2435,10 +2446,15 @@ inline void addNoise(std::span<float> block, float rms, std::uint32_t& state) no
 
 - [ ] **Step 5: Make `AnalysisThread` drain in lock-step**
 
-In `AnalysisThread.h`, add `#include "measure/PairedDrain.h"`, a second scratch
-buffer `std::vector<float> referenceScratch_;` (sized with `hopScratch_` in the
+In `AnalysisThread.h`, add a second scratch buffer
+`std::vector<float> referenceScratch_;` (sized with `hopScratch_` in the
 constructor), and declare `void drain();` and
 `void drainPaired(int referenceChannel, int measurementChannel);`.
+
+`#include "measure/PairedDrain.h"` goes in the **`.cpp`**, not the header:
+`pairedHopCount` is called only from `drainPaired`'s body, and a header include
+propagates to every translation unit that touches `AnalysisThread` for no
+reason.
 
 In `AnalysisThread.cpp`, replace the two `drainRole` calls in `runBody` with a
 single `drain()`:
@@ -2491,6 +2507,10 @@ void AnalysisThread::drainPaired(int referenceChannel, int measurementChannel) {
 In `SyntheticInput.h`, add to `Config`:
 
 ```cpp
+        /// Below this, noise is OFF -- the generator is not called and the
+        /// channels stay bit-identical.
+        static constexpr double kNoiseOffDb = -120.0;
+
         /// Applied to the MEASUREMENT channel only, so the two channels stop
         /// being identical and the transfer function stops being H = 1. The
         /// display then has an answer that can be checked by eye against the
@@ -2502,7 +2522,13 @@ In `SyntheticInput.h`, add to `Config`:
         /// reason about -- gamma^2 = S/(S+N) per bin -- which is what makes the
         /// coherence ribbon and the trace fade visible at all without a room,
         /// a microphone, and somebody talking.
-        double measurementNoiseDb = -120.0;
+        ///
+        /// `kNoiseOffDb` is a genuine OFF, not merely a very small level: at or
+        /// below it the generator is not called at all and the two channels
+        /// stay bit-identical. A default must not change behaviour for a caller
+        /// that did not opt in, and "inaudibly small" is not the same promise
+        /// as "unchanged".
+        double measurementNoiseDb = kNoiseOffDb;
 ```
 
 In `SyntheticInput.cpp`: add a second block buffer and a `DelayLine`, and write
@@ -3168,6 +3194,16 @@ one.
   `PaneView::Transfer` → `TransferView(analysisThread_)`.
 - Default workspace when none is loaded: one `rta` pane, so the app's opening
   screen is byte-for-byte what it is today.
+- **Turn the synthetic knobs on.** Task 6 gave `SyntheticInput::Config` a
+  measurement delay and a noise floor and left both at their inert defaults, so
+  the hardware-free path still shows H = 1: flat 0.0 dB, 0 degrees, coherence
+  1.00. That is the single most misleading picture this application can
+  display, because it is what a perfectly working measurement of nothing looks
+  like AND what several broken engines look like. Set a real delay and a real
+  noise floor here -- `measurementDelaySamples = 4` and
+  `measurementNoiseDb = -30.0` give the readable closed form the lane has been
+  building toward: -30 degrees at 1 kHz, -120 at 4 kHz, and a coherence that
+  visibly dims where the noise dominates.
 - **Member declaration order stays load-bearing** (trap T-1 in that file's own
   class comment): `audioIo_` before `analysisThread_` before anything holding
   references into them. `library_` must be declared **before** `workspace_`,
