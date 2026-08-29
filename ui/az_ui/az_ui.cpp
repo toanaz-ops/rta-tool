@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "az_ui.h"
 
+#include "theme/Layout.cpp"
 #include "theme/Typography.cpp"
 #include "theme/Primitives.cpp"
 #include "theme/AzLookAndFeel.cpp"
