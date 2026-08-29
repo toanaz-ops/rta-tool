@@ -52,6 +52,9 @@ target_sources(rtatool PRIVATE
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
     src/view/StoredTraceLayer.cpp
+    # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
+    # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
+    src/view/TraceStroke.cpp
     # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
     # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
     # the moment the VIEW reads the library, both GUI binaries need the
@@ -131,6 +134,9 @@ target_sources(rtatool_snapshot PRIVATE
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
     src/view/StoredTraceLayer.cpp
+    # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
+    # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
+    src/view/TraceStroke.cpp
     # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
     # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
     # the moment the VIEW reads the library, both GUI binaries need the

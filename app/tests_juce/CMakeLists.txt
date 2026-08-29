@@ -25,11 +25,15 @@
 
 add_executable(rtatool_view_tests
     test_stored_trace_layer.cpp
+    test_trace_stroke.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)
     #   trace/TraceLibrary.h    -> needs TraceLibrary.cpp linked (entries/revision/setVisible)
     #   view/MeasureColours.h   -> az_ui (aliases only, but the module must link)
     #   view/TraceDecimator.h   -> header only, all inline
+    #   view/TraceStroke.h      -> needs TraceStroke.cpp linked (the stroking half, task 7)
+    #   view/PhaseDecimator.h,
+    #   view/CoherenceAlpha.h   -> header only, all inline
     # Nothing else. SessionCodec.cpp / TraceBlobCodec.cpp are NOT listed even
     # though TraceLibrary.h includes SessionCodec.h: that include supplies the
     # LibraryEntry STRUCT, and no function defined in those translation units
@@ -37,6 +41,7 @@ add_executable(rtatool_view_tests
     # into a view test for no reason and hide a real link dependency behind a
     # source list that is wider than the code.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/StoredTraceLayer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TraceStroke.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.cpp
 )
 
