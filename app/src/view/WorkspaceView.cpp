@@ -19,6 +19,21 @@ WorkspaceView::WorkspaceView(std::vector<rta::trace::PaneSpec> panes, PaneFactor
         // to `PaneView::Rta`, never to "build nothing" -- a dropped pane
         // here would shift every child after it out from under the caller's
         // own indexing.
+        //
+        // `resolution.fellBack` (and `.requested`) are read no further than
+        // this line, on purpose -- NOT an oversight of PaneResolution's own
+        // "the caller REPORTS this" contract. The pane is built either way,
+        // which is the load-bearing half; the REPORTING half has no seam to
+        // land in today, because nothing in this tree yet loads a saved
+        // workspace (`MainComponent` only ever hands this constructor one
+        // hardcoded `rta` `PaneSpec`, which never falls back). The seam that
+        // owes this a report is whatever future code path decodes a session
+        // file's `[pane]` sections and builds a `WorkspaceView` from them --
+        // the same layer `SessionCodec`'s own "refuse what you do not
+        // understand" / "never refuse a session over a layout word" split
+        // already reasons about (docs/dsp/2026-08-29-display-layer-l5c.md
+        // decision 6). Until that loader exists, plumbing `fellBack` any
+        // further than here would be a report with no reader.
         const auto resolution = resolvePaneView(spec.view);
         auto child = factory(resolution.view);
         addAndMakeVisible(*child);

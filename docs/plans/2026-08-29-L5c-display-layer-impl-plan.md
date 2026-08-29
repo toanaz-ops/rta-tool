@@ -3349,6 +3349,21 @@ one.
   `PaneView::Transfer` → `TransferView(analysisThread_)`.
 - Default workspace when none is loaded: one `rta` pane, so the app's opening
   screen is byte-for-byte what it is today.
+- **Assign the channel roles, and unassign them on the way out.** With
+  impairments on, `SyntheticInput` routes the impaired block by *role* and
+  `AnalysisThread::drain` refuses to pair until `firstChannelWithRole(Reference)`
+  is non-negative — so without a Reference role the transfer function never
+  populates and the app shows `NO REFERENCE CHANNEL` forever.
+
+  **The exit path matters more than the entry path.** `CaptureBus::prepare`
+  resets rings, not roles, so a role set on entering SYNTHETIC survives back
+  into LIVE. On a **mono** live device that is not cosmetic: `drain()` takes the
+  paired branch, `bus_.ring(1)` is null for an unprepared channel, `drainPaired`
+  returns immediately, and **nothing drains at all — including channel 0**. The
+  plot freezes, and on a mono device there is no channel-1 row in the table for
+  the user to clear the role from. On a stereo device the same staleness
+  silently starts a transfer measurement between two live inputs nobody asked
+  for. Reset both roles when leaving synthetic mode.
 - **Turn the synthetic knobs on.** Task 6 gave `SyntheticInput::Config` a
   measurement delay and a noise floor and left both at their inert defaults, so
   the hardware-free path still shows H = 1: flat 0.0 dB, 0 degrees, coherence

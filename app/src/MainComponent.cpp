@@ -136,6 +136,29 @@ void MainComponent::setSyntheticMode(bool enabled) {
         // panel that lets a user start a real one, so there is never a
         // window where both could be live at once.
         syntheticInput_.reset();
+
+        // The roles set on entry do NOT unset themselves: CaptureBus::prepare()
+        // resets ring CONTENTS on a device change, never ChannelConfig's roles
+        // (they are separate state -- ChannelConfig.h's own class comment
+        // draws this line explicitly, two different epochs for two different
+        // things). Left alone, a stale Reference role survives straight into
+        // LIVE mode and breaks it two different ways depending on the device:
+        // on a MONO device, AnalysisThread::drain() still finds a Reference
+        // role configured, takes the paired branch, finds bus_.ring(1) null
+        // for a channel the device never prepared, and drainPaired() returns
+        // immediately -- NOTHING drains, including channel 0's measurement,
+        // and the plot freezes with no channel-1 row in the table for a user
+        // to clear the role from. On a STEREO device the same staleness
+        // silently starts a transfer measurement between two live inputs
+        // nobody asked for. Reset to Unused, not to whatever the role table
+        // held before synthetic mode started: this class has never offered
+        // a way to remember or restore a prior live assignment, and Unused is
+        // what channelRoleTable_ shows below anyway once
+        // refreshChannelNamesFromDevice() repopulates it from the real
+        // device's channel list.
+        audioIo_.bus().config().setRole(0, rta::platform::ChannelRole::Unused);
+        audioIo_.bus().config().setRole(1, rta::platform::ChannelRole::Unused);
+
         devicePanel_.setEnabled(true);
         lastChannelNames_.clear();
         refreshChannelNamesFromDevice();
