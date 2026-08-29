@@ -3081,6 +3081,14 @@ Record decision 6, the model and the format. No components yet.
 
 1. **`weights are normalised on read`** — `{2, 2}` and `{0.5, 0.5}` both
    normalise to two equal shares summing to 1.
+1b. **`a collapsed pane stays collapsed, at any scale`** — `{1, 1, 0}` and
+   `{2, 2, 0}` must BOTH yield `{0.5, 0.5, 0.0}`. Two assertions, and both are
+   load-bearing: the zero pins that a non-positive weight is not redistributed
+   (the user collapsed it), and comparing the two inputs pins scale-invariance,
+   which a joint-normalisation implementation fails while still passing every
+   all-positive test. Add `{1, 0, -1}` → `{1.0, 0.0, 0.0}` for the negative and
+   the single-survivor case, and `{1, 0, inf}` → the `inf` treated as
+   non-positive, not as a pane that swallows the window.
 2. **`more than three panes are clamped`** — record decision 6 caps at 3,
    matching OSM's, because below roughly a third of a 760 px window a dB pane
    stops resolving what the readout rules promise. Five specs in, three out.
@@ -3092,7 +3100,10 @@ Record decision 6, the model and the format. No components yet.
 In `app/tests/test_session_codec.cpp`:
 
 5. **`a workspace round-trips through the index`** — encode two panes, decode,
-   compare count, view strings and weights.
+   compare count, view strings and weights. **Also assert the encoded TEXT**
+   contains `[pane]`, `view=`, and `weight=`: a round-trip alone passes when the
+   encoder and decoder are wrong in matching ways, and a renamed key would sail
+   through it.
 6. **`an unknown view name does not refuse the session`** — decode an index
    whose pane says `view=spectrograph`. Assert `DecodeStatus::Ok` and that the
    string arrives verbatim. Then assert `resolvePaneView("spectrograph")`
@@ -3160,10 +3171,33 @@ struct PaneSpec {
     float weight = 1.0f;
 };
 
-/// Clamp to `kMaxPanes`, drop non-positive weights to equal shares, normalise
-/// the rest to sum to 1. An empty input yields exactly one default pane: a
-/// session saved before workspaces existed and a brand-new one are the same
-/// case, and both must open.
+/// Clamp to `kMaxPanes` and normalise the weights. An empty input yields exactly
+/// one default pane: a session saved before workspaces existed and a brand-new
+/// one are the same case, and both must open.
+///
+/// **A non-positive weight stays zero.** It is not redistributed, not floored,
+/// not turned into an equal share. `az::ui::splitVertically` -- the only
+/// consumer of these numbers -- already decided what a non-positive weight
+/// means: that child gets zero height, and equal shares happen only when NOBODY
+/// expressed a preference. Any other rule here would silently reopen a pane the
+/// user collapsed, and the two functions would disagree about the same number.
+///
+/// So: positive weights are scaled to sum to 1 among themselves; non-positive
+/// ones are set to exactly 0; and if there are no positive weights at all,
+/// every pane gets `1/n`, which is the same fallback `splitVertically` makes
+/// for the same reason.
+///
+/// **The result must not depend on the scale of the input.** `{1, 1, 0}` and
+/// `{2, 2, 0}` express the identical preference and must produce identical
+/// shares -- an earlier draft normalised the whole set jointly after replacing
+/// zeros with `1/n`, which gave the collapsed pane 0.143 in the first case and
+/// 0.077 in the second. Two inputs meaning the same thing produced different
+/// layouts, which is the property `weights are normalised on read` exists to
+/// forbid and only tested for the all-positive case.
+///
+/// A non-finite weight (`inf`, `nan`) counts as non-positive. `std::from_chars`
+/// accepts both from a hand-edited file, and either one turns joint
+/// normalisation into `NaN` shares -- a layout with no geometry at all.
 [[nodiscard]] std::vector<PaneSpec> normalisePanes(std::vector<PaneSpec> panes);
 
 }  // namespace rta::trace
