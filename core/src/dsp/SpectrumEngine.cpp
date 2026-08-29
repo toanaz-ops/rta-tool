@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "rta/dsp/SpectrumEngine.h"
 
+#include "rta/dsp/PsdScaling.h"
+
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -36,8 +38,10 @@ SpectrumEngine::SpectrumEngine(const Config& config)
     }
 
     // PSD[k] = 2 |X[k]|^2 / (fs * sum(w^2)); DC and Nyquist lose the factor of
-    // two because they have no mirror-image partner to fold in.
-    densityScale_ = 2.0 / (config.sampleRate * window_.sumSquares());
+    // two because they have no mirror-image partner to fold in. The single
+    // definition of this lives in PsdScaling.h so DualFftEngine cannot drift
+    // from it into a divergent dB offset -- see docs/dsp/2026-08-28-dual-fft.md §5.
+    densityScale_ = PsdScaling::scale(config.sampleRate, window_.sumSquares());
     enbwHz_ = config.sampleRate * window_.sumSquares() / (window_.sum() * window_.sum());
 
     // One frame advances the clock by hopSize samples, so that is the interval
@@ -109,12 +113,10 @@ void SpectrumEngine::analyseFrame() {
     fft_.forward(windowed_, bins_);
 
     ++frameCount_;
-    const std::size_t last = bins_.size() - 1;
 
     for (std::size_t k = 0; k < bins_.size(); ++k) {
         const double magnitudeSquared = static_cast<double>(std::norm(bins_[k]));
-        double psd = magnitudeSquared * densityScale_;
-        if (k == 0 || k == last) psd *= 0.5;
+        const double psd = magnitudeSquared * densityScale_ * PsdScaling::binFactor(k, bins_.size());
 
         if (frameCount_ == 1) {
             // Seed from the first frame rather than from zero. An exponential
