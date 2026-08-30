@@ -423,18 +423,37 @@ TEST_CASE("The inverse filter is the faded sweep reversed and shaped, nothing el
     // -- the already-rendered, already-faded sweep, reversed, shaped. No further
     // windowing of any kind. Pinning that as the SPEC, element by element, is
     // what makes a later "helpful" extra layer go red instead of going unnoticed.
-    // The tolerance is one float rounding: buildInverseFilter multiplies in
-    // double and stores float, and process() renders the same forward samples
-    // bit-for-bit through the same expression.
+    // The tolerance is a closed form, not a picked number. buildInverseFilter
+    // computes the product in double and stores ONE float; process() renders
+    // the same forward samples bit-for-bit through the same expression (see
+    // Sweep::nextSample). So the only difference is a single double->float
+    // rounding. Every |inv[m]| is below 1.0 -- asserted below rather than
+    // assumed -- hence ulp <= 2^-24 and half an ulp is 2^-25 = 2.98e-8.
+    //
+    // NOT zero, deliberately. MSVC /fp:precise does not contract today so
+    // bit-identical would pass, but a toolchain that enabled FMA in one of the
+    // two translation units and not the other would make this red with nothing
+    // wrong. One rounding is the right claim; zero roundings is a claim about
+    // the compiler.
+    // Measured for this fixture: worst 1.48995e-08 with largest |inv| = 0.4787.
+    // Since that largest is below 0.5 its own ulp is 2^-25 and half of that is
+    // 2^-26 = 1.49012e-08 -- so the measurement SATURATES the tighter sub-bound,
+    // which is how we know 2^-25 is a real bound and not a comfortable margin.
+    // The looser figure is asserted so a configuration whose samples reach into
+    // [0.5, 1) does not turn a correct implementation red.
+    constexpr double kHalfUlpBelowOne = 2.98023223876953125e-08;   // 2^-25
     double worst = 0.0;
+    double largest = 0.0;
     for (std::size_t m = 0; m < n; ++m) {
         const std::size_t original = n - 1 - m;
         const double expected = static_cast<double>(forward[original])
                               * (sweep.instantaneousFrequency(original) / cfg.endHz);
         worst = std::max(worst, std::abs(static_cast<double>(inv[m]) - expected));
+        largest = std::max(largest, std::abs(static_cast<double>(inv[m])));
     }
-    CAPTURE(worst);
-    CHECK(worst < 1.0e-6);
+    CAPTURE(worst, largest);
+    CHECK(largest < 1.0);              // the premise the bound rests on
+    CHECK(worst <= kHalfUlpBelowOne);
 
     // Both ends already reach zero through the inherited fades, which is why no
     // second layer is needed to prevent a step in the kernel.
