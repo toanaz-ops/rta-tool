@@ -65,11 +65,43 @@ public:
         double sampleRate    = 48000.0;
         double startHz       = 20.0;
         double endHz         = 20000.0;
+        /// REQUESTED duration. The sweep actually rendered is a little
+        /// shorter or longer -- between -1.0% and +1.3% across this project's
+        /// configurations -- because `f1*L` is rounded to a whole number so
+        /// that harmonic packets land on whole samples with whole-turn phase
+        /// (Novak synchronisation; see the ctor). Read `durationSec()` or
+        /// `lengthSamples()` for what you got; never assume this times
+        /// `sampleRate`.
         double durationSec   = 10.0;
         double levelDbFsPeak = -6.0;   ///< peak-referenced: amplitude = 10^(db/20)
-        double fadeInSec     = 0.02;   ///< clamped up to 2/startHz, see ctor
-        double fadeOutSec    = 0.02;   ///< NOT clamped against endHz -- only the
-                                       ///< start fade is mandated a minimum
+        double fadeInSec     = 0.02;   ///< a FLOOR, not the value: the widest of
+                                       ///< this, 2/startHz, and fadeInOctaves
+                                       ///< octaves of travel wins. See the ctor,
+                                       ///< and fadeInOctavesAchieved() to read
+                                       ///< back which one did.
+        /// Minimum fade-in width in OCTAVES of sweep travel -- the unit that
+        /// governs the deconvolution's pre-arrival artefact floor. Seconds do
+        /// not: measured, 0.5 octave gives a -75.4 dB floor and 2 octaves gives
+        /// -108.7 dB, and the figure does not depend on the sweep's duration.
+        /// The `2/startHz` floor below is a CYCLES rule, so in octaves it
+        /// SHRINKS as the sweep lengthens -- under it alone, a longer sweep
+        /// measured worse. See docs/dsp/2026-08-30-sweep-ir-l4a.md decision 5.
+        ///
+        /// This is a trade-off the caller owns, not a setting with one right
+        /// value. A wide fade-in tapers the bottom of the sweep: two octaves
+        /// from 20 Hz shapes everything below 80 Hz, costing signal-to-noise
+        /// where room modes live. To have both, set `startHz` two octaves BELOW
+        /// the band of interest -- 5 Hz for a 20 Hz band -- which spends sweep
+        /// duration instead of low-frequency energy. Set to 0.0 to restore the
+        /// pre-2026-08-30 behaviour exactly.
+        double fadeInOctaves = 2.0;
+
+        double fadeOutSec    = 0.02;   ///< clamped up to 2/endHz -- two cycles at
+                                       ///< the end frequency, the mirror of the
+                                       ///< fade-in's floor. An unfaded
+                                       ///< switch-off lands at the START of the
+                                       ///< inverse filter, where the +6 dB/oct
+                                       ///< envelope amplifies it.
     };
 
     /// Throws std::invalid_argument if sampleRate, startHz, durationSec are not
@@ -81,11 +113,39 @@ public:
     [[nodiscard]] double phaseConstantK() const noexcept { return phaseK_; }
     [[nodiscard]] std::size_t lengthSamples() const noexcept { return lengthSamples_; }
 
-    /// Samples spent on the raised-cosine start fade, after the 2/startHz
-    /// clamp. Exposed for the same reason phaseAt is: a clamp nobody can
-    /// observe is a clamp nobody can check.
+    /// Samples spent on the raised-cosine start fade, after all three floors
+    /// have competed. Exposed for the same reason phaseAt is: a clamp nobody
+    /// can observe is a clamp nobody can check.
     [[nodiscard]] std::size_t fadeInSamples() const noexcept { return fadeInSamples_; }
     [[nodiscard]] std::size_t fadeOutSamples() const noexcept { return fadeOutSamples_; }
+
+    /// The fade-in width actually achieved, in octaves of sweep travel, after
+    /// all three floors have competed and the result has been rounded to whole
+    /// samples. This is the number that predicts the artefact floor, so it is
+    /// the one worth reading back.
+    /// The duration actually rendered, after Novak synchronisation rounded
+    /// `f1*L` to a whole number. Differs from `Config::durationSec` by up to
+    /// about 1.3% in the configurations this project uses.
+    [[nodiscard]] double durationSec() const noexcept;
+
+    /// `f1 * L`, which synchronisation makes an integer. Exposed because a
+    /// condition nobody can observe is a condition nobody can check.
+    [[nodiscard]] double synchronisedCycles() const noexcept {
+        return startHz_ * lengthL_;
+    }
+
+    [[nodiscard]] double fadeInOctavesAchieved() const noexcept;
+
+    /// Lower edge of the band in which this sweep's deconvolution is
+    /// meaningful: `f1 * exp(fadeInSec/L)`, the frequency the sweep had reached
+    /// when the fade-in finished. When the octave floor is the binding one this
+    /// collapses to `f1 * 2^fadeInOctaves` -- the lower band edge IS the knob.
+    [[nodiscard]] double validBandLowHz() const noexcept;
+
+    /// Upper edge: `f2 * exp(-fadeOutSec/L)`. Note the fade-out is deliberately
+    /// NOT clamped in octaves: measured, a wider fade-out makes the artefact
+    /// floor worse by about 3.5 dB per octave, the opposite of the fade-in.
+    [[nodiscard]] double validBandHighHz() const noexcept;
 
     /// Closed-form phase at sample n, in radians: K*(exp(n/(fs*L)) - 1).
     /// Public because a definition nobody can call is a definition nobody can
@@ -128,6 +188,8 @@ private:
     double lengthL_;        ///< T / ln(f2/f1)
     double phaseK_;         ///< 2*pi*f1*L
     std::size_t lengthSamples_;
+    double durationSec_;    ///< as synchronised, not as requested
+    double fadeOutSec_;     ///< as clamped, for validBandHighHz()
     std::size_t fadeInSamples_;
     std::size_t fadeOutSamples_;
     std::size_t n_ = 0;     ///< the only mutable state nextSample() advances

@@ -3,6 +3,152 @@
 *2026-08-28, cuối phiên orchestrator kế nhiệm. Đọc file này + `docs/reports/002`
 + `docs/plans/MASTER-EXECUTION-PLAN.md` trước khi đọc bất kỳ dòng code nào.*
 
+---
+
+# 2026-08-30 — lane L4a, MERGE GIỮA CHỪNG (lane CHƯA đóng)
+
+**Đọc mục này trước. Mọi mục bên dưới là lịch sử của các ngày trước đó.**
+
+17 commit, `408d0a5..acaae9a`, đã merge vào `main` cục bộ. Lane L4a xây được
+**Task 1, 2, 3, 4 và Novak**; **Task 5 và Task 6 chưa làm**. Kế hoạch thi công
+đầy đủ ở `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md`, quyết định ở
+`docs/dsp/2026-08-30-sweep-ir-l4a.md` — đọc record TRƯỚC plan.
+
+## Baseline đo được (dán từ lệnh, trên cây đã merge)
+
+```
+cmake --build build-l2 --config Release --parallel --clean-first  -> 0 warning /W4
+ctest --test-dir build-l2 -C Release                              -> 334/334, 0 failed
+rta_core_has_no_framework_deps                                    -> OK, 76 file
+filter_design_has_no_polynomial_form                              -> OK, 87 file
+core_makes_no_class_1_claim                                       -> OK,  9 file
+rta_platform_types_has_no_framework_deps                          -> OK,  5 file
+app_measure_has_no_framework_deps                                 -> OK, 29 file
+```
+
+Đây là cấu hình **`RTA_BUILD_APP=OFF`** (thư mục `build-l2`, gitignore). Cấu
+hình `ON` **chưa được đo lại trong phiên này** — đừng cộng gộp hai cấu hình,
+đừng đoán số cho cấu hình ON.
+
+## Đã hạ cánh
+
+| | |
+|---|---|
+| `rta::ir::deconvolve` | giải chập tuyến tính, giữ nguyên vùng thời gian âm, mang `originIndex` và `harmonicSpacingL` |
+| `inBandNormalisation` / `bandFlatness` | vô hướng chuẩn hoá trong băng, và **độ phẳng đạt được** — không ai được phép giả định nó bằng 0 |
+| `rta::ir::analyseSpectrum` | FFT vùng nhân quả, cửa sổ bắt đầu **trước** t=0 hai chu kỳ của `f_lo`, đã khử pha tuyến tính của lead-in |
+| `Sweep::fadeInOctaves` | kẹp fade-in theo **octave** (mặc định 2.0) — ba tầng floor, tầng rộng nhất thắng |
+| Novak synchronisation | `f1·L` làm tròn về số nguyên; `durationSec()` trả thời lượng THẬT |
+| `buildInverseFilter` | **xoá lớp Tukey thứ hai**; sàn fade-out hai chu kỳ tại `endHz` |
+
+## Việc còn mở
+
+**Task 5 — Polarity. ĐÃ ĐƯỢC DUYỆT, CHƯA THI CÔNG.** Xem mục quyết định bên
+dưới. Plan Task 5 đã viết sẵn đầy đủ code và test; nó **chưa phản ánh** phương
+án ba tầng vừa được duyệt, nên đọc mục quyết định trước khi làm theo plan.
+
+**Task 6 — closeout.** Chưa làm. Gồm: golden vector cho `rta::ir`, đọc lại số
+guard, và đồng bộ tài liệu. Hai việc cụ thể phải mang theo:
+
+1. **Hai bất đối xứng Python/C++** trong bộ sinh golden, chưa kích hoạt nhưng sẽ
+   thành bẫy: `tools/gen_generator.py` kẹp fade ở `len//2` còn C++ không có kẹp
+   tương đương; `raw` của Python có biên độ đỉnh 1.0 còn C++ nhân `10^(-6/20)`.
+   Cả hai **vô hại CHỈ VÌ** field duy nhất được tiêu thụ là một tỉ số. Thêm một
+   field không phải tỉ số vào golden này là kích hoạt cả hai.
+2. Đo lại cấu hình `RTA_BUILD_APP=ON`.
+
+**Chưa merge lên `origin`.** Sau merge, `main` cục bộ đi trước `origin/main`
+**57 commit** — đo bằng `git rev-list --count origin/main..main`, không phải
+cộng nhẩm. Chủ nhân đã chủ động chọn chưa push.
+
+## Quyết định của con người
+
+**G21 — ĐÃ DUYỆT 2026-08-30, nhưng qua đường chuyển tiếp.** Chủ nhân duyệt
+trong một phiên KHÁC (phiên review Fable ở checkout chính) và phiên đó nhắn
+sang. Phiên này **không tự khởi công dựa trên tin nhắn của một phiên khác** —
+ghi lại để phiên sau có bối cảnh, và **xin xác nhận một câu với chủ nhân trước
+khi xây**. Nội dung được chuyển tiếp, ba tầng:
+
+1. **Task 5 xây polarity TUYỆT ĐỐI** với cổng bề rộng 2.5 octave như plan. Khi
+   trả `Unknown` phải **kèm lý do** (ví dụ `bandwidth 2.0 oct < 2.5`) — một lời
+   từ chối phải có lối đi tiếp, không phải ngõ cụt.
+2. **Polarity TƯƠNG ĐỐI** — dấu tương quan chéo giữa IR mới đo và trace đã lưu
+   (`TraceLibrary` từ L5c đã có sẵn). Core ở L4b/L4c, giao diện ở L4c. **Đây
+   mới là câu trả lời cho subwoofer**, vì phép so tương đối đúng ở mọi bề rộng
+   băng.
+3. **Workflow dẫn dắt** (đo main full-range → đo sub tương đối với main) để L7,
+   đặt cạnh alignment wizard G17.
+
+Kèm hai điều kiện: ranh 2.5 octave giữ dạng cấu hình được, ghi rõ là **quan sát
+chứ chưa dẫn xuất**, và Task 5 phải mở rộng khảo sát sang họ bộ lọc và bậc khác
+trước khi tin nó; và chuỗi chữ giao diện khi `Unknown` phải trỏ sang đường
+tương đối.
+
+**Còn chờ, không ai quyết được thay:**
+
+- Mua **ISO 2969:2015 / SMPTE ST 202:2010** (bảng dung sai X-curve, L5b) và
+  **IEC 60268-16** (STI, L4d). Cả hai lane đứng yên vì chúng.
+- **ISO 18233:2006** — tiêu chuẩn đúng cho quy tắc độ dài capture. Record chỉ
+  *nêu tên* nó và không trích một dòng nào, vì chưa ai mua. Đừng trích.
+- Tên sản phẩm chính thức.
+- Ba câu hỏi giao diện còn treo từ L5c (cap 3 pane, dải màu spectrograph,
+  unwrap có hiện trace pha đã lưu không).
+
+## Người có thể tự chạy gì
+
+Thứ đáng chạy trước tiên, và là thứ duy nhất **không cần build**:
+
+```bash
+"D:/DEV CAVE EP3/PRJ010-RTA-TOOL/.venv/Scripts/python.exe" tools/verify_l4a_measurement.py
+```
+
+Nó in ra sáu mục đo (D, E, G, H, K, L). Mục **L** là bảng 28 ô cho thấy vì sao
+polarity tuyệt đối từ chối subwoofer: từ 2.5 octave trở lên mọi ô đọc đúng dấu,
+dưới 2 octave thì gần như luôn sai — và **không ngưỡng symmetry nào tách được
+hai vùng đó**, đó là lý do cổng symmetry bị rút.
+
+Hai lệnh còn lại, cùng venv: `tools/verify_l4a_pulse.py` (mục A B C F I J) và
+`tools/probe_sweep_fade.py` (hình học xung, luật fade theo octave). **Mọi con số
+trong record sinh ra từ đúng ba lệnh này** — không lệnh nào ghi file.
+
+Muốn thấy test chạy:
+
+```bash
+ctest --test-dir build-l2 -C Release --output-on-failure
+```
+
+**Chưa có gì để NHÌN.** L4a nằm hoàn toàn trong `core/`; không widget, không
+ảnh chụp. Thứ đầu tiên người vận hành nhìn thấy được thuộc về L4c.
+
+## Bẫy phiên này trả học phí (ngoài danh sách cũ bên dưới)
+
+13. **Chạy script Python không phải chạy test.** Ba vòng làm tài liệu, tôi chạy
+    ba script verify và báo "cây sạch" — đúng về git, nhưng
+    `filter_design_has_no_polynomial_form` đã ĐỎ suốt ba commit vì một
+    `scipy.signal.lfilter` trong `tools/`. Guard quét cả `tools/*.py`. Chạy
+    `ctest` sau bất kỳ thay đổi nào dưới `tools/`.
+14. **Một field golden không ai đọc là một tripwire không tồn tại.** `peak_index`
+    được ghi từ ngày đầu và **không test nào đọc**. Bốn commit của lane này viện
+    dẫn "peak_index không được nhúc nhích" như một tripwire; nó chỉ sống trong
+    việc một con người nhìn diff. Đã vá ở `82ece26`. Grep xem field golden nào
+    thực sự có người đọc trước khi tin nó.
+15. **Fixture tối ưu cho số ngoan có thể đo được số không.** Xem
+    `memory/a-fixture-can-be-too-well-behaved-to-fail.md`.
+16. **Fetch một trang web không phải đọc một tiêu chuẩn.** Record từng trích
+    "AES-2id" cho các khuyến nghị về sweep. AES-2id là hướng dẫn về **giao diện
+    số AES3** — dây tín hiệu. Nguồn là một trang web tự nhận. Kiểm phạm vi tiêu
+    chuẩn trước khi trích tên nó.
+17. **Hai đặc tả có thể mâu thuẫn, và code sẽ theo cái cũ.**
+    `plans/2026-08-27:317` bắt fade inverse filter lần hai; `Sweep.h:44-50` tả
+    chỉ thừa kế. Code theo plan, nên header **nói dối về code** suốt bốn ngày.
+    Đã đánh dấu supersede. Khi sửa một hành vi, grep xem tài liệu nào ĐANG yêu
+    cầu hành vi cũ — nếu không, phiên sau khôi phục nó với đầy thiện chí.
+18. **Fade đối xứng làm mọi cấu trúc trùng nhau.** Không test nào bắt được lớp
+    fade thứ hai vì mọi fixture đều dùng fade-in = fade-out. Khi kiểm một cấu
+    trúc, dùng cấu hình **bất đối xứng**.
+
+---
+
 **Cập nhật 2026-08-29 (lần hai — lane L5c ĐÃ XÂY XONG).** Mười nhiệm vụ, 35
 commit, `78ef14f..e14d0a0`. Hợp thể Bode (ribbon coherence + pane biên độ +
 pane pha trên MỘT trục tần số dùng chung), workspace 1–3 pane lưu xuống đĩa, và
@@ -135,7 +281,7 @@ thành loa hỏng.
 
 **L2 (2026-08-29) và L5c (2026-08-29) đều đã xây xong.** L2: tám nhiệm vụ,
 `docs/reports/003-dual-fft-engine.md`. L5c: mười nhiệm vụ, số liệu ở block
-baseline phía trên — không lặp lại ở đây. **Lane tiếp theo, theo thứ tự**
+baseline phía trên — không lặp lại ở đây. **(Đoạn dưới đây đã LỖI THỜI từ 2026-08-30: L4 đã có decision record và L4a đã xây một phần. Xem mục 2026-08-30 ở đầu file.)** Lane tiếp theo, theo thứ tự
 (chi tiết ở "Suggested opening order" trong
 `docs/plans/MASTER-EXECUTION-PLAN.md`): **L4** (sweep/IR — cần một lượt nghiên
 cứu trạm 1 trước, nó chưa có decision record), rồi **L3** + **L6b**, rồi **L7**

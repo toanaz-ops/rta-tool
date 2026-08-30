@@ -277,55 +277,100 @@ def build_mls_case(order: int) -> str:
 # --- 5. Sweep: Farina exponential sweep, rendered and deconvolved independently of the
 # C++ Sweep class per the closed forms in docs/dsp/2026-08-27-generator.md.
 def sweep_length_constants(f1: float, f2: float, T: float) -> tuple[float, float]:
-    length_l = T / np.log(f2 / f1)
-    phase_k = 2.0 * np.pi * f1 * length_l
-    return length_l, phase_k
+    """L and K, with Novak synchronisation applied.
 
-def raised_cosine_fade(x: np.ndarray, fade_len: int) -> np.ndarray:
-    fade_len = min(fade_len, len(x) // 2)
+    `f1*L` is rounded to a whole number so the sweep's total phase is an exact
+    multiple of 2*pi and every harmonic packet lands on a whole sample with
+    whole-turn phase. Without it the packet positions are still right to a
+    fraction of a sample, but each harmonic's response carries a
+    frequency-dependent phase rotation. Novak et al., EURASIP 2010 / JAES 2015.
+
+    The DURATION moves, not the frequency range: f(t) = f1*e^(t/L) reaches f2
+    only at t = L*ln(f2/f1). Use synchronised_duration() for the real figure.
+    """
+    length_l = T / np.log(f2 / f1)
+    length_l = max(1.0, round(f1 * length_l)) / f1
+    return length_l, 2.0 * np.pi * f1 * length_l
+
+
+def synchronised_duration(f1: float, f2: float, T: float) -> float:
+    """The duration actually rendered once L has been synchronised."""
+    length_l, _ = sweep_length_constants(f1, f2, T)
+    return length_l * np.log(f2 / f1)
+
+
+def raised_cosine_fade(x: np.ndarray, fade_in_len: int, fade_out_len: int) -> np.ndarray:
+    """Taper the two ends INDEPENDENTLY, matching core's Sweep.
+
+    One length for both ends was wrong from the start and merely invisible: it
+    happened to agree with core only while 2/f1 equalled the default fadeOutSec.
+    It matters now because the fade-in has an octave floor and the fade-out does
+    not -- measured, a wide fade-out makes the deconvolution's artefact floor
+    WORSE by about 3.5 dB per octave while a wide fade-in makes it better by
+    about 19, so the two ends cannot share a number.
+    """
     window = np.ones_like(x)
-    # Divide by (fade_len - 1), not fade_len: the ramp must land EXACTLY on
-    # p=1 (gain 1.0) at its last sample -- zero value AND zero slope
-    # discontinuity against the flat region it hands off to, the whole
-    # reason a raised cosine is used over a linear taper. The original
-    # fade_len denominator stopped one sample short of unity (a real, if
-    # minor, fixed bug); it was not the dominant source of this case's
-    # cross-implementation SNR gap against the independent C++ Sweep (see
-    # test_generator_sweep.cpp's +/-2 dB golden-tolerance comment).
-    denom = max(fade_len - 1, 1)
-    ramp = 0.5 * (1.0 - np.cos(np.pi * np.arange(fade_len) / denom))
-    window[:fade_len] *= ramp
-    window[-fade_len:] *= ramp[::-1]
+    # Divide by (len - 1), not len: the ramp must land EXACTLY on p=1 (gain 1.0)
+    # at its last sample -- zero value AND zero slope discontinuity against the
+    # flat region it hands off to, the whole reason a raised cosine is used over
+    # a linear taper.
+    fade_in_len = min(fade_in_len, len(x) // 2)
+    fade_out_len = min(fade_out_len, len(x) // 2)
+    if fade_in_len > 1:
+        window[:fade_in_len] *= 0.5 * (
+            1.0 - np.cos(np.pi * np.arange(fade_in_len) / (fade_in_len - 1)))
+    if fade_out_len > 1:
+        ramp = 0.5 * (1.0 - np.cos(np.pi * np.arange(fade_out_len) / (fade_out_len - 1)))
+        window[-fade_out_len:] *= ramp[::-1]
     return x * window
+
 
 def render_sweep_and_inverse(fs: float, f1: float, f2: float, T: float):
     """Both closed forms repeated verbatim from docs/dsp/2026-08-27-generator.md,
     computed here independently in Python."""
     length_l, phase_k = sweep_length_constants(f1, f2, T)
-    n = np.arange(int(round(fs * T)))
+    n = np.arange(int(round(fs * synchronised_duration(f1, f2, T))))
     phase = phase_k * (np.exp(n / (fs * length_l)) - 1.0)
     raw = np.sin(phase)
     instantaneous_freq = f1 * np.exp(n / (fs * length_l))
 
-    # Fade at least two full cycles at f1 -- an unfaded start is a broadband click landing
-    # in the exact band the sweep exists to measure.
-    fade_len = int(np.ceil(2.0 / f1 * fs))
-    sweep = raised_cosine_fade(raw.copy(), fade_len)
-    # Inverse: reverse with a f/f2 envelope applied BEFORE reversal (+6 dB/oct with
-    # frequency; equivalently decaying with time along the reversed signal -- the two
-    # phrasings describe the same envelope).
-    envelope = raw * (instantaneous_freq / f2)
-    inverse = envelope[::-1].copy()
-    inverse /= np.max(np.abs(inverse))
-    inverse = raised_cosine_fade(inverse, fade_len)
+    # Fade-in: three floors, widest wins -- the requested seconds, two cycles at
+    # f1 (an unfaded start is a broadband click in the exact band the sweep
+    # measures), and fadeInOctaves octaves of travel, which is the unit that
+    # actually governs the deconvolution's pre-arrival artefact floor.
+    # fadeInOctaves defaults to 2.0 in core, so it defaults to 2.0 here.
+    # Fade-out: two cycles at f2, the mirror floor, and deliberately NOT given an
+    # octave rule. See docs/dsp/2026-08-30-sweep-ir-l4a.md decision 5.
+    fade_in_len = int(round(max(0.02, 2.0 / f1, 2.0 * np.log(2.0) * length_l) * fs))
+    fade_out_len = int(round(max(0.02, 2.0 / f2) * fs))
+    sweep = raised_cosine_fade(raw.copy(), fade_in_len, fade_out_len)
+
+    # Inverse: the ALREADY-FADED sweep, shaped by f/f2 (+6 dB/oct with frequency;
+    # equivalently decaying with time along the reversed signal -- the two
+    # phrasings describe the same envelope), then reversed. The taper is
+    # INHERITED through that reversal.
+    #
+    # No second fade, and no peak normalisation. An earlier version did both,
+    # following docs/plans/2026-08-27-generator-impl-plan.md, which is now marked
+    # superseded at that line: core/include/rta/gen/Sweep.h has always specified
+    # inheritance only, and the second layer tapered the kernel's highest
+    # frequencies, costing up to 72 dB of in-band flatness once the fade-in
+    # widened. Normalisation cancels in every ratio these goldens take.
+    inverse = (sweep * (instantaneous_freq / f2))[::-1].copy()
     return sweep, inverse
+
 
 def build_sweep_params_case(fs: float, f1: float, f2: float, T: float) -> str:
     length_l, phase_k = sweep_length_constants(f1, f2, T)
-    n = np.linspace(0, fs * T * 0.999, 10).astype(int)
+    # Sample instants span the SYNCHRONISED duration, not the requested one --
+    # the sweep is that long, and phases past its end describe nothing.
+    duration = synchronised_duration(f1, f2, T)
+    n = np.linspace(0, fs * duration * 0.999, 10).astype(int)
     phase = phase_k * (np.exp(n / (fs * length_l)) - 1.0)
     return case_block("sweep_params", 1, {
-        "fs": fs, "f1": f1, "f2": f2, "T": T,
+        # T is the REQUESTED duration, kept so the C++ can construct the same
+        # Config; T_sync is what synchronisation actually produced.
+        "fs": fs, "f1": f1, "f2": f2, "T": T, "T_sync": duration,
         "L": length_l, "K": phase_k, "n": n, "phase": phase,
     })
 
@@ -366,9 +411,16 @@ def build_sweep_deconv_case(fs: float, f1: float, f2: float, T: float) -> str:
                           "construction before writing this golden")
     print(f"  sweep_deconv: peak_index={peak_index} snr_db={snr_db:.3f}")
     return case_block("sweep_deconv", 1, {
+        # T_sync alongside T for the same reason as in sweep_params: the C++
+        # constructs its Config from T, but the sample count it renders -- and
+        # therefore where the deconvolution peaks -- follows T_sync.
         "fs": fs, "f1": f1, "f2": f2, "T": T,
+        "T_sync": synchronised_duration(f1, f2, T),
         "ir_index": ir_index, "ir_amp": ir_amp,
-        "peak_index": peak_index, "peak_amp_norm": 1.0, "snr_db": snr_db,
+        # No peak_amp_norm: it was a hardcoded 1.0, derived from nothing, read
+        # by nothing, and its name implied a normalisation the inverse filter
+        # does not perform.
+        "peak_index": peak_index, "snr_db": snr_db,
     })
 
 def main() -> int:
