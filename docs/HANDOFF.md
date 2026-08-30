@@ -142,9 +142,20 @@ guard, và đồng bộ tài liệu. Hai việc cụ thể phải mang theo:
    field không phải tỉ số vào golden này là kích hoạt cả hai.
 2. Đo lại cấu hình `RTA_BUILD_APP=ON`.
 
-**Chưa merge lên `origin`.** Sau merge, `main` cục bộ đi trước `origin/main`
-**57 commit** — đo bằng `git rev-list --count origin/main..main`, không phải
-cộng nhẩm. Chủ nhân đã chủ động chọn chưa push.
+**Chưa push lên `origin`.** `main` cục bộ đi trước `origin/main` một khoảng
+**không được viết vào file này** — đo bằng lệnh, mỗi lần cần:
+
+```
+git rev-list --count origin/main..main
+```
+
+Chủ nhân đã chủ động chọn chưa push.
+
+> Câu này từng viết "**57 commit**" ngay sau mệnh lệnh "đo bằng
+> `git rev-list --count`, không phải cộng nhẩm". Đo lại 2026-08-30 (phiên EP06,
+> hai phiên độc lập cùng chạy lệnh): **71**. Một con số đứng cạnh chính lệnh
+> bác bỏ nó vẫn mục sau bốn ngày — nên con số đã bị rút, không phải cập nhật.
+> Cùng lớp lỗi với `fc776f3`; đây là lần thứ ba trong repo này.
 
 ## Quyết định của con người
 

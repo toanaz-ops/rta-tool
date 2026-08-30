@@ -170,10 +170,18 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
    `CMakeLists.txt`, and **not one line of `core/`**).
 3. ~~**Now**: **L4** — and note it starts at **station 1**, not station 3: sweep/IR
    has no decision record yet~~ — **superseded 2026-08-30.** L4 now has a
-   decision record and is split four ways; **L4a is built** (Task 6 closeout in progress) and resumes at
-   its Task 5, not at station 1. Read `docs/HANDOFF.md` first, then
-   `docs/dsp/2026-08-30-sweep-ir-l4a.md`. **L5b** stays blocked on the ISO 2969 /
-   SMPTE ST 202 purchase, **L4d** on IEC 60268-16. L8 research lanes
-   fire-and-forget anytime.
-4. Then **L3** + **L6b**; then **L7**, which needed L2 + L4 + L5 — two of those
+   decision record and is split four ways. ~~**L4a is built** (Task 6 closeout in
+   progress) and resumes at its Task 5, not at station 1.~~ — **L4a is CLOSED and
+   MERGED**, 2026-08-30, merge commit `61daf1a`; Task 5 and Task 6 both landed.
+   Read `docs/HANDOFF.md` first, then `docs/dsp/2026-08-30-sweep-ir-l4a.md`.
+   **L5b** stays blocked on the ISO 2969 / SMPTE ST 202 purchase, **L4d** on
+   IEC 60268-16. L8 research lanes fire-and-forget anytime.
+4. **Now**: **L4b** — ETC, Schroeder, Lundeby, EDT/T20/T30, C50/C80/D50, all in
+   `core/`. It has **no decision record**, so it starts at **station 1**, not
+   station 3. Two mandates L4a measured and handed it are in that record's
+   "What this record does not decide" — the deconvolution noise tail that reads
+   as a plausible RT60 out of a measurement containing no room, and the
+   relative-polarity ρ thresholds that came from one grid and must be
+   re-derived before any of them ships.
+5. Then **L3** + **L6b**; then **L7**, which needed L2 + L4 + L5 — two of those
    three are now in. **L6a** after meters; **L9** last.
