@@ -403,14 +403,31 @@ def filter_own_t60(sos, fs: float = FS) -> float:
 def ring_table() -> None:
     """Why the octave-band mode comparison above found nothing.
 
-    A band-pass filter has its own decay, and it adds to the room's. Whether
-    that matters is not a question about frequency, it is a question about the
-    RATIO of the filter's decay to the room's -- and the grid above never got
-    that ratio above about 0.28, which is why all three modes agreed there.
+    A band-pass filter has its own decay and it adds to the room's. Whether that
+    matters is not a question about frequency, and the grid above never got the
+    two decays anywhere near comparable, which is why all three modes agreed.
+
+    ## Read the B*T column, not the ratio column
+
+    The ratio column is printed to show the mechanism, and it must NOT be used
+    for a threshold. Both sessions on this lane measured it and their tables
+    disagreed by exactly x2 on every row -- one designed the band as
+    `butter(4, btype='bandpass')` (8th order overall), the other as `butter(8)`
+    (16th). Both measured their own filter correctly; they were measuring
+    different filters. A decay ratio is a property of an implementation's filter
+    order, so a constant expressed in it means nothing across implementations.
+
+    B*T is immune: B comes from the band table and T from the room. It is also
+    the quantity the literature already uses -- the classical floor for reading
+    a decay through a band-pass is B*T > 16, lowered to about 4 by
+    Jacobsen & Rindel's time-reversed method.
     """
-    print("=== filter's own T60 vs the room's -- the ratio that decides =========")
+    print("=== bandwidth, the filter's own decay, and B*T ======================")
+    print("The ratio columns show the MECHANISM. The B*T columns are what a")
+    print("threshold may be written in -- see this function's docstring.")
     print(f"{'band':>14} {'BW (Hz)':>9} {'filter T60':>12}"
-          + "".join(f"{'/ ' + str(r) + 's':>10}" for r in (0.3, 0.4, 1.2)))
+          + "".join(f"{'ratio/' + str(r) + 's':>12}" for r in (0.4, 1.2))
+          + "".join(f"{'B*T@' + str(r) + 's':>11}" for r in (0.4, 1.2)))
     for label, centre, frac in (("octave 125", 125.0, 1), ("octave 1000", 1000.0, 1),
                                 ("1/3-oct 125", 125.0, 3), ("1/3-oct 63", 63.0, 3),
                                 ("1/3-oct 40", 40.0, 3)):
@@ -418,7 +435,8 @@ def ring_table() -> None:
         lo, hi = centre / f, centre * f
         sos = (octave_sos(centre, FS) if frac == 1 else third_sos(centre))
         r = filter_own_t60(sos)
-        cells = "".join(f"{r / room:9.2f} " for room in (0.3, 0.4, 1.2))
+        cells = "".join(f"{r / room:11.2f} " for room in (0.4, 1.2))
+        cells += "".join(f"{(hi - lo) * room:10.1f} " for room in (0.4, 1.2))
         print(f"{label:>14} {hi - lo:9.1f} {r * 1000:10.1f}ms " + cells)
     print()
 
