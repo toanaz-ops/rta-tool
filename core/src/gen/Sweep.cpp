@@ -15,8 +15,9 @@ constexpr double kTwoPi = 2.0 * kPi;
 
 /// Shared raised-cosine (Tukey-shaped) taper closed form: 0 at p=0, 1 at p=1,
 /// with zero slope at both ends -- the C1 continuity that makes a taper
-/// click-free. Used for the sweep's own start/end fades and again, verbatim,
-/// on the inverse filter's fades.
+/// click-free. Used for the sweep's own start and end fades, and ONLY those.
+/// The inverse filter inherits its taper through the reversal; it is not faded
+/// again (see buildInverseFilter).
 double raisedCosine(double p) noexcept {
     return 0.5 * (1.0 - std::cos(kPi * p));
 }
@@ -58,14 +59,22 @@ Sweep::Sweep(const Config& config)
     phaseK_ = kTwoPi * startHz_ * lengthL_;
     lengthSamples_ = roundToSamples(config.durationSec, sampleRate_);
 
-    // The fade-in is clamped up to two full cycles at the start frequency: an
-    // unfaded start at f1 is a broadband click that pollutes exactly the
-    // low-frequency band the sweep exists to measure, and anything shorter
-    // than one full cycle at f1 is not meaningfully a fade at all. The
-    // fade-out carries no such clamp -- only the start is named in the
-    // decision record.
-    const double minFadeInSec = 2.0 / startHz_;
-    const double fadeInSec = std::max(config.fadeInSec, minFadeInSec);
+    // THREE floors compete and the widest wins. They are in different units and
+    // neither implies the other:
+    //
+    //   config.fadeInSec          what the caller asked for
+    //   2 / startHz               two cycles at f1 -- an unfaded start is a
+    //                             broadband click landing in the exact band the
+    //                             sweep exists to measure
+    //   fadeInOctaves*ln2*L       the width that governs the deconvolution's
+    //                             pre-arrival artefact floor
+    //
+    // For a 10 s sweep from 20 Hz the cycles floor is 0.1 s and the octave floor
+    // is 2.007 s; for a 0.05 s sweep the cycles floor is the larger. Both stay.
+    const double octaveFloorSec = config.fadeInOctaves > 0.0
+        ? config.fadeInOctaves * std::log(2.0) * lengthL_
+        : 0.0;
+    const double fadeInSec = std::max({ config.fadeInSec, 2.0 / startHz_, octaveFloorSec });
     fadeInSamples_ = roundToSamples(fadeInSec, sampleRate_);
 
     // Two cycles at the END frequency, the mirror of the fade-in's two cycles
@@ -81,8 +90,8 @@ Sweep::Sweep(const Config& config)
     // second fade layer in buildInverseFilter genuinely covered -- is handled
     // on the FORWARD signal, where the click actually is, rather than patched
     // on the kernel afterwards.
-    const double fadeOutSec = std::max(config.fadeOutSec, 2.0 / endHz_);
-    fadeOutSamples_ = roundToSamples(fadeOutSec, sampleRate_);
+    fadeOutSec_ = std::max(config.fadeOutSec, 2.0 / endHz_);
+    fadeOutSamples_ = roundToSamples(fadeOutSec_, sampleRate_);
 
     // Guard the degenerate case (a fade of 0 or 1 samples has no interior to
     // divide by) rather than let a caller-supplied near-zero duration produce
@@ -90,6 +99,23 @@ Sweep::Sweep(const Config& config)
     // with the floor above: it can no longer be zero.
     if (fadeInSamples_ < 2) fadeInSamples_ = 2;
     if (fadeOutSamples_ < 2) fadeOutSamples_ = 2;
+}
+
+double Sweep::fadeInOctavesAchieved() const noexcept {
+    // Invert fadeInSec = octaves*ln2*L, using the SAMPLE count actually stored
+    // rather than the requested seconds, so the rounding to whole samples is
+    // included in the answer instead of being assumed away.
+    const double seconds = static_cast<double>(fadeInSamples_) / sampleRate_;
+    return seconds / (std::log(2.0) * lengthL_);
+}
+
+double Sweep::validBandLowHz() const noexcept {
+    const double seconds = static_cast<double>(fadeInSamples_) / sampleRate_;
+    return startHz_ * std::exp(seconds / lengthL_);
+}
+
+double Sweep::validBandHighHz() const noexcept {
+    return endHz_ * std::exp(-fadeOutSec_ / lengthL_);
 }
 
 double Sweep::phaseAt(std::size_t n) const noexcept {

@@ -126,14 +126,14 @@ mandates normalising the inverse to unit peak, `tools/gen_generator.py` does it,
 and the C++ does not. It cancels in every ratio this lane takes, so it is noted
 and not acted on.)
 
-- [ ] **Step 0a: Remove the second Tukey layer**
+- [x] **Step 0a: Remove the second Tukey layer**
 
 Delete the two loops at `core/src/gen/Sweep.cpp:151-162`. Their stated reason —
 "without this the inverse filter starts/ends with a step" — is false in the
 ordinary case: `forward[]` is multiplied by `fadeEnvelope`, which is zero at
 both ends, and the reversal carries those zeros.
 
-- [ ] **Step 0b: Give the fade-out a floor, so the reason stops being true at all**
+- [x] **Step 0b: Give the fade-out a floor, so the reason stops being true at all**
 
 The layer is load-bearing in exactly one configuration: `fadeOutSec == 0`, where
 the *forward* sweep ends with a step. Fix that where it happens rather than
@@ -161,7 +161,7 @@ leaves the loudspeaker clicking); and rejecting `fadeOutSec == 0` outright
 (over-strict — zero is a legitimate request under the sweep-to-Nyquist option in
 the record's open decisions).
 
-- [ ] **Step 0c: Test it with an ASYMMETRIC fade, or the test proves nothing**
+- [x] **Step 0c: Test it with an ASYMMETRIC fade, or the test proves nothing**
 
 **Under a symmetric fade every candidate construction agrees.** That is exactly
 why this defect survived: no fixture in the suite uses different fade-in and
@@ -200,7 +200,7 @@ TEST_CASE("The inverse filter is the faded sweep reversed and shaped, and nothin
 }
 ```
 
-- [ ] **Step 0d: Fix the statements this makes false, and the one it makes true**
+- [x] **Step 0d: Fix the statements this makes false, and the one it makes true**
 
 - `core/include/rta/gen/Sweep.h:71-72` — "`fadeOutSec` ... NOT clamped against
   endHz — only the start fade is mandated a minimum" becomes **false**. Rewrite.
@@ -214,7 +214,7 @@ TEST_CASE("The inverse filter is the faded sweep reversed and shaped, and nothin
   time; the code comment even cites "§2.4 of the plan" as its authority.
 - `core/include/rta/gen/Sweep.h:44-50` needs no change and becomes **correct**.
 
-- [ ] **Step 0e: Now the flatness span can be asserted, and Task 3 unblocks**
+- [x] **Step 0e: Now the flatness span can be asserted, and Task 3 unblocks**
 
 With the layer gone, `bandFlatness` over the valid band measures the analysis
 pulse rather than the defect. Add to `test_ir_deconvolver.cpp`'s normalisation
@@ -229,7 +229,7 @@ case, which currently asserts only that the range is finite:
     CHECK(flat.maxDb - flat.minDb < 0.30);
 ```
 
-- [ ] **Step 0f: Full suite, then commit Step 0 on its own**
+- [x] **Step 0f: Full suite, then commit Step 0 on its own**
 
 ```
 ctest --test-dir build-l2 -C Release --output-on-failure
@@ -251,7 +251,7 @@ git commit -m "fix(core): the inverse filter was faded twice, and the header sai
 
 ---
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `core/tests/test_generator_sweep.cpp`. The literals are derived, not
 observed: `L = 3/ln(100) = 0.651442 s`, `2·ln2·L = 0.903090 s`,
@@ -316,14 +316,14 @@ TEST_CASE("The valid band's edges follow from the fades", "[sweep]") {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 ```
 ctest --test-dir build -C Release -R rta_core_tests --output-on-failure
 ```
 Expected: compile error, `'fadeInOctaves': is not a member of 'Sweep::Config'`.
 
-- [ ] **Step 3: Add the Config field and accessors**
+- [x] **Step 3: Add the Config field and accessors**
 
 In `core/include/rta/gen/Sweep.h`, inside `struct Config`, after `fadeOutSec`:
 
@@ -367,7 +367,7 @@ Then, with the other accessors:
     [[nodiscard]] double validBandHighHz() const noexcept;
 ```
 
-- [ ] **Step 4: Implement the clamp**
+- [x] **Step 4: Implement the clamp**
 
 In `core/src/gen/Sweep.cpp`, replace the two-floor clamp at lines 63-75:
 
@@ -418,7 +418,7 @@ double Sweep::validBandHighHz() const noexcept {
 }
 ```
 
-- [ ] **Step 5: Run — the new tests pass and an OLD test now fails**
+- [x] **Step 5: Run — the new tests pass and an OLD test now fails**
 
 ```
 ctest --test-dir build -C Release -R rta_core_tests --output-on-failure
@@ -429,7 +429,7 @@ Expected: the two new cases PASS, and
 43348. **This failure is correct.** Do not adjust the number until it goes
 green: re-derive it.
 
-- [ ] **Step 6: Re-derive the old test rather than patch it**
+- [x] **Step 6: Re-derive the old test rather than patch it**
 
 That test now asserts something the code deliberately no longer does. Its
 *shape* check is still valuable and unaffected (it uses `fadeInSec = 1.0`, which
@@ -456,7 +456,7 @@ TEST_CASE("The fade is raised-cosine, and the cycles floor still applies", "[swe
 Set `shapeCfg.fadeInOctaves = 0.0` too, so the shape check measures the fade it
 names.
 
-- [ ] **Step 7: Fix the golden generator's fade, which fades both ends equally**
+- [x] **Step 7: Fix the golden generator's fade, which fades both ends equally**
 
 `tools/gen_generator.py:284` takes ONE `fade_len` and applies it to both ends.
 `core` has always had independent `fadeInSamples_` and `fadeOutSamples_`. The
@@ -502,7 +502,7 @@ And in `render_sweep_and_inverse`, replace the single `fade_len`:
     inverse = raised_cosine_fade(inverse, fade_in_len, fade_out_len)
 ```
 
-- [ ] **Step 8: Regenerate the goldens and READ the diff**
+- [x] **Step 8: Regenerate the goldens and READ the diff**
 
 ```
 "D:/DEV CAVE EP3/PRJ010-RTA-TOOL/.venv/Scripts/python.exe" tools/gen_generator.py
@@ -521,7 +521,7 @@ The predicted 144.9 dB comes from a NumPy replication that reproduced the
 committed 86.877 dB to 0.09 dB before the change, so treat a result more than
 2 dB from 144.9 as a signal that something else moved too.
 
-- [ ] **Step 9: Full suite, clean**
+- [x] **Step 9: Full suite, clean**
 
 ```
 cmake --build build --config Release --parallel --clean-first
@@ -531,7 +531,7 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 Expected: all green. Record the total; it is the baseline for Task 6.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add core/include/rta/gen/Sweep.h core/src/gen/Sweep.cpp core/tests/test_generator_sweep.cpp tools/gen_generator.py core/tests/golden/generator.txt

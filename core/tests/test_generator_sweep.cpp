@@ -263,14 +263,17 @@ TEST_CASE("Instantaneous frequency is f1 e^(t/L), measured at the zero crossings
     }
 }
 
-TEST_CASE("The fades are raised-cosine and at least two cycles at f1", "[sweep]") {
+TEST_CASE("The fade is raised-cosine, and the cycles floor still applies", "[sweep]") {
     Sweep::Config cfg;
     cfg.sampleRate = 48000.0;
     cfg.startHz = 50.0;
     cfg.endHz = 5000.0;
     cfg.durationSec = 3.0;
     cfg.levelDbFsPeak = -6.0;
-    cfg.fadeInSec = 0.001;   // deliberately shorter than 2/startHz = 0.04 s
+    cfg.fadeInSec = 0.001;      // deliberately shorter than 2/startHz = 0.04 s
+    cfg.fadeInOctaves = 0.0;    // isolate the cycles floor this case is about:
+                                // at this duration the octave floor is 0.903 s
+                                // and would otherwise win by a factor of 22
     Sweep sweep(cfg);
 
     const auto expectedClamp = (std::size_t) std::llround((2.0 / cfg.startHz) * cfg.sampleRate);
@@ -281,6 +284,7 @@ TEST_CASE("The fades are raised-cosine and at least two cycles at f1", "[sweep]"
     // carrier cycle, which the clamp (already verified above) violates.
     auto shapeCfg = cfg;
     shapeCfg.fadeInSec = 1.0;   // 50 cycles at 50 Hz
+    shapeCfg.fadeInOctaves = 0.0;   // measure the fade this case names
     Sweep shapeSweep(shapeCfg);
     const auto fadeLen = shapeSweep.fadeInSamples();
     std::vector<float> samples(fadeLen + 4);
@@ -479,4 +483,69 @@ TEST_CASE("The fade-out has a floor of two cycles at endHz", "[sweep]") {
     auto defaultCfg = cfg;
     defaultCfg.fadeOutSec = 0.02;
     CHECK(Sweep(defaultCfg).fadeOutSamples() == 960u);
+}
+
+TEST_CASE("The fade-in clamp is expressed in octaves of sweep travel", "[sweep]") {
+    Sweep::Config cfg;
+    cfg.sampleRate = 48000.0;
+    cfg.startHz = 50.0;
+    cfg.endHz = 5000.0;
+    cfg.durationSec = 3.0;
+    cfg.fadeInSec = 0.001;      // below every floor, so a floor must win
+
+    // Three floors compete. L = T/ln(f2/f1) = 3/ln(100) = 0.651442 s, so two
+    // octaves is 2*ln2*L = 0.903090 s -- an order of magnitude above the
+    // 0.04 s cycles floor, which is the whole point: the cycles rule is
+    // expressed in seconds, and the artefact floor is governed by octaves.
+    Sweep sweep(cfg);
+    const double lengthL = 3.0 / std::log(100.0);
+    const double octaveFloorSec = 2.0 * std::log(2.0) * lengthL;
+    CHECK(sweep.fadeInSamples()
+          == (std::size_t) std::llround(octaveFloorSec * cfg.sampleRate));
+    CHECK_THAT(sweep.fadeInOctavesAchieved(), WithinRel(2.0, 1.0e-5));
+
+    // The cycles floor still governs where it is the larger of the two: a very
+    // short sweep travels half an octave faster than two cycles at f1 take.
+    auto shortCfg = cfg;
+    shortCfg.durationSec = 0.05;
+    shortCfg.fadeInOctaves = 0.5;
+    Sweep shortSweep(shortCfg);
+    CHECK(shortSweep.fadeInSamples()
+          == (std::size_t) std::llround((2.0 / shortCfg.startHz) * shortCfg.sampleRate));
+
+    // Zero restores the pre-2026-08-30 behaviour exactly, which is what makes
+    // the trade-off in record decision 5 selectable rather than imposed.
+    auto legacyCfg = cfg;
+    legacyCfg.fadeInOctaves = 0.0;
+    CHECK(Sweep(legacyCfg).fadeInSamples()
+          == (std::size_t) std::llround((2.0 / cfg.startHz) * cfg.sampleRate));
+
+    // And a LONGER sweep keeps the same width in octaves. Under the cycles rule
+    // alone it would have shrunk -- 0.04 s is 0.5 octave at T=3 s but 0.15
+    // octave at T=10 s -- so lengthening the sweep made the band edges worse,
+    // which is the defect this floor exists to remove.
+    auto longCfg = cfg;
+    longCfg.durationSec = 10.0;
+    CHECK_THAT(Sweep(longCfg).fadeInOctavesAchieved(), WithinRel(2.0, 1.0e-5));
+}
+
+TEST_CASE("The valid band's edges follow from the fades", "[sweep]") {
+    Sweep::Config cfg;
+    cfg.sampleRate = 48000.0;
+    cfg.startHz = 100.0;
+    cfg.endHz = 10000.0;
+    cfg.durationSec = 2.0;
+    Sweep sweep(cfg);
+
+    // f_lo = f1*exp(fadeInSec/L). When the octave floor binds, fadeInSec is
+    // exactly octaves*ln2*L, so the exponential collapses to f1 * 2^octaves --
+    // the lower band edge IS the knob. 100 Hz * 2^2 = 400 Hz.
+    CHECK_THAT(sweep.validBandLowHz(), WithinRel(400.0, 1.0e-4));
+
+    // f_hi = f2*exp(-fadeOutSec/L), with L = 2/ln(100) = 0.434294 s.
+    const double lengthL = 2.0 / std::log(100.0);
+    CHECK_THAT(sweep.validBandHighHz(),
+               WithinRel(10000.0 * std::exp(-0.02 / lengthL), 1.0e-9));
+    CHECK(sweep.validBandHighHz() < cfg.endHz);
+    CHECK(sweep.validBandLowHz() > cfg.startHz);
 }

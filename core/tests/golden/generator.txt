@@ -79,5 +79,5 @@ ir_index 1000.0
 ir_amp 1.0
 peak_index 96999.0
 peak_amp_norm 1.0
-snr_db 86.87737275248364
+snr_db 144.89692939148614
 end

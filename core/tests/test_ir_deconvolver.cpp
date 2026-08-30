@@ -233,6 +233,10 @@ TEST_CASE("A narrow fade-in is measurably less flat", "[ir][deconv]") {
     // span for this fixture against 0.17 dB with the two-octave fade.
     auto cfg = wideFadeConfig();
     cfg.fadeInSec = 0.001;      // below the 2/startHz floor, so that floor wins
+    cfg.fadeInOctaves = 0.0;    // and the octave floor must be OUT of the way,
+                                // or "narrow" is not narrow. This case failed
+                                // the moment fadeInOctaves began defaulting to
+                                // 2.0, which is the floor doing its job.
     Sweep narrow(cfg);
     const auto excitation = renderSweep(narrow);
     const auto inverse = narrow.buildInverseFilter();

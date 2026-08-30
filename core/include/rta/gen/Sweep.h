@@ -68,6 +68,23 @@ public:
         double durationSec   = 10.0;
         double levelDbFsPeak = -6.0;   ///< peak-referenced: amplitude = 10^(db/20)
         double fadeInSec     = 0.02;   ///< clamped up to 2/startHz, see ctor
+        /// Minimum fade-in width in OCTAVES of sweep travel -- the unit that
+        /// governs the deconvolution's pre-arrival artefact floor. Seconds do
+        /// not: measured, 0.5 octave gives a -75.4 dB floor and 2 octaves gives
+        /// -108.7 dB, and the figure does not depend on the sweep's duration.
+        /// The `2/startHz` floor below is a CYCLES rule, so in octaves it
+        /// SHRINKS as the sweep lengthens -- under it alone, a longer sweep
+        /// measured worse. See docs/dsp/2026-08-30-sweep-ir-l4a.md decision 5.
+        ///
+        /// This is a trade-off the caller owns, not a setting with one right
+        /// value. A wide fade-in tapers the bottom of the sweep: two octaves
+        /// from 20 Hz shapes everything below 80 Hz, costing signal-to-noise
+        /// where room modes live. To have both, set `startHz` two octaves BELOW
+        /// the band of interest -- 5 Hz for a 20 Hz band -- which spends sweep
+        /// duration instead of low-frequency energy. Set to 0.0 to restore the
+        /// pre-2026-08-30 behaviour exactly.
+        double fadeInOctaves = 2.0;
+
         double fadeOutSec    = 0.02;   ///< clamped up to 2/endHz -- two cycles at
                                        ///< the end frequency, the mirror of the
                                        ///< fade-in's floor. An unfaded
@@ -85,11 +102,28 @@ public:
     [[nodiscard]] double phaseConstantK() const noexcept { return phaseK_; }
     [[nodiscard]] std::size_t lengthSamples() const noexcept { return lengthSamples_; }
 
-    /// Samples spent on the raised-cosine start fade, after the 2/startHz
-    /// clamp. Exposed for the same reason phaseAt is: a clamp nobody can
-    /// observe is a clamp nobody can check.
+    /// Samples spent on the raised-cosine start fade, after all three floors
+    /// have competed. Exposed for the same reason phaseAt is: a clamp nobody
+    /// can observe is a clamp nobody can check.
     [[nodiscard]] std::size_t fadeInSamples() const noexcept { return fadeInSamples_; }
     [[nodiscard]] std::size_t fadeOutSamples() const noexcept { return fadeOutSamples_; }
+
+    /// The fade-in width actually achieved, in octaves of sweep travel, after
+    /// all three floors have competed and the result has been rounded to whole
+    /// samples. This is the number that predicts the artefact floor, so it is
+    /// the one worth reading back.
+    [[nodiscard]] double fadeInOctavesAchieved() const noexcept;
+
+    /// Lower edge of the band in which this sweep's deconvolution is
+    /// meaningful: `f1 * exp(fadeInSec/L)`, the frequency the sweep had reached
+    /// when the fade-in finished. When the octave floor is the binding one this
+    /// collapses to `f1 * 2^fadeInOctaves` -- the lower band edge IS the knob.
+    [[nodiscard]] double validBandLowHz() const noexcept;
+
+    /// Upper edge: `f2 * exp(-fadeOutSec/L)`. Note the fade-out is deliberately
+    /// NOT clamped in octaves: measured, a wider fade-out makes the artefact
+    /// floor worse by about 3.5 dB per octave, the opposite of the fade-in.
+    [[nodiscard]] double validBandHighHz() const noexcept;
 
     /// Closed-form phase at sample n, in radians: K*(exp(n/(fs*L)) - 1).
     /// Public because a definition nobody can call is a definition nobody can
@@ -132,6 +166,7 @@ private:
     double lengthL_;        ///< T / ln(f2/f1)
     double phaseK_;         ///< 2*pi*f1*L
     std::size_t lengthSamples_;
+    double fadeOutSec_;     ///< as clamped, for validBandHighHz()
     std::size_t fadeInSamples_;
     std::size_t fadeOutSamples_;
     std::size_t n_ = 0;     ///< the only mutable state nextSample() advances
