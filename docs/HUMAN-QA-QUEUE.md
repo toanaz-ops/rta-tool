@@ -43,23 +43,22 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   `359/359`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
   giữ checkout `main`, sau khi chủ nhân nói "merge" **trong chính phiên đó** —
   tin nhắn giữa hai phiên không phải lời duyệt.
-- [ ] **EDT: chọn một trong ba — CHƯA CHỐT, đang được hai phiên bàn.**
-  Dưới oracle truncation, zero-phase EDT lệch +21.9% tại B·T 11.6 và +24.3% tại
-  5.8 — **cả hai nằm TRONG vùng cổng T30 cho qua**, vì cổng đó hiệu chỉnh trên
-  T30. Ba lối: (a) sàn B·T riêng, cao hơn, cho EDT; (b) từ chối EDT ở các băng
-  ⅓-octave thấp; (c) ship kèm bias công bố.
+- [ ] **EDT — hai phiên đã bàn xong và ĐỀ XUẤT; chờ chủ nhân chốt.**
+  Chỉ thị 2026-08-30 là "bàn với thinker", và cuộc bàn đã kết thúc.
 
-  Chủ nhân **chưa chọn phương án nào**; chỉ thị 2026-08-30 là **"bàn với
-  thinker"** — tức giao hai phiên chuẩn bị đề xuất, không phải chốt.
+  **Đề xuất chung của hai phiên:** ship EDT **kèm số đo độ tin cậy của chính
+  nó**, và **KHÔNG cổng**. Phương án (b) "từ chối ở ⅓-octave thấp" bị bác —
+  băng thấp là triệu chứng, `B·T_EDT` thấp mới là nguyên nhân.
 
-  > ⚠️ **Mục này từng bị ghi nhầm thành "chủ nhân chốt (b)".** Chủ nhân gõ
-  > `b:` để trỏ tới **mục b trong danh sách câu hỏi của agent**, và agent đọc
-  > thành **phương án (b) của chính câu này**. Chủ nhân bác ngay trong phiên và
-  > mục đã được khôi phục. Giữ lại vì đây đúng là chế độ hỏng mà file này tồn
-  > tại để chặn — và nó cho thấy chế độ đó **không cần đi qua hai phiên mới xảy
-  > ra**: một agent hiểu sai một ký tự của chủ nhân là đủ. Bài học thi công:
-  > khi câu trả lời của chủ nhân **ngắn hơn câu hỏi**, hỏi lại trước khi ghi,
-  > đừng chọn cách đọc thuận tay nhất.
+  **Vì sao không cổng:** ở `B·T_EDT = 74` (băng rộng, phòng bình thường), IQR
+  vẫn **24%** trên 400 realisation. Cổng chữa bias, **không chữa variance** —
+  nó sẽ từ chối đúng chỗ EDT lệch mà vẫn trao số vô dụng ở chỗ nó cho qua.
+  Và ngưỡng cũng chưa dẫn xuất được: bias +20.0 ± 3.3% tại B·T_EDT 6.1 và
+  +9.4 ± 2.8% tại 9.3, nên muốn ≤5% cần đâu đó giữa 9.3 và 74 — **dải đó chưa
+  ai đo**.
+
+  Toàn bộ số liệu, và bốn vòng hai phiên tiêu vào một bất đồng hoá ra là nhiễu
+  lấy mẫu, ở record **§4f**.
 
 ## Quyết định sản phẩm
 

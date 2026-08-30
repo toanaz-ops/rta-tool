@@ -63,6 +63,27 @@ enum class DecayRefusal {
     /// toward refusal is still the right direction for a number someone acts
     /// on, but it is not a free choice.
     ///
+    /// ## The margin is 0.29 and it SHRINKS as the ensemble grows
+    ///
+    /// Both calibrating grids used a median of 12 realisations. That is the
+    /// same mistake that later voided this lane's EDT figures, where a median
+    /// of 24 wandered over 47 percentage points between seed families -- so the
+    /// threshold was re-checked rather than trusted. Worst measured B*T among
+    /// cells whose TRUE B*T is below 4:
+    ///
+    ///     n=12, three different seed families:  5.27  5.41  5.58
+    ///     n=100:                                5.48  5.58  5.71
+    ///
+    /// Zero false accepts still, at every ensemble size tried. **But the worst
+    /// case RISES with n** -- 5.58 at twelve, 5.71 at a hundred -- because a
+    /// maximum can only grow as more of the tail is sampled. The margin to 6.0
+    /// is 0.29 and it is not guaranteed to survive a much larger ensemble.
+    ///
+    /// Do not read this as "6.0 is proven". Read it as: 6.0 holds everywhere it
+    /// has been measured, the property being relied on is an extremum rather
+    /// than an average, and an extremum is the statistic least protected by a
+    /// small sample. If this constant is ever re-derived, start at n >= 100.
+    ///
     /// **This constant is filter-order dependent** -- the inflation is the
     /// filter's own decay -- so changing the section count means re-measuring
     /// it, not assuming it carries over. Record decision 4c.
