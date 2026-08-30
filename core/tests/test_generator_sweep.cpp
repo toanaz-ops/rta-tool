@@ -390,6 +390,27 @@ TEST_CASE("Sweep then inverse filter recovers a synthetic IR at SNR above 60 dB"
     // here even after fixing a real fade off-by-one on the Python side.
     // +/-2 dB still catches a real error; the >60 dB floor above is binding.
     CHECK_THAT(result.snrDb, WithinAbs(g.row("snr_db").front(), 2.0));
+
+    // peak_index was WRITTEN to the golden from the first day and read by
+    // nothing. Four commits in this lane cited "peak_index must not move" as a
+    // tripwire; it lived only in a human reading the regeneration diff, so a
+    // later regeneration that moved it would have gone green. That is trap #1
+    // of docs/HANDOFF.md -- a guard that has silently stopped guarding -- in
+    // its golden-vector form.
+    CHECK(result.mainIndex == (std::size_t) g.row("peak_index").front());
+
+    // And the stored index is not an oracle: it is a closed form. The analysis
+    // pulse peaks at Ninv-1 (= round(T*fs) - 1), and the synthetic room puts
+    // its direct arrival ir_index samples later. Deriving it here means a
+    // generator change that silently altered the fixture cannot hide inside a
+    // regenerated number.
+    const auto ninv = (std::size_t) std::llround(g.row("T").front() * g.row("fs").front());
+    CHECK((std::size_t) g.row("peak_index").front()
+          == ninv - 1u + (std::size_t) g.row("ir_index").front());
+
+    // The two implementations must agree on the FIXTURE, not just the result.
+    CHECK_THAT(g.row("ir_index").front(), WithinAbs(1000.0, 0.0));
+    CHECK_THAT(g.row("ir_amp").front(), WithinAbs(1.0, 0.0));
 }
 
 TEST_CASE("Full-range 20 Hz to 20 kHz sweep deconvolution", "[.][slow][sweep]") {

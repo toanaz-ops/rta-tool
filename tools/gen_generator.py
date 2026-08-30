@@ -390,7 +390,10 @@ def build_sweep_deconv_case(fs: float, f1: float, f2: float, T: float) -> str:
     return case_block("sweep_deconv", 1, {
         "fs": fs, "f1": f1, "f2": f2, "T": T,
         "ir_index": ir_index, "ir_amp": ir_amp,
-        "peak_index": peak_index, "peak_amp_norm": 1.0, "snr_db": snr_db,
+        # No peak_amp_norm: it was a hardcoded 1.0, derived from nothing, read
+        # by nothing, and its name implied a normalisation the inverse filter
+        # does not perform.
+        "peak_index": peak_index, "snr_db": snr_db,
     })
 
 def main() -> int:

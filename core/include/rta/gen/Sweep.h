@@ -67,7 +67,11 @@ public:
         double endHz         = 20000.0;
         double durationSec   = 10.0;
         double levelDbFsPeak = -6.0;   ///< peak-referenced: amplitude = 10^(db/20)
-        double fadeInSec     = 0.02;   ///< clamped up to 2/startHz, see ctor
+        double fadeInSec     = 0.02;   ///< a FLOOR, not the value: the widest of
+                                       ///< this, 2/startHz, and fadeInOctaves
+                                       ///< octaves of travel wins. See the ctor,
+                                       ///< and fadeInOctavesAchieved() to read
+                                       ///< back which one did.
         /// Minimum fade-in width in OCTAVES of sweep travel -- the unit that
         /// governs the deconvolution's pre-arrival artefact floor. Seconds do
         /// not: measured, 0.5 octave gives a -75.4 dB floor and 2 octaves gives
