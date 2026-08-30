@@ -104,15 +104,17 @@ struct PolarityResult {
 ///
 /// These are not caveats to be trimmed. Each is a measured limit.
 ///
-/// 1. **A multi-way box with a section inverted by design is ill-posed**, and
-///    not only for this implementation -- for every absolute polarity checker,
-///    including the surveyed competitors. A two-way with a 3rd-order crossover
-///    and an inverted tweeter reads negative, and that reading is *true*: the
-///    first arriving wavefront is the tweeter and it is inverted. Only the
-///    interpretation "this box is wired backwards" is wrong, and the information
-///    needed to reject it -- the designer's intent -- is not in the signal.
-///    `margin` runs 0.85-0.98 for that class against a median of 0.46 for a
-///    single-section box, which is the honest thing for it to flag.
+/// 1. **A multi-way box with a section inverted by design is ill-posed for any
+///    checker that has only the measurement to read.** A two-way with a
+///    3rd-order crossover and an inverted tweeter reads negative, and that
+///    reading is *true*: the first arriving wavefront is the tweeter and it is
+///    inverted. Only the interpretation "this box is wired backwards" is wrong,
+///    and the information needed to reject it -- the designer's intent -- is not
+///    in the signal. A tool carrying per-model design documentation could
+///    answer, because it would have a second source; none of the surveyed
+///    analysers does, and neither does this one. `margin` runs 0.85-0.98 for
+///    that class against a median of 0.46 for a single-section box, which is
+///    the honest thing for it to flag.
 /// 2. **Minimum-phase FIR was validated at one construction**, not a swept
 ///    family.
 /// 3. **The band-edge estimator's window is keyed to the low edge** and assumes

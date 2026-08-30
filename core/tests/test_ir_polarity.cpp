@@ -134,19 +134,41 @@ TEST_CASE("Polarity refuses a horn even though it spans four octaves",
 
 TEST_CASE("The low gate is load-bearing: widen it and the horn answers wrongly",
           "[ir][polarity]") {
-    // A gate is only proven by showing what goes wrong without it. A gate that
-    // refuses everything also produces a green suite, so the previous case alone
-    // proves nothing. Open the low edge and the same measurement must produce a
-    // CONFIDENT WRONG SIGN -- that is the failure the gate exists to prevent,
-    // and this is the only case in the suite that demonstrates it.
+    // A gate is only proven by showing what goes wrong without it -- a gate that
+    // refuses everything also produces a green suite. The three claims below are
+    // deliberately in ONE case and deliberately interlocking, so that making any
+    // one of them pass by editing it forces the case to tell a story that
+    // contradicts itself.
+    //
+    // IF THIS EVER GOES RED, DO NOT EDIT THE EXPECTATIONS. The horn answering
+    // correctly would mean the behaviour decision 6b is built on has changed, and
+    // the gate would have lost its reason to exist -- which claim (1) below
+    // asserts in the same breath. Check reality instead; it takes half a minute:
+    //
+    //     .venv/Scripts/python.exe tools/probe_polarity_bandwidth.py
+    //
+    // and read the `butter order 8, centre 4000 Hz, nominal 4.0 oct` cell. Three
+    // independently built grids measured it. Then reopen decision 6b.
+    const auto hornPlus  = measureThrough(1000.0, 16000.0, 8, +1.0f);
+    const auto hornMinus = measureThrough(1000.0, 16000.0, 8, -1.0f);
+
+    // (1) With the shipped gate, this system is refused, and refused for its LOW
+    //     edge -- a horn has no bottom.
+    CHECK(rta::ir::findPolarity(hornPlus, {}).refusal == Refusal::BandTooLow);
+
     rta::ir::PolarityConfig ungated;
     ungated.gateLowHz = 20000.0;   // admit anything
-    for (float drive : {+1.0f, -1.0f}) {
-        const auto got =
-            rta::ir::findPolarity(measureThrough(1000.0, 16000.0, 8, drive), ungated);
-        CHECK(got.refusal == Refusal::None);
-        CHECK(got.sign == (drive > 0 ? Sign::Negative : Sign::Positive));  // BACKWARDS
-    }
+
+    // (2) Widened, the same measurement is admitted: the refusal above came from
+    //     the gate, not from some other failure further down.
+    CHECK(rta::ir::findPolarity(hornPlus, ungated).refusal == Refusal::None);
+
+    // (3) And what it then answers is BACKWARDS, symmetrically, on both drive
+    //     polarities. Two assertions, not one: flipping a single expectation to
+    //     go green would leave the pair claiming the system answers correctly one
+    //     way and backwards the other, which is not a thing a linear system does.
+    CHECK(rta::ir::findPolarity(hornPlus, ungated).sign == Sign::Negative);
+    CHECK(rta::ir::findPolarity(hornMinus, ungated).sign == Sign::Positive);
 }
 
 TEST_CASE("Polarity survives an inverted reflection louder than the direct sound",
