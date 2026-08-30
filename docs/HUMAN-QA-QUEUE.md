@@ -66,14 +66,19 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Từ phiên EP06 (2026-08-30)
 
-- [ ] **ISO 3382-1 — mua, hay dựng từ nguồn mở?** Định nghĩa T20/T30/EDT/
-  C50/C80/D50 nằm trong đó. Chủ nhân được hỏi cùng lượt với câu chốt lane và
-  **trả lời "số 1"**, mà phương án 1 của cả hai câu đều là phương án đề xuất.
-  **Agent hiểu là: dựng từ nguồn mở, provenance ghi là *literature*, docs KHÔNG
-  được nói "theo ISO 3382-1".** Ghi ở đây dưới dạng **giả định đang chạy**, chưa
-  đóng, vì một chữ "số 1" trả lời hai câu là suy luận của agent chứ không phải
-  câu chữ của chủ nhân. Nếu sai, sửa ở đây và lane đổi theo — không chặn việc.
-  Không thêm vào danh sách mua ở trên cho tới khi chủ nhân xác nhận muốn mua.
+- [ ] **`[!]` ISO 3382-1 — mua, hay dựng từ nguồn mở? CHỦ NHÂN HOÃN CÓ CHỦ Ý.**
+  Định nghĩa T20/T30/EDT/C50/C80/D50 nằm trong đó. Hỏi 2026-08-30, chủ nhân trả
+  lời **"ISO thì cần bàn thêm sau"** — đây là một *hoãn tường minh*, không phải
+  câu chưa được hỏi và không phải câu đã trả lời. Đừng đóng nó bằng suy luận.
+
+  **Luật tạm thời L4b chạy dưới, trong lúc chờ:** dựng từ nguồn mở (Schroeder
+  1965, Lundeby 1995, python-acoustics 0.2.6, pyrato, REW), provenance ghi là
+  ***literature***, và **docs không được viết "theo ISO 3382-1" ở bất kỳ đâu**.
+
+  Luật này chọn được vì nó **đảo được theo cả hai hướng**: mua chuẩn về thì chỉ
+  thêm citation clause vào chỗ đã có số; quyết định không mua thì không phải gỡ
+  gì cả. Một lane viết "theo ISO 3382-1" trước khi cầm chuẩn thì hướng ngược lại
+  mới là hướng đắt — đó là bẫy #16 (AES-2id) ở dạng khác.
 
 ## Đã trả lời
 
