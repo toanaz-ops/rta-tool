@@ -11,7 +11,7 @@
 
 Branch `claude_desk/handoff-continuation-9045fc`, worktree
 `.claude/worktrees/handoff-continuation-9045fc`. Chín commit trên `main` cục bộ
-(`a7453b6..89bc979`), **chưa merge** — merge là việc của phiên giữ checkout
+(`a7453b6..HEAD`, đếm bằng `git rev-list --count main..HEAD`), **chưa merge** — merge là việc của phiên giữ checkout
 `main`, sau khi chủ nhân nói "merge" trong chính phiên đó.
 
 ## Baseline đo được (dán từ lệnh, đo hai lần trên cây đã commit)
@@ -19,10 +19,10 @@ Branch `claude_desk/handoff-continuation-9045fc`, worktree
 ```
 cmake -S . -B build-l4b -G "Visual Studio 18 2026" -A x64
 cmake --build build-l4b --config Release --parallel   -> 0 warning /W4
-ctest  --test-dir build-l4b -C Release                -> 358/358, 0 failed
+ctest  --test-dir build-l4b -C Release                -> 359/359, 0 failed
 ```
 Cấu hình `RTA_BUILD_APP=OFF`, MSVC 14.51.36231. Baseline trước lane này là
-**345/345**; mười ba case mới là chênh lệch. **Cấu hình `ON` CHƯA đo lại** —
+**345/345**; mười bốn case mới là chênh lệch. **Cấu hình `ON` CHƯA đo lại** —
 đừng đoán số đó ở đây hay bất cứ đâu.
 
 Guard sau lane: `core_has_no_framework_deps` quét **85 file** (trước: 79).
@@ -68,10 +68,17 @@ theo chiều dài đuôi. Đó là khác biệt giữa một phép đo và một
 - **§7a "who guards what" chưa được ghi vào hai file test.** Record nói khế ước
   tồn tại; `test_ir_golden.cpp` và `test_generator_sweep.cpp` chưa mang con trỏ
   ngắn trỏ về nó.
-- **Một tầng của G3 chưa đo:** zero-phase trét năng lượng direct sound ra trước
-  t=0; code loại nó khỏi cả hai tích phân clarity, nhưng **lượng bị loại chưa
-  được đo**.
-- **Ngưỡng 6.0 hiệu chỉnh trên MỘT fixture, ensemble 12** (không phải 24).
+- ~~Một tầng của G3 chưa đo~~ — **ĐÃ ĐO VÀ ĐÃ ĐẢO QUYẾT ĐỊNH.** `filtfilt` đặt
+  ~50% năng lượng band của direct sound ra **trước** t=0 ở mọi band. Bản đầu
+  loại nó đi như "rò rỉ bộ lọc"; sai — đó là năng lượng của chính direct sound
+  bị dời đối xứng và **được bảo toàn**. Đo cả hai convention đối chiếu C50 của
+  IR **chưa lọc**: exclude sai −3.06 dB tại 1/3-oct 40 Hz, include sai −0.33 dB.
+  Nay **include**, có test khoá và test đó **đỏ được**.
+- **Ngưỡng 6.0: hai lưới độc lập đều cho 0 false-accept** (25 ô và 30 ô, khớp
+  inflation trong 0.4%). **Nhưng giá là một DẢI, không phải một ô**: cả vùng
+  true B·T ≈ 4–6 đọc ra 5.6–5.9 và bị từ chối — bốn ô dùng được. **Phòng khô đo
+  ở 1/3-octave thấp sẽ gặp refusal THƯỜNG XUYÊN, không hãn hữu.** Bất cứ thứ gì
+  trình bày số này cho người vận hành phải nói ra điều đó.
 - **Cấu hình `RTA_BUILD_APP=ON` chưa đo lại.**
 - **Chưa có gì để NHÌN.** L4b nằm hoàn toàn trong `core/`. Widget thuộc L4c.
 

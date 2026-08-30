@@ -38,9 +38,9 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Từ lane L4b (2026-08-30, phiên EP06)
 
-- [ ] **Merge L4b vào `main`?** Chín commit, `a7453b6..89bc979`, trên
+- [ ] **Merge L4b vào `main`?** Đếm commit bằng `git rev-list --count main..HEAD`, đừng chép số. Branch
   `claude_desk/handoff-continuation-9045fc`. Đo trên cây đã commit:
-  `358/358`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
+  `359/359`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
   giữ checkout `main`, sau khi chủ nhân nói "merge" **trong chính phiên đó** —
   tin nhắn giữa hai phiên không phải lời duyệt.
 - [ ] **EDT: chọn một trong ba.** Dưới oracle truncation, zero-phase EDT lệch
