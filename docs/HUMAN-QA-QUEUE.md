@@ -36,6 +36,30 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   đo bằng `git rev-list --count`, đừng đọc con số chép sẵn — bản đầu của mục này
   ghi "8 commit", con số thật lúc merge là 10.
 
+## Từ lane L4b (2026-08-30, phiên EP06)
+
+- [ ] **Merge L4b vào `main`?** Đếm commit bằng `git rev-list --count main..HEAD`, đừng chép số. Branch
+  `claude_desk/handoff-continuation-9045fc`. Đo trên cây đã commit:
+  `359/359`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
+  giữ checkout `main`, sau khi chủ nhân nói "merge" **trong chính phiên đó** —
+  tin nhắn giữa hai phiên không phải lời duyệt.
+- [ ] **EDT — hai phiên đã bàn xong và ĐỀ XUẤT; chờ chủ nhân chốt.**
+  Chỉ thị 2026-08-30 là "bàn với thinker", và cuộc bàn đã kết thúc.
+
+  **Đề xuất chung của hai phiên:** ship EDT **kèm số đo độ tin cậy của chính
+  nó**, và **KHÔNG cổng**. Phương án (b) "từ chối ở ⅓-octave thấp" bị bác —
+  băng thấp là triệu chứng, `B·T_EDT` thấp mới là nguyên nhân.
+
+  **Vì sao không cổng:** ở `B·T_EDT = 74` (băng rộng, phòng bình thường), IQR
+  vẫn **24%** trên 400 realisation. Cổng chữa bias, **không chữa variance** —
+  nó sẽ từ chối đúng chỗ EDT lệch mà vẫn trao số vô dụng ở chỗ nó cho qua.
+  Và ngưỡng cũng chưa dẫn xuất được: bias +20.0 ± 3.3% tại B·T_EDT 6.1 và
+  +9.4 ± 2.8% tại 9.3, nên muốn ≤5% cần đâu đó giữa 9.3 và 74 — **dải đó chưa
+  ai đo**.
+
+  Toàn bộ số liệu, và bốn vòng hai phiên tiêu vào một bất đồng hoá ra là nhiễu
+  lấy mẫu, ở record **§4f**.
+
 ## Quyết định sản phẩm
 
 - [ ] **Tên sản phẩm chính thức.**
@@ -64,6 +88,22 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ---
 
+## Từ phiên EP06 (2026-08-30)
+
+- [ ] **`[!]` ISO 3382-1 — mua, hay dựng từ nguồn mở? CHỦ NHÂN HOÃN CÓ CHỦ Ý.**
+  Định nghĩa T20/T30/EDT/C50/C80/D50 nằm trong đó. Hỏi 2026-08-30, chủ nhân trả
+  lời **"ISO thì cần bàn thêm sau"** — đây là một *hoãn tường minh*, không phải
+  câu chưa được hỏi và không phải câu đã trả lời. Đừng đóng nó bằng suy luận.
+
+  **Luật tạm thời L4b chạy dưới, trong lúc chờ:** dựng từ nguồn mở (Schroeder
+  1965, Lundeby 1995, python-acoustics 0.2.6, pyrato, REW), provenance ghi là
+  ***literature***, và **docs không được viết "theo ISO 3382-1" ở bất kỳ đâu**.
+
+  Luật này chọn được vì nó **đảo được theo cả hai hướng**: mua chuẩn về thì chỉ
+  thêm citation clause vào chỗ đã có số; quyết định không mua thì không phải gỡ
+  gì cả. Một lane viết "theo ISO 3382-1" trước khi cầm chuẩn thì hướng ngược lại
+  mới là hướng đắt — đó là bẫy #16 (AES-2id) ở dạng khác.
+
 ## Đã trả lời
 
 - [x] **G21 tầng 1 — ship absolute polarity hay không (B1 vs B2).**
@@ -76,3 +116,7 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   → **Duyệt sửa**: chuyển sang G17 như câu hỏi PHA. 2026-08-30.
 - [x] **Ngôn ngữ báo cáo.** → Technical terms giữ nguyên tiếng Anh, không dịch
   sang tiếng Việt. 2026-08-30.
+- [x] **Lane kế sau L4a.** → **L4b** (ETC, Schroeder, Lundeby, EDT/T20/T30,
+  C50/C80/D50, toàn bộ trong `core/`). Chủ nhân chốt 2026-08-30, phiên EP06,
+  trả lời trực tiếp trong phiên thi công. `MASTER-EXECUTION-PLAN.md` mục 4 của
+  "Suggested opening order" đã bỏ nhãn pending theo đó.

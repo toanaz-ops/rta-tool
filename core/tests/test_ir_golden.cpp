@@ -3,6 +3,12 @@
 //
 // [golden] cases read core/tests/golden/ir.txt, written by tools/gen_ir.py.
 //
+// LANE L4b LEANS ON THIS FILE. Its golden vectors are deliberately blind to
+// generator and deconvolver divergence, which is only safe while this file and
+// test_generator_sweep.cpp keep guarding those layers. Simplifying either one
+// removes L4b's fence with no guard going red -- see
+// docs/dsp/2026-08-30-ir-decay-l4b.md section 7a.
+//
 // Two rules govern what this file may assert, and both were learned the
 // expensive way in this lane:
 //
