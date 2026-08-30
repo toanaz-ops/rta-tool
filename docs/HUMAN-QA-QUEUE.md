@@ -10,20 +10,38 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Chặn việc ngay bây giờ
 
-- [ ] **`[!]` Skill nhắn tin cho chủ nhân không tồn tại trên máy này.**
-  Chủ nhân bảo dùng "skill Ask Seph (suy ra từ skill ask-LUNA)" để nhắn Telegram.
-  Kiểm: `~/.claude/skills/` không có mục nào tên `ask-seph`, `ask-luna`, hay
-  chứa `telegram`; `SearchSkills` trả rỗng. Agent **không tự dựng** một đường
-  gửi ra dịch vụ ngoài.
-  **Cần:** tên/đường dẫn skill đúng, hoặc xác nhận cứ dùng file này thay thế.
+- [x] **Skill nhắn tin cho chủ nhân → DÙNG CHÍNH FILE NÀY, quyết theo uỷ quyền
+  2026-08-30.** Kiểm lại: `~/.claude/skills/` không có `ask-seph`, `ask-luna`
+  hay mục nào chứa `telegram`.
+
+  Quyết định: **không dựng đường gửi ra dịch vụ ngoài**, và file này là kênh.
+  Lý do không phải "agent không làm được" mà là **agent không nên làm**: một
+  đường gửi ra ngoài do agent tự dựng là một kênh chủ nhân không cấu hình, không
+  thấy, và không tắt được — cùng loại ranh giới với push lên `origin` ở trên, và
+  ở đó ranh giới đã do con người bước qua chứ không do agent suy ra.
+
+  File này lại có tính chất mà một tin nhắn không có: **nó nằm trong repo, đi
+  cùng lịch sử, và phiên sau đọc được**. Ba tuần nữa không ai tìm lại được một
+  tin Telegram, nhưng `git log` thì còn. Nếu chủ nhân muốn kênh đẩy, đưa tên
+  skill đúng và mục này mở lại.
 
 ## Mua tiêu chuẩn — hai lane đứng yên vì chúng
 
-- [ ] **ISO 2969:2015 / SMPTE ST 202:2010** — bảng dung sai X-curve. Chặn **L5b**.
-- [ ] **IEC 60268-16** — STI. Chặn **L4d**.
-- [ ] **ISO 18233:2006** — tiêu chuẩn đúng cho quy tắc độ dài capture. Record chỉ
-  *nêu tên* và không trích một dòng nào vì chưa ai mua. **Đừng trích khi chưa có
-  bản thật** — lane này đã trả học phí một lần với AES-2id (bẫy #16).
+*Ba mục dưới đây cần TIỀN, nên agent không quyết được. Nhưng agent ĐÃ quyết
+phần quyết được: cái nào thật sự chặn việc, và cái nào không.*
+
+- [ ] **ISO 2969:2015 / SMPTE ST 202:2010** — bảng dung sai X-curve. **THẬT SỰ
+  CHẶN L5b**, và khác hẳn ISO 3382-1: hình dạng đường cong là công khai, **bảng
+  DUNG SAI thì không**. Một dung sai đoán là một tuyên bố Class sai — không có
+  đường vòng bằng nguồn mở, và cố đi vòng chính là bẫy #16.
+- [ ] **IEC 60268-16** — STI. **THẬT SỰ CHẶN L4d**, cùng lý do: STI là một thủ
+  tục tính có trọng số và bảng cụ thể, không phải một định nghĩa suy ra được.
+- [x] **ISO 18233:2006 → KHÔNG chặn gì, quyết 2026-08-30.** Nó là chuẩn đúng cho
+  quy tắc độ dài capture, nhưng L4a/L4b **đã dẫn xuất quy tắc đó bằng đo** (chặn
+  hai phía: ≥1.5×RT60 từ dưới, truncation gỡ chặn trên). Chuẩn sẽ **xác nhận
+  hoặc sửa** một con số đã có, không mở khoá một việc đang đứng. Luật giữ
+  nguyên: **nêu tên được, trích thì không, khi chưa cầm bản thật.** Mua khi
+  tiện, đừng xếp nó cạnh hai mục trên như thể cùng mức khẩn.
 
 ## Chờ một câu của chủ nhân, không phải một quyết định khó
 
@@ -38,13 +56,16 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Từ lane L4b (2026-08-30, phiên EP06)
 
-- [ ] **Merge L4b vào `main`?** Đếm commit bằng `git rev-list --count main..HEAD`, đừng chép số. Branch
-  `claude_desk/handoff-continuation-9045fc`. Đo trên cây đã commit:
-  `359/359`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
-  giữ checkout `main`, sau khi chủ nhân nói "merge" **trong chính phiên đó** —
-  tin nhắn giữa hai phiên không phải lời duyệt.
-## Quyết định sản phẩm
+- [x] **Merge L4b vào `main` → ĐÃ MERGE**, `e77e0e1`, 2026-08-30, chạy ở phiên
+  REVIEW sau khi chủ nhân nói "merge" trong chính phiên đó. Đo độc lập sau
+  merge trên build dir phiên review chưa từng bị phiên build chạm:
+  **359/359** (OFF) và **399/399** (ON — lần đo đầu tiên của cấu hình này với
+  L4b; 385→399 khớp đúng chênh lệch 14 case của 345→359). Sau đó đã push:
+  `29b464e..7122070`.
 
+  **Còn một đợt sau đó CHƯA merge:** công việc EDT ensemble (`decayTimesAcross`)
+  và các quyết định uỷ quyền, trên `claude_desk/handoff-continuation-9045fc`.
+  Đếm bằng `git rev-list --count main..HEAD`, đừng chép số.
 - [x] **Tên sản phẩm chính thức → `AZ Soundtech RTA`.** Chủ nhân chốt
   2026-08-30, phiên EP06 DOER, nguyên văn: *"Tên sản phẩm chính thức =
   AZ Soundtech RTA"*. Target CMake vẫn là `rtatool` — đó là định danh
