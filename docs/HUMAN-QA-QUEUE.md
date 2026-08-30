@@ -66,25 +66,72 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
      — nó cho thấy đúng con đường: ranh giới đó do con người bước qua, không
      phải do agent tự suy ra là mình được phép.
 
-- [ ] **Ba câu giao diện treo từ L5c:** cap 3 pane; dải màu spectrograph; unwrap
-  có hiện trace pha đã lưu không.
+## Uỷ quyền: agent tự quyết sau khi tham khảo nguồn ngoài (2026-08-30)
 
-## Từ lane L4a, sau khi step 0 chạy (2026-08-30)
+*Chủ nhân: "Các câu hỏi còn lại, agent tham khảo các sản phẩm khác để có thêm 1
+nguồn thông tin rồi cho phép tự quyết." Bốn mục dưới đây quyết theo uỷ quyền đó.
+Mỗi mục ghi **nguồn ngoài đã tra**, kể cả khi nguồn đó nói ngược lại — một
+khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo sát.*
 
-- [ ] **Hai hằng số gate `100 Hz` / `8 kHz` — chủ nhân có muốn duyệt con số
-  không, hay để agent chốt?** Chúng là **quan sát, chưa dẫn xuất**, đọc từ lưới
-  hợp nhất ba nguồn. Chi phí đã đo: `bessel` order 6/8 design đúng 100 Hz đo ra
-  100.6 / 110.6 Hz nên bị **từ chối oan** — nhất quán (0.006 oct repeat spread),
-  có số kèm trong refusal reason, không nhấp nháy. Không chặn: nếu không có ý
-  kiến, agent giữ (100, 8000) và ghi rõ là observed.
-- [ ] **Chuỗi chữ giao diện cho `Unknown`** (thuộc L4c, hỏi trước để khỏi làm
-  lại): `BandTooLow` → trỏ sang so sánh tương đối; `BandTooHigh` → bảo đo
-  full-range. Chủ nhân có muốn duyệt câu chữ, hay để L4c đề xuất rồi duyệt sau?
-- [ ] **Có công bố giới hạn multi-way ra tài liệu người dùng không?** Một thùng
-  2-way có driver đảo cực theo thiết kế là **ill-posed cho mọi absolute polarity
-  checker**, kể cả Smaart/OSM/REW — họ ship và không nói. Nói ra là trung thực
-  hơn đối thủ; cũng là tự nêu một giới hạn đối thủ giấu. **Quyết định marketing,
-  không phải kỹ thuật.**
+- [x] **Hai hằng số gate polarity `100 Hz` / `8 kHz` → GIỮ NGUYÊN, nhãn
+  *observed*.** Chúng đo được 0 câu sai qua `butter`/`cheby1`/`ellip`/`bessel`
+  bậc 2–16; giá đã biết và đã ghi (`bessel` bậc 6/8 bị từ chối oan, nhất quán,
+  có số trong refusal reason).
+
+  **Nguồn ngoài, và nó chỉ hướng NGƯỢC LẠI:** kỹ thuật *band-limited polarity
+  detection* (US 2006/0062399) làm điều ngược hẳn — **low-pass bậc hai tại
+  400 Hz** để ép đáp ứng vào vùng cùng pha với đấu dây, thay vì đòi một băng
+  rộng. Ghi lại vì nó thật, và **không đổi quyết định**: nó giải một bài khác
+  (ép tín hiệu vào vùng dễ đọc) trong khi cổng của ta trả lời *"phép đo này có
+  đủ tư cách kết luận không"*. Nếu lane sau muốn thử hướng low-pass, đây là
+  con trỏ — nhưng nó là một tính năng khác, không phải một hằng số khác.
+
+- [x] **Chuỗi chữ cho `Unknown` → chốt câu chữ, kèm hướng.** Nguyên tắc: mỗi
+  refusal phải **gửi người vận hành đi đâu đó**, không chỉ nói "không biết".
+  - `BandTooLow` (đo được low edge > 100 Hz — một horn): *"Băng đo không xuống
+    đủ thấp để xác định cực tính tuyệt đối (low edge X Hz). So sánh tương đối
+    với một phép đo khác của chính hệ này."*
+  - `BandTooHigh` (high edge < 8 kHz — một sub): *"Băng đo không lên đủ cao
+    (high edge X Hz). Đo lại full-range, hoặc so tương đối trước/sau thay đổi."*
+  - `SweepBandInsufficient`: câu chữ phải **đổ lỗi cho sweep, không cho loa** —
+    *"Sweep này chỉ đáng tin từ X đến Y Hz, không đủ để kết luận."*
+  Mỗi chuỗi **phải mang con số đo được**; một refusal không có số là một refusal
+  người vận hành không kiểm được. L4c thi công, không thiết kế lại.
+
+- [x] **Cap 3 pane → GIỮ.** Record L5c §6 đã chốt 1–3 pane dọc và **tự xếp nó
+  vào loại "taste"** (§423), tức đã biết nó là lựa chọn chứ không phải suy ra.
+  Nguồn ngoài: Smaart cho đổi loại đồ thị trong mỗi pane qua dropdown nhưng
+  không tài liệu nào nêu một cap khuyến nghị; SysTune cố định **hai** pane —
+  và §299 đã ghi rằng hai pane không đủ chỗ cho RTA + transfer + một cái nữa.
+  **Không có bằng chứng ngoài để đổi, và có lý do nội tại để giữ.** Đổi cap là
+  đổi cả model workspace đã persist xuống đĩa; không làm vì không có lý do.
+
+- [x] **Unwrap có hiện trace pha đã lưu không → CÓ, và unwrap LẠI tại chỗ vẽ,
+  không tin unwrap đã lưu.** L5c §5 đã unwrap dọc trục bin lúc dựng cache rồi
+  wrap lại lúc vẽ — nên một stored trace **đã mang đủ thông tin** để unwrap lại
+  dưới đúng cài đặt hiện hành.
+
+  Lý do không tái dùng unwrap cũ: unwrap là **thao tác hiển thị** (§4), và một
+  trace lưu hôm qua đã unwrap dưới coherence gate và độ phân giải của hôm qua.
+  Vẽ nó cạnh một trace live unwrap hôm nay là đặt hai quyết định khác nhau lên
+  một trục và mời người vận hành đọc hiệu số của chúng như hiệu số của hệ
+  thống. Unwrap lại cả hai bằng cùng một luật thì hiệu số mới là của hệ thống.
+
+- [x] **Công bố giới hạn multi-way ra tài liệu người dùng → CÓ, CÔNG BỐ.**
+  Một thùng 2-way có driver đảo cực theo thiết kế là ill-posed cho **mọi**
+  absolute polarity checker.
+
+  **Nguồn ngoài xác nhận nó là giới hạn thật, không phải khiếm khuyết của ta:**
+  văn liệu và diễn đàn kỹ thuật ghi *"cực tính đôi khi rất mơ hồ, đặc biệt khi
+  dùng loa multi-way"*, rằng cực tính phụ thuộc độ dốc crossover, và rằng
+  impulse response của một loa một-đường đọc rõ dấu trong khi cấu hình nhiều
+  driver thì không.
+
+  **Quyết định công bố, và lý do là một lý do sản phẩm chứ không phải kỹ
+  thuật:** đối thủ ship tính năng này và không nói ra giới hạn. Nói ra biến một
+  giới hạn chung của ngành thành một điểm phân biệt — công cụ này **từ chối
+  thay vì đoán**, và tài liệu giải thích khi nào nó từ chối. Người vận hành mất
+  niềm tin vì một con số sai tự tin, không vì một lời từ chối có lý do.
 
 ---
 
