@@ -2,6 +2,12 @@
 // Station D: Farina exponential sweep + inverse filter (rta::gen::Sweep).
 // [golden] cases read core/tests/golden/generator.txt; if it hasn't landed
 // yet, loadGolden() throws and those cases are legitimately RED, not a bug.
+//
+// LANE L4b LEANS ON THIS FILE. Its golden vectors are deliberately blind to
+// generator and deconvolver divergence, which is only safe while this file and
+// test_ir_golden.cpp keep guarding those layers. Simplifying either one
+// removes L4b's fence with no guard going red -- see
+// docs/dsp/2026-08-30-ir-decay-l4b.md section 7a.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

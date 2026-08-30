@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <random>
@@ -63,24 +64,37 @@ constexpr std::size_t kLeadIn = 9600;   // 200 ms
 TEST_CASE("A pure exponential decay reads back the T60 it was built with", "[ir][decay]") {
     // 800 Hz octave: B = 566 Hz, so B*T is 226 at T60 = 0.4 s -- far above the
     // gate, which is the point. This case tests the arithmetic, not the gate.
-    const auto h = makeDecay(0.4, 1.6, 60.0, 1234);
-    const auto band = rta::ir::bandFilterZeroPhase(h, 566.0, 1132.0, kFs);
-    REQUIRE(band.size() == h.size());
+    //
+    // FIVE seeds, asserted on the MEDIAN. An earlier version ran one seed
+    // against the +-10 % envelope this lane measured for an ENSEMBLE, which is
+    // the mistake of dressing a single realisation in a population's tolerance:
+    // it passes or fails on which noise the generator happened to produce, and
+    // a version of the code that was genuinely 8 % out could sit green for as
+    // long as the seed was kind. The median of five is not an ensemble either,
+    // but it cannot be carried by one lucky draw.
+    std::vector<double> t30s, t20s;
+    for (unsigned seed : {1234u, 1235u, 1236u, 1237u, 1238u}) {
+        const auto h = makeDecay(0.4, 1.6, 60.0, seed);
+        const auto band = rta::ir::bandFilterZeroPhase(h, 566.0, 1132.0, kFs);
+        REQUIRE(band.size() == h.size());
 
-    const auto curve = rta::ir::energyDecayCurve(band, kLeadIn, kFs, 566.0);
-    REQUIRE(curve.has());
-    CHECK(curve.db.front() == Catch::Approx(0.0).margin(1e-6));
+        const auto curve = rta::ir::energyDecayCurve(band, kLeadIn, kFs, 566.0);
+        REQUIRE(curve.has());
+        CHECK(curve.db.front() == Catch::Approx(0.0).margin(1e-6));
 
-    const auto times = rta::ir::decayTimes(curve);
-    REQUIRE(times.t30.has());
-    REQUIRE(times.t20.has());
+        const auto times = rta::ir::decayTimes(curve);
+        REQUIRE(times.t30.has());
+        REQUIRE(times.t20.has());
+        t30s.push_back(times.t30.seconds);
+        t20s.push_back(times.t20.seconds);
+    }
 
-    // 10 % is the envelope this lane measured for a single realisation in a
-    // wide band, not a number chosen to make the test pass: the ensemble median
-    // sits within a few percent and the inter-quartile spread at this bandwidth
-    // is about 3-5 %.
-    CHECK_THAT(times.t30.seconds, WithinRel(0.4, 0.10));
-    CHECK_THAT(times.t20.seconds, WithinRel(0.4, 0.10));
+    const auto median = [](std::vector<double> v) {
+        std::sort(v.begin(), v.end());
+        return v[v.size() / 2];
+    };
+    CHECK_THAT(median(t30s), WithinRel(0.4, 0.10));
+    CHECK_THAT(median(t20s), WithinRel(0.4, 0.10));
 }
 
 TEST_CASE("The decay time is -60/slope, not -60/slope times a span factor",
