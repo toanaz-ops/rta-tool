@@ -15,3 +15,7 @@ One line per memory. Content lives in the linked file, never here.
 - [The venv imports acoustics only through a shim](the-venv-imports-acoustics-only-through-a-shim.md) — scipy 1.18 removed sph_harm; the shim makes imports live and real sph_harm calls silently wrong; pyrato is named in CLAUDE.md but not installed
 - [A gen script runs the moment you invoke it](a-gen-script-runs-the-moment-you-invoke-it.md) — no argparse anywhere in tools/gen_*.py; --help ran the pipeline and overwrote a golden, byte-identical only because generation is deterministic
 - [A public issue has a date too](a-public-issue-has-a-date-too.md) — an issue described a convergence bug the current code no longer has; read the code at a pinned commit before citing the issue
+- [Một biện pháp chống bẫy mang sang phải tự biện minh lại](an-anti-trap-measure-must-re-earn-its-place.md) — khe 6 ms và cửa sổ 20 ms; +0.4% thành +17.2%.
+- [Hai bản dựng lệch nhau không chứng minh bên nào sai](two-builds-disagreeing-is-not-evidence-one-is-wrong.md) — bốn vòng truy nhiễu lấy mẫu của median-24; và vì sao cực trị là thống kê yếu nhất trước mẫu nhỏ.
+- [Câu trả lời của chủ nhân ngắn hơn câu hỏi là câu mơ hồ](an-owner-reply-shorter-than-the-question-is-ambiguous.md) — `b:` bị đọc thành phương án (b) và ghi vào queue như quyết định.
+- [Một build cấu hình sai đi 99% quãng đường rồi hỏng như một test thường](a-misconfigured-build-goes-99-percent-of-the-way.md) — Ninja chọn MinGW, 196/196 object sạch, chết ở test discovery.
