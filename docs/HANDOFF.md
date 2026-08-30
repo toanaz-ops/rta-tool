@@ -5,30 +5,57 @@
 
 ---
 
-# 2026-08-30 — lane L4a, MERGE GIỮA CHỪNG (lane CHƯA đóng)
+# 2026-08-30 — lane L4a, TASK 5 XONG, Task 6 đang đóng
 
 **Đọc mục này trước. Mọi mục bên dưới là lịch sử của các ngày trước đó.**
 
-17 commit, `408d0a5..acaae9a`, đã merge vào `main` cục bộ. Lane L4a xây được
-**Task 1, 2, 3, 4 và Novak**; **Task 5 và Task 6 chưa làm**. Kế hoạch thi công
-đầy đủ ở `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md`, quyết định ở
-`docs/dsp/2026-08-30-sweep-ir-l4a.md` — đọc record TRƯỚC plan.
+Phiên trước: 17 commit `408d0a5..acaae9a` đã merge vào `main` cục bộ (Task 1–4
++ Novak). Phiên này, trên branch `claude_desk/handoff-workflow-continuation-81650b`
+**chưa merge**:
 
-## Baseline đo được (dán từ lệnh, trên cây đã merge)
+| commit | nội dung |
+|---|---|
+| `46012f6` | record decision **6b** + ba probe script |
+| `d9345a6` | plan Task 5 viết lại, HANDOFF, `docs/HUMAN-QA-QUEUE.md` |
+| `7eb3809` | **`rta::ir::Polarity`** — implementation + test |
+| `48f1c2e` | hai fix từ review: claim quá tay, test dễ sửa-cho-xanh |
+| `115da7d` | `CaptureTooShort` — fiction quay lại qua nhánh không-recurse |
+| `5a7bb22` | golden `rta::ir`, quy tắc biên độ **enforce bằng máy** |
+
+Kế hoạch ở `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md`, quyết định ở
+`docs/dsp/2026-08-30-sweep-ir-l4a.md` — **đọc record TRƯỚC plan**, và trong
+record đọc **decision 6b**, không phải decision 6 (đã bị chính khảo sát của nó
+bác, giữ lại có khung SUPERSEDED).
+
+## Baseline đo được (dán từ lệnh)
 
 ```
-cmake --build build-l2 --config Release --parallel --clean-first  -> 0 warning /W4
-ctest --test-dir build-l2 -C Release                              -> 334/334, 0 failed
-rta_core_has_no_framework_deps                                    -> OK, 76 file
-filter_design_has_no_polynomial_form                              -> OK, 87 file
-core_makes_no_class_1_claim                                       -> OK,  9 file
-rta_platform_types_has_no_framework_deps                          -> OK,  5 file
-app_measure_has_no_framework_deps                                 -> OK, 29 file
+ctest --test-dir build-l4a     -C Release   -> 345/345, 0 failed   (RTA_BUILD_APP=OFF)
+ctest --test-dir build-l4a-app -C Release   -> 385/385, 0 failed   (RTA_BUILD_APP=ON)
+cmake --build build-l4a --config Release --parallel --clean-first -> 0 warning /W4
+core_has_no_framework_deps                  -> OK, 79 file
+filter_design_has_no_polynomial_form        -> OK, 93 file
+platform_types_has_no_framework_deps        -> OK,  5 file
+measure_has_no_framework_deps               -> OK, 29 file
 ```
 
-Đây là cấu hình **`RTA_BUILD_APP=OFF`** (thư mục `build-l2`, gitignore). Cấu
-hình `ON` **chưa được đo lại trong phiên này** — đừng cộng gộp hai cấu hình,
-đừng đoán số cho cấu hình ON.
+**Hai cấu hình phủ hai tập target khác nhau — đừng cộng gộp.** 385 = 345 của
+cấu hình OFF cộng 40 test app/platform mà cấu hình ON mới build được. Cả hai đo
+trong phiên này, trên cùng cây, sau commit cuối.
+
+Guard `core_has_no_framework_deps` đã được **chứng minh là còn canh**, không chỉ
+còn xanh: chèn `#include <juce_core/juce_core.h>` vào `core/src/ir/Polarity.cpp`
+làm nó ĐỎ, bỏ ra làm nó XANH, `git diff` rỗng sau khi khôi phục. Trap #1 nói
+guard hỏng vẫn xanh; cách duy nhất biết là làm nó đỏ.
+
+## Một dòng cho phiên sau, đừng bỏ qua
+
+`tools/probe_polarity_margin.py` và `probe_polarity_bandwidth.py` chứa đường tụt
+"0.708 → 0.300 theo bậc lọc" và bảng cliff `cheby1` order 9 / `butter` order 16.
+**Những số đó đo bằng PEAK-SIGN rule, không phải rule đang ship** (first arrival
+tại 0.5). Dưới rule đang ship, cùng lưới cho **0 câu sai** ở order 2–16. Đừng
+khôi phục một envelope "order ≤ 8" từ chúng — docstring của cả hai file đã mang
+cảnh báo này, đọc trước khi trích.
 
 ## Đã hạ cánh
 
