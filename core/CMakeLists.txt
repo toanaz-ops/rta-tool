@@ -30,6 +30,7 @@ add_library(rta_core STATIC
     src/gen/Synthetic.cpp
     src/ir/Deconvolver.cpp
     src/ir/IrSpectrum.cpp
+    src/ir/Polarity.cpp
     src/meter/Detector.cpp
     src/meter/Leq.cpp
 )

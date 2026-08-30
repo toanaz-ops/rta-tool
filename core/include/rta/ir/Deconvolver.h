@@ -43,6 +43,38 @@ struct Deconvolution {
     /// the `Sweep` object, which by then may not exist.
     double harmonicSpacingL = 0.0;
 
+    /// The band the excitation covered AT ALL -- the sweep's `startHz`/`endHz`.
+    /// Zero means "not stated"; a reader must then not clamp rather than assume
+    /// a full band.
+    ///
+    /// Carried because a spectrum measured from this result contains energy
+    /// outside the excited band that is NOT response: leakage from windowing,
+    /// and the inverse filter's own fade. A band-edge estimator that counts
+    /// those bins reports a system wider than the one measured -- a `butter(2)`
+    /// section designed 7.5-120 Hz reads 4.09 octaves by counting a bin at
+    /// 11.7 Hz, when only 20-120 Hz was ever excited. See
+    /// `docs/dsp/2026-08-30-sweep-ir-l4a.md` decision 6b, estimator defect 2.
+    double excitationLowHz = 0.0;
+    double excitationHighHz = 0.0;
+
+    /// The narrower band in which this measurement is TRUSTWORTHY --
+    /// `Sweep::validBandLowHz()` / `validBandHighHz()`, i.e. after the fades.
+    /// Zero means "not stated".
+    ///
+    /// Distinct from the excitation band on purpose, and the distinction is
+    /// load-bearing rather than pedantic. Clamping a band-edge search to THIS
+    /// band instead of the excitation band makes a system lying below it
+    /// unreadable: a 50-71 Hz subwoofer measured with a sweep whose fade-in
+    /// finishes at 80 Hz then reports a low edge of 82 Hz, because the -10 dB
+    /// threshold is taken against a peak made of skirt. The number is not
+    /// merely imprecise, it describes a different loudspeaker.
+    ///
+    /// What this band IS for: deciding whether the measurement can support a
+    /// judgement at all. A verdict whose threshold sits outside it is being
+    /// asked of a sweep that never established the answer.
+    double trustedLowHz = 0.0;
+    double trustedHighHz = 0.0;
+
     /// Offset in samples from `originIndex` to the Nth harmonic packet:
     /// `-L*ln(N)*fs`, hence NEGATIVE for every order >= 2. Returns 0 for order
     /// 1 -- the fundamental IS the origin -- and for anything below 1.
@@ -56,6 +88,15 @@ struct DeconvolverConfig {
     /// Applied to every output sample. Compute it with `inBandNormalisation`
     /// from a reference deconvolution; 1.0 leaves the result raw.
     double normalisationGain = 1.0;
+
+    /// Copied into the result. Leave at zero when not known; nothing downstream
+    /// may then clamp to it. NOT validated here: this function's contract is
+    /// about lengths and sample rate, and widening it would reject callers who
+    /// legitimately do not know the band.
+    double excitationLowHz = 0.0;
+    double excitationHighHz = 0.0;
+    double trustedLowHz = 0.0;
+    double trustedHighHz = 0.0;
 };
 
 /// Linear (non-cyclic) deconvolution: `response` convolved with
