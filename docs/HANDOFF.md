@@ -132,15 +132,45 @@ driver đảo theo thiết kế là ill-posed cho MỌI absolute polarity checke
 đối thủ); minimum-phase FIR mới thử một construction; mid-band resonance Q cao
 chưa khảo sát.
 
-**Task 6 — closeout.** Chưa làm. Gồm: golden vector cho `rta::ir`, đọc lại số
-guard, và đồng bộ tài liệu. Hai việc cụ thể phải mang theo:
+**Task 6 — closeout (ĐÃ XONG, `5a7bb22` + `f28a58b`).** Golden vector cho
+`rta::ir` ở `5a7bb22`; đo hai cấu hình, chứng minh guard còn canh, và đồng bộ
+tài liệu ở `f28a58b`. Cả hai đã merge qua `61daf1a`.
 
-1. **Hai bất đối xứng Python/C++** trong bộ sinh golden, chưa kích hoạt nhưng sẽ
-   thành bẫy: `tools/gen_generator.py` kẹp fade ở `len//2` còn C++ không có kẹp
-   tương đương; `raw` của Python có biên độ đỉnh 1.0 còn C++ nhân `10^(-6/20)`.
-   Cả hai **vô hại CHỈ VÌ** field duy nhất được tiêu thụ là một tỉ số. Thêm một
-   field không phải tỉ số vào golden này là kích hoạt cả hai.
-2. Đo lại cấu hình `RTA_BUILD_APP=ON`.
+**Nhưng một trong hai hạng mục nó mang theo KHÔNG phải việc đã xong — nó là
+ràng buộc còn hiệu lực.** Tách ra thành mục riêng ngay dưới đây, vì đọc lướt
+qua header "ĐÃ XONG" sẽ nuốt mất nó.
+
+### ⚠️ RÀNG BUỘC ĐANG SỐNG — hai bất đối xứng Python/C++ trong bộ sinh golden
+
+**Chưa được vá. Chỉ được ghi nhận.** Áp dụng cho MỌI phiên sinh golden mới, kể
+cả L4b tuần này. Kiểm lại 2026-08-30 bằng file thật, hai phiên độc lập:
+
+```
+grep -n "len(x) // 2" tools/gen_generator.py     -> 317, 318
+grep -n "amplitudeFromDbFsPeak" core/src/gen/Sweep.cpp
+```
+
+| | Python (`tools/gen_generator.py`) | C++ (`core/src/gen/Sweep.cpp`) |
+|---|---|---|
+| kẹp bề rộng fade | `min(fade_len, len(x)//2)`, dòng 317–318 | **không có kẹp trên**. Ba tầng floor (`fadeInSec`, `2/startHz`, `fadeInOctaves·ln2·L`) và sàn 2 mẫu — không tầng nào chặn fade vượt nửa chiều dài |
+| biên độ đỉnh của `raw` | `np.sin(phase)` → **1.0** | `amplitude_ · sin(...)`, `amplitude_ = 10^(levelDbFsPeak/20)`, mặc định −6 dB → **0.5012** |
+
+**Cả hai vô hại CHỈ VÌ** field duy nhất golden hiện tiêu thụ là một **tỉ số**
+(`test_generator_sweep.cpp`, case `sweep_params`: chỉ L, K và mẫu phase — toàn
+phase-domain, mù với fade và biên độ). Điều kiện vô hại đang treo trên một sợi
+chỉ: **thêm một field không-phải-tỉ-số vào golden là kích hoạt cả hai.**
+
+**Cái này bắn thẳng vào L4b.** Một phần lớn tham số L4b định ship lại tình cờ
+bất biến theo tỉ lệ — T20/T30/EDT là **độ dốc dB**, C50/C80/D50 là **tỉ số năng
+lượng trong cùng một tín hiệu** — nên bất đối xứng *biên độ* nhiều khả năng vẫn
+ngủ. Bất đối xứng *bề rộng fade* thì **không** bất biến theo tỉ lệ: nó đổi hình
+dạng kích thích, do đó đổi xung giải chập, do đó đổi đoạn suy giảm sớm — đúng
+chỗ EDT đọc. **Đó là giả thuyết chưa đo, không phải kết luận.** L4b phải đo nó
+trước khi commit golden đầu tiên, hoặc phải chứng minh field nó ghi là bất biến
+tỉ lệ. Đừng ship rồi mới hỏi.
+
+Hạng mục còn lại của Task 6 — đo lại cấu hình `RTA_BUILD_APP=ON` — **đã xong**,
+`385/385`, ghi ở `f28a58b` và ở `docs/HUMAN-QA-QUEUE.md`.
 
 **Chưa push lên `origin`.** `main` cục bộ đi trước `origin/main` một khoảng
 **không được viết vào file này** — đo bằng lệnh, mỗi lần cần:
