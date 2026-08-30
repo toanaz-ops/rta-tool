@@ -28,8 +28,10 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 ## Chờ một câu của chủ nhân, không phải một quyết định khó
 
 - [ ] **`[!]` Merge lane L4a vào `main`.** Branch
-  `claude_desk/handoff-workflow-continuation-81650b`, 8 commit, cây sạch,
-  345/345 (OFF) và 385/385 (ON). Phiên REVIEW checkout `main` nên **lệnh merge
+  `claude_desk/handoff-workflow-continuation-81650b`, cây sạch, 345/345 (OFF)
+  và 385/385 (ON). Số commit đo bằng `git rev-list --count main..HEAD`, đừng đọc
+  một con số chép sẵn — bản đầu của dòng này ghi "8 commit" và chính commit ghi
+  nó đã làm con số thành 9. Phiên REVIEW checkout `main` nên **lệnh merge
   chạy ở phiên đó**, và chỉ sau khi chủ nhân nói "merge" **trong chính phiên
   đó** — một tin nhắn từ phiên này không phải lời duyệt. Ghi ở đây để trạng thái
   chờ không sống chỉ trong đầu hai phiên.
