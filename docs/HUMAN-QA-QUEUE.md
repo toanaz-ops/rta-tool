@@ -64,6 +64,17 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ---
 
+## Từ phiên EP06 (2026-08-30)
+
+- [ ] **ISO 3382-1 — mua, hay dựng từ nguồn mở?** Định nghĩa T20/T30/EDT/
+  C50/C80/D50 nằm trong đó. Chủ nhân được hỏi cùng lượt với câu chốt lane và
+  **trả lời "số 1"**, mà phương án 1 của cả hai câu đều là phương án đề xuất.
+  **Agent hiểu là: dựng từ nguồn mở, provenance ghi là *literature*, docs KHÔNG
+  được nói "theo ISO 3382-1".** Ghi ở đây dưới dạng **giả định đang chạy**, chưa
+  đóng, vì một chữ "số 1" trả lời hai câu là suy luận của agent chứ không phải
+  câu chữ của chủ nhân. Nếu sai, sửa ở đây và lane đổi theo — không chặn việc.
+  Không thêm vào danh sách mua ở trên cho tới khi chủ nhân xác nhận muốn mua.
+
 ## Đã trả lời
 
 - [x] **G21 tầng 1 — ship absolute polarity hay không (B1 vs B2).**
@@ -76,3 +87,7 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   → **Duyệt sửa**: chuyển sang G17 như câu hỏi PHA. 2026-08-30.
 - [x] **Ngôn ngữ báo cáo.** → Technical terms giữ nguyên tiếng Anh, không dịch
   sang tiếng Việt. 2026-08-30.
+- [x] **Lane kế sau L4a.** → **L4b** (ETC, Schroeder, Lundeby, EDT/T20/T30,
+  C50/C80/D50, toàn bộ trong `core/`). Chủ nhân chốt 2026-08-30, phiên EP06,
+  trả lời trực tiếp trong phiên thi công. `MASTER-EXECUTION-PLAN.md` mục 4 của
+  "Suggested opening order" đã bỏ nhãn pending theo đó.

@@ -177,10 +177,9 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
    **L5b** stays blocked on the ISO 2969 / SMPTE ST 202 purchase, **L4d** on
    IEC 60268-16. L8 research lanes fire-and-forget anytime.
 4. **Now**: **L4b** — ETC, Schroeder, Lundeby, EDT/T20/T30, C50/C80/D50, all in
-   `core/`. **(Owner confirmation pending, 2026-08-30 — this line is a reading
-   of the order above, not an instruction the owner gave. Delete this
-   parenthesis when they confirm, or renumber when they redirect.)** It has
-   **no decision record**, so it starts at **station 1**, not station 3. Two mandates L4a measured and handed it are in that record's
+   `core/`. **Confirmed by the owner 2026-08-30** (session EP06; the pending
+   marker this line carried for one round is deleted rather than left to rot).
+   It has **no decision record**, so it starts at **station 1**, not station 3. Two mandates L4a measured and handed it are in that record's
    "What this record does not decide" — the deconvolution noise tail that reads
    as a plausible RT60 out of a measurement containing no room, and the
    relative-polarity ρ thresholds that came from one grid and must be
