@@ -241,7 +241,37 @@ Clarity clarity(std::span<const float> bandResponse, std::size_t originIndex,
         return out;
     }
 
+    // Energy that zero-phase filtering placed BEFORE the arrival counts as
+    // EARLY, and this is measured rather than assumed.
+    //
+    // `filtfilt` is symmetric about an impulse, so it puts half the direct
+    // sound's band energy before t = 0 at every band. An earlier version
+    // discarded it as filter leakage; that reading was backwards. It is the
+    // direct sound's own energy, displaced by a filter that conserves it, and
+    // dropping it is what creates a filter-dependent loss.
+    //
+    // Both conventions were measured against the C50 of the UNFILTERED impulse
+    // response, which has no smearing to argue about. Median of 8 seeds, error
+    // in dB against that truth:
+    //
+    //                     exclude   include
+    //     1/3-oct 40 Hz    -3.06     -0.33
+    //     1/3-oct 63 Hz    -3.46     -2.98
+    //     1/3-oct 125 Hz   +0.62     +1.00
+    //     octave 1000 Hz   -0.14     -0.14
+    //
+    // Include wins decisively where the difference is large, ties where the
+    // band is wide, and loses by 0.4 dB in one middle cell. The residual the
+    // two share at 125 Hz is band-limiting itself changing C50 -- a property of
+    // the measurement, not of this choice.
     double early50 = 0.0, early80 = 0.0, total = 0.0;
+    for (std::size_t i = 0; i < originIndex; ++i) {
+        const double v = static_cast<double>(bandResponse[i]);
+        const double e = v * v;
+        total += e;
+        early50 += e;
+        early80 += e;
+    }
     for (std::size_t i = 0; i < cut; ++i) {
         const double e = static_cast<double>(tail[i]) * static_cast<double>(tail[i]);
         total += e;

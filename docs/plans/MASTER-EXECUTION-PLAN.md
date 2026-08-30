@@ -176,10 +176,17 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
    Read `docs/HANDOFF.md` first, then `docs/dsp/2026-08-30-sweep-ir-l4a.md`.
    **L5b** stays blocked on the ISO 2969 / SMPTE ST 202 purchase, **L4d** on
    IEC 60268-16. L8 research lanes fire-and-forget anytime.
-4. **Now**: **L4b** — ETC, Schroeder, Lundeby, EDT/T20/T30, C50/C80/D50, all in
-   `core/`. **Confirmed by the owner 2026-08-30** (session EP06; the pending
-   marker this line carried for one round is deleted rather than left to rot).
-   It has **no decision record**, so it starts at **station 1**, not station 3. Two mandates L4a measured and handed it are in that record's
+4. ~~**Now**: **L4b**~~ — **BUILT 2026-08-30** (session EP06), `core/` only, on
+   `claude_desk/handoff-continuation-9045fc` and **not yet merged**. Record
+   `docs/dsp/2026-08-30-ir-decay-l4b.md`; numbers and open items live in
+   `docs/HANDOFF.md` and are not copied here. Three figures a later session must
+   not re-derive: the B*T gate ships at **6, not the literature's 4** (the
+   measured decay is inflated by the filter at exactly the values being gated,
+   and the constant is filter-order dependent); the gate reads **T30, not
+   Lundeby's working slope**; and **EDT has no validity envelope yet** and reads
+   +22 to +24 % inside the region the gate admits. Still open: golden vectors,
+   the "who guards what" pointers in two test files, and the RTA_BUILD_APP=ON
+   count. Two mandates L4a measured and handed it are in that record's
    "What this record does not decide" — the deconvolution noise tail that reads
    as a plausible RT60 out of a measurement containing no room, and the
    relative-polarity ρ thresholds that came from one grid and must be

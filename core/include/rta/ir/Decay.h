@@ -49,12 +49,19 @@ enum class DecayRefusal {
     /// to refuse. A first version of this gate did exactly that, and the test
     /// that caught it is `"A band too narrow for the decay refuses"`.
     ///
-    /// The two populations are NOT cleanly separable in measured units -- over
-    /// a 25-cell grid the worst unusable cell reads 5.58 and the best usable
-    /// one reads 5.48. Six is chosen because it is the smallest threshold with
-    /// **zero false accepts**, at a cost of one false refusal, at a true B*T of
-    /// 4.38 which is marginal anyway. Erring toward refusal is the right
-    /// direction of error for a figure an operator acts on.
+    /// The two populations are NOT cleanly separable in measured units -- the
+    /// worst unusable cell reads 5.58 and the best usable one reads 5.48. Six
+    /// is the smallest threshold with **zero false accepts** on two grids built
+    /// by two sessions independently (25 cells and 30 cells; they agree on the
+    /// inflation to within 0.4 %).
+    ///
+    /// **The price is a RANGE, not one cell.** On the denser grid the whole
+    /// band of true B*T from about 4 to 6 reads back as 5.6-5.9 and is refused
+    /// -- four usable cells, not one. A dry room measured in the low
+    /// third-octaves will meet this refusal ROUTINELY rather than rarely, and
+    /// anything reporting these figures to an operator should say so. Erring
+    /// toward refusal is still the right direction for a number someone acts
+    /// on, but it is not a free choice.
     ///
     /// **This constant is filter-order dependent** -- the inflation is the
     /// filter's own decay -- so changing the section count means re-measuring
@@ -298,11 +305,15 @@ struct DecayConfig {
 /// 5 ms of energy across the boundary and C50 moves with it. Pass the
 /// `Deconvolution::originIndex`, not the start of the buffer.
 ///
-/// Energy that zero-phase filtering smears to BEFORE the origin is excluded
-/// from both integrals rather than folded into the early one. It is filter
-/// leakage, not room response, and adding it to the numerator would inflate
-/// clarity by an amount that depends on the filter -- the same class of error
-/// as `NoLeadIn`, one step further along.
+/// Energy that zero-phase filtering placed BEFORE the origin counts as EARLY.
+///
+/// `filtfilt` is symmetric about an impulse, so it puts half of the direct
+/// sound's band energy before t = 0. That is the direct sound's own energy,
+/// displaced by a filter that conserves it -- not leakage. An earlier version
+/// discarded it on the leakage reading, and discarding it is what creates a
+/// filter-dependent loss: measured against the C50 of the UNFILTERED impulse
+/// response, excluding costs -3.06 dB at 1/3-octave 40 Hz where including costs
+/// -0.33 dB. Both conventions were measured; the numbers are in Decay.cpp.
 ///
 /// Refuses when the response ends before the split point, rather than treating
 /// a missing late half as silence, which would report a magnificent room for a

@@ -5,6 +5,93 @@
 
 ---
 
+# 2026-08-30 (tối) — **L4b ĐÃ XÂY XONG trong `core/`, CHƯA MERGE**
+
+**Đọc mục này trước tiên. Mục "L4a" bên dưới là lịch sử của cùng ngày.**
+
+Branch `claude_desk/handoff-continuation-9045fc`, worktree
+`.claude/worktrees/handoff-continuation-9045fc`. Chín commit trên `main` cục bộ
+(`a7453b6..89bc979`), **chưa merge** — merge là việc của phiên giữ checkout
+`main`, sau khi chủ nhân nói "merge" trong chính phiên đó.
+
+## Baseline đo được (dán từ lệnh, đo hai lần trên cây đã commit)
+
+```
+cmake -S . -B build-l4b -G "Visual Studio 18 2026" -A x64
+cmake --build build-l4b --config Release --parallel   -> 0 warning /W4
+ctest  --test-dir build-l4b -C Release                -> 358/358, 0 failed
+```
+Cấu hình `RTA_BUILD_APP=OFF`, MSVC 14.51.36231. Baseline trước lane này là
+**345/345**; mười ba case mới là chênh lệch. **Cấu hình `ON` CHƯA đo lại** —
+đừng đoán số đó ở đây hay bất cứ đâu.
+
+Guard sau lane: `core_has_no_framework_deps` quét **85 file** (trước: 79).
+
+**Hai guard được chứng minh CÒN CANH, không chỉ còn xanh:**
+- chèn `#include <juce_core/juce_core.h>` vào `core/src/ir/DecayLundeby.cpp` →
+  `core_has_no_framework_deps` ĐỎ; bỏ ra → XANH; `git diff` rỗng.
+- hạ `minBandwidthTime` 6.0 → 4.0 → test refusal ĐỎ, còn test *"same band passes
+  once the room is slow enough"* vẫn XANH (nên cổng không bị hàn chết).
+
+## Đã hạ cánh
+
+`rta::ir::Decay` — lọc băng **zero-phase**, tích phân Schroeder, **truncation
+Lundeby**, EDT/T20/T30, C50/C80/D50. Record:
+`docs/dsp/2026-08-30-ir-decay-l4b.md`. Probe:
+`tools/probe_l4b_filter_mode.py`, `tools/probe_l4b_truncation.py`.
+
+**Kết quả trung tâm:** truncation **gỡ bỏ sự phụ thuộc vào chiều dài đuôi**.
+Không truncation, T30 đọc dài từ +1.8% tới +3286% tuỳ đuôi dài bao nhiêu — tức
+tuỳ người vận hành bấm stop lúc nào. Có Lundeby: −0.8% tới +19.5%, và **phẳng**
+theo chiều dài đuôi. Đó là khác biệt giữa một phép đo và một sự trùng hợp.
+
+## Ba con số một phiên sau KHÔNG được suy diễn lại
+
+1. **Ngưỡng gate là `B·T < 6`, không phải 4.** Sàn 4 là của văn liệu và tính
+   trên B·T **thật**. Code chỉ đọc được B·T **đo được**, mà ở B·T thấp chính bộ
+   lọc thổi phồng nó (×1.42 tại true 3.71, ×1.91 tại 2.78). Hai quần thể
+   **không tách sạch được**; 6.0 là ngưỡng nhỏ nhất cho 0 false-accept.
+   **Phụ thuộc bậc bộ lọc** (`kSections = 4`, tức bậc 8) — đổi bậc phải đo lại.
+2. **Gate đọc T30 (hoặc T20), không đọc dốc làm việc của Lundeby.** Bản đầu đọc
+   dốc đó và sai 2.4× theo hướng mở cổng. Luật: **gate trên con số mày ship.**
+3. **EDT chưa có envelope riêng và bảng của record chứng minh nó cần.** Dưới
+   oracle, zero-phase EDT đọc +21.9% tại B·T 11.6 và +24.3% tại 5.8 — **cả hai
+   NẰM TRONG vùng cổng cho qua**, vì cổng hiệu chỉnh trên T30. **Cho tới khi
+   quyết, đừng trình bày EDT như ngang chất lượng với T20/T30.**
+
+## Việc còn mở của L4b
+
+- **Chưa có golden vector.** Record §7 đã chốt luật (commit **mẫu IR**, không
+  commit tham số để C++ sinh lại; nhiễu đặc tả bằng **SNR**, không bằng biên độ
+  tuyệt đối; mẫu qua float32 TRƯỚC khi Python tính kỳ vọng; fixture đặt XA mọi
+  ngưỡng refusal) — nhưng chưa ai viết.
+- **§7a "who guards what" chưa được ghi vào hai file test.** Record nói khế ước
+  tồn tại; `test_ir_golden.cpp` và `test_generator_sweep.cpp` chưa mang con trỏ
+  ngắn trỏ về nó.
+- **Một tầng của G3 chưa đo:** zero-phase trét năng lượng direct sound ra trước
+  t=0; code loại nó khỏi cả hai tích phân clarity, nhưng **lượng bị loại chưa
+  được đo**.
+- **Ngưỡng 6.0 hiệu chỉnh trên MỘT fixture, ensemble 12** (không phải 24).
+- **Cấu hình `RTA_BUILD_APP=ON` chưa đo lại.**
+- **Chưa có gì để NHÌN.** L4b nằm hoàn toàn trong `core/`. Widget thuộc L4c.
+
+## Người có thể tự chạy gì
+
+```bash
+"D:/DEV CAVE EP3/PRJ010-RTA-TOOL/.venv/Scripts/python.exe" tools/probe_l4b_truncation.py
+```
+In ra bảng truncation (cột Lundeby **phẳng** theo chiều dài đuôi, cột không
+truncation thì không), bảng B·T, và so ba chế độ lọc. Không ghi file nào.
+
+```bash
+"D:/DEV CAVE EP3/PRJ010-RTA-TOOL/.venv/Scripts/python.exe" tools/probe_l4b_filter_mode.py
+```
+Bảng ba chế độ lọc, kèm docstring ghi lại **hai lần probe này tự sai** trước khi
+đúng được gì — 38.7 dB năng lượng bịa ra do thiếu lead-in, và trục chiều dài đuôi
+bị giấu.
+
+---
+
 # 2026-08-30 — lane L4a ĐÃ ĐÓNG VÀ ĐÃ MERGE. Lane tiếp theo: **L4b**
 
 **Đọc mục này trước. Mọi mục bên dưới là lịch sử của các ngày trước đó.**

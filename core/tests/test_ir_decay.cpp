@@ -317,3 +317,48 @@ TEST_CASE("An impossible band is refused at the door", "[ir][decay]") {
     CHECK_THROWS_AS(rta::ir::bandFilterZeroPhase(h, 100.0, 200.0, 0.0),
                     std::invalid_argument);
 }
+
+TEST_CASE("Energy the filter moved before the arrival counts as early",
+          "[ir][decay]") {
+    // Zero-phase filtering is symmetric about an impulse, so half the direct
+    // sound's band energy lands BEFORE the arrival. It is that sound's own
+    // energy, moved by a filter that conserves it -- not leakage. Dropping it
+    // is what creates a filter-dependent loss: measured against the C50 of the
+    // unfiltered response, excluding costs -3.06 dB at 1/3-octave 40 Hz where
+    // including costs -0.33 dB.
+    //
+    // This asserts the convention arithmetically rather than by re-deriving the
+    // survey: the two candidate numerators are both computable here, and the
+    // implementation must equal the one that keeps the pre-arrival energy.
+    std::vector<float> h(static_cast<std::size_t>(0.5 * kFs), 0.0f);
+    h[kLeadIn] = 1.0f;
+    h[kLeadIn + static_cast<std::size_t>(0.200 * kFs)] = 1.0f;
+
+    const double lo = 63.0 / std::pow(2.0, 1.0 / 6.0);
+    const double hi = 63.0 * std::pow(2.0, 1.0 / 6.0);
+    const auto band = rta::ir::bandFilterZeroPhase(h, lo, hi, kFs);
+
+    rta::ir::EnergyDecayCurve curve;
+    curve.sampleRate = kFs;
+    curve.crossingIndex = band.size() - kLeadIn;
+    curve.truncationCorrection = 0.0;
+    curve.refusal = rta::ir::DecayRefusal::None;
+
+    double preOrigin = 0.0, early = 0.0, total = 0.0;
+    const auto at50 = static_cast<std::size_t>(0.050 * kFs);
+    for (std::size_t i = 0; i < band.size(); ++i) {
+        const double e = static_cast<double>(band[i]) * static_cast<double>(band[i]);
+        total += e;
+        if (i < kLeadIn) preOrigin += e;
+        else if (i - kLeadIn < at50) early += e;
+    }
+
+    // The filter really does put a substantial share before the arrival --
+    // otherwise this test would pass for both conventions and prove nothing.
+    REQUIRE(preOrigin > 0.05 * total);
+
+    const auto c = rta::ir::clarity(band, kLeadIn, kFs, curve);
+    REQUIRE(c.d50.has());
+    CHECK_THAT(c.d50.value, WithinRel((preOrigin + early) / total, 1e-6));
+    CHECK(c.d50.value > early / total);   // i.e. NOT the excluding convention
+}

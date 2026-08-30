@@ -36,6 +36,21 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   đo bằng `git rev-list --count`, đừng đọc con số chép sẵn — bản đầu của mục này
   ghi "8 commit", con số thật lúc merge là 10.
 
+## Từ lane L4b (2026-08-30, phiên EP06)
+
+- [ ] **Merge L4b vào `main`?** Chín commit, `a7453b6..89bc979`, trên
+  `claude_desk/handoff-continuation-9045fc`. Đo trên cây đã commit:
+  `358/358`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
+  giữ checkout `main`, sau khi chủ nhân nói "merge" **trong chính phiên đó** —
+  tin nhắn giữa hai phiên không phải lời duyệt.
+- [ ] **EDT: chọn một trong ba.** Dưới oracle truncation, zero-phase EDT lệch
+  +21.9% tại B·T 11.6 và +24.3% tại 5.8 — **cả hai nằm TRONG vùng cổng cho
+  qua**, vì cổng hiệu chỉnh trên T30. Ba lối: (a) sàn B·T riêng, cao hơn, cho
+  EDT; (b) từ chối EDT ở các băng 1/3-octave thấp; (c) ship kèm bias công bố.
+  **Quyết định sản phẩm, không phải kỹ thuật** — nó nói người vận hành được
+  phép tin EDT tới đâu. Không chặn: code hiện ship EDT kèm refusal chung, và
+  record cấm trình bày nó như ngang chất lượng với T20/T30.
+
 ## Quyết định sản phẩm
 
 - [ ] **Tên sản phẩm chính thức.**
