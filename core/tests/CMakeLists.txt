@@ -34,6 +34,7 @@ add_executable(rta_core_tests
     test_generator_sweep.cpp
     test_generator_mls.cpp
     test_ir_deconvolver.cpp
+    test_ir_polarity.cpp
     test_ir_spectrum.cpp
 )
 

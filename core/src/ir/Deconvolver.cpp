@@ -130,6 +130,10 @@ Deconvolution deconvolve(std::span<const float> response,
     out.sampleRate = config.sampleRate;
     out.normalisationGain = config.normalisationGain;
     out.harmonicSpacingL = config.harmonicSpacingL;
+    out.excitationLowHz = config.excitationLowHz;
+    out.excitationHighHz = config.excitationHighHz;
+    out.trustedLowHz = config.trustedLowHz;
+    out.trustedHighHz = config.trustedHighHz;
     return out;
 }
 
