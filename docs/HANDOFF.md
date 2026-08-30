@@ -281,14 +281,12 @@ tỉ lệ. Đừng ship rồi mới hỏi.
 Hạng mục còn lại của Task 6 — đo lại cấu hình `RTA_BUILD_APP=ON` — **đã xong**,
 `385/385`, ghi ở `f28a58b` và ở `docs/HUMAN-QA-QUEUE.md`.
 
-**Chưa push lên `origin`.** `main` cục bộ đi trước `origin/main` một khoảng
-**không được viết vào file này** — đo bằng lệnh, mỗi lần cần:
-
-```
-git rev-list --count origin/main..main
-```
-
-Chủ nhân đã chủ động chọn chưa push.
+**ĐÃ PUSH lên `origin` — 2026-08-30 tối, sau merge L4b.** Chủ nhân ra lệnh
+trong phiên EP06 THINKER (nguyên văn gõ: "merge master" — phiên hỏi lại và
+chủ nhân xác nhận nghĩa là push, theo đúng luật câu-ngắn-hơn-câu-hỏi);
+`git push origin main` → `29b464e..3c74294`. Khoảng cách đo lại bằng
+`git rev-list --count origin/main..main` → 0. Trạng thái push về sau đo bằng
+chính lệnh đó, đừng chép số vào đây.
 
 > Câu này từng viết "**57 commit**" ngay sau mệnh lệnh "đo bằng
 > `git rev-list --count`, không phải cộng nhẩm". Đo lại 2026-08-30 (phiên EP06,
