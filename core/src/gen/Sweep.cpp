@@ -55,9 +55,33 @@ Sweep::Sweep(const Config& config)
     }
 
     // L = T / ln(f2/f1); K = 2*pi*f1*L. See the derivation in Sweep.h.
-    lengthL_ = config.durationSec / std::log(endHz_ / startHz_);
+    const double octaveSpan = std::log(endHz_ / startHz_);
+    lengthL_ = config.durationSec / octaveSpan;
+
+    // NOVAK SYNCHRONISATION. `f1*L` is rounded to a whole number, which makes
+    // the sweep's total phase an exact multiple of 2*pi and every harmonic
+    // packet land on a whole sample with a phase that is a multiple of 2*pi
+    // too. Without it the packet POSITIONS are still right to a fraction of a
+    // sample, but each harmonic's frequency response carries a
+    // frequency-dependent phase rotation: amplitude distortion analysis
+    // survives, phase-accurate per-harmonic analysis does not.
+    // Novak et al., EURASIP 2010 and JAES 2015; record decision 3's qualifier.
+    //
+    // The DURATION moves, not the frequency range. f(t) = f1*e^(t/L) reaches f2
+    // only at t = L*ln(f2/f1), so quantising L and keeping f1, f2 exact means
+    // the sweep is a little shorter or longer than asked. Measured over this
+    // project's configurations the shift is between -1.0% and +1.3%. Callers
+    // that need the real figure read durationSec() or lengthSamples(); nothing
+    // may assume `config.durationSec * sampleRate`.
+    //
+    // max(1.0, ...) guards a sweep so short that f1*L rounds to zero, which
+    // would make L zero and every later division undefined.
+    const double integerCycles = std::max(1.0, std::round(startHz_ * lengthL_));
+    lengthL_ = integerCycles / startHz_;
+
     phaseK_ = kTwoPi * startHz_ * lengthL_;
-    lengthSamples_ = roundToSamples(config.durationSec, sampleRate_);
+    durationSec_ = lengthL_ * octaveSpan;
+    lengthSamples_ = roundToSamples(durationSec_, sampleRate_);
 
     // THREE floors compete and the widest wins. They are in different units and
     // neither implies the other:
@@ -99,6 +123,10 @@ Sweep::Sweep(const Config& config)
     // with the floor above: it can no longer be zero.
     if (fadeInSamples_ < 2) fadeInSamples_ = 2;
     if (fadeOutSamples_ < 2) fadeOutSamples_ = 2;
+}
+
+double Sweep::durationSec() const noexcept {
+    return durationSec_;
 }
 
 double Sweep::fadeInOctavesAchieved() const noexcept {

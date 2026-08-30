@@ -31,14 +31,23 @@ constexpr double kEndHz      = 10000.0;
 constexpr double kDuration   = 2.0;
 constexpr double kPi         = 3.14159265358979323846;
 
-double lengthConstant() { return kDuration / std::log(kEndHz / kStartHz); }
-
-Sweep::Config wideFadeConfig() {
+Sweep::Config baseConfig() {
     Sweep::Config cfg;
     cfg.sampleRate  = kSampleRate;
     cfg.startHz     = kStartHz;
     cfg.endHz       = kEndHz;
     cfg.durationSec = kDuration;
+    return cfg;
+}
+
+/// Read from the Sweep rather than recomputed. Novak synchronisation rounds
+/// `f1*L` to a whole number, so `T/ln(f2/f1)` is the REQUESTED L and not the one
+/// the sweep uses -- a helper that recomputes it disagrees with the object it is
+/// testing, silently, by about 1%.
+double lengthConstant() { return Sweep(baseConfig()).lengthConstantL(); }
+
+Sweep::Config wideFadeConfig() {
+    auto cfg = baseConfig();
     cfg.fadeInSec   = 2.0 * std::log(2.0) * lengthConstant();   // two octaves
     return cfg;
 }

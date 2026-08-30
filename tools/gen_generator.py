@@ -277,9 +277,27 @@ def build_mls_case(order: int) -> str:
 # --- 5. Sweep: Farina exponential sweep, rendered and deconvolved independently of the
 # C++ Sweep class per the closed forms in docs/dsp/2026-08-27-generator.md.
 def sweep_length_constants(f1: float, f2: float, T: float) -> tuple[float, float]:
+    """L and K, with Novak synchronisation applied.
+
+    `f1*L` is rounded to a whole number so the sweep's total phase is an exact
+    multiple of 2*pi and every harmonic packet lands on a whole sample with
+    whole-turn phase. Without it the packet positions are still right to a
+    fraction of a sample, but each harmonic's response carries a
+    frequency-dependent phase rotation. Novak et al., EURASIP 2010 / JAES 2015.
+
+    The DURATION moves, not the frequency range: f(t) = f1*e^(t/L) reaches f2
+    only at t = L*ln(f2/f1). Use synchronised_duration() for the real figure.
+    """
     length_l = T / np.log(f2 / f1)
-    phase_k = 2.0 * np.pi * f1 * length_l
-    return length_l, phase_k
+    length_l = max(1.0, round(f1 * length_l)) / f1
+    return length_l, 2.0 * np.pi * f1 * length_l
+
+
+def synchronised_duration(f1: float, f2: float, T: float) -> float:
+    """The duration actually rendered once L has been synchronised."""
+    length_l, _ = sweep_length_constants(f1, f2, T)
+    return length_l * np.log(f2 / f1)
+
 
 def raised_cosine_fade(x: np.ndarray, fade_in_len: int, fade_out_len: int) -> np.ndarray:
     """Taper the two ends INDEPENDENTLY, matching core's Sweep.
@@ -311,7 +329,7 @@ def render_sweep_and_inverse(fs: float, f1: float, f2: float, T: float):
     """Both closed forms repeated verbatim from docs/dsp/2026-08-27-generator.md,
     computed here independently in Python."""
     length_l, phase_k = sweep_length_constants(f1, f2, T)
-    n = np.arange(int(round(fs * T)))
+    n = np.arange(int(round(fs * synchronised_duration(f1, f2, T))))
     phase = phase_k * (np.exp(n / (fs * length_l)) - 1.0)
     raw = np.sin(phase)
     instantaneous_freq = f1 * np.exp(n / (fs * length_l))
@@ -344,10 +362,15 @@ def render_sweep_and_inverse(fs: float, f1: float, f2: float, T: float):
 
 def build_sweep_params_case(fs: float, f1: float, f2: float, T: float) -> str:
     length_l, phase_k = sweep_length_constants(f1, f2, T)
-    n = np.linspace(0, fs * T * 0.999, 10).astype(int)
+    # Sample instants span the SYNCHRONISED duration, not the requested one --
+    # the sweep is that long, and phases past its end describe nothing.
+    duration = synchronised_duration(f1, f2, T)
+    n = np.linspace(0, fs * duration * 0.999, 10).astype(int)
     phase = phase_k * (np.exp(n / (fs * length_l)) - 1.0)
     return case_block("sweep_params", 1, {
-        "fs": fs, "f1": f1, "f2": f2, "T": T,
+        # T is the REQUESTED duration, kept so the C++ can construct the same
+        # Config; T_sync is what synchronisation actually produced.
+        "fs": fs, "f1": f1, "f2": f2, "T": T, "T_sync": duration,
         "L": length_l, "K": phase_k, "n": n, "phase": phase,
     })
 
@@ -388,7 +411,11 @@ def build_sweep_deconv_case(fs: float, f1: float, f2: float, T: float) -> str:
                           "construction before writing this golden")
     print(f"  sweep_deconv: peak_index={peak_index} snr_db={snr_db:.3f}")
     return case_block("sweep_deconv", 1, {
+        # T_sync alongside T for the same reason as in sweep_params: the C++
+        # constructs its Config from T, but the sample count it renders -- and
+        # therefore where the deconvolution peaks -- follows T_sync.
         "fs": fs, "f1": f1, "f2": f2, "T": T,
+        "T_sync": synchronised_duration(f1, f2, T),
         "ir_index": ir_index, "ir_amp": ir_amp,
         # No peak_amp_norm: it was a hardcoded 1.0, derived from nothing, read
         # by nothing, and its name implied a normalisation the inverse filter

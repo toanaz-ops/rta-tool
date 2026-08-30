@@ -65,6 +65,13 @@ public:
         double sampleRate    = 48000.0;
         double startHz       = 20.0;
         double endHz         = 20000.0;
+        /// REQUESTED duration. The sweep actually rendered is a little
+        /// shorter or longer -- between -1.0% and +1.3% across this project's
+        /// configurations -- because `f1*L` is rounded to a whole number so
+        /// that harmonic packets land on whole samples with whole-turn phase
+        /// (Novak synchronisation; see the ctor). Read `durationSec()` or
+        /// `lengthSamples()` for what you got; never assume this times
+        /// `sampleRate`.
         double durationSec   = 10.0;
         double levelDbFsPeak = -6.0;   ///< peak-referenced: amplitude = 10^(db/20)
         double fadeInSec     = 0.02;   ///< a FLOOR, not the value: the widest of
@@ -116,6 +123,17 @@ public:
     /// all three floors have competed and the result has been rounded to whole
     /// samples. This is the number that predicts the artefact floor, so it is
     /// the one worth reading back.
+    /// The duration actually rendered, after Novak synchronisation rounded
+    /// `f1*L` to a whole number. Differs from `Config::durationSec` by up to
+    /// about 1.3% in the configurations this project uses.
+    [[nodiscard]] double durationSec() const noexcept;
+
+    /// `f1 * L`, which synchronisation makes an integer. Exposed because a
+    /// condition nobody can observe is a condition nobody can check.
+    [[nodiscard]] double synchronisedCycles() const noexcept {
+        return startHz_ * lengthL_;
+    }
+
     [[nodiscard]] double fadeInOctavesAchieved() const noexcept;
 
     /// Lower edge of the band in which this sweep's deconvolution is
@@ -170,6 +188,7 @@ private:
     double lengthL_;        ///< T / ln(f2/f1)
     double phaseK_;         ///< 2*pi*f1*L
     std::size_t lengthSamples_;
+    double durationSec_;    ///< as synchronised, not as requested
     double fadeOutSec_;     ///< as clamped, for validBandHighHz()
     std::size_t fadeInSamples_;
     std::size_t fadeOutSamples_;

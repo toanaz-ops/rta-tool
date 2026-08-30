@@ -172,14 +172,29 @@ TEST_CASE("L and K follow from f1, f2 and T", "[sweep]") {
         cfg.durationSec = p.t;
         Sweep sweep(cfg);
 
-        const double expectedL = p.t / std::log(p.f2 / p.f1);
+        // Novak synchronisation rounds f1*L to a whole number, so the closed
+        // form has an extra step: L = round(f1 * T/ln(f2/f1)) / f1. Without it
+        // the sweep's total phase is not a whole number of turns and the
+        // harmonic packets carry a frequency-dependent phase rotation.
+        const double requestedL = p.t / std::log(p.f2 / p.f1);
+        const double expectedL = std::max(1.0, std::round(p.f1 * requestedL)) / p.f1;
+        CHECK_THAT(sweep.synchronisedCycles(),
+                   WithinAbs(std::round(sweep.synchronisedCycles()), 1.0e-9));
+        CHECK_THAT(sweep.durationSec(),
+                   WithinRel(expectedL * std::log(p.f2 / p.f1), 1.0e-12));
         const double expectedK = 2.0 * kPi * p.f1 * expectedL;
         CHECK_THAT(sweep.lengthConstantL(), WithinRel(expectedL, 1.0e-12));
         CHECK_THAT(sweep.phaseConstantK(), WithinRel(expectedK, 1.0e-12));
 
         // The identity that PROVES L is correct, independent of how it was
-        // computed: requiring f(T) = f2 is exactly how L was derived.
-        CHECK_THAT(p.f1 * std::exp(p.t / sweep.lengthConstantL()), WithinRel(p.f2, 1.0e-12));
+        // computed: requiring f(T) = f2 is exactly how L was derived. Under
+        // synchronisation the T in that identity is the RENDERED duration, not
+        // the requested one -- quantising L moves the moment at which the sweep
+        // reaches f2, and it reaches f2 exactly then. Reading p.t here instead
+        // asks for the frequency 20 ms past the end of a 1.98 s sweep, which
+        // for a 100 Hz-10 kHz sweep is 4.7% high.
+        CHECK_THAT(p.f1 * std::exp(sweep.durationSec() / sweep.lengthConstantL()),
+                   WithinRel(p.f2, 1.0e-12));
     }
 }
 
@@ -404,7 +419,9 @@ TEST_CASE("Sweep then inverse filter recovers a synthetic IR at SNR above 60 dB"
     // its direct arrival ir_index samples later. Deriving it here means a
     // generator change that silently altered the fixture cannot hide inside a
     // regenerated number.
-    const auto ninv = (std::size_t) std::llround(g.row("T").front() * g.row("fs").front());
+    // T_sync, not T: synchronisation moves the duration, so the requested one
+    // no longer gives the sample count the sweep actually rendered.
+    const auto ninv = (std::size_t) std::llround(g.row("T_sync").front() * g.row("fs").front());
     CHECK((std::size_t) g.row("peak_index").front()
           == ninv - 1u + (std::size_t) g.row("ir_index").front());
 
@@ -519,8 +536,9 @@ TEST_CASE("The fade-in clamp is expressed in octaves of sweep travel", "[sweep]"
     // 0.04 s cycles floor, which is the whole point: the cycles rule is
     // expressed in seconds, and the artefact floor is governed by octaves.
     Sweep sweep(cfg);
-    const double lengthL = 3.0 / std::log(100.0);
-    const double octaveFloorSec = 2.0 * std::log(2.0) * lengthL;
+    // Read L from the sweep: synchronisation rounds it, so 3/ln(100) is the
+    // requested value, not the one the fade floor is computed against.
+    const double octaveFloorSec = 2.0 * std::log(2.0) * sweep.lengthConstantL();
     CHECK(sweep.fadeInSamples()
           == (std::size_t) std::llround(octaveFloorSec * cfg.sampleRate));
     CHECK_THAT(sweep.fadeInOctavesAchieved(), WithinRel(2.0, 1.0e-5));
@@ -563,10 +581,10 @@ TEST_CASE("The valid band's edges follow from the fades", "[sweep]") {
     // the lower band edge IS the knob. 100 Hz * 2^2 = 400 Hz.
     CHECK_THAT(sweep.validBandLowHz(), WithinRel(400.0, 1.0e-4));
 
-    // f_hi = f2*exp(-fadeOutSec/L), with L = 2/ln(100) = 0.434294 s.
-    const double lengthL = 2.0 / std::log(100.0);
+    // f_hi = f2*exp(-fadeOutSec/L), with L read from the sweep rather than
+    // recomputed -- synchronisation rounds it.
     CHECK_THAT(sweep.validBandHighHz(),
-               WithinRel(10000.0 * std::exp(-0.02 / lengthL), 1.0e-9));
+               WithinRel(10000.0 * std::exp(-0.02 / sweep.lengthConstantL()), 1.0e-9));
     CHECK(sweep.validBandHighHz() < cfg.endHz);
     CHECK(sweep.validBandLowHz() > cfg.startHz);
 }

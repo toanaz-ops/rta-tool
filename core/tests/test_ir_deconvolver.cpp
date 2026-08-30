@@ -29,7 +29,20 @@ constexpr double kStartHz    = 100.0;
 constexpr double kEndHz      = 10000.0;
 constexpr double kDuration   = 2.0;
 
-double lengthConstant() { return kDuration / std::log(kEndHz / kStartHz); }
+Sweep::Config baseConfig() {
+    Sweep::Config cfg;
+    cfg.sampleRate  = kSampleRate;
+    cfg.startHz     = kStartHz;
+    cfg.endHz       = kEndHz;
+    cfg.durationSec = kDuration;
+    return cfg;
+}
+
+/// Read from the Sweep rather than recomputed. Novak synchronisation rounds
+/// `f1*L` to a whole number, so `T/ln(f2/f1)` is the REQUESTED L and not the one
+/// the sweep uses -- a helper that recomputes it disagrees with the object it is
+/// testing, silently, by about 1%.
+double lengthConstant() { return Sweep(baseConfig()).lengthConstantL(); }
 
 /// Two octaves of fade-in, stated in SECONDS so this fixture does not depend on
 /// `Sweep::Config`'s default fade width. Record decision 5 measures the
@@ -39,11 +52,7 @@ double lengthConstant() { return kDuration / std::log(kEndHz / kStartHz); }
 double twoOctaveFadeSec() { return 2.0 * std::log(2.0) * lengthConstant(); }
 
 Sweep::Config wideFadeConfig() {
-    Sweep::Config cfg;
-    cfg.sampleRate  = kSampleRate;
-    cfg.startHz     = kStartHz;
-    cfg.endHz       = kEndHz;
-    cfg.durationSec = kDuration;
+    auto cfg = baseConfig();
     cfg.fadeInSec   = twoOctaveFadeSec();
     return cfg;
 }
