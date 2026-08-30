@@ -5,25 +5,38 @@
 
 ---
 
-# 2026-08-30 (tối) — **L4b ĐÃ XÂY XONG trong `core/`, CHƯA MERGE**
+# 2026-08-30 (tối) — **L4b ĐÃ MERGE VÀO `main` tại `e77e0e1`**
 
 **Đọc mục này trước tiên. Mục "L4a" bên dưới là lịch sử của cùng ngày.**
 
-Branch `claude_desk/handoff-continuation-9045fc`, worktree
-`.claude/worktrees/handoff-continuation-9045fc`. Chín commit trên `main` cục bộ
-(`a7453b6..HEAD`, đếm bằng `git rev-list --count main..HEAD`), **chưa merge** — merge là việc của phiên giữ checkout
-`main`, sau khi chủ nhân nói "merge" trong chính phiên đó.
+Chủ nhân nói "merge" trong phiên REVIEW (EP06 THINKER, giữ checkout `main`),
+2026-08-30 tối. Merge `--no-ff`, ort strategy, không xung đột. Branch
+`claude_desk/handoff-continuation-9045fc` và worktree của nó GIỮ NGUYÊN —
+dọn hay không là quyết định của chủ nhân. Đếm gì cũng bằng `git rev-list
+--count`, đừng chép số vào đây.
 
-## Baseline đo được (dán từ lệnh, đo hai lần trên cây đã commit)
+## Baseline đo được (dán từ lệnh)
+
+Phiên xây đo trên cây đã commit của branch (build-l4b, MSVC 14.51.36231):
 
 ```
-cmake -S . -B build-l4b -G "Visual Studio 18 2026" -A x64
 cmake --build build-l4b --config Release --parallel   -> 0 warning /W4
-ctest  --test-dir build-l4b -C Release                -> 359/359, 0 failed
+ctest  --test-dir build-l4b -C Release                -> 359/359, 0 failed   (RTA_BUILD_APP=OFF)
 ```
-Cấu hình `RTA_BUILD_APP=OFF`, MSVC 14.51.36231. Baseline trước lane này là
-**345/345**; mười bốn case mới là chênh lệch. **Cấu hình `ON` CHƯA đo lại** —
-đừng đoán số đó ở đây hay bất cứ đâu.
+
+Phiên review đo lại ĐỘC LẬP **sau merge**, trên `main` đã ghép, build dir
+riêng chưa từng bị phiên xây chạm, `--clean-first`:
+
+```
+ctest --test-dir build-verify     -C Release  -> 359/359, 0 failed   (RTA_BUILD_APP=OFF)
+ctest --test-dir build-verify-app -C Release  -> 399/399, 0 failed   (RTA_BUILD_APP=ON)
+```
+
+Baseline trước lane: 345/345 (OFF) và 385/385 (ON) — cùng chênh lệch mười bốn
+case ở cả hai cấu hình. Số ON là lần đo ĐẦU TIÊN của cấu hình đó với code L4b;
+nó không còn là lỗ hổng. (Bốn dòng "CMAKE_GENERATOR_PLATFORM will be ignored"
+trong build ON là cảnh báo môi trường từ JUCEUtils CUSTOMBUILD, không phải
+warning /W4 trên code — có từ trước lane.)
 
 Guard sau lane: `core_has_no_framework_deps` quét **85 file** (trước: 79).
 

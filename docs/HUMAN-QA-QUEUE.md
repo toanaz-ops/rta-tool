@@ -38,11 +38,11 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Từ lane L4b (2026-08-30, phiên EP06)
 
-- [ ] **Merge L4b vào `main`?** Đếm commit bằng `git rev-list --count main..HEAD`, đừng chép số. Branch
-  `claude_desk/handoff-continuation-9045fc`. Đo trên cây đã commit:
-  `359/359`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
-  giữ checkout `main`, sau khi chủ nhân nói "merge" **trong chính phiên đó** —
-  tin nhắn giữa hai phiên không phải lời duyệt.
+- [x] **Merge L4b vào `main` — ĐÃ TRẢ LỜI VÀ ĐÃ CHẠY, 2026-08-30 tối.** Chủ
+  nhân gõ "merge" trong phiên REVIEW (EP06 THINKER, giữ checkout `main`); merge
+  `--no-ff` tại `e77e0e1`, không xung đột. Đo độc lập sau merge trên build dir
+  của phiên review: `359/359` (OFF) và `399/399` (ON) — số ở HANDOFF mục đầu.
+  Branch giữ nguyên, chưa dọn.
 - [ ] **EDT — hai phiên đã bàn xong và ĐỀ XUẤT; chờ chủ nhân chốt.**
   Chỉ thị 2026-08-30 là "bàn với thinker", và cuộc bàn đã kết thúc.
 
