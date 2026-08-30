@@ -50,14 +50,22 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   AZ Soundtech RTA"*. Target CMake vẫn là `rtatool` — đó là định danh
   build, không phải tên sản phẩm, và đổi nó là một lượt refactor riêng
   không ai yêu cầu.
-- [ ] **`[!]` Push lên `origin`? — CHỜ CHỦ NHÂN, agent KHÔNG tự quyết.**
-  Chủ nhân đã uỷ quyền cho agent tự quyết "các câu hỏi còn lại" (2026-08-30),
-  **và agent cố tình loại mục này ra khỏi phạm vi uỷ quyền đó.** Push là hành
-  động **đẩy ra ngoài máy**: nó công khai mã cho bất kỳ ai đọc được remote, và
-  nó không đảo được sạch — một lần đã push thì lịch sử đã ra khỏi tầm tay.
-  Uỷ quyền "tự quyết" hợp lý cho các lựa chọn kỹ thuật bên trong repo; nó không
-  tự động mở rộng sang một hành động ra khỏi ranh giới máy này.
-  Đo khoảng cách bằng `git rev-list --count origin/main..main`, đừng chép số.
+- [x] **Push lên `origin` → ĐÃ PUSH 2026-08-30**, `29b464e..7122070`, chạy ở
+  phiên REVIEW sau khi chủ nhân ra lệnh **trong chính phiên đó**. Đo sau khi
+  push: `git rev-list --count origin/main..main` → **0**.
+
+  Hai ghi chú quy trình đáng giữ, vì cả hai là luật của phiên này được đem ra
+  dùng thật:
+  1. Chủ nhân gõ **"merge master"** — ngắn hơn câu hỏi và không khớp hẳn từ
+     vựng. Phiên review **hỏi lại trước khi chạy**, đúng luật rút ra từ vụ `b:`
+     sáng cùng ngày. Luật ra đời từ một lần ghi sai, và lần dùng đầu tiên của
+     nó là để tránh một hành động **không đảo được**.
+  2. Phiên DOER trước đó đã **cố ý loại push khỏi phạm vi uỷ quyền "agent tự
+     quyết các câu hỏi còn lại"**, vì push rời khỏi máy và không đảo sạch được.
+     Việc chủ nhân sau đó tự ra lệnh push **không làm cho việc loại trừ đó sai**
+     — nó cho thấy đúng con đường: ranh giới đó do con người bước qua, không
+     phải do agent tự suy ra là mình được phép.
+
 - [ ] **Ba câu giao diện treo từ L5c:** cap 3 pane; dải màu spectrograph; unwrap
   có hiện trace pha đã lưu không.
 
