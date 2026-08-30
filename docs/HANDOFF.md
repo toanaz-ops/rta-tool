@@ -5,13 +5,29 @@
 
 ---
 
-# 2026-08-30 — lane L4a, TASK 5 XONG, Task 6 đang đóng
+# 2026-08-30 — lane L4a ĐÃ ĐÓNG VÀ ĐÃ MERGE. Lane tiếp theo: **L4b**
 
 **Đọc mục này trước. Mọi mục bên dưới là lịch sử của các ngày trước đó.**
 
+**Cập nhật 2026-08-30 (phiên EP06 DOER).** Mục này từng viết "Task 5 CHƯA THI
+CÔNG" và "chưa merge". **Cả hai đã hết đúng** trước khi phiên EP06 mở ra, và
+file này không được cập nhật theo — đúng loại lỗi bẫy #10 mô tả. Trạng thái
+thật, đo bằng lệnh chứ không đọc từ file:
+
+```
+git log --oneline -3   -> a7453b6 / 61daf1a (merge lane L4a) / fc776f3
+git rev-list --count main..HEAD  và  HEAD..main   -> 0 và 0
+```
+
+Task 5 (`rta::ir::Polarity`) và Task 6 (golden + đo hai cấu hình + đồng bộ tài
+liệu) **đã hạ cánh**, lane L4a **đã merge vào `main` cục bộ** ở `61daf1a`, sau
+khi chủ nhân nói "merge" trong phiên REVIEW đang giữ checkout `main`. Bảng
+commit ngay dưới đây giữ lại làm lịch sử của branch đó; nó **không còn là danh
+sách việc chờ merge**.
+
 Phiên trước: 17 commit `408d0a5..acaae9a` đã merge vào `main` cục bộ (Task 1–4
-+ Novak). Phiên này, trên branch `claude_desk/handoff-workflow-continuation-81650b`
-**chưa merge**:
++ Novak). Sau đó, trên branch `claude_desk/handoff-workflow-continuation-81650b`
+(nay đã merge qua `61daf1a`):
 
 | commit | nội dung |
 |---|---|
@@ -70,12 +86,29 @@ cảnh báo này, đọc trước khi trích.
 
 ## Việc còn mở
 
-**Task 5 — Polarity. ĐÃ KHẢO SÁT XONG (step 0), CHƯA THI CÔNG. ĐỪNG LÀM THEO
-PLAN HIỆN TẠI — plan đã bị chính khảo sát của nó bác.**
+**Task 5 và Task 6 KHÔNG còn mở — xem khối cập nhật ở đầu mục này.** Hai tiểu
+mục ngay dưới đây (`Task 5`, `Task 6`) giữ lại vì chúng ghi *cái gì đã được xây
+và vì sao*, không phải vì còn việc. Bảng "plan nói / khảo sát đo được" vẫn là
+cách nhanh nhất hiểu vì sao `Polarity.h` có hình dạng hiện tại.
 
-Step 0 chạy 2026-08-30 theo đúng điều kiện chủ nhân kèm khi duyệt G21, và kết
-quả bác plan. Đọc `docs/dsp/2026-08-30-sweep-ir-l4a.md` **decision 6b** trước
-mọi thứ khác. Tóm tắt cái gì đổi:
+**Việc thật sự còn mở là lane tiếp theo: L4b** (ETC, Schroeder, Lundeby,
+EDT/T20/T30, C50/C80/D50 — `core/`). Nó chưa có decision record, nên bắt đầu ở
+**trạm 1**, không phải trạm 3. L4a giao cho nó hai mệnh lệnh đã đo, ghi ở
+`docs/dsp/2026-08-30-sweep-ir-l4a.md` mục "What this record does not decide":
+
+1. **Đuôi nhiễu của giải chập đọc ra như hồi âm.** `apparent RT60 ≈
+   3·T / log10(f2/f1)`, cơ chế đã dẫn xuất, biên độ đúng ~10% qua ba cấu hình.
+   L4b dùng nó để **nhận ra** artefact, **không bao giờ để trừ đi**, và phải tự
+   tìm điểm cắt chứ không tin đường dốc nhìn thấy.
+2. **Các con số ρ của relative polarity đến từ MỘT lưới, chưa ai dựng lại độc
+   lập.** Step 0 của L4b phải dẫn xuất lại toàn bộ trước khi bất kỳ ngưỡng ρ nào
+   được ship. Đừng để số một-nguồn mặc quân phục của số ba-nguồn.
+
+**Task 5 — Polarity (ĐÃ XÂY, `7eb3809` + `48f1c2e` + `115da7d`).** Lý do plan
+gốc bị bác, giữ lại làm lịch sử: step 0 chạy 2026-08-30 theo đúng điều kiện chủ
+nhân kèm khi duyệt G21, và kết quả bác plan. Đọc
+`docs/dsp/2026-08-30-sweep-ir-l4a.md` **decision 6b** trước mọi thứ khác. Tóm
+tắt cái gì đổi:
 
 | plan hiện tại nói | khảo sát đo được |
 |---|---|
