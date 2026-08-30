@@ -35,6 +35,7 @@ add_executable(rta_core_tests
     test_generator_mls.cpp
     test_ir_deconvolver.cpp
     test_ir_golden.cpp
+    test_ir_decay.cpp
     test_ir_polarity.cpp
     test_ir_spectrum.cpp
 )
