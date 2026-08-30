@@ -211,15 +211,37 @@ TEST_CASE("Normalisation centres the valid band on 0 dB", "[ir][deconv]") {
     CHECK_THAT(rta::ir::inBandNormalisation(normalised, lowHz, highHz),
                WithinRel(1.0, 1.0e-4));
 
-    // And flatness must be a finite, non-degenerate range. No figure is
-    // asserted for the SPAN: today it is governed by a defect in
-    // buildInverseFilter -- a second, direct Tukey layer over the inverse
-    // kernel that tapers its high-frequency end -- so locking a number here
-    // would lock in that defect's value. The span assertion belongs with the
-    // commit that removes it.
+    // REGRESSION LOCK, labelled as one. Record decision 4's table has a row for
+    // exactly this fixture -- 100 Hz-10 kHz, 2 s, two-octave fade-in, band
+    // 400-9549.9 Hz -- measured at -0.03..+0.14 dB, a span of 0.17. The bound
+    // is 0.30: clear of the float32 transform, and far below the 10.65 dB span
+    // a narrow fade-in produces, which the next case pins from the other side.
+    //
+    // This could not be asserted until buildInverseFilter stopped applying a
+    // second Tukey layer to the inverse kernel; before that, the number here
+    // measured the defect rather than the analysis pulse.
+    CHECK(flat.maxDb - flat.minDb < 0.30);
     CHECK(flat.maxDb > flat.minDb);
     CHECK(std::isfinite(flat.minDb));
     CHECK(std::isfinite(flat.maxDb));
+}
+
+TEST_CASE("A narrow fade-in is measurably less flat", "[ir][deconv]") {
+    // The falsifier for the case above, from the other side. If bandFlatness
+    // returned a constant, or measured the wrong band, these two could not
+    // separate -- and they separate by a factor of sixty. Measured 10.65 dB of
+    // span for this fixture against 0.17 dB with the two-octave fade.
+    auto cfg = wideFadeConfig();
+    cfg.fadeInSec = 0.001;      // below the 2/startHz floor, so that floor wins
+    Sweep narrow(cfg);
+    const auto excitation = renderSweep(narrow);
+    const auto inverse = narrow.buildInverseFilter();
+
+    const auto reference = rta::ir::deconvolve(excitation, inverse, plainConfig());
+    const auto flat = rta::ir::bandFlatness(reference,
+                                            validBandLowHz(cfg), validBandHighHz(cfg));
+    CAPTURE(flat.minDb, flat.maxDb);
+    CHECK(flat.maxDb - flat.minDb > 5.0);
 }
 
 TEST_CASE("The band queries refuse a band they cannot answer for", "[ir][deconv]") {

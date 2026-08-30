@@ -314,7 +314,10 @@ index `m` with original index `n = N−1−m`:
 inv[m] = x[n] * (instantaneousFrequency(n) / endHz)
 ```
 
-normalised so the envelope's maximum is 1, then Tukey fades at both ends of the
+**SUPERSEDED 2026-08-30 — do not restore the second fade.** The sentence below mandates a Tukey fade applied DIRECTLY to the inverse filter, on top of the taper it already inherits from the faded forward sweep. That layer was implemented (`Sweep.cpp` cited "§2.4 of the plan" as its authority) and removed on 2026-08-30: `inv[0]` is the sweep's LAST sample, so the layer tapered the deconvolution kernel's highest frequencies and cost 13.75 dB of in-band flatness at the default configuration, rising to 72 dB once the fade-in widened. `core/include/rta/gen/Sweep.h` always specified inheritance only; the code followed this plan instead. See `docs/dsp/2026-08-30-sweep-ir-l4a.md` decision 5 and `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md` Task 1 Step 0.
+
+The superseded text follows, kept so the record of what was asked stays
+readable: normalised so the envelope's maximum is 1, then Tukey fades at both ends of the
 inverse. Note this envelope *decays with time* along the inverse while *rising
 with frequency* — the two common descriptions in the literature are the same
 thing, and the comment must say so, because a reader who has met only the "6 dB

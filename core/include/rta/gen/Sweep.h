@@ -68,8 +68,12 @@ public:
         double durationSec   = 10.0;
         double levelDbFsPeak = -6.0;   ///< peak-referenced: amplitude = 10^(db/20)
         double fadeInSec     = 0.02;   ///< clamped up to 2/startHz, see ctor
-        double fadeOutSec    = 0.02;   ///< NOT clamped against endHz -- only the
-                                       ///< start fade is mandated a minimum
+        double fadeOutSec    = 0.02;   ///< clamped up to 2/endHz -- two cycles at
+                                       ///< the end frequency, the mirror of the
+                                       ///< fade-in's floor. An unfaded
+                                       ///< switch-off lands at the START of the
+                                       ///< inverse filter, where the +6 dB/oct
+                                       ///< envelope amplifies it.
     };
 
     /// Throws std::invalid_argument if sampleRate, startHz, durationSec are not

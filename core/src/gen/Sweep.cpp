@@ -67,13 +67,29 @@ Sweep::Sweep(const Config& config)
     const double minFadeInSec = 2.0 / startHz_;
     const double fadeInSec = std::max(config.fadeInSec, minFadeInSec);
     fadeInSamples_ = roundToSamples(fadeInSec, sampleRate_);
-    fadeOutSamples_ = roundToSamples(config.fadeOutSec, sampleRate_);
+
+    // Two cycles at the END frequency, the mirror of the fade-in's two cycles
+    // at the start frequency and there for the same reason: an unfaded
+    // switch-off is a broadband click, and after the reversal that builds the
+    // inverse filter it lands at the very START of the deconvolution kernel,
+    // where the +6 dB/oct envelope is at its maximum and amplifies it.
+    //
+    // Five samples at 20 kHz. Inaudible, spectrally invisible (0.02 octave is
+    // already measured harmless), and dormant at every default this project
+    // ships, where fadeOutSec = 0.02 s gives 960 samples. It exists so that
+    // `fadeOutSec = 0` -- a legitimate request, and the only case the old
+    // second fade layer in buildInverseFilter genuinely covered -- is handled
+    // on the FORWARD signal, where the click actually is, rather than patched
+    // on the kernel afterwards.
+    const double fadeOutSec = std::max(config.fadeOutSec, 2.0 / endHz_);
+    fadeOutSamples_ = roundToSamples(fadeOutSec, sampleRate_);
 
     // Guard the degenerate case (a fade of 0 or 1 samples has no interior to
     // divide by) rather than let a caller-supplied near-zero duration produce
-    // a division by zero inside fadeEnvelope.
+    // a division by zero inside fadeEnvelope. The fade-out's `!= 0` half went
+    // with the floor above: it can no longer be zero.
     if (fadeInSamples_ < 2) fadeInSamples_ = 2;
-    if (fadeOutSamples_ != 0 && fadeOutSamples_ < 2) fadeOutSamples_ = 2;
+    if (fadeOutSamples_ < 2) fadeOutSamples_ = 2;
 }
 
 double Sweep::phaseAt(std::size_t n) const noexcept {
@@ -144,22 +160,32 @@ std::vector<float> Sweep::buildInverseFilter() const {
         inv[m] = static_cast<float>(static_cast<double>(forward[original]) * envelope);
     }
 
-    // Tukey-fade the inverse filter itself at both ends, same shape as the
-    // forward sweep's own fades (§2.4 of the plan): without this the inverse
-    // filter starts/ends with a step, which is exactly the click the forward
-    // sweep's fade exists to avoid, now on the deconvolution kernel.
-    for (std::size_t m = 0; m < n && m < fadeInSamples_; ++m) {
-        const double p = static_cast<double>(m) / static_cast<double>(fadeInSamples_ - 1);
-        inv[m] = static_cast<float>(static_cast<double>(inv[m]) * raisedCosine(p));
-    }
-    if (fadeOutSamples_ > 0) {
-        for (std::size_t m = 0; m < n && m < fadeOutSamples_; ++m) {
-            const std::size_t idx = n - 1 - m;
-            const double p = static_cast<double>(m) / static_cast<double>(fadeOutSamples_ - 1);
-            inv[idx] = static_cast<float>(static_cast<double>(inv[idx]) * raisedCosine(p));
-        }
-    }
-
+    // NO SECOND FADE HERE, and the reason is worth stating because a second
+    // one lived here until 2026-08-30, added on the authority of §2.4 of
+    // docs/plans/2026-08-27-generator-impl-plan.md (now marked superseded).
+    //
+    // `forward` above is already multiplied by fadeEnvelope, which is zero at
+    // both ends, and the reversal carries those zeros. So `inv` already begins
+    // and ends at zero: an extra Tukey layer multiplies something that is
+    // already nothing.
+    //
+    // It was not merely redundant, it was harmful, and the damage grew with the
+    // fade width. `inv[0]` corresponds to the sweep's LAST sample, so a layer
+    // applied over `fadeInSamples_` from the start of `inv` tapers the kernel's
+    // HIGHEST frequencies -- and a wide taper at the high edge is measured to
+    // make the deconvolution's artefact floor worse, not better. With a
+    // two-octave fade-in the in-band flatness went from 0.27 dB to 72.36 dB.
+    // Even at today's narrow fades it was costing 13.75 dB at the default
+    // configuration. See docs/dsp/2026-08-30-sweep-ir-l4a.md decision 5.
+    //
+    // No test caught it for four days because every fixture used equal fade-in
+    // and fade-out widths, under which every candidate construction agrees.
+    // `test_generator_sweep.cpp` now pins the construction at an ASYMMETRIC
+    // configuration, which is the only kind that can tell them apart.
+    //
+    // The one case the old layer did cover -- `fadeOutSec == 0`, where the
+    // forward sweep ends with a step -- is handled where it happens, by the
+    // two-cycles-at-endHz floor in the constructor.
     return inv;
 }
 

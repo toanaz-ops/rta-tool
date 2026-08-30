@@ -398,3 +398,66 @@ TEST_CASE("Full-range 20 Hz to 20 kHz sweep deconvolution", "[.][slow][sweep]") 
     CHECK_THAT(result.amp2300Rel, WithinRel(-0.25, 0.005));
     CHECK(result.snrDb > 60.0);
 }
+
+TEST_CASE("The inverse filter is the faded sweep reversed and shaped, nothing else",
+          "[sweep]") {
+    Sweep::Config cfg;
+    cfg.sampleRate  = 48000.0;
+    cfg.startHz     = 100.0;
+    cfg.endHz       = 10000.0;
+    cfg.durationSec = 2.0;
+    cfg.fadeInSec   = 0.30;    // ASYMMETRIC on purpose. Under equal fade widths
+    cfg.fadeOutSec  = 0.02;    // every candidate construction agrees, which is
+    Sweep sweep(cfg);          // exactly how a second, undocumented Tukey layer
+                               // lived in buildInverseFilter for four days
+                               // without a single test noticing.
+    REQUIRE(sweep.fadeInSamples() != sweep.fadeOutSamples());
+
+    const auto n = sweep.lengthSamples();
+    std::vector<float> forward(n);
+    sweep.process(forward);
+    const auto inv = sweep.buildInverseFilter();
+    REQUIRE(inv.size() == n);
+
+    // Sweep.h specifies inv[m] = x[N-1-m] * (instantaneousFrequency(N-1-m)/endHz)
+    // -- the already-rendered, already-faded sweep, reversed, shaped. No further
+    // windowing of any kind. Pinning that as the SPEC, element by element, is
+    // what makes a later "helpful" extra layer go red instead of going unnoticed.
+    // The tolerance is one float rounding: buildInverseFilter multiplies in
+    // double and stores float, and process() renders the same forward samples
+    // bit-for-bit through the same expression.
+    double worst = 0.0;
+    for (std::size_t m = 0; m < n; ++m) {
+        const std::size_t original = n - 1 - m;
+        const double expected = static_cast<double>(forward[original])
+                              * (sweep.instantaneousFrequency(original) / cfg.endHz);
+        worst = std::max(worst, std::abs(static_cast<double>(inv[m]) - expected));
+    }
+    CAPTURE(worst);
+    CHECK(worst < 1.0e-6);
+
+    // Both ends already reach zero through the inherited fades, which is why no
+    // second layer is needed to prevent a step in the kernel.
+    CHECK_THAT(static_cast<double>(inv.front()), WithinAbs(0.0, 1.0e-9));
+    CHECK_THAT(static_cast<double>(inv.back()), WithinAbs(0.0, 1.0e-9));
+}
+
+TEST_CASE("The fade-out has a floor of two cycles at endHz", "[sweep]") {
+    Sweep::Config cfg;
+    cfg.sampleRate  = 48000.0;
+    cfg.startHz     = 20.0;
+    cfg.endHz       = 20000.0;
+    cfg.durationSec = 2.0;
+    cfg.fadeOutSec  = 0.0;     // legitimate request; must not leave a step
+    Sweep sweep(cfg);
+
+    // 2 / 20000 Hz = 0.1 ms = 5 samples at 48 kHz.
+    const auto expected = (std::size_t) std::llround((2.0 / cfg.endHz) * cfg.sampleRate);
+    CHECK(sweep.fadeOutSamples() == expected);
+    CHECK(expected == 5u);
+
+    // Dormant at the shipped default: 0.02 s is 960 samples, far above the floor.
+    auto defaultCfg = cfg;
+    defaultCfg.fadeOutSec = 0.02;
+    CHECK(Sweep(defaultCfg).fadeOutSamples() == 960u);
+}
