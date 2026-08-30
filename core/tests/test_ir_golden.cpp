@@ -122,22 +122,36 @@ TEST_CASE("[golden] rta::ir recovers a three-tap room from an independent sweep"
 
     SECTION("the reference path is as flat as the independent model says") {
         // bandFlatness is dB against the band's own mean, so amplitude cancels.
-        // The tolerance is +-0.5 dB rather than something tighter for the reason
-        // test_generator_sweep.cpp gives about sweep_deconv: two pipelines, one
-        // float32 and one float64, measuring a spread of ratios do not converge
-        // more closely than that from the same formulas alone.
+        //
+        // An earlier draft borrowed test_generator_sweep.cpp's +-2 dB reasoning
+        // for sweep_deconv -- two pipelines, one float32 and one float64. The
+        // reasoning does not transfer, and measuring said so. sweep_deconv
+        // compares a NOISE-FLOOR RATIO, whose denominator is tiny and where the
+        // two precisions genuinely diverge. Flatness compares in-band magnitudes
+        // against their own mean: every term is large and well conditioned.
+        //
+        // Measured today, with the tolerance set to zero so the expansion showed
+        // both values:
+        //     minDb  -0.03217936  vs golden  -0.03217887   delta 4.8e-7 dB
+        //     maxDb   0.13674427  vs golden   0.13674170   delta 2.6e-6 dB
+        // So +-0.01 dB is roughly 4000x the observed disagreement -- loose enough
+        // to survive a different STL or FFT build, tight enough to still be a
+        // tripwire. +-0.5 dB would have been 170000x, which is not a test.
         const auto reference =
             rta::ir::deconvolve(excitation, sweep.buildInverseFilter(), dc);
         const auto flatness = rta::ir::bandFlatness(reference,
                                                     g.row("band_low_hz").front(),
                                                     g.row("band_high_hz").front());
-        CHECK_THAT(flatness.minDb, WithinAbs(g.row("flatness_min_db").front(), 0.5));
-        CHECK_THAT(flatness.maxDb, WithinAbs(g.row("flatness_max_db").front(), 0.5));
+        CHECK_THAT(flatness.minDb, WithinAbs(g.row("flatness_min_db").front(), 0.01));
+        CHECK_THAT(flatness.maxDb, WithinAbs(g.row("flatness_max_db").front(), 0.01));
 
-        // And the figure that decision 5 is about: with the shipped two-octave
-        // fade-in this band is flat to a fraction of a dB. Asserting the BOUND
-        // rather than only the stored pair means a regeneration that quietly
-        // widened it fails here.
+        // REGRESSION LOCK, labelled as one -- this is not a derived bound and not
+        // a specification of acceptable flatness. Measured today the band spans
+        // [-0.032, +0.137] dB, a spread of 0.169 dB, so 1.0 dB carries about 6x
+        // headroom. It exists to catch the CLASS of regression decision 5 is
+        // about: the fade-clamp defect this lane fixed had this same band
+        // spanning tens of dB. Do not read 1.0 as a target; read it as "if this
+        // ever approaches 1 dB, the fade geometry has broken again".
         CHECK(flatness.maxDb - flatness.minDb < 1.0);
     }
 

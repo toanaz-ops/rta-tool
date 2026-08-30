@@ -53,5 +53,5 @@ refusal reason naming the real cause — the capture, not the loudspeaker.
   between them; it does not catch a question both failed to ask. A reader coming
   fresh to the logic does.
 
-See also [[a-scalar-gate-calibrated-on-a-filter-grid-always-breaks]] and
+See also [[a-threshold-read-off-a-grid-is-that-grids-floor]] and
 [[a-fixture-can-be-too-well-behaved-to-fail]].

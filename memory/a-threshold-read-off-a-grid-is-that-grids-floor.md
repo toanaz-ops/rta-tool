@@ -1,4 +1,9 @@
-# A scalar gate calibrated on a filter grid is always beaten by a steeper filter
+# A threshold read off a grid is that grid's floor, not a boundary
+
+*Renamed from "a scalar gate ... always breaks" after review: that title said
+every scalar gate dies, which this file's own body contradicts. A gate whose
+variable carries a bound from outside the grid survives. The failure is reading
+a threshold off a survey and treating it as a property of the world.*
 
 *Learned in lane L4a, 2026-08-30, at the cost of four gate variables and most of
 a session. Portable well beyond polarity.*
