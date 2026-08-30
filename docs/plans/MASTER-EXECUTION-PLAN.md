@@ -117,7 +117,7 @@ not, and a guessed tolerance is a false Class claim.
 |---|---|---|---|
 | **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16). **✅ BUILT (2026-08-29), see `docs/reports/003-dual-fft-engine.md`.** Record: `docs/dsp/2026-08-28-dual-fft.md`. Merged into `main` and pushed 2026-08-29 | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
 | **L3 — MTW** | P3: decimation cascade, per-band FFT sizes, stitching, CONCURRENT with fixed engine (G2). Needs its own station-1 research pass first | L2 interface | L5, L6a |
-| **L4 — Sweep/IR** | P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
+| **L4 — Sweep/IR** — split 2026-08-30 into **L4a** (deconvolution → IR, FR, polarity; `core/`), **L4b** (ETC, Schroeder, Lundeby, RT60, clarity), **L4c** (draggable gate G25, min/excess phase G24, offline WAV G22; `app/`), **L4d** (STI, blocked on IEC 60268-16). **L4a PARTLY BUILT 2026-08-30**: decisions 1-4 and 7-9 shipped, polarity (G21) approved but not built. Record `docs/dsp/2026-08-30-sweep-ir-l4a.md`, plan `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md`, state in `docs/HANDOFF.md`. Original scope: P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
 | **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6): ✅ BUILT 2026-08-29.** Ten tasks, 35 commits, `78ef14f..e14d0a0`. Record `docs/dsp/2026-08-29-display-layer-l5c.md` (with a §5a added mid-build for two interactions it had not decided); plan `docs/plans/2026-08-29-L5c-display-layer-impl-plan.md`. Numbers live in ONE place, `docs/HANDOFF.md`'s baseline block — do not copy them here. It also absorbed, on the owner's ruling, the thing no lane owned: **`app/` had never called L2's dual-FFT engine**, so `measure::Snapshot` carried no transfer function. That bridge is now built, and the stored-trace path this plan recorded as "built but unreached" is wired. **The spectrograph remains OUT of scope** — record §7 fixes three constraints and does not design it; it needs its own record when scheduled, and its decay-view half belongs with the IR/RT60 lane. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
 | **~~cepstrum/wavelet (G23)~~** | **Moved OUT of L5** — it is DSP, not display, and belongs with L2/L3. Putting it beside "draw a trace" confused two layers. | L2 | — |
 | **L6a — SPL-pro** | P6 subset: SPL logging/history/alarms/PDF/web viewer (G7), dose IEC 61252 (G8) | Meters track (in flight — wait for it to land) | everything except L6b |
@@ -168,9 +168,12 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
 2. ~~**L4** + **L5c** in parallel~~ — **L5c done, 2026-08-29** (see its row
    above; it touched `app/`, `ui/`, `tools/` and one line of root
    `CMakeLists.txt`, and **not one line of `core/`**).
-3. **Now**: **L4** — and note it starts at **station 1**, not station 3: sweep/IR
-   has no decision record yet, unlike L2 and L5c which both had one before a
-   line was written. **L5b** stays blocked on the ISO 2969 / SMPTE ST 202
-   purchase. L8 research lanes fire-and-forget anytime.
+3. ~~**Now**: **L4** — and note it starts at **station 1**, not station 3: sweep/IR
+   has no decision record yet~~ — **superseded 2026-08-30.** L4 now has a
+   decision record and is split four ways; **L4a is partly built** and resumes at
+   its Task 5, not at station 1. Read `docs/HANDOFF.md` first, then
+   `docs/dsp/2026-08-30-sweep-ir-l4a.md`. **L5b** stays blocked on the ISO 2969 /
+   SMPTE ST 202 purchase, **L4d** on IEC 60268-16. L8 research lanes
+   fire-and-forget anytime.
 4. Then **L3** + **L6b**; then **L7**, which needed L2 + L4 + L5 — two of those
    three are now in. **L6a** after meters; **L9** last.
