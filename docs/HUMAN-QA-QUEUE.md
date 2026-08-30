@@ -43,13 +43,23 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   `359/359`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
   giữ checkout `main`, sau khi chủ nhân nói "merge" **trong chính phiên đó** —
   tin nhắn giữa hai phiên không phải lời duyệt.
-- [ ] **EDT: chọn một trong ba.** Dưới oracle truncation, zero-phase EDT lệch
-  +21.9% tại B·T 11.6 và +24.3% tại 5.8 — **cả hai nằm TRONG vùng cổng cho
-  qua**, vì cổng hiệu chỉnh trên T30. Ba lối: (a) sàn B·T riêng, cao hơn, cho
-  EDT; (b) từ chối EDT ở các băng 1/3-octave thấp; (c) ship kèm bias công bố.
-  **Quyết định sản phẩm, không phải kỹ thuật** — nó nói người vận hành được
-  phép tin EDT tới đâu. Không chặn: code hiện ship EDT kèm refusal chung, và
-  record cấm trình bày nó như ngang chất lượng với T20/T30.
+- [ ] **EDT: chọn một trong ba — CHƯA CHỐT, đang được hai phiên bàn.**
+  Dưới oracle truncation, zero-phase EDT lệch +21.9% tại B·T 11.6 và +24.3% tại
+  5.8 — **cả hai nằm TRONG vùng cổng T30 cho qua**, vì cổng đó hiệu chỉnh trên
+  T30. Ba lối: (a) sàn B·T riêng, cao hơn, cho EDT; (b) từ chối EDT ở các băng
+  ⅓-octave thấp; (c) ship kèm bias công bố.
+
+  Chủ nhân **chưa chọn phương án nào**; chỉ thị 2026-08-30 là **"bàn với
+  thinker"** — tức giao hai phiên chuẩn bị đề xuất, không phải chốt.
+
+  > ⚠️ **Mục này từng bị ghi nhầm thành "chủ nhân chốt (b)".** Chủ nhân gõ
+  > `b:` để trỏ tới **mục b trong danh sách câu hỏi của agent**, và agent đọc
+  > thành **phương án (b) của chính câu này**. Chủ nhân bác ngay trong phiên và
+  > mục đã được khôi phục. Giữ lại vì đây đúng là chế độ hỏng mà file này tồn
+  > tại để chặn — và nó cho thấy chế độ đó **không cần đi qua hai phiên mới xảy
+  > ra**: một agent hiểu sai một ký tự của chủ nhân là đủ. Bài học thi công:
+  > khi câu trả lời của chủ nhân **ngắn hơn câu hỏi**, hỏi lại trước khi ghi,
+  > đừng chọn cách đọc thuận tay nhất.
 
 ## Quyết định sản phẩm
 
