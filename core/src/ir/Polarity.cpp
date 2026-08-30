@@ -24,6 +24,10 @@ struct Edges {
     double lowHz = 0.0;
     double highHz = 0.0;
     bool valid = false;
+    /// The window could not be sized: the capture ends before ten cycles of the
+    /// measured low edge. Distinct from `!valid`, because the caller must say so
+    /// rather than report an edge it does not have.
+    bool tooShort = false;
 };
 
 /// Where between two bins the magnitude crosses `thresholdDb`, in hertz.
@@ -105,9 +109,17 @@ Edges bandEdges(const Deconvolution& source, std::size_t from, std::size_t to,
         const double roughLowHz = std::max(static_cast<double>(lowBin) * binHz, 1.0);
         const auto needed =
             static_cast<std::size_t>(std::ceil(cycles * source.sampleRate / roughLowHz));
-        if (needed > span && from + needed <= source.samples.size())
-            return bandEdges(source, from, from + needed, lowClampHz, highClampHz,
-                             cycles, true);
+        if (needed > span) {
+            if (from + needed <= source.samples.size())
+                return bandEdges(source, from, from + needed, lowClampHz, highClampHz,
+                                 cycles, true);
+            // The capture ends first. Do NOT fall through to the first-pass
+            // reading: that reading is the fiction this whole function exists to
+            // remove, and returning it silently is how a fixed defect returns.
+            Edges tooShort;
+            tooShort.tooShort = true;
+            return tooShort;
+        }
     }
 
     Edges out;
@@ -154,6 +166,10 @@ PolarityResult findPolarity(const Deconvolution& source, const PolarityConfig& c
 
     const auto edges = bandEdges(source, source.originIndex, last,
                                  source.excitationLowHz, source.excitationHighHz);
+    if (edges.tooShort) {
+        out.refusal = Refusal::CaptureTooShort;
+        return out;
+    }
     out.lowEdgeHz = edges.lowHz;
     out.highEdgeHz = edges.highHz;
 
@@ -211,7 +227,14 @@ PolarityResult findPolarity(const Deconvolution& source, const PolarityConfig& c
 
     // Structural refusals win over NoSignal: measuring louder cannot widen a
     // band, and these are the two that tell the operator where to go instead.
-    if (!edges.valid || out.lowEdgeHz > config.gateLowHz) {
+    if (!edges.valid) {
+        // Nothing measurable inside the excitation band. That is an absent
+        // measurement, not a narrow one -- calling it BandTooLow would tell the
+        // operator "this is a horn" about a spectrum nobody could read.
+        out.refusal = Refusal::NoSignal;
+        return out;
+    }
+    if (out.lowEdgeHz > config.gateLowHz) {
         out.refusal = Refusal::BandTooLow;
         return out;
     }

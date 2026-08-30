@@ -297,6 +297,27 @@ TEST_CASE("Polarity blames the sweep when the sweep is what cannot answer",
     CHECK(got.refusal == Refusal::SweepBandInsufficient);
 }
 
+TEST_CASE("A capture too short to size the window refuses instead of guessing",
+          "[ir][polarity]") {
+    // The back door into the fiction path, found by review rather than by any
+    // test. The adaptive window needs about ten cycles of the low edge: for a
+    // 50-71 Hz subwoofer that is ~0.21 s. Decision 9 sizes the capture gap at
+    // 1.5x RT60, so a dry room at RT60 = 0.1 s leaves only 0.15 s -- less than
+    // the window needs. If the estimator then silently keeps its first-pass
+    // 50 ms reading, that reading is the 46.9 Hz - 18270 Hz fiction defect 1
+    // exists to kill, and the gate ADMITS a subwoofer on the strength of it.
+    //
+    // So a window that cannot be sized must refuse, not fall back.
+    auto source = measureThrough(50.0, 71.0, 4, +1.0f);
+    const auto keep = static_cast<std::size_t>(0.15 * kSampleRate);
+    REQUIRE(source.samples.size() > source.originIndex + keep);   // premise
+    source.samples.resize(source.originIndex + keep);
+
+    const auto got = rta::ir::findPolarity(source, {});
+    CHECK(got.sign == Sign::Unknown);
+    CHECK(got.refusal == Refusal::CaptureTooShort);
+}
+
 TEST_CASE("sign and refusal cannot disagree", "[ir][polarity]") {
     // The invariant, asserted in BOTH directions so that neither field can drift
     // into meaning something the other does not. A result carrying a sign and a

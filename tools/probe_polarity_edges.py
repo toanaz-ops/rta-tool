@@ -108,16 +108,31 @@ def band_edges(tail, sweep_lo, sweep_hi, cycles=10.0, floor_seconds=0.05,
 
     if _pass == 0:                                          # defect 1
         rough_low = max(freqs[low_bin], 1.0)
-        needed = cycles / rough_low
-        if needed > floor_seconds and int(round(needed * sample_rate)) < len(tail):
-            return band_edges(tail, sweep_lo, sweep_hi, cycles, needed,
-                              sample_rate, _pass=1)
+        # ceil, not round: the rule is "at least `cycles` cycles", and rounding
+        # down can hand back 9.99 of them. It also keeps this in step with the
+        # C++, where a one-sample disagreement can cross a power-of-two boundary
+        # and halve the bin width, moving every interpolated edge with it.
+        needed = int(np.ceil(cycles * sample_rate / rough_low))
+        if needed > span:
+            if needed <= len(tail):
+                return band_edges(tail, sweep_lo, sweep_hi, cycles,
+                                  needed / sample_rate, sample_rate, _pass=1)
+            # The capture ends before the window can be sized. Refuse rather than
+            # keep the first-pass reading: measured, a 50-71 Hz subwoofer cut to a
+            # 0.15 s capture returns 40.7 Hz - 18272 Hz from that fallback, which
+            # is the fiction this function exists to remove. A silent fallback is
+            # how a fixed defect comes back. C++ reports Refusal::CaptureTooShort.
+            return None
 
-    # defect 3: interpolate outward from the first and last bins above threshold
+    # defect 3: interpolate outward, but never INTO a bin outside the clamp --
+    # this file's own docstring says those bins are not evidence, and using one
+    # as an interpolation endpoint uses it as evidence.
+    in_band_bins = np.nonzero(inband)[0]
+    first_in, last_in = int(in_band_bins[0]), int(in_band_bins[-1])
     lo_hz = (_interpolated_crossing(mag_db, low_bin, low_bin - 1, freqs, -10.0)
-             if low_bin > 0 else float(freqs[low_bin]))
+             if low_bin > first_in else float(freqs[low_bin]))
     hi_hz = (_interpolated_crossing(mag_db, high_bin, high_bin + 1, freqs, -10.0)
-             if high_bin + 1 < len(freqs) else float(freqs[high_bin]))
+             if high_bin < last_in else float(freqs[high_bin]))
     return lo_hz, hi_hz
 
 

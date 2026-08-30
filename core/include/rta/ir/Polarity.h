@@ -40,6 +40,18 @@ enum class Refusal {
     /// "low edge 120 Hz, gate 100 Hz" -- which sends the operator to inspect a
     /// perfectly good box. The message has to point at the sweep.
     SweepBandInsufficient,
+
+    /// The capture is too short to size the analysis window for a low edge this
+    /// low, so the band edges cannot be measured at all.
+    ///
+    /// Refusing here rather than falling back is the whole point. The window
+    /// needs about ten cycles of the low edge -- roughly 0.21 s for a 50-71 Hz
+    /// subwoofer -- and decision 9 sizes the capture gap at 1.5x RT60, so a dry
+    /// room can leave less than that. An estimator that quietly kept its
+    /// first-pass 50 ms reading would hand back the 46.9 Hz - 18270 Hz fiction
+    /// that defect 1 exists to kill, and the gate would admit a subwoofer on the
+    /// strength of it. A silent fallback is how a fixed defect comes back.
+    CaptureTooShort,
 };
 
 struct PolarityConfig {
