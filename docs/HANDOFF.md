@@ -65,9 +65,8 @@ theo chiều dài đuôi. Đó là khác biệt giữa một phép đo và một
   commit tham số để C++ sinh lại; nhiễu đặc tả bằng **SNR**, không bằng biên độ
   tuyệt đối; mẫu qua float32 TRƯỚC khi Python tính kỳ vọng; fixture đặt XA mọi
   ngưỡng refusal) — nhưng chưa ai viết.
-- **§7a "who guards what" chưa được ghi vào hai file test.** Record nói khế ước
-  tồn tại; `test_ir_golden.cpp` và `test_generator_sweep.cpp` chưa mang con trỏ
-  ngắn trỏ về nó.
+- ~~§7a "who guards what" chưa ghi vào hai file test~~ — **XONG.** Mỗi file nay
+  mang con trỏ ngắn gọi tên file kia và mục §7a của record.
 - ~~Một tầng của G3 chưa đo~~ — **ĐÃ ĐO VÀ ĐÃ ĐẢO QUYẾT ĐỊNH.** `filtfilt` đặt
   ~50% năng lượng band của direct sound ra **trước** t=0 ở mọi band. Bản đầu
   loại nó đi như "rò rỉ bộ lọc"; sai — đó là năng lượng của chính direct sound
@@ -79,7 +78,10 @@ theo chiều dài đuôi. Đó là khác biệt giữa một phép đo và một
   true B·T ≈ 4–6 đọc ra 5.6–5.9 và bị từ chối — bốn ô dùng được. **Phòng khô đo
   ở 1/3-octave thấp sẽ gặp refusal THƯỜNG XUYÊN, không hãn hữu.** Bất cứ thứ gì
   trình bày số này cho người vận hành phải nói ra điều đó.
-- **Cấu hình `RTA_BUILD_APP=ON` chưa đo lại.**
+- ~~Một test dựa vào một seed may~~ — **XONG.** Case *"A pure exponential decay
+  reads back the T60"* nay chạy năm seed và khẳng định trên **median**.
+- **Cấu hình `RTA_BUILD_APP=ON` chưa đo lại.** Đây là việc còn mở DUY NHẤT không
+  cần một quyết định của con người.
 - **Chưa có gì để NHÌN.** L4b nằm hoàn toàn trong `core/`. Widget thuộc L4c.
 
 ## Người có thể tự chạy gì
