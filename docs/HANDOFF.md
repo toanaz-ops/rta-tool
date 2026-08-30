@@ -43,9 +43,34 @@ hình `ON` **chưa được đo lại trong phiên này** — đừng cộng g�
 
 ## Việc còn mở
 
-**Task 5 — Polarity. ĐÃ ĐƯỢC DUYỆT, CHƯA THI CÔNG.** Xem mục quyết định bên
-dưới. Plan Task 5 đã viết sẵn đầy đủ code và test; nó **chưa phản ánh** phương
-án ba tầng vừa được duyệt, nên đọc mục quyết định trước khi làm theo plan.
+**Task 5 — Polarity. ĐÃ KHẢO SÁT XONG (step 0), CHƯA THI CÔNG. ĐỪNG LÀM THEO
+PLAN HIỆN TẠI — plan đã bị chính khảo sát của nó bác.**
+
+Step 0 chạy 2026-08-30 theo đúng điều kiện chủ nhân kèm khi duyệt G21, và kết
+quả bác plan. Đọc `docs/dsp/2026-08-30-sweep-ir-l4a.md` **decision 6b** trước
+mọi thứ khác. Tóm tắt cái gì đổi:
+
+| plan hiện tại nói | khảo sát đo được |
+|---|---|
+| gate = `minBandwidthOctaves = 2.5` | **không hằng số bề rộng nào sống**; `butter(8)` 1000–16000 Hz đo 4.18 oct vẫn trả lời ngược |
+| `PolarityResult` không có field lý do | phải có `Refusal` enum, lý do **có hướng** |
+| `arrivalFraction = 0.5`, chưa nói vì sao | **0.5 là bắt buộc**; `0.2` bị linear-phase FIR bác (pre-ring đối xứng) |
+| `arrivalBandwidthOctaves` FFT cửa sổ 50 ms cố định | **hỏng**: sub 50–71 Hz đọc ra 46.9–18270 Hz, sai ~90 dB. Phải adaptive |
+| `confidenceDb = 200.0` khi không có noise window | sentinel giả — phải là `Refusal::NoNoiseEstimate`, KHÔNG throw (L=0 là output hợp lệ của `deconvolve`) |
+| test narrowband `CHECK(confidenceDb > 20.0)` | xanh nhờ sentinel 200.0 — test vô nghĩa |
+
+**Cái phải xây thay vào:** gate = hộp hai band edge trên **measured** edges
+(`low ≤ 100 Hz` VÀ `high ≥ 8 kHz`), stateless, không hysteresis, không widening
+constant trong `core/`. `margin` ship như **số hiển thị**, không phải gate, và
+được phép > 1. Estimator phải mang cả ba fix (adaptive window ≥10 chu kỳ của
+low edge; clamp vào excited band — nên `Deconvolution` phải mang band edges;
+nội suy crossing giữa hai bin). Bản tham chiếu để C++ transcribe:
+`tools/probe_polarity_edges.py`.
+
+**Ba mệnh đề scope phải vào header comment, không được bỏ:** multi-way có
+driver đảo theo thiết kế là ill-posed cho MỌI absolute polarity checker (kể cả
+đối thủ); minimum-phase FIR mới thử một construction; mid-band resonance Q cao
+chưa khảo sát.
 
 **Task 6 — closeout.** Chưa làm. Gồm: golden vector cho `rta::ir`, đọc lại số
 guard, và đồng bộ tài liệu. Hai việc cụ thể phải mang theo:
@@ -63,26 +88,33 @@ cộng nhẩm. Chủ nhân đã chủ động chọn chưa push.
 
 ## Quyết định của con người
 
-**G21 — ĐÃ DUYỆT 2026-08-30, nhưng qua đường chuyển tiếp.** Chủ nhân duyệt
-trong một phiên KHÁC (phiên review Fable ở checkout chính) và phiên đó nhắn
-sang. Phiên này **không tự khởi công dựa trên tin nhắn của một phiên khác** —
-ghi lại để phiên sau có bối cảnh, và **xin xác nhận một câu với chủ nhân trước
-khi xây**. Nội dung được chuyển tiếp, ba tầng:
+**G21 — ĐÃ DUYỆT 2026-08-30 qua đường chuyển tiếp, rồi ĐÃ XÁC NHẬN VÀ SỬA HAI
+LẦN trong phiên thi công cùng ngày.** Nguồn đầy đủ:
+`docs/dsp/2026-08-30-sweep-ir-l4a.md` **decision 6b** + section "Owner decisions
+recorded". Mục này chỉ là con trỏ; đừng sửa số ở đây.
 
-1. **Task 5 xây polarity TUYỆT ĐỐI** với cổng bề rộng 2.5 octave như plan. Khi
-   trả `Unknown` phải **kèm lý do** (ví dụ `bandwidth 2.0 oct < 2.5`) — một lời
-   từ chối phải có lối đi tiếp, không phải ngõ cụt.
-2. **Polarity TƯƠNG ĐỐI** — dấu tương quan chéo giữa IR mới đo và trace đã lưu
-   (`TraceLibrary` từ L5c đã có sẵn). Core ở L4b/L4c, giao diện ở L4c. **Đây
-   mới là câu trả lời cho subwoofer**, vì phép so tương đối đúng ở mọi bề rộng
-   băng.
-3. **Workflow dẫn dắt** (đo main full-range → đo sub tương đối với main) để L7,
-   đặt cạnh alignment wizard G17.
+Bản chuyển tiếp ban đầu, ba tầng — **tầng 1 và tầng 3 đã bị đo và phải sửa**:
 
-Kèm hai điều kiện: ranh 2.5 octave giữ dạng cấu hình được, ghi rõ là **quan sát
-chứ chưa dẫn xuất**, và Task 5 phải mở rộng khảo sát sang họ bộ lọc và bậc khác
-trước khi tin nó; và chuỗi chữ giao diện khi `Unknown` phải trỏ sang đường
-tương đối.
+1. ~~Task 5 xây polarity TUYỆT ĐỐI với cổng bề rộng **2.5 octave**~~
+   → **SAI, đã bỏ.** 2.5 octave là đáy của một lưới một-family-một-order
+   (`butter(4)`). Mở rộng khảo sát: `butter(8)` 1000–16000 Hz đo được **4.18
+   octave** và vẫn trả lời ngược. Thay bằng **hộp hai band edge**:
+   `low ≤ 100 Hz` VÀ `high ≥ 8 kHz`, trên **measured** edges. Yêu cầu "Unknown
+   kèm lý do" GIỮ NGUYÊN và mạnh hơn: lý do có hướng
+   (`BandTooLow` → sub, dùng tương đối; `BandTooHigh` → horn, đo full-range).
+2. **Polarity TƯƠNG ĐỐI** — giữ, nhưng ~~"đúng ở mọi bề rộng băng"~~ **SAI**.
+   Tuyến tính chỉ chứng minh ca **cùng một hệ** đo trước/sau. Xuyên qua một
+   crossover nó đọc SAI DẤU ở order 2 và 4 khi đấu đúng. Cần gate riêng:
+   `ρ = |xcorr peak| / √(E₁E₂)`, chịu được SNR 20 dB, lệch 30 ms, phòng vang tới
+   D/R = −6 dB. Việc của L4b.
+3. ~~Workflow dẫn dắt "đo main → đo sub tương đối với main" để L7~~
+   → **ĐÃ SỬA, chủ nhân duyệt trong phiên thi công 2026-08-30.** Chuyển sang
+   **G17 như câu hỏi PHA**: offset pha đúng tại crossover phụ thuộc topology
+   định trước (LR 0°, BW2 180°, BW lẻ 90°) mà phép đo không khôi phục được.
+
+Điều kiện chủ nhân kèm khi duyệt ("mở rộng khảo sát sang họ lọc và bậc khác
+trước khi tin nó") **đã thực hiện, và chính nó bác plan** — đó là lý do lane này
+không viết dòng code nào cho Task 5 trong phiên đó.
 
 **Còn chờ, không ai quyết được thay:**
 
@@ -102,14 +134,26 @@ Thứ đáng chạy trước tiên, và là thứ duy nhất **không cần buil
 "D:/DEV CAVE EP3/PRJ010-RTA-TOOL/.venv/Scripts/python.exe" tools/verify_l4a_measurement.py
 ```
 
-Nó in ra sáu mục đo (D, E, G, H, K, L). Mục **L** là bảng 28 ô cho thấy vì sao
-polarity tuyệt đối từ chối subwoofer: từ 2.5 octave trở lên mọi ô đọc đúng dấu,
-dưới 2 octave thì gần như luôn sai — và **không ngưỡng symmetry nào tách được
-hai vùng đó**, đó là lý do cổng symmetry bị rút.
+Nó in ra sáu mục đo (D, E, G, H, K, L). Mục **L** là bảng 28 ô cho thấy không
+ngưỡng symmetry nào tách được hai quần thể, đó là lý do cổng symmetry bị rút.
+⚠️ **Trục `width` của mục L là bề rộng DANH ĐỊNH khi thiết kế bộ lọc**
+(`log2(hi/lo)` tại điểm −3 dB), KHÔNG phải đại lượng code đo. Câu "từ 2.5 octave
+trở lên mọi ô đọc đúng dấu" từng đứng ở đây là một hiện tượng của
+`butter(4)` — mở sang họ và bậc khác thì nó sập. Xem decision 6b.
 
-Hai lệnh còn lại, cùng venv: `tools/verify_l4a_pulse.py` (mục A B C F I J) và
-`tools/probe_sweep_fade.py` (hình học xung, luật fade theo octave). **Mọi con số
-trong record sinh ra từ đúng ba lệnh này** — không lệnh nào ghi file.
+Bốn lệnh còn lại, cùng venv, không lệnh nào ghi file:
+
+```bash
+"D:/DEV CAVE EP3/PRJ010-RTA-TOOL/.venv/Scripts/python.exe" tools/probe_polarity_edges.py
+```
+
+In ra ba defect của band-edge estimator và cái gì đổi khi sửa — dễ đọc nhất là
+dòng sub 50–71 Hz: `46.9 – 18270 Hz` (fiction) → `51.5 – 72 Hz`.
+
+`tools/probe_polarity_bandwidth.py` (trục octave và vì sao không hằng số nào
+sống), `tools/probe_polarity_margin.py` (trục margin, **peak-sign rule** — đọc
+docstring attribution trước khi trích số), `tools/verify_l4a_pulse.py`
+(mục A B C F I J), `tools/probe_sweep_fade.py` (hình học xung, luật fade).
 
 Muốn thấy test chạy:
 

@@ -1381,269 +1381,226 @@ git commit -m "feat(core): a spectrum window that starts before the impulse, not
 
 ---
 
-## Task 5: `rta::ir::Polarity` — and the case it must refuse to answer
+## Task 5: `rta::ir::Polarity` — the gate is a pair of band edges
+
+> **REWRITTEN 2026-08-30.** The previous Task 5 specified a `minBandwidthOctaves
+> = 2.5` gate and full code for it. Its own step 0 — the survey the owner made a
+> condition of approving G21 — refuted it. **Read
+> `docs/dsp/2026-08-30-sweep-ir-l4a.md` decision 6b before this section**, and do
+> not resurrect anything from the superseded text: the 2.5-octave gate, the
+> symmetry gate, `arrivalFraction = 0.2`, the `confidenceDb = 200.0` sentinel,
+> or a fixed 50 ms bandwidth window. Each was measured and each is wrong.
 
 **Files:**
 - Create: `core/include/rta/ir/Polarity.h`
 - Create: `core/src/ir/Polarity.cpp`
 - Create: `core/tests/test_ir_polarity.cpp`
+- Modify: `core/include/rta/ir/Deconvolver.h`, `core/src/ir/Deconvolver.cpp`
+  (carry the excitation band — see step 0)
 - Modify: `core/CMakeLists.txt`, `core/tests/CMakeLists.txt`
 
 **Interfaces:**
-- Consumes: `Deconvolution` (Task 2).
-- Produces:
-  ```cpp
-  enum class Sign { Negative = -1, Unknown = 0, Positive = 1 };
-  struct PolarityConfig {
-      double arrivalFraction   = 0.5;
-      double searchSeconds     = 0.05;
-      double minConfidenceDb   = 20.0;
-      double minBandwidthOctaves = 2.5;
-  };
-  struct PolarityResult {
-      Sign        sign = Sign::Unknown;
-      std::size_t arrivalIndex = 0;
-      double      confidenceDb = 0.0;
-      double      bandwidthOctaves = 0.0;
-  };
-  [[nodiscard]] PolarityResult findPolarity(const Deconvolution&, const PolarityConfig&);
-  ```
-
-### Read decision 6 before writing a line of this
-
-It contains a proposal that was **withdrawn after being measured**, and the
-withdrawn version is the one an implementer would reinvent. In short:
-
-- Confidence (peak over noise RMS) does **not** detect the failure. On the one
-  system that answers backwards it reads **129.7 dB — the highest of any system
-  tested** — because it measures signal-to-noise, and a narrowband system has
-  excellent signal-to-noise and no definable polarity.
-- A **symmetry** figure (largest positive over largest negative excursion) was
-  proposed as the discriminator and does not work either. Across 28 cells,
-  agreeing systems span 0.09–12.71 dB and disagreeing ones span 0.26–4.18 dB;
-  4 octaves at 4 kHz reads **0.09 dB and is correct**, 2 octaves at 250 Hz reads
-  **4.18 dB and is wrong**. No threshold separates them. **Do not add a
-  symmetry gate.**
-- What does separate them is **bandwidth**: at 2.5 octaves and above every
-  surveyed cell agrees; at 2 octaves it agrees at 4 of 5 bass centres and only
-  1 of 4 wideband ones, with nothing on screen distinguishing them.
-
-And the reason, which belongs in the header comment: for a band-limited system
-the sign of the first arrival is a property of that system's phase response, not
-of how it is wired. Relative polarity — this box against that one, or before
-against after — is sound at any bandwidth, because negating the drive negates
-the response exactly. Only the **absolute** verdict needs the bandwidth.
-
-`minBandwidthOctaves = 2.5` is a boundary **observed, not derived**: it is the
-lowest width measured clean at all nine centre frequencies, with one filter
-family and one order. Say so in the
-comment. It is exposed for the same reason `arrivalFraction` is.
-
-- [ ] **Step 1: Write the failing test**
 
 ```cpp
-namespace {
-/// Drive the sweep through a Butterworth band-pass, deconvolve, read polarity.
-/// A fresh BiquadCascade per call, so no state leaks between cases.
-rta::ir::PolarityResult readPolarity(double lowHz, double highHz, float polarity) {
-    Sweep sweep(testConfig());
-    std::vector<float> excitation(sweep.lengthSamples());
-    sweep.process(excitation);
+enum class Sign { Negative = -1, Unknown = 0, Positive = 1 };
 
-    const auto design = rta::dsp::ButterworthDesign::bandPass(lowHz, highHz, 48000.0, 2);
-    rta::dsp::BiquadCascade cascade(design.sections);
-    std::vector<float> driven(excitation.size());
-    for (std::size_t i = 0; i < excitation.size(); ++i)
-        driven[i] = (float) cascade.processSample((double) polarity * excitation[i]);
+/// Why an answer was withheld. `None` iff `sign != Unknown` -- the two carry the
+/// same information and a test asserts both directions, so neither can drift.
+/// Ordering matters when more than one applies: TooNarrow wins, because it is
+/// the STRUCTURAL refusal (measuring louder cannot fix it) and it is the one
+/// with somewhere to send the operator.
+enum class Refusal { None, NoSignal, NoNoiseEstimate, BandTooLow, BandTooHigh };
 
-    const auto inverse = sweep.buildInverseFilter();
-    const auto result = rta::ir::deconvolve(driven, inverse,
-                                            {48000.0, sweep.lengthConstantL(), 1.0});
-    return rta::ir::findPolarity(result, {});
-}
-}  // namespace
+struct PolarityConfig {
+    double arrivalFraction = 0.5;   ///< see "why 0.5 and never 0.2" below
+    double searchSeconds   = 0.05;
+    double minConfidenceDb = 20.0;
+    double gateLowHz       = 100.0;  ///< answer only if measured low edge <= this
+    double gateHighHz      = 8000.0; ///< ...AND measured high edge >= this
+};
 
-TEST_CASE("Polarity reads correctly through a wideband passband", "[ir][polarity]") {
-    // 60 Hz to 15 kHz is about 8 octaves, comfortably past the boundary. Every
-    // surveyed cell at 2.5 octaves and above agreed with the drive polarity.
-    for (float polarity : {+1.0f, -1.0f}) {
-        const auto got = readPolarity(60.0, 15000.0, polarity);
-        CHECK(got.sign == (polarity > 0 ? rta::ir::Sign::Positive : rta::ir::Sign::Negative));
-        CHECK(got.confidenceDb > 20.0);
-        CHECK(got.bandwidthOctaves > 2.5);
-    }
-}
+struct PolarityResult {
+    Sign        sign         = Sign::Unknown;
+    Refusal     refusal      = Refusal::NoSignal;
+    std::size_t arrivalIndex = 0;
+    double      confidenceDb = 0.0;
+    double      lowEdgeHz    = 0.0;  ///< measured, -10 dB, clamped to excitation
+    double      highEdgeHz   = 0.0;
+    /// |largest excursion opposite the verdict| / |peak|. MAY EXCEED 1: that
+    /// means the window's largest excursion disagrees with the answer, which is
+    /// exactly when a human should look closer. Displayed, never gated on.
+    double      margin       = 0.0;
+};
 
-TEST_CASE("Polarity refuses a narrowband system rather than guessing", "[ir][polarity]") {
-    // THE case with teeth. Measured: this system answers BACKWARDS under the
-    // sign rule alone, and its confidence is 129.7 dB -- the HIGHEST of any
-    // system measured. A suite without it passes an implementation that would
-    // send an operator to rewire a working loudspeaker.
-    for (float polarity : {+1.0f, -1.0f}) {
-        const auto got = readPolarity(200.0, 250.0, polarity);
-        CHECK(got.sign == rta::ir::Sign::Unknown);
-        CHECK(got.bandwidthOctaves < 2.5);
-        CHECK(got.confidenceDb > 20.0);   // and confidence did NOT notice
-    }
-}
+[[nodiscard]] PolarityResult findPolarity(const Deconvolution&,
+                                          const PolarityConfig&);
+```
 
-TEST_CASE("Polarity pins its behaviour at the boundary, on a real subwoofer",
+### The three things that make this different from the version it replaces
+
+**1. The gate is a box on both band edges, not a width.** An octave width
+conflates "wide" with "reaches low": `butter(8)` spanning 1000–16000 Hz is four
+octaves and answers backwards; it is a horn. Measured over 124 admitted cells at
+this gate, under the shipped rule: **zero wrong answers**, families
+`butter`/`cheby1`/`ellip`/`bessel` at orders 2–16, plus linear- and
+minimum-phase FIR. `100.0` and `8000.0` are **observed, not derived** — exposed
+as config for the same reason `arrivalFraction` is.
+
+**2. `arrivalFraction` is 0.5 and must never be lowered to 0.2.** An IIR-only
+table favours 0.2. Linear-phase FIR refutes it: symmetric pre-ring puts an
+opposite-signed lobe above the 20% threshold *before* the main lobe, so 0.2
+answers backwards on both drive polarities. Linear-phase presets are ordinary in
+line-array processing. **Put this reasoning in the header comment**, or a later
+session reading the IIR table will change it back in good faith (trap #17).
+
+**3. The edge estimator has three fixes and they are load-bearing.** Transcribe
+`tools/probe_polarity_edges.py::band_edges` — it exists for this. Without fix 1
+alone, a 50–71 Hz subwoofer measures 46.9 Hz – 18270 Hz and lands *inside* the
+gate built to refuse it.
+
+- [ ] **Step 0: carry the excitation band, before anything else**
+
+`Deconvolution` must gain `excitationLowHz` / `excitationHighHz`, set from
+`DeconvolverConfig`. Without them `findPolarity` cannot clamp its search, and
+bins below the sweep's start — leakage and inverse-filter fade, not response —
+get counted as signal. This is a change to a shipped struct; add fields with
+defaults of 0.0 and treat 0.0 as "unknown, do not clamp", so no existing caller
+changes behaviour. Run the full suite before moving on: the golden comparison in
+`test_ir_deconvolver.cpp` reads this struct.
+
+- [ ] **Step 1: write the failing tests**
+
+Six cases. The first three pin the decision; the last three pin the failures
+that were actually measured, and a suite without them passes an implementation
+that would send an operator to rewire a working loudspeaker.
+
+```cpp
+TEST_CASE("Polarity answers a full-range box, both drive polarities",
           "[ir][polarity]") {
-    // 40-100 Hz is 1.3 octaves: an ordinary subwoofer pass band, sitting just
-    // under the 2.5-octave minimum. It exists so that moving the boundary
-    // cannot move it THROUGH a real use case with nothing going red. If the
-    // chosen behaviour ever changes, change it here deliberately.
-    //
-    // Note what this suite deliberately does NOT assert: that some subwoofer
-    // yields a sign. Paired with the narrowband case above, that would only be
-    // satisfiable for one hand-picked fixture -- a suite testing its fixture.
-    for (float polarity : {+1.0f, -1.0f}) {
-        const auto got = readPolarity(40.0, 100.0, polarity);
-        CHECK(got.sign == rta::ir::Sign::Unknown);
-        CHECK(got.bandwidthOctaves < 2.5);
+    // 60 Hz - 15 kHz through a 4th-order Butterworth: inside the gate. Measured
+    // across 256 such boxes (4 families x orders 2-8 x 8 passbands x 2
+    // polarities): zero wrong answers.
+    for (float drive : {+1.0f, -1.0f}) {
+        const auto got = readPolarity(60.0, 15000.0, 4, drive);
+        CHECK(got.sign == (drive > 0 ? Sign::Positive : Sign::Negative));
+        CHECK(got.refusal == Refusal::None);
+        CHECK(got.lowEdgeHz  <= 100.0);
+        CHECK(got.highEdgeHz >= 8000.0);
     }
 }
 
-TEST_CASE("Polarity survives an inverted reflection louder than the direct sound",
+TEST_CASE("Polarity refuses a subwoofer, and says which way to go",
           "[ir][polarity]") {
-    // The 50% threshold latches onto the direct arrival before the reflection
-    // lands, so a boundary bounce -- or a second box wired backwards -- does not
-    // flip the reading. Measured correct at every threshold from 0.2 to 0.7.
-    Sweep sweep(testConfig());
-    std::vector<float> excitation(sweep.lengthSamples());
-    sweep.process(excitation);
-    const auto delay = (std::size_t) std::llround(0.003 * 48000.0);
-    std::vector<float> driven(excitation.size(), 0.0f);
-    for (std::size_t i = 0; i < excitation.size(); ++i) {
-        driven[i] += excitation[i];
-        if (i + delay < driven.size()) driven[i + delay] += -1.5f * excitation[i];
+    // 30-120 Hz. The high edge fails the gate, so the refusal is BandTooHigh --
+    // read that name as "the band stops too low", i.e. this is a sub. The UI
+    // string for it points at the relative comparison; that is decision 6b's
+    // "a refusal must have somewhere to go".
+    for (float drive : {+1.0f, -1.0f}) {
+        const auto got = readPolarity(30.0, 120.0, 4, drive);
+        CHECK(got.sign == Sign::Unknown);
+        CHECK(got.refusal == Refusal::BandTooHigh);
+        CHECK(got.highEdgeHz < 8000.0);
     }
-    auto chain = makeBandpass(60.0, 15000.0);
-    for (auto biquad : chain) for (auto& s : driven) s = biquad.processSample(s);
+}
 
-    const auto inverse = sweep.buildInverseFilter();
-    const auto result = rta::ir::deconvolve(driven, inverse,
-                                            {48000.0, sweep.lengthConstantL(), 1.0});
-    CHECK(rta::ir::findPolarity(result, {}).sign == rta::ir::Sign::Positive);
+TEST_CASE("Polarity refuses a horn even though it is four octaves wide",
+          "[ir][polarity]") {
+    // 1000-16000 Hz, order 8. THE case with teeth: four octaves wide, so every
+    // bandwidth-in-octaves gate ever proposed would ADMIT it -- and measured, it
+    // answers BACKWARDS. This is the cell that killed the 2.5-octave gate.
+    for (float drive : {+1.0f, -1.0f}) {
+        const auto got = readPolarity(1000.0, 16000.0, 8, drive);
+        CHECK(got.sign == Sign::Unknown);
+        CHECK(got.refusal == Refusal::BandTooLow);
+        CHECK(got.lowEdgeHz > 100.0);
+    }
+}
+
+TEST_CASE("Polarity survives an inverted reflection louder than the direct",
+          "[ir][polarity]") {
+    // A boundary bounce, or a second box wired backwards, 3 ms later at 1.5x.
+    // Measured correct at every threshold from 0.2 to 0.7 on this system --
+    // unlike the order-8 case above, where 0.5 and 0.2 disagree.
+    CHECK(readPolarityWithReflection().sign == Sign::Positive);
+}
+
+TEST_CASE("Polarity refuses rather than throwing when L is unknown",
+          "[ir][polarity]") {
+    // harmonicSpacingL == 0 is a LEGAL output of deconvolve() -- it validates
+    // sample rate and lengths, never L. So the noise window cannot be located.
+    // Refuse with a reason; do NOT throw on a valid input, and do NOT invent a
+    // sentinel confidence. The superseded version returned 200.0 dB here, which
+    // made the narrowband test pass for the wrong reason.
+    auto d = deconvolveWithoutL();
+    const auto got = findPolarity(d, {});
+    CHECK(got.sign == Sign::Unknown);
+    CHECK(got.refusal == Refusal::NoNoiseEstimate);
+    CHECK(got.confidenceDb == 0.0);
+}
+
+TEST_CASE("sign and refusal cannot disagree", "[ir][polarity]") {
+    // The invariant, asserted in BOTH directions so neither field can drift
+    // into meaning something the other does not.
+    for (const auto& got : {readPolarity(60.0, 15000.0, 4, +1.0f),
+                            readPolarity(30.0, 120.0, 4, +1.0f),
+                            readPolarity(1000.0, 16000.0, 8, +1.0f)}) {
+        CHECK((got.sign != Sign::Unknown) == (got.refusal == Refusal::None));
+    }
 }
 ```
 
-`makeBandpass(lowHz, highHz)` is a file-local helper returning a
-`std::vector<rta::dsp::Biquad>` built with `rta::dsp::ButterworthDesign`. Read
-that header before writing it.
-
-- [ ] **Step 2: Run to verify it fails**
-
-Expected: `Cannot open include file: 'rta/ir/Polarity.h'`.
-
-- [ ] **Step 3: Implement**
-
-```cpp
-PolarityResult findPolarity(const Deconvolution& source, const PolarityConfig& config) {
-    if (!(source.sampleRate > 0.0))
-        throw std::invalid_argument("findPolarity: sampleRate must be positive");
-    if (!(config.arrivalFraction > 0.0) || !(config.arrivalFraction <= 1.0))
-        throw std::invalid_argument("findPolarity: arrivalFraction must be in (0, 1]");
-
-    const auto span = static_cast<std::size_t>(
-        std::llround(config.searchSeconds * source.sampleRate));
-    const std::size_t last = std::min(source.originIndex + span, source.samples.size());
-
-    double largest = 0.0, mostPositive = 0.0, mostNegative = 0.0;
-    for (std::size_t i = source.originIndex; i < last; ++i) {
-        const double v = source.samples[i];
-        largest = std::max(largest, std::abs(v));
-        mostPositive = std::max(mostPositive, v);
-        mostNegative = std::min(mostNegative, v);
-    }
-
-    PolarityResult out;
-    if (largest <= 0.0) return out;                 // Unknown
-
-    // Noise window: from the second-harmonic packet up to t=0. By the closed
-    // form -L*ln(N), H2 is the FIRST packet, so everything between it and the
-    // origin is sidelobes and noise only. The window is computed, not chosen.
-    const auto h2 = static_cast<std::size_t>(std::llround(-source.harmonicOffsetSamples(2)));
-    const std::size_t noiseFrom = h2 < source.originIndex ? source.originIndex - h2 : 0;
-    double sumSq = 0.0;
-    std::size_t count = 0;
-    for (std::size_t i = noiseFrom; i < source.originIndex; ++i) {
-        sumSq += (double) source.samples[i] * (double) source.samples[i];
-        ++count;
-    }
-    const double noiseRms = count > 0 ? std::sqrt(sumSq / (double) count) : 0.0;
-    out.confidenceDb = noiseRms > 0.0 ? 20.0 * std::log10(largest / noiseRms) : 200.0;
-
-    // Bandwidth of the arrival itself, in octaves between its -10 dB points.
-    // This is the figure that decides whether an ABSOLUTE polarity verdict is a
-    // fact about the device at all: for a band-limited system the sign of the
-    // first arrival is set by that system's phase response, not its wiring.
-    // Confidence cannot stand in for it -- confidence reads its HIGHEST value
-    // on exactly the system that answers backwards, because signal-to-noise is
-    // excellent there and beside the point.
-    out.bandwidthOctaves = arrivalBandwidthOctaves(source, source.originIndex, last);
-
-    for (std::size_t i = source.originIndex; i < last; ++i) {
-        if (std::abs((double) source.samples[i]) >= config.arrivalFraction * largest) {
-            out.arrivalIndex = i;
-            out.sign = source.samples[i] > 0.0f ? Sign::Positive : Sign::Negative;
-            break;
-        }
-    }
-    if (out.confidenceDb < config.minConfidenceDb
-        || out.bandwidthOctaves < config.minBandwidthOctaves)
-        out.sign = Sign::Unknown;
-    return out;
-}
-```
-
-with, in the anonymous namespace above it:
-
-```cpp
-/// Octaves between the -10 dB points of the arrival window's own spectrum.
-/// Self-contained on purpose: the bandwidth that governs the first arrival's
-/// shape is the bandwidth of the arrival, so this needs no band edges from the
-/// sweep and no dependency on IrSpectrum.
-double arrivalBandwidthOctaves(const Deconvolution& source,
-                               std::size_t from, std::size_t to) {
-    if (to <= from) return 0.0;
-    const std::size_t fftSize = nextPowerOfTwo(to - from);
-    dsp::RealFft fft(fftSize);
-    std::vector<float> padded(fftSize, 0.0f);
-    std::copy(source.samples.begin() + from, source.samples.begin() + to, padded.begin());
-    std::vector<std::complex<float>> bins(fft.numBins());
-    fft.forward(padded, bins);
-
-    double peak = 0.0;
-    for (const auto& bin : bins) peak = std::max(peak, (double) std::abs(bin));
-    if (peak <= 0.0) return 0.0;
-
-    const double threshold = peak * 0.31622776601683794;   // -10 dB
-    std::size_t lowBin = 0, highBin = 0;
-    bool found = false;
-    for (std::size_t k = 1; k < bins.size(); ++k) {        // skip DC
-        if ((double) std::abs(bins[k]) < threshold) continue;
-        if (!found) { lowBin = k; found = true; }
-        highBin = k;
-    }
-    if (!found || lowBin == 0 || highBin <= lowBin) return 0.0;
-    return std::log2((double) highBin / (double) lowBin);
-}
-```
-
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 2: run, and read the count**
 
 ```
-ctest --test-dir build -C Release -R "polarity" --output-on-failure
+ctest --test-dir build-l4a -C Release -R "polarity" --output-on-failure
 ```
-Expected: four cases PASS. **Read the count** — a `-R` that matches nothing
-reports success.
+Expected: `Cannot open include file: 'rta/ir/Polarity.h'`. After step 3, expect
+**six** cases. A `-R` that matches nothing reports success — read the number.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: implement**
+
+Order of operations inside `findPolarity`, each step justified in decision 6b:
+
+1. Validate `sampleRate > 0` and `arrivalFraction ∈ (0, 1]`; throw only on those.
+2. Find the window `[originIndex, originIndex + searchSeconds·fs)`; if its peak
+   is zero, return `{Unknown, NoSignal}`.
+3. Measure both band edges with the transcribed `band_edges` — adaptive window
+   (≥ 10 cycles of the low edge, one re-measure), clamped to the excitation
+   band, crossings interpolated between bins in log magnitude.
+4. Noise window from H2 to the origin, as decision 6 derived. If
+   `harmonicSpacingL == 0`, return `{Unknown, NoNoiseEstimate}` with
+   `confidenceDb = 0.0`.
+5. Sign from the first arrival reaching `arrivalFraction` of the window peak.
+6. `margin` = largest opposite-signed excursion over the peak, **relative to the
+   verdict's sign**, allowed to exceed 1.
+7. Gate: `lowEdgeHz > gateLowHz` → `BandTooLow`; `highEdgeHz < gateHighHz` →
+   `BandTooHigh`; `confidenceDb < minConfidenceDb` → `NoSignal`. Structural
+   refusals win over `NoSignal`.
+
+**The header comment must carry three scope statements.** They are not caveats
+to be trimmed; each is a place where the promise stops:
+
+- a multi-way box with a driver inverted **by design** is ill-posed for *every*
+  absolute polarity checker, this one and the competitors' — the tool reports
+  the first arriving section's sign, which is a true fact and not the question
+  the operator asked;
+- minimum-phase FIR was validated at **one** construction, not a swept family;
+- the adaptive window is keyed to the low edge and assumes ringing is dominated
+  by the band edges; a high-Q mid-band resonance is unsurveyed.
+
+- [ ] **Step 4: run, and check the guard count moved**
+
+```
+ctest --test-dir build-l4a -C Release --output-on-failure
+```
+`core_has_no_framework_deps` must scan **two more files** than before this task.
+If the count is unchanged the glob missed `core/src/ir/` and the guard is
+passing while watching nothing — HANDOFF trap #1.
+
+- [ ] **Step 5: commit**
 
 ```bash
-git add core/include/rta/ir/Polarity.h core/src/ir/Polarity.cpp core/tests/test_ir_polarity.cpp core/CMakeLists.txt core/tests/CMakeLists.txt
-git commit -m "feat(core): a polarity verdict that knows when it has none"
+git add core/include/rta/ir/Polarity.h core/src/ir/Polarity.cpp core/tests/test_ir_polarity.cpp core/include/rta/ir/Deconvolver.h core/src/ir/Deconvolver.cpp core/CMakeLists.txt core/tests/CMakeLists.txt
 ```
 
 ---
@@ -1736,12 +1693,26 @@ ask it to check:
    JUCE include there temporarily and confirming the guard goes RED.
 2. That the `IrSpectrum` lead-in is load-bearing — set it to zero and confirm the
    highpass test fails.
-3. That the polarity narrowband case fails if `minBandwidthOctaves` is set to
-   0.0 — and that no symmetry gate crept back in: `grep -rn "symmetry" core/`
-   should return nothing. The record withdrew that idea after measuring it, and
-   an implementer who read only the code would reinvent it.
-4. That the regenerated `sweep_deconv` golden's `peak_index` is still 96999.
-5. That no file exceeds 400 lines.
+3. That the polarity gate is load-bearing in **both** directions: widen
+   `gateLowHz` to 20000 and confirm the horn case (1000–16000 Hz, order 8) goes
+   from `Unknown` to a WRONG sign; drop `gateHighHz` to 0 and confirm the
+   subwoofer case starts answering. A gate that refuses everything also produces
+   a green suite.
+4. That **three withdrawn ideas have not crept back**, each measured and each
+   the kind an implementer reading only the code would reinvent:
+   `grep -rn "symmetry" core/` returns nothing (no threshold on it separates
+   anything); no `minBandwidthOctaves` or any single-number bandwidth gate
+   exists (no constant survives a steeper filter); `arrivalFraction` defaults to
+   0.5 and not 0.2 (linear-phase FIR pre-ring answers backwards at 0.2).
+5. That `margin` is never read in a branch — it is displayed, not gated on —
+   and that nothing clamps it to 1.0. Exceeding 1 is the signal, not a bug.
+6. That `findPolarity` does not throw when `harmonicSpacingL == 0`, because
+   `deconvolve` accepts it: `grep -n "harmonicSpacingL" core/src/ir/Deconvolver.cpp`
+   shows it validated nowhere.
+7. That the regenerated `sweep_deconv` golden's `peak_index` is still 96999 —
+   **and that some test actually reads that field.** It was cited as a tripwire
+   in four commits while no test consumed it (trap #14).
+8. That no file exceeds 400 lines.
 
 A reviewer that reports "all tests pass" has not done this. **The question is
 never "is it green", it is "what wrong implementation would make it red".**
