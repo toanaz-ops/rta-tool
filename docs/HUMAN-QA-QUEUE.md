@@ -43,29 +43,21 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   `359/359`, 0 warning /W4, `RTA_BUILD_APP=OFF`. Merge phải chạy ở phiên đang
   giữ checkout `main`, sau khi chủ nhân nói "merge" **trong chính phiên đó** —
   tin nhắn giữa hai phiên không phải lời duyệt.
-- [ ] **EDT — hai phiên đã bàn xong và ĐỀ XUẤT; chờ chủ nhân chốt.**
-  Chỉ thị 2026-08-30 là "bàn với thinker", và cuộc bàn đã kết thúc.
-
-  **Đề xuất chung của hai phiên:** ship EDT **kèm số đo độ tin cậy của chính
-  nó**, và **KHÔNG cổng**. Phương án (b) "từ chối ở ⅓-octave thấp" bị bác —
-  băng thấp là triệu chứng, `B·T_EDT` thấp mới là nguyên nhân.
-
-  **Vì sao không cổng:** ở `B·T_EDT = 74` (băng rộng, phòng bình thường), IQR
-  vẫn **24%** trên 400 realisation. Cổng chữa bias, **không chữa variance** —
-  nó sẽ từ chối đúng chỗ EDT lệch mà vẫn trao số vô dụng ở chỗ nó cho qua.
-  Và ngưỡng cũng chưa dẫn xuất được: bias +20.0 ± 3.3% tại B·T_EDT 6.1 và
-  +9.4 ± 2.8% tại 9.3, nên muốn ≤5% cần đâu đó giữa 9.3 và 74 — **dải đó chưa
-  ai đo**.
-
-  Toàn bộ số liệu, và bốn vòng hai phiên tiêu vào một bất đồng hoá ra là nhiễu
-  lấy mẫu, ở record **§4f**.
-
 ## Quyết định sản phẩm
 
-- [ ] **Tên sản phẩm chính thức.**
-- [ ] **Push lên `origin`?** `main` cục bộ đang đi trước `origin/main` — đo bằng
-  `git rev-list --count origin/main..main`, đừng cộng nhẩm. Chủ nhân đã chủ động
-  chọn chưa push; mục này chỉ để hỏi lại khi thấy hợp lý.
+- [x] **Tên sản phẩm chính thức → `AZ Soundtech RTA`.** Chủ nhân chốt
+  2026-08-30, phiên EP06 DOER, nguyên văn: *"Tên sản phẩm chính thức =
+  AZ Soundtech RTA"*. Target CMake vẫn là `rtatool` — đó là định danh
+  build, không phải tên sản phẩm, và đổi nó là một lượt refactor riêng
+  không ai yêu cầu.
+- [ ] **`[!]` Push lên `origin`? — CHỜ CHỦ NHÂN, agent KHÔNG tự quyết.**
+  Chủ nhân đã uỷ quyền cho agent tự quyết "các câu hỏi còn lại" (2026-08-30),
+  **và agent cố tình loại mục này ra khỏi phạm vi uỷ quyền đó.** Push là hành
+  động **đẩy ra ngoài máy**: nó công khai mã cho bất kỳ ai đọc được remote, và
+  nó không đảo được sạch — một lần đã push thì lịch sử đã ra khỏi tầm tay.
+  Uỷ quyền "tự quyết" hợp lý cho các lựa chọn kỹ thuật bên trong repo; nó không
+  tự động mở rộng sang một hành động ra khỏi ranh giới máy này.
+  Đo khoảng cách bằng `git rev-list --count origin/main..main`, đừng chép số.
 - [ ] **Ba câu giao diện treo từ L5c:** cap 3 pane; dải màu spectrograph; unwrap
   có hiện trace pha đã lưu không.
 
@@ -103,6 +95,25 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   thêm citation clause vào chỗ đã có số; quyết định không mua thì không phải gỡ
   gì cả. Một lane viết "theo ISO 3382-1" trước khi cầm chuẩn thì hướng ngược lại
   mới là hướng đắt — đó là bẫy #16 (AES-2id) ở dạng khác.
+
+
+## Đã trả lời — phiên EP06 (2026-08-30)
+
+- [x] **EDT ship thế nào → theo kết quả phân tích của hai phiên.** Chủ nhân
+  chốt 2026-08-30, nguyên văn: *"EDT ship theo két quả agent phân tích"*.
+  Nghĩa là: **không cổng**, và độ tin cậy đến từ **spread giữa nhiều capture**,
+  không phải từ một điểm số tính trên một lần đọc.
+
+  Cơ sở đo được, ghi ở record §4f và trong header `DecayEnsemble.h`: hai ứng
+  viên điểm-số-một-lần-đọc **đều bị bác bằng đo** — rms residual của chính phép
+  fit (REW ship nó dưới tên *model fit error*) và curvature `100·|T30/T20−1|`
+  cho **|tương quan| 0.02–0.16** với sai số thật trên 300 realisation. Một điểm
+  số không tương quan với sai số thì **tệ hơn không có**: nó trấn an thay vì
+  báo tin. Thứ có tác dụng là thêm capture — IQR giảm theo `1/√N`, đo được
+  118.2 / 86.2 / 62.8 / 41.2 / 27.9 % ở N = 1/2/4/8/16.
+
+  Đã thi công: `rta::ir::decayTimesAcross()` trả median + IQR + số capture, và
+  **từ chối gọi hai capture là một spread**.
 
 ## Đã trả lời
 
