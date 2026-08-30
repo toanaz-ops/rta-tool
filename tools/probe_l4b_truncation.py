@@ -119,6 +119,7 @@ def lundeby_crosspoint(sq: np.ndarray, fs: float,
                        intervals_per_10db: float = 5.0,
                        db_above_noise: float = 10.0,
                        fit_range_db: float = 20.0,
+                       noise_margin_db: float = 10.0,
                        max_iter: int = 30,
                        tol_sec: float = 0.01) -> tuple[int, float] | None:
     """Index where the decay meets the noise floor, and the noise power there.
@@ -198,20 +199,37 @@ def lundeby_crosspoint(sq: np.ndarray, fs: float,
             break
         crossing = new_crossing
 
-        # Step 5: resize the smoothing window from the slope just measured, so
-        # the window is a fixed number of intervals per 10 dB of decay.
+        # The decay rate, used both to size the smoothing window and to place
+        # the noise-estimate margin. One quantity, one place it is derived.
         db_per_sample = -slope
         if db_per_sample <= 0.0:
             return None
+
+        # Step 5: resize the smoothing window from the slope just measured, so
+        # the window is a fixed number of intervals per 10 dB of decay.
         win = (10.0 / db_per_sample) / intervals_per_10db
         blocks, centres = smooth(win)
         if blocks is None:
             return None
 
         # Step 7: re-estimate the noise from beyond the crossing point.
-        start = int(min(n - 1, max(0, new_crossing + 0.10 * n)))
+        #
+        # The margin past the crossing is expressed in DECIBELS OF DECAY and
+        # converted to samples through the slope just measured -- never as a
+        # fraction of the buffer. A buffer-fraction margin would tie the noise
+        # estimate to the record's length, which is the exact axis this whole
+        # probe exists to remove: the answer would then depend on how long the
+        # operator left the recorder running, one level down from where that
+        # dependency was just eliminated. An earlier draft of this function used
+        # `0.10 * n` and was harmless only because the fixture's noise is
+        # stationary; the reviewing session caught it before it reached C++.
+        margin_samples = noise_margin_db / db_per_sample
+        start = int(min(n - 1, max(0, new_crossing + margin_samples)))
         if n - start < 16:
-            start = int(0.9 * n)
+            # Not enough record past the crossing to re-estimate from. Refuse
+            # rather than fall back to a fraction of the buffer -- a fallback
+            # here would silently reintroduce the dependency just removed.
+            return None
         noise = float(np.mean(sq[start:]))
         if noise <= 0.0:
             return None
@@ -281,7 +299,7 @@ def decay_time(curve: np.ndarray, fs: float, upper: float, lower: float):
 # ---------------------------------------------------------------- report
 
 
-def ensemble(t60, band, tail_mult, snr, mode, truncate, param):
+def ensemble(t60, band, tail_mult, snr, mode, truncate, param, third=False):
     """Median error and inter-quartile spread over SEEDS realisations.
 
     Median, not mean: a single realisation that refuses or lands far out should
@@ -291,7 +309,7 @@ def ensemble(t60, band, tail_mult, snr, mode, truncate, param):
     bias anyone can act on.
     """
     upper, lower = param
-    sos = octave_sos(band, FS) if band else None
+    sos = (third_sos(band) if third else octave_sos(band, FS)) if band else None
     errs = []
     refused = 0
     for s in range(SEEDS):
@@ -315,6 +333,147 @@ def ensemble(t60, band, tail_mult, snr, mode, truncate, param):
 
 
 T30 = (-5.0, -35.0)
+T20 = (-5.0, -25.0)
+EDT = (0.0, -10.0)
+MODES = ["forward", "zero-phase", "time-reversed"]
+
+
+def mode_table(snr: float, tail_mult: float) -> None:
+    """The filter-mode comparison, run only now that truncation is in place.
+
+    Part one ran this comparison with no truncation and found the three modes
+    agreeing to within about 2 %. That agreement was not evidence they are
+    equivalent: it was two small numbers being compared underneath a large one.
+    With the tail-length term removed, whatever separates the modes is no longer
+    hiding under a factor of thirty.
+
+    EDT is included because it is the parameter REW's documentation singles out:
+    time-reversed filtering "greatly reduces the filter's own contribution", but
+    "EDT figures using Time-Reversed filters may not be valid". That is a claim
+    with a direction, so it can be checked rather than believed.
+    """
+    print(f"=== filter modes WITH Lundeby truncation, SNR {snr:.0f} dB, "
+          f"tail {tail_mult:.1f}xT60 " + "=" * 12)
+    print(f"{'T60':>5} {'band':>6} {'param':>5} "
+          + "".join(f"{m:>20}" for m in MODES))
+    for t60 in (0.4, 1.2):
+        for band in (125.0, 1000.0):
+            for name, param in (("EDT", EDT), ("T20", T20), ("T30", T30)):
+                cells = []
+                for m in MODES:
+                    med, iqr, ref = ensemble(t60, band, tail_mult, snr,
+                                             m, True, param)
+                    if med is None:
+                        cells.append(f"{'ref ' + str(ref):>20}")
+                    else:
+                        tag = f"{med:+6.1f}% (IQR {iqr:4.1f})"
+                        if ref:
+                            tag += f" r{ref}"
+                        cells.append(f"{tag:>20}")
+                print(f"{t60:5.1f} {band:6.0f} {name:>5} " + "".join(cells))
+    print()
+
+
+def third_sos(centre: float, fs: float = FS):
+    f = 2.0 ** (1.0 / 6.0)
+    return signal.butter(4, [(centre / f) / (fs / 2), (centre * f) / (fs / 2)],
+                         btype="bandpass", output="sos")
+
+
+def filter_own_t60(sos, fs: float = FS) -> float:
+    """T60 of the band-pass filter's OWN impulse response, measured its own way.
+
+    This is the number that decides whether the filtering mode matters at all,
+    and it is measured by the same T20 fit used on rooms rather than taken from
+    a bandwidth formula -- so that the comparison below is between two
+    quantities produced by one procedure.
+    """
+    x = np.zeros(int(fs))
+    x[0] = 1.0
+    y = signal.sosfilt(sos, x)
+    e = np.cumsum(y[::-1] ** 2)[::-1]
+    db = 10.0 * np.log10(np.maximum(e, np.finfo(float).tiny) / e[0])
+    i0, i1 = int(np.argmax(db <= -5)), int(np.argmax(db <= -25))
+    if i1 <= i0:
+        return float("nan")
+    slope, _ = np.polyfit(np.arange(i0, i1) / fs, db[i0:i1], 1)
+    return -60.0 / slope
+
+
+def ring_table() -> None:
+    """Why the octave-band mode comparison above found nothing.
+
+    A band-pass filter has its own decay, and it adds to the room's. Whether
+    that matters is not a question about frequency, it is a question about the
+    RATIO of the filter's decay to the room's -- and the grid above never got
+    that ratio above about 0.28, which is why all three modes agreed there.
+    """
+    print("=== filter's own T60 vs the room's -- the ratio that decides =========")
+    print(f"{'band':>14} {'BW (Hz)':>9} {'filter T60':>12}"
+          + "".join(f"{'/ ' + str(r) + 's':>10}" for r in (0.3, 0.4, 1.2)))
+    for label, centre, frac in (("octave 125", 125.0, 1), ("octave 1000", 1000.0, 1),
+                                ("1/3-oct 125", 125.0, 3), ("1/3-oct 63", 63.0, 3),
+                                ("1/3-oct 40", 40.0, 3)):
+        f = 2.0 ** (1.0 / (2 * frac))
+        lo, hi = centre / f, centre * f
+        sos = (octave_sos(centre, FS) if frac == 1 else third_sos(centre))
+        r = filter_own_t60(sos)
+        cells = "".join(f"{r / room:9.2f} " for room in (0.3, 0.4, 1.2))
+        print(f"{label:>14} {hi - lo:9.1f} {r * 1000:10.1f}ms " + cells)
+    print()
+
+
+def regime_table() -> None:
+    """The mode comparison run where the ratio is large enough to matter.
+
+    REW documents that time-reversed filtering "greatly reduces the filter's own
+    contribution" but that "EDT figures using Time-Reversed filters may not be
+    valid". Both halves are directional claims, so both can be checked.
+
+    ## Read the refusal counts before the percentages
+
+    At ratio 0.93, forward filtering refuses on all 24 seeds. That is not a
+    failure of the probe; it is the answer. The fitted late slope is so shallow
+    -- because it is largely the filter's own decay, not the room's -- that the
+    10 dB noise margin no longer fits inside the record, and the estimator
+    declines rather than inventing a crossing. The other two modes return
+    numbers on most seeds.
+
+    ## An honest note about how much this depends on the estimator
+
+    An earlier draft placed the noise-estimate margin at a fixed fraction of the
+    buffer instead of a fixed amount of decay. Under that draft this same cell
+    returned +129.1 % rather than refusing. The change from "confidently wrong"
+    to "declines to answer" came from one line of the estimator, not from any
+    change to the physics.
+
+    Two things follow, and the record must carry both. First, the ranking
+    between zero-phase and time-reversed is NOT established here: their medians
+    differ by less than the inter-quartile spread, so the honest statement is
+    about FORWARD versus the other two. Second, a refusal produced by an
+    estimator limit is not the same claim as a refusal produced by physics, and
+    conflating them invites a later session to "improve the estimator" into a
+    regime where the variance never allowed an answer.
+    """
+    print("=== filter modes where ring/decay is LARGE (1/3-octave), SNR 55 dB ===")
+    print(f"{'T60':>5} {'band':>6} {'ratio':>6} {'param':>4} "
+          + "".join(f"{m:>20}" for m in MODES))
+    for t60, centre in ((0.4, 63.0), (0.4, 125.0), (1.2, 63.0)):
+        ratio = filter_own_t60(third_sos(centre)) / t60
+        for name, param in (("EDT", EDT), ("T30", T30)):
+            cells = []
+            for m in MODES:
+                med, iqr, ref = ensemble(t60, centre, 2.5, 55.0, m, True, param,
+                                         third=True)
+                if med is None:
+                    cells.append(f"{'ref ' + str(ref):>20}")
+                else:
+                    tag = f"{med:+6.1f}% (IQR {iqr:5.1f})"
+                    if ref:
+                        tag += f" r{ref}"
+                    cells.append(f"{tag:>20}")
+            print(f"{t60:5.1f} {centre:6.0f} {ratio:6.2f} {name:>4} " + "".join(cells))
+    print()
 
 
 def main() -> None:
@@ -346,6 +505,11 @@ def main() -> None:
                             cells.append(f"{tag:>22}")
                     print(f"{t60:6.1f} {band:7.0f} {mult:5.1f}x " + "".join(cells))
         print()
+
+    mode_table(55.0, 2.5)
+    mode_table(45.0, 2.5)
+    ring_table()
+    regime_table()
 
 
 if __name__ == "__main__":
