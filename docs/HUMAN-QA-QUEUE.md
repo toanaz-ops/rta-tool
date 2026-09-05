@@ -63,9 +63,12 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
   L4b; 385→399 khớp đúng chênh lệch 14 case của 345→359). Sau đó đã push:
   `29b464e..7122070`.
 
-  **Còn một đợt sau đó CHƯA merge:** công việc EDT ensemble (`decayTimesAcross`)
-  và các quyết định uỷ quyền, trên `claude_desk/handoff-continuation-9045fc`.
-  Đếm bằng `git rev-list --count main..HEAD`, đừng chép số.
+  **Đợt EDT ensemble sau đó → ĐÃ MERGE 2026-09-05**, merge `--no-ff` tại
+  `a2cbd02`, chủ nhân ra lệnh "merge hết code mới về master" trong chính phiên
+  đó. Nó mang `rta::ir::decayTimesAcross` (`DecayEnsemble`) + bốn quyết định
+  uỷ quyền, từ `claude_desk/handoff-continuation-9045fc`. Chi tiết đo ở mục đầu
+  HANDOFF. `main` chưa push (`rev-list --count origin/main..main` > 0) — push là
+  lệnh riêng của con người, phiên này không tự suy ra.
 - [x] **Tên sản phẩm chính thức → `AZ Soundtech RTA`.** Chủ nhân chốt
   2026-08-30, phiên EP06 DOER, nguyên văn: *"Tên sản phẩm chính thức =
   AZ Soundtech RTA"*. Target CMake vẫn là `rtatool` — đó là định danh

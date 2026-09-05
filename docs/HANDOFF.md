@@ -5,6 +5,54 @@
 
 ---
 
+# 2026-09-05 — **EDT ENSEMBLE ĐÃ MERGE VÀO `main` tại `a2cbd02`**
+
+**Đọc mục này trước tiên.** Chủ nhân ra lệnh "merge hết code mới về master"
+trong phiên này. Chỉ một nhánh đi trước `main`: `handoff-continuation-9045fc`
+(4 commit — 1 feat + 3 docs). Merge `--no-ff`, xung đột **chỉ** ở
+`docs/HUMAN-QA-QUEUE.md` (cả hai nhánh cùng viết lại mục "Merge L4b"); giải quyết
+bằng cách giữ bản nhánh nguồn (đầy đủ hơn) và bỏ mục `[ ] EDT chờ chủ nhân chốt`
+đã lỗi thời — nhánh đó đã tự trả lời và chuyển EDT sang "Đã trả lời". Toàn bộ
+code mới nằm trong `core/`, không đụng `app/`.
+
+## Đã hạ cánh
+`rta::ir::decayTimesAcross()` (`DecayEnsemble`) — EDT/T20/T30 báo độ tin cậy
+bằng **median + IQR qua nhiều capture**, không bằng một điểm số một-lần-đọc. Đây
+là câu trả lời cho việc-còn-mở "EDT chưa có envelope riêng" mà L4b để lại: hai
+ứng viên điểm-số một-lần-đọc đều bị đo bác (|corr| 0.02–0.16 với sai số thật);
+IQR co theo `1/√N`. Cơ sở ở record §4f và header `DecayEnsemble.h`.
+
+## Baseline đo được (dán từ lệnh) — kiểm chứng ĐỘC LẬP sau merge
+
+Đo trên cây đã merge, build dir riêng của phiên merge chưa từng bị ai chạm,
+MSVC 14.51.36231 Release, generator Visual Studio (KHÔNG Ninja — xem memory
+"một build cấu hình sai đi 99% quãng đường rồi hỏng"):
+
+```
+cmake -S . -B build-verify -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=OFF
+cmake --build build-verify --config Release --parallel      -> link sạch
+ctest  --test-dir build-verify -C Release                   -> 362/362, 0 failed   (OFF)
+```
+
+362 = **359 của baseline L4b + 3 test EDT ensemble mới** trong `test_ir_decay.cpp`.
+Sáu guard kiến trúc/biểu diễn đều PASS; `core_has_no_framework_deps` quét
+**87 file** (L4b: 85 → +2, đúng `DecayEnsemble.h/.cpp`) — guard **thật sự canh**
+code mới, không chỉ còn xanh.
+
+## Việc còn mở của đợt này
+- **`RTA_BUILD_APP=ON` CHƯA đo lại sau merge này.** Đây là việc còn mở DUY NHẤT
+  không cần quyết định của con người. L4b từng đo 399/399 (ON); con số ON với
+  EDT ensemble chưa có — đừng đoán.
+- **Golden vector cho `rta::ir` decay/EDT vẫn chưa viết** (nợ mang sang từ L4b;
+  ⚠️ ràng buộc "hai bất đối xứng Python/C++ trong bộ sinh golden" ở mục L4b bên
+  dưới **vẫn hiệu lực**, phải đo trước khi commit golden đầu tiên).
+- **`main` chưa push lên `origin`** (`git rev-list --count origin/main..main` > 0
+  — đo bằng lệnh, đừng chép số). Push là lệnh riêng của con người.
+- **Lane tiếp theo** theo MASTER-EXECUTION-PLAN mục 5: **L3 (MTW)** + **L6b**,
+  rồi **L7**. L3 cần một lượt research trạm 1 trước (chưa có decision record).
+
+---
+
 # 2026-08-30 (tối) — **L4b ĐÃ MERGE VÀO `main` tại `e77e0e1`**
 
 **Đọc mục này trước tiên. Mục "L4a" bên dưới là lịch sử của cùng ngày.**
