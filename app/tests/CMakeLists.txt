@@ -27,6 +27,7 @@ add_executable(rtatool_analysis_tests
     test_paired_drain.cpp
     test_synthetic_impairment.cpp
     test_workspace.cpp
+    test_analyser_mtw.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp

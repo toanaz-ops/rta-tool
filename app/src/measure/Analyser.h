@@ -8,6 +8,7 @@
 
 #include "rta/dsp/BandWeights.h"
 #include "rta/dsp/DualFftEngine.h"
+#include "rta/dsp/MtwEngine.h"
 #include "rta/dsp/SpectrumEngine.h"
 #include "rta/dsp/TransferEstimator.h"
 #include "rta/dsp/Window.h"
@@ -59,6 +60,20 @@ public:
         /// Compensated as a stream offset before the transform; see
         /// docs/dsp/2026-08-28-dual-fft.md section 4 for why never after.
         int referenceDelaySamples = 0;
+
+        /// Multi-time-window engine settings (docs/dsp/2026-09-05-mtw-l3.md
+        /// §5-§6): FRAMES, never seconds -- see MtwLayout.h's own MtwConfig
+        /// comment for why neither knob here has a seconds twin. Defaults
+        /// match rta::dsp::MtwConfig's own defaults exactly, so a caller who
+        /// touches nothing gets the record's own reference numbers
+        /// (integrationSeconds {5.4613 .. 0.0853}s, effectiveAverages
+        /// 8.5866271 in every band).
+        bool mtwEnabled = true;
+        std::size_t mtwTopFftSize = 1024;
+        std::size_t mtwOctaveCount = 6;
+        rta::dsp::TransferAveraging mtwAveraging = rta::dsp::TransferAveraging::Fifo;
+        std::size_t mtwFifoDepth = 16;
+        double mtwTimeConstantFrames = 16.0;
     };
 
     explicit Analyser(const Config& config);
@@ -134,6 +149,17 @@ private:
     /// offered" is a different fact from "a frame was analysed". Both are
     /// required before a transfer function is published.
     bool dualEngaged_ = false;
+
+    /// A second engine, not a second thread (record §6): `MtwEngine` has no
+    /// default constructor, same as `DualFftEngine`, so it is built here in
+    /// the member-initialiser list and nowhere else. Constructed
+    /// unconditionally -- `mtwEnabled` gates whether `pushPair` FEEDS it, not
+    /// whether it exists, because there is no default-constructed "off"
+    /// state to fall back to.
+    rta::dsp::MtwEngine mtw_;
+    /// False until the first pushPair with `mtwEnabled` true. Same reasoning
+    /// as `dualEngaged_`.
+    bool mtwEngaged_ = false;
 
     std::uint64_t sequence_ = 0;
     std::atomic<SnapshotPtr> latest_;
