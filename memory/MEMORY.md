@@ -19,3 +19,4 @@ One line per memory. Content lives in the linked file, never here.
 - [Hai bản dựng lệch nhau không chứng minh bên nào sai](two-builds-disagreeing-is-not-evidence-one-is-wrong.md) — bốn vòng truy nhiễu lấy mẫu của median-24; và vì sao cực trị là thống kê yếu nhất trước mẫu nhỏ.
 - [Câu trả lời của chủ nhân ngắn hơn câu hỏi là câu mơ hồ](an-owner-reply-shorter-than-the-question-is-ambiguous.md) — `b:` bị đọc thành phương án (b) và ghi vào queue như quyết định.
 - [Một build cấu hình sai đi 99% quãng đường rồi hỏng như một test thường](a-misconfigured-build-goes-99-percent-of-the-way.md) — Ninja chọn MinGW, 196/196 object sạch, chết ở test discovery.
+- [A default must be run through the gate it feeds](a-default-must-be-run-through-the-gate-it-feeds.md) — 0.5 s uniform-seconds averaging left three MTW bands under the coherence gate forever; the header formula said fine, the shipped function said no.
