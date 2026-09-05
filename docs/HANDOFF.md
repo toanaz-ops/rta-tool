@@ -40,9 +40,18 @@ Sáu guard kiến trúc/biểu diễn đều PASS; `core_has_no_framework_deps` 
 code mới, không chỉ còn xanh.
 
 ## Việc còn mở của đợt này
-- **`RTA_BUILD_APP=ON` CHƯA đo lại sau merge này.** Đây là việc còn mở DUY NHẤT
-  không cần quyết định của con người. L4b từng đo 399/399 (ON); con số ON với
-  EDT ensemble chưa có — đừng đoán.
+- ~~`RTA_BUILD_APP=ON` CHƯA đo lại sau merge này~~ — **ĐÃ ĐO 2026-09-05** trên
+  HEAD `7e10eb6`, build dir riêng `build-verify-app`, generator Visual Studio,
+  MSVC 14.51.36231, JUCE qua `RTA_JUCE_PATH`:
+
+  ```
+  ctest --test-dir build-verify-app -C Release   -> 402/402, 0 failed   (ON)
+  ```
+
+  402 = 362 (OFF) + 40 test chỉ build khi ON (1 guard callback-shape + 10
+  platform-JUCE + 4 az_ui + 25 view), phân rã đọc từ cấu trúc gating trong
+  bốn file CMakeLists, không chỉ trừ hai tổng. 0 `warning C` trên app target.
+  Bốn guard PASS: core 87 file, polynomial-form 103, platform-types 5, measure 29.
 - **Golden vector cho `rta::ir` decay/EDT vẫn chưa viết** (nợ mang sang từ L4b;
   ⚠️ ràng buộc "hai bất đối xứng Python/C++ trong bộ sinh golden" ở mục L4b bên
   dưới **vẫn hiệu lực**, phải đo trước khi commit golden đầu tiên).
