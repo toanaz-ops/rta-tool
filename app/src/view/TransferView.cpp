@@ -6,8 +6,10 @@
 #include "measure/PhaseUnwrap.h"
 #include "measure/Snapshot.h"
 #include "trace/TraceLibrary.h"
+#include "view/ColumnMap.h"
 #include "view/CoherenceAlpha.h"
 #include "view/MeasureColours.h"
+#include "view/MtwLayer.h"
 #include "view/PhaseDecimator.h"
 #include "view/PlotAxes.h"
 #include "view/TraceDecimator.h"
@@ -83,45 +85,6 @@ void drawStoredPhaseHiddenState(juce::Graphics& g, const PlotGeometry& geometry)
     g.drawText("STORED PHASE HIDDEN  --  UNWRAPPED", line, juce::Justification::centredLeft, false);
 }
 
-/// Which ABSOLUTE pixel column each FFT bin lands in, using the composite's
-/// own shared log mapping (`geometry.xForHz`) rather than a second one
-/// derived here -- any pane's geometry works for this, because decision 1
-/// guarantees every pane's x mapping is identical.
-///
-/// Absolute, unlike StoredTraceLayer.cpp's `columnsForBins`: that helper
-/// subtracts an image origin because it rasterises into a small LOCAL
-/// canvas blitted back afterwards. The live overlay drawn here paints
-/// straight onto the composite's own Graphics with no local canvas, so a
-/// bin's column IS the screen column, and TraceStroke.h's column-as-x
-/// contract (`fillColumn` uses the column index as x with no origin term of
-/// its own) is satisfied by construction instead of by a coordinate
-/// transform.
-std::vector<int> absoluteColumnsForBins(const PlotGeometry& geometry, double binHz,
-                                        std::size_t bins, int columnCount) {
-    std::vector<int> columns(bins, -1);
-    // `xForHz` is not clamped below `fLowHz` (PlotGeometry.h's own contract
-    // comment: a caller can ask "what's past the edge"), so a bin between
-    // `hzForX(0)` and `fLowHz` maps to a column LEFT of the plot's own left
-    // edge -- inside the level-label gutter reserved by kLevelLabelWidth.
-    // `geometry.left` is the same axis.left every pane's geometry carries
-    // (BodeLayout.h's paneGeometry, decision 1), and StoredTraceLayer.cpp's
-    // `columnsForBins` floors that identical value into its own `originX_`
-    // and rejects anything below it -- this floor is that same rejection,
-    // so the live and stored paths agree on where the axis starts by
-    // construction, not by two implementations happening to compute the
-    // same number.
-    const double leftEdge = std::floor(static_cast<double>(geometry.left));
-    for (std::size_t i = 0; i < bins; ++i) {
-        const double hz = static_cast<double>(i) * binHz;
-        if (hz <= 0.0) continue;
-        const double column = std::floor(static_cast<double>(geometry.xForHz(hz)));
-        if (column >= leftEdge && column < static_cast<double>(columnCount)) {
-            columns[i] = static_cast<int>(column);
-        }
-    }
-    return columns;
-}
-
 /// The live phase, continuous (no wrap), and the whole-multiple-of-360 axis
 /// that encloses it (decision 4). Empty `unwrappedDeg` means the transfer
 /// carried no phase to unwrap.
@@ -189,6 +152,11 @@ void TransferView::setSource(const rta::measure::SnapshotSource& source) {
     repaint();
 }
 
+void TransferView::setSource(TransferPane pane, TransferSource newSource) {
+    sources_[static_cast<std::size_t>(pane)] = newSource;
+    repaint();
+}
+
 void TransferView::setLibrary(const rta::trace::TraceLibrary* library) {
     library_ = library;
     storedMagnitude_.forget();
@@ -228,46 +196,81 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
     const FrequencyAxis axis = frequencyAxis(content);
 
     const auto snapshot = source_->latest();
-    const bool hasTransfer = snapshot != nullptr && snapshot->transfer.has_value();
+    const bool hasFixed = snapshot != nullptr && snapshot->transfer.has_value();
+    const bool hasMtw = snapshot != nullptr && snapshot->mtw.has_value();
+    const bool hasAny = hasFixed || hasMtw;
 
+    // The preferred per-pane source, falling back to whichever block
+    // actually exists (record §6 makes Mtw the DEFAULT PREFERENCE, not a
+    // requirement that the fixed engine's own coverage vanish the moment MTW
+    // hasn't engaged -- no reference fed yet, or mtwEnabled false). An
+    // EXPLICIT setSource is still honoured the instant its own block exists.
+    const auto effectiveSource = [&](TransferPane pane) noexcept {
+        const TransferSource preferred = source(pane);
+        const bool preferredAvailable = preferred == TransferSource::Mtw ? hasMtw : hasFixed;
+        if (preferredAvailable) return preferred;
+        return hasFixed ? TransferSource::Fixed : TransferSource::Mtw;
+    };
+    const TransferSource magnitudeSource = effectiveSource(TransferPane::Magnitude);
+    const TransferSource phaseSource = effectiveSource(TransferPane::Phase);
+    const TransferSource coherenceSource = effectiveSource(TransferPane::Coherence);
+
+    // Unwrap (decision 4) applies only to the FIXED phase curve: an MTW
+    // curve is stitched from independent bands' own atan2 results with no
+    // single continuous phase to unwrap across a seam.
+    const bool drawUnwrappedFixed = hasFixed && unwrapped_ && phaseSource == TransferSource::Fixed;
     UnwrappedPhase unwrapped;
-    if (hasTransfer && unwrapped_) unwrapped = computeUnwrappedPhase(*snapshot->transfer);
+    if (drawUnwrappedFixed) unwrapped = computeUnwrappedPhase(*snapshot->transfer);
 
     const PlotGeometry ribbonGeometry = paneGeometry(axis, panes.ribbon, 1.0, 0.0);
     const PlotGeometry magnitudeGeometry = paneGeometry(axis, panes.magnitude, kMagnitudeDbTop, kMagnitudeDbBottom);
     const PlotGeometry phaseGeometry = paneGeometry(
-        axis, panes.phase, unwrapped_ ? unwrapped.dbTop : kWrappedPhaseDbTop,
-        unwrapped_ ? unwrapped.dbBottom : kWrappedPhaseDbBottom);
+        axis, panes.phase, drawUnwrappedFixed ? unwrapped.dbTop : kWrappedPhaseDbTop,
+        drawUnwrappedFixed ? unwrapped.dbBottom : kWrappedPhaseDbBottom);
 
-    // Bin -> absolute column mapping, shared by the ribbon and both live
-    // traces below (decision 1: one x mapping, read through whichever
-    // pane's own geometry -- they all agree by construction).
-    const std::size_t bins = hasTransfer ? snapshot->transfer->magnitudeDb.size() : 0;
-    const double binHz =
-        hasTransfer && snapshot->fftSize > 0 ? snapshot->sampleRate / static_cast<double>(snapshot->fftSize) : 0.0;
-    const int columnCount = static_cast<int>(std::ceil(axis.right));
-    const std::vector<int> columnForBin =
-        bins > 0 ? absoluteColumnsForBins(magnitudeGeometry, binHz, bins, columnCount) : std::vector<int>{};
+    const std::size_t columnCount = static_cast<std::size_t>(std::ceil(axis.right));
+    const int columnCountInt = static_cast<int>(columnCount);
 
-    // The ONE per-column trust vector every pane in the composite reads --
-    // computed here exactly once, not once per pane, because it cannot
-    // differ between them: same coherence, same shared columnForBin/
-    // columnCount (decision 1). Empty coherence (nothing measured yet) means
-    // an empty alpha vector, which the ribbon reads as "no fill" and
-    // strokeMagnitudeExtents/strokePhaseColumns read as "draw opaque" --
-    // two different, both correct, contracts for the same empty span
-    // (TransferRibbon.h and TraceStroke.h each document their own).
-    const std::span<const float> coherenceSource =
-        hasTransfer && snapshot->transfer->coherence.has_value()
-            ? std::span<const float>(*snapshot->transfer->coherence)
-            : std::span<const float>{};
-    const std::vector<float> liveAlpha =
-        coherenceSource.empty() ? std::vector<float>{} : columnAlpha(coherenceSource, columnForBin, columnCount);
+    // Fixed engine's own bin -> absolute column mapping and per-column trust,
+    // built once and reused by whichever pane resolves to Fixed (decision 1:
+    // one x mapping per engine). Empty coherence (nothing measured yet) means
+    // an empty alpha vector -- the ribbon reads that as "no fill" and
+    // strokeMagnitudeExtents/strokePhaseColumns read it as "draw opaque"
+    // (TransferRibbon.h and TraceStroke.h each document their own contract).
+    std::vector<int> fixedColumns;
+    std::vector<float> fixedAlpha;
+    if (hasFixed) {
+        const std::size_t bins = snapshot->transfer->magnitudeDb.size();
+        const double binHz = snapshot->fftSize > 0
+            ? snapshot->sampleRate / static_cast<double>(snapshot->fftSize) : 0.0;
+        fixedColumns = absoluteColumnsForBins(magnitudeGeometry, binHz, bins, columnCount);
+        const std::span<const float> coherenceValues =
+            snapshot->transfer->coherence.has_value()
+                ? std::span<const float>(*snapshot->transfer->coherence)
+                : std::span<const float>{};
+        fixedAlpha = coherenceValues.empty()
+            ? std::vector<float>{}
+            : columnAlpha(coherenceValues, fixedColumns, columnCountInt);
+    }
 
-    // The ribbon shows the LIVE capture's coherence only (decision 3) -- an
-    // empty alpha draws the frame alone, never a solid "fully trusted" fill
-    // (TransferRibbon.h's own contract comment).
-    drawTransferRibbon(g, ribbonGeometry, panes.ribbon, liveAlpha);
+    // The MTW engine's own EXPLICIT frequency vector -> column mapping
+    // (ColumnMap.h's sibling function), and its per-band-aware trust
+    // (MtwLayer.h -- an ungated band reads fully trusted, never the
+    // coherence-alpha floor; see that function's own contract comment).
+    std::vector<int> mtwColumns;
+    std::vector<float> mtwAlpha;
+    if (hasMtw) {
+        mtwColumns = absoluteColumnsForFrequencies(magnitudeGeometry, snapshot->mtw->frequencyHz, columnCount);
+        mtwAlpha = mtwColumnAlpha(*snapshot->mtw, mtwColumns, columnCount);
+    }
+
+    // The ribbon shows whichever source Coherence resolved to -- an empty
+    // alpha draws the frame alone, never a solid "fully trusted" fill
+    // (TransferRibbon.h's own contract comment; mtwAlpha is never empty once
+    // hasMtw, by MtwLayer.h's own contract, so this only degrades for Fixed).
+    const std::vector<float>& ribbonAlpha =
+        coherenceSource == TransferSource::Mtw ? mtwAlpha : fixedAlpha;
+    drawTransferRibbon(g, ribbonGeometry, panes.ribbon, ribbonAlpha);
 
     drawGrid(g, magnitudeGeometry);
     drawLevelLabels(g, magnitudeGeometry);
@@ -276,20 +279,23 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
     drawFrequencyLabels(g, phaseGeometry);
     drawPhaseLabels(g, phaseGeometry);
 
-    if (!hasTransfer) {
+    if (!hasAny) {
         // A Bode plot of nothing looks like a measurement -- draw the grid
         // and stop, never a flat trace.
         drawNoReferenceState(g, panes.magnitude);
         return;
     }
 
-    const auto& transfer = *snapshot->transfer;
-
     if (library_ != nullptr) storedMagnitude_.draw(g, *library_, magnitudeGeometry);
 
     {
-        const auto extents = bridgeGaps(decimateToColumns(transfer.magnitudeDb, columnForBin, columnCount));
-        strokeMagnitudeExtents(g, extents, magnitudeGeometry, 0, liveAlpha, rta::view::trace);
+        const bool useMtw = magnitudeSource == TransferSource::Mtw;
+        const auto& magnitudeDb = useMtw ? snapshot->mtw->magnitudeDb : snapshot->transfer->magnitudeDb;
+        const auto& columns = useMtw ? mtwColumns : fixedColumns;
+        const auto& alpha = useMtw ? mtwAlpha : fixedAlpha;
+        const auto extents = bridgeGaps(decimateToColumns(magnitudeDb, columns, columnCountInt));
+        strokeMagnitudeExtents(g, extents, magnitudeGeometry, 0, alpha, rta::view::trace);
+        if (useMtw) drawMtwSeams(g, *snapshot->mtw, magnitudeGeometry, rta::view::mtwSeam);
     }
 
     // Stored traces are always drawn WRAPPED (StoredTraceLayer's own
@@ -310,18 +316,23 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
         }
     }
 
-    if (!unwrapped_) {
-        const auto phaseColumns = decimatePhaseToColumns(transfer.phaseDeg, columnForBin, columnCount);
-        const auto drawn = wrapForDrawing(phaseColumns);
-        strokePhaseColumns(g, drawn, phaseGeometry, 0, liveAlpha, rta::view::trace);
-    } else {
+    if (drawUnwrappedFixed) {
         // Unwrapped: a continuous curve with no discontinuity to draw around,
         // so it is decimated and stroked exactly like magnitude rather than
         // through the wrap-aware path (decision 5 is about the WRAPPED
         // default; there is nothing for it to do once the trace no longer
         // wraps).
-        const auto extents = bridgeGaps(decimateToColumns(unwrapped.unwrappedDeg, columnForBin, columnCount));
-        strokeMagnitudeExtents(g, extents, phaseGeometry, 0, liveAlpha, rta::view::trace);
+        const auto extents = bridgeGaps(decimateToColumns(unwrapped.unwrappedDeg, fixedColumns, columnCountInt));
+        strokeMagnitudeExtents(g, extents, phaseGeometry, 0, fixedAlpha, rta::view::trace);
+    } else {
+        const bool useMtw = phaseSource == TransferSource::Mtw;
+        const auto& phaseDeg = useMtw ? snapshot->mtw->phaseDeg : snapshot->transfer->phaseDeg;
+        const auto& columns = useMtw ? mtwColumns : fixedColumns;
+        const auto& alpha = useMtw ? mtwAlpha : fixedAlpha;
+        const auto phaseColumns = decimatePhaseToColumns(phaseDeg, columns, columnCountInt);
+        const auto drawn = wrapForDrawing(phaseColumns);
+        strokePhaseColumns(g, drawn, phaseGeometry, 0, alpha, rta::view::trace);
+        if (useMtw) drawMtwSeams(g, *snapshot->mtw, phaseGeometry, rta::view::mtwSeam);
     }
 }
 

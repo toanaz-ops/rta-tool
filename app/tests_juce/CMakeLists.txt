@@ -34,6 +34,7 @@ add_executable(rtatool_view_tests
     # already provide -- moved here to make room for the new margin-overpaint
     # case.
     test_transfer_view_unwrap.cpp
+    test_transfer_view_mtw.cpp
     test_workspace_view.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)
@@ -69,6 +70,10 @@ add_executable(rtatool_view_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferView.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferRibbon.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PlotAxes.cpp
+    # test_transfer_view_mtw.cpp's own additional dependency (task 7):
+    #   view/MtwLayer.h/.cpp -> the MTW-specific per-band alpha and seam
+    #     drawing, JUCE-using so it lives here rather than in ColumnMap.h.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/MtwLayer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp

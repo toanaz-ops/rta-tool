@@ -11,7 +11,21 @@
 #include "view/RepaintGate.h"
 #include "view/StoredTraceLayer.h"
 
+#include <array>
+
 namespace rta::view {
+
+/// The three curves the Bode composite draws -- NOT the three stacked
+/// `PaneRect`s in `BodePanes` (ribbon/magnitude/phase), though Coherence
+/// here maps onto that ribbon: record §6 draws coherence as the ribbon's
+/// trust fill, not a fourth stacked plot.
+enum class TransferPane { Magnitude, Phase, Coherence };
+
+/// Which engine's data feeds a given pane. Record §6: MTW is the default for
+/// all three; the fixed FFT stays selectable per plot -- Smaart's own v9
+/// dual-dataset behaviour, and what makes the MTW path falsifiable by eye
+/// against the engine this project already proved.
+enum class TransferSource { Mtw, Fixed };
 
 /// The stacked Bode composite: coherence ribbon, magnitude pane, phase pane,
 /// all three on the ONE shared log-frequency mapping (decision 1).
@@ -27,6 +41,15 @@ public:
     ~TransferView() override;
 
     void setSource(const rta::measure::SnapshotSource& source);
+
+    /// Per-pane engine choice (record §6). Defaults to `Mtw` for all three --
+    /// see `renderTo`'s own comment for the fallback when the preferred
+    /// source's block is simply absent from the snapshot (no reference fed,
+    /// or MTW disabled).
+    void setSource(TransferPane pane, TransferSource source);
+    [[nodiscard]] TransferSource source(TransferPane pane) const noexcept {
+        return sources_[static_cast<std::size_t>(pane)];
+    }
 
     /// Nullable, null by default -- same contract RtaView::setLibrary states.
     /// `override`: implements `LibraryConsumer` (view/PaneRegistry.h), the
@@ -88,6 +111,11 @@ private:
     GateState gate_;
     bool unwrapped_ = false;
     BodePanes panes_;
+
+    /// Indexed by `static_cast<std::size_t>(TransferPane)`. Mtw for all
+    /// three by default (record §6).
+    std::array<TransferSource, 3> sources_{ TransferSource::Mtw, TransferSource::Mtw,
+                                            TransferSource::Mtw };
 
     /// One cached layer per pane. The O(1)-in-trace-count property L5a bought
     /// has to survive multiplication by panes, which is what

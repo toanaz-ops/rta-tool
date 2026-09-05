@@ -60,6 +60,9 @@ target_sources(rtatool PRIVATE
     # length cap (see that file's own header comment for why).
     src/view/TransferView.cpp
     src/view/TransferRibbon.cpp
+    # MtwLayer.cpp is the MTW-specific per-band alpha and seam drawing (task 7
+    # of the MTW plan), split out to keep TransferView.cpp under the cap.
+    src/view/MtwLayer.cpp
     # WorkspaceView.cpp is task 10's pane container (decision 6) -- the file
     # that finally attaches TraceLibrary to a real pane. Deliberately does
     # NOT include RtaView.h/TransferView.h itself (see its own class
@@ -157,6 +160,9 @@ target_sources(rtatool_snapshot PRIVATE
     # length cap. Needed here for transfer.png below.
     src/view/TransferView.cpp
     src/view/TransferRibbon.cpp
+    # MtwLayer.cpp is the MTW-specific per-band alpha and seam drawing (task 7
+    # of the MTW plan), needed here for the specimen render.
+    src/view/MtwLayer.cpp
     # WorkspaceView.cpp is task 10's pane container (decision 6), needed here
     # for workspace.png. Deliberately does NOT include RtaView.h/
     # TransferView.h itself -- see its own class comment.

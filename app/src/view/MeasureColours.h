@@ -112,4 +112,13 @@ inline const juce::Colour storedTrace = az::ui::dim;
 /// reads as "quiet data" and a ghost is not data at all yet.
 inline const juce::Colour ghost = az::ui::dim;
 
+/// The MTW band-seam hairlines (docs/dsp/2026-09-05-mtw-l3.md §6: "marks the
+/// seams"). Furniture describing where one octave's window hands off to the
+/// next, not data -- the same secondary-silkscreen tone `axisText`/`target`
+/// already alias, deliberately NOT `grid`'s tone (`az::ui::border`): a seam
+/// must read as visually distinct from the axis's own decade-tick hairlines,
+/// or a reader cannot tell "the window changed here" from "this is a decade
+/// line".
+inline const juce::Colour mtwSeam = az::ui::dim;
+
 }  // namespace rta::view
