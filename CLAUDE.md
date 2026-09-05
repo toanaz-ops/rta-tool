@@ -1,5 +1,7 @@
 # RTA Tool — project instructions
 
+@memory/MEMORY.md
+
 Dual-FFT audio measurement software. C++20. Licence **AGPL-3.0-or-later**.
 
 ## The one rule that governs the architecture
