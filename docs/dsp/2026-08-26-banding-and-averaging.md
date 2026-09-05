@@ -198,9 +198,11 @@ less variance reduction than their count suggests.
   without saying which path produced it, and a comparison against a handheld
   meter is only meaningful against the filter-bank path.
 - Phase 3's multi-time-window engine solves the low-frequency deficit for the
-  FFT path, by running different FFT sizes on decimated streams. When it lands,
-  the RTA should be able to use it, so `OctaveBands` must not assume a single
-  delta-f.
+  FFT path, ~~by running different FFT sizes on decimated streams~~ — built
+  2026-09-06 without decimation: full-rate `DualFftEngine` instances, one per
+  octave, FFT size doubling downward (`docs/dsp/2026-09-05-mtw-l3.md` §2). When
+  it lands for the RTA, the RTA should be able to use it, so `OctaveBands` must
+  not assume a single delta-f.
 - ~~The filter bank's decimation cascade introduces a different group delay per
   band~~ — resolved 2026-08-27: the bank runs single-rate, so this trap was
   removed rather than managed. See 2026-08-27-filterbank.md.

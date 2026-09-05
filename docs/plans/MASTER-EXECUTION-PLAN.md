@@ -49,7 +49,7 @@ loopback cable). Both need a person, not another agent — see
 graph LR
     P1["<b>P1</b> · RTA / SPL / generator<br/><i>built — M2 + M7 by hand</i>"]
     P2["<b>P2</b> · dual-FFT engine<br/><i>BUILT 2026-08-29 · report 003</i>"]
-    P3["<b>P3</b> · MTW<br/><i>band stitching</i>"]
+    P3["<b>P3</b> · MTW<br/><i>BUILT 2026-09-06</i>"]
     P4["<b>P4</b> · sweep / IR<br/><i>Farina, Schroeder, RT60</i>"]
     P4b["<b>P4b</b> · THD / STI<br/><i>needs IEC 60268-16</i>"]
     L5a["<b>L5a</b> · trace library + session<br/><i>BUILT · wired by L5c</i>"]
@@ -78,10 +78,10 @@ graph LR
     classDef blocked fill:#3d1f1f,stroke:#f87171,stroke-width:2px,color:#fde8e8
     classDef later fill:#26262b,stroke:#71717a,stroke-width:1px,color:#d4d4d8
 
-    class P1,P2,L5a,L5c done
+    class P1,P2,L5a,L5c,P3 done
     class P4 next
     class L5b,P4b blocked
-    class P3,P6,P7,P8,P9 later
+    class P6,P7,P8,P9 later
 ```
 
 **Green** is built. **Amber** is what to open next. **Red** is blocked on a
@@ -116,7 +116,7 @@ not, and a guessed tolerance is a false Class claim.
 | Lane | Scope (decision records to read first) | Depends on | PARALLEL-SAFE with |
 |---|---|---|---|
 | **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16). **✅ BUILT (2026-08-29), see `docs/reports/003-dual-fft-engine.md`.** Record: `docs/dsp/2026-08-28-dual-fft.md`. Merged into `main` and pushed 2026-08-29 | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
-| **L3 — MTW** | P3: decimation cascade, per-band FFT sizes, stitching, CONCURRENT with fixed engine (G2). Needs its own station-1 research pass first | L2 interface | L5, L6a |
+| **L3 — MTW** | P3: multi-time-window transfer function, CONCURRENT with the fixed engine (G2). **✅ BUILT 2026-09-06.** Record `docs/dsp/2026-09-05-mtw-l3.md`, plan `docs/plans/2026-09-05-L3-mtw-impl-plan.md`. Decimation was **REJECTED**: the engine runs `K+1` full-rate `DualFftEngine` instances, FFT size doubling per octave downward, not a decimation cascade. Averaging is frames-uniform (`fifoDepth`, `timeConstantFrames`), with integration seconds reported per band rather than specified in seconds. MTW traces are **live-only** for now — storing them is an L5 amendment (`Trace` derives its axis from `fftSize` on purpose). Numbers live only in `docs/HANDOFF.md`'s baseline block. | L2 interface | L5, L6a |
 | **L4 — Sweep/IR** — split 2026-08-30 into **L4a** (deconvolution → IR, FR, polarity; `core/`), **L4b** (ETC, Schroeder, Lundeby, RT60, clarity), **L4c** (draggable gate G25, min/excess phase G24, offline WAV G22; `app/`), **L4d** (STI, blocked on IEC 60268-16). **L4a BUILT 2026-08-30**: decisions 1-4 and 7-9 shipped; polarity (G21) shipped as decision **6b** -- decision 6's 2.5-octave bandwidth gate was refuted by its own step-0 survey and replaced by a gate on both measured band edges (low <= 100 Hz AND high >= 8 kHz). G21 tier 3 (guided sub-against-main) was AMENDED by the owner the same day and moved to G17 as a phase question. Record `docs/dsp/2026-08-30-sweep-ir-l4a.md`, plan `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md`, state in `docs/HANDOFF.md`. Original scope: P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
 | **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6): ✅ BUILT 2026-08-29.** Ten tasks, 35 commits, `78ef14f..e14d0a0`. Record `docs/dsp/2026-08-29-display-layer-l5c.md` (with a §5a added mid-build for two interactions it had not decided); plan `docs/plans/2026-08-29-L5c-display-layer-impl-plan.md`. Numbers live in ONE place, `docs/HANDOFF.md`'s baseline block — do not copy them here. It also absorbed, on the owner's ruling, the thing no lane owned: **`app/` had never called L2's dual-FFT engine**, so `measure::Snapshot` carried no transfer function. That bridge is now built, and the stored-trace path this plan recorded as "built but unreached" is wired. **The spectrograph remains OUT of scope** — record §7 fixes three constraints and does not design it; it needs its own record when scheduled, and its decay-view half belongs with the IR/RT60 lane. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
 | **~~cepstrum/wavelet (G23)~~** | **Moved OUT of L5** — it is DSP, not display, and belongs with L2/L3. Putting it beside "draw a trace" confused two layers. | L2 | — |
@@ -191,5 +191,6 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
    as a plausible RT60 out of a measurement containing no room, and the
    relative-polarity ρ thresholds that came from one grid and must be
    re-derived before any of them ships.
-5. Then **L3** + **L6b**; then **L7**, which needed L2 + L4 + L5 — two of those
-   three are now in. **L6a** after meters; **L9** last.
+5. ~~Then **L3**~~ — **BUILT 2026-09-06**, see its row above. **L6b** next;
+   then **L7**, which needed L2 + L4 + L5 — two of those three are now in.
+   **L6a** after meters; **L9** last.
