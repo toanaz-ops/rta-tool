@@ -14,6 +14,7 @@ add_executable(rta_core_tests
     test_dualfft.cpp
     test_transfer_estimator.cpp
     test_transfer_golden.cpp
+    test_mtw_layout.cpp
     test_group_delay.cpp
     test_window.cpp
     test_ringbuffer.cpp
