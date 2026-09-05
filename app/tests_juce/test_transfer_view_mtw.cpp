@@ -12,6 +12,7 @@
 
 #include "rta/dsp/MtwLayout.h"
 #include "view/BodeLayout.h"
+#include "view/MtwReadout.h"
 #include "view/PlotGeometry.h"
 
 #include <cmath>
@@ -101,6 +102,30 @@ int firstLiveTraceY(const juce::Image& image, int x, int yTop, int yBottom) {
     return -1;
 }
 
+/// True if any pixel in `[x-1, x+1] x [geometry.top, geometry.bottom)` reads
+/// as the seam/readout colour (`isStoredTraceish` -- the same predicate the
+/// original single-pane version of this test used, since `mtwSeam` aliases
+/// the same `az::ui::dim` token `storedTrace` does).
+bool seamPixelFound(const juce::Image& image, const PlotGeometry& geometry, double hz) {
+    const int x = static_cast<int>(std::lround(geometry.xForHz(hz)));
+    const int top = static_cast<int>(geometry.top);
+    const int bottom = static_cast<int>(geometry.bottom);
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int y = top; y < bottom; ++y) {
+            if (isStoredTraceish(image.getPixelAt(x + dx, y))) return true;
+        }
+    }
+    return false;
+}
+
+/// The six interior seam frequencies `makeMtwFixture`'s default layout
+/// produces -- shared by the presence and absence seam tests so neither can
+/// silently drift from the other.
+const std::vector<double>& defaultSeamHz() {
+    static const std::vector<double> seams{ 187.5, 375.0, 750.0, 1500.0, 3000.0, 6000.0 };
+    return seams;
+}
+
 }  // namespace
 
 // CATCHES: a magnitude pane that draws the fixed (flat) block regardless of
@@ -179,8 +204,12 @@ TEST_CASE("the per-plot source toggle switches magnitude back to the fixed FFT",
 
 // CATCHES: no seam drawn at all, and a seam drawn at the wrong frequency --
 // each of the six checked columns is read from the SAME mtwBands() this
-// fixture built its block from, not a hand-picked pixel offset.
-TEST_CASE("seam marks are drawn once per band boundary", "[transferview][mtw]") {
+// fixture built its block from, not a hand-picked pixel offset. Extended
+// (finding 3, station-4 fix pass) to the coherence/ribbon pane: record §6's
+// own decision is that coherence is the quantity most affected by the
+// window, so it is the pane that needs the seam marks most, not the one
+// that can do without them.
+TEST_CASE("seam marks are drawn once per band boundary, on every MTW pane", "[transferview][mtw]") {
     const auto snap = snapshotWithBoth(4096, 48000.0);
     const StaticSnapshotSource source(snap);
     TransferView view(source);
@@ -191,22 +220,112 @@ TEST_CASE("seam marks are drawn once per band boundary", "[transferview][mtw]") 
     const FrequencyAxis axis = rta::view::frequencyAxis(PaneRect{ 0, 0, 1100, 760 });
     const PlotGeometry magnitudeGeometry =
         rta::view::paneGeometry(axis, view.panes().magnitude, 18.0, -18.0);
-    const int top = static_cast<int>(magnitudeGeometry.top);
-    const int bottom = static_cast<int>(magnitudeGeometry.bottom);
+    const PlotGeometry phaseGeometry =
+        rta::view::paneGeometry(axis, view.panes().phase, 180.0, -180.0);
+    const PlotGeometry ribbonGeometry =
+        rta::view::paneGeometry(axis, view.panes().ribbon, 1.0, 0.0);
 
-    const std::vector<double> seamHz{ 187.5, 375.0, 750.0, 1500.0, 3000.0, 6000.0 };
-    for (const double hz : seamHz) {
+    for (const double hz : defaultSeamHz()) {
         CAPTURE(hz);
-        const int x = static_cast<int>(std::lround(magnitudeGeometry.xForHz(hz)));
-        bool found = false;
-        for (int dx = -1; dx <= 1 && !found; ++dx) {
-            for (int y = top; y < bottom; ++y) {
-                if (isStoredTraceish(image.getPixelAt(x + dx, y))) {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        CHECK(found);
+        CHECK(seamPixelFound(image, magnitudeGeometry, hz));
+        CHECK(seamPixelFound(image, phaseGeometry, hz));
+        CHECK(seamPixelFound(image, ribbonGeometry, hz));
+    }
+}
+
+// CATCHES the mutation `if (useMtw)` -> `if (hasMtw)` at the magnitude,
+// phase and ribbon seam call sites: that mutation draws every seam
+// regardless of the pane's own resolved source, so this test fails the
+// instant a pane whose source is explicitly Fixed still shows one.
+TEST_CASE("seam marks are absent from every pane once its source is fixed", "[transferview][mtw]") {
+    const auto snap = snapshotWithBoth(4096, 48000.0);
+    const StaticSnapshotSource source(snap);
+    TransferView view(source);
+    view.setSize(1100, 760);
+    view.resized();
+
+    view.setSource(TransferPane::Magnitude, TransferSource::Fixed);
+    view.setSource(TransferPane::Phase, TransferSource::Fixed);
+    view.setSource(TransferPane::Coherence, TransferSource::Fixed);
+    const auto image = renderView(view, 1100, 760);
+
+    const FrequencyAxis axis = rta::view::frequencyAxis(PaneRect{ 0, 0, 1100, 760 });
+    const PlotGeometry magnitudeGeometry =
+        rta::view::paneGeometry(axis, view.panes().magnitude, 18.0, -18.0);
+    const PlotGeometry phaseGeometry =
+        rta::view::paneGeometry(axis, view.panes().phase, 180.0, -180.0);
+    const PlotGeometry ribbonGeometry =
+        rta::view::paneGeometry(axis, view.panes().ribbon, 1.0, 0.0);
+
+    for (const double hz : defaultSeamHz()) {
+        CAPTURE(hz);
+        CHECK_FALSE(seamPixelFound(image, magnitudeGeometry, hz));
+        CHECK_FALSE(seamPixelFound(image, phaseGeometry, hz));
+        CHECK_FALSE(seamPixelFound(image, ribbonGeometry, hz));
+    }
+}
+
+// CATCHES a readout that reads the implementation's own numbers back at
+// itself instead of the closed form record §5 states: every expected string
+// below comes from `integrationSeconds = 16 * hop_k / fs` computed by hand,
+// not from running the code first and pasting what it printed.
+TEST_CASE("the MTW integration strip formats each band from the closed form, not from itself",
+          "[transferview][mtw]") {
+    const auto block = makeMtwFixture();
+    REQUIRE(block.bands.size() == 7);
+
+    const std::vector<juce::String> expectedSeconds{ "5.5 s", "2.7 s", "1.4 s", "0.68 s",
+                                                      "0.34 s", "0.17 s", "0.09 s" };
+    for (std::size_t i = 0; i < block.bands.size(); ++i) {
+        CAPTURE(i);
+        CHECK(rta::view::formatIntegrationSeconds(block.bands[i].integrationSeconds) == expectedSeconds[i]);
+    }
+
+    CHECK(rta::view::formatBandRange(block, 0) == "< 188 Hz");
+    CHECK(rta::view::formatBandRange(block, 1) == "188-375");
+    CHECK(rta::view::formatBandRange(block, 2) == "375-750");
+    CHECK(rta::view::formatBandRange(block, 3) == "750-1500");
+    CHECK(rta::view::formatBandRange(block, 4) == "1500-3000");
+    CHECK(rta::view::formatBandRange(block, 5) == "3000-6000");
+    CHECK(rta::view::formatBandRange(block, 6) == "> 6000");
+
+    CHECK(rta::view::mtwIntegrationStrip(block) ==
+          "< 188 Hz  5.5 s | 188-375  2.7 s | 375-750  1.4 s | 750-1500  0.68 s"
+          " | 1500-3000  0.34 s | 3000-6000  0.17 s | > 6000  0.09 s");
+}
+
+// CATCHES the strip never being drawn at all, and the strip being drawn
+// unconditionally regardless of source (record §5's requirement is that it
+// appears "whenever a pane's source is MTW", not always).
+TEST_CASE("the MTW integration strip is present for MTW sources and absent when every pane is fixed",
+          "[transferview][mtw]") {
+    const auto snap = snapshotWithBoth(4096, 48000.0);
+    const StaticSnapshotSource source(snap);
+    TransferView view(source);
+    view.setSize(1100, 760);
+    view.resized();
+
+    const FrequencyAxis axis = rta::view::frequencyAxis(PaneRect{ 0, 0, 1100, 760 });
+    const PlotGeometry magnitudeGeometry =
+        rta::view::paneGeometry(axis, view.panes().magnitude, 18.0, -18.0);
+    // A box at the strip's own drawn position (drawMtwIntegrationStrip:
+    // geometry.left/top + az::ui::spacing), well clear of the nearest seam
+    // column (187.5 Hz lands far to the right of a 300 px-wide box at 1100
+    // px width) and of the grid's own hairlines (isStoredTraceish rejects
+    // az::ui::border's G=47 -- see test_transfer_view_helpers.h).
+    const juce::Rectangle<int> stripArea(static_cast<int>(magnitudeGeometry.left) + 1,
+                                         static_cast<int>(magnitudeGeometry.top) + 1, 300, 20);
+
+    {
+        const auto image = renderView(view, 1100, 760);
+        CHECK(anyPixelMatches(image, stripArea, isStoredTraceish));
+    }
+
+    view.setSource(TransferPane::Magnitude, TransferSource::Fixed);
+    view.setSource(TransferPane::Phase, TransferSource::Fixed);
+    view.setSource(TransferPane::Coherence, TransferSource::Fixed);
+    {
+        const auto image = renderView(view, 1100, 760);
+        CHECK_FALSE(anyPixelMatches(image, stripArea, isStoredTraceish));
     }
 }

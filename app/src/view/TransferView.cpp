@@ -10,6 +10,7 @@
 #include "view/CoherenceAlpha.h"
 #include "view/MeasureColours.h"
 #include "view/MtwLayer.h"
+#include "view/MtwReadout.h"
 #include "view/PhaseDecimator.h"
 #include "view/PlotAxes.h"
 #include "view/TraceDecimator.h"
@@ -284,6 +285,29 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
         // and stop, never a flat trace.
         drawNoReferenceState(g, panes.magnitude);
         return;
+    }
+
+    // Finding 3 (station-4 fix pass): the coherence pane draws seams too,
+    // once the ribbon's own source resolves to Mtw -- record §6's own
+    // decision is that seams mark where the window changes, and coherence
+    // is the quantity most affected by the window, so it needs the mark
+    // most, not least. Placed after the `hasAny` gate, same as the
+    // magnitude/phase call sites below: `coherenceSource == Mtw` here
+    // implies `hasMtw` by the same fallback logic `effectiveSource` states
+    // in its own comment, so `*snapshot->mtw` is never dereferenced empty.
+    if (coherenceSource == TransferSource::Mtw) {
+        drawMtwSeams(g, *snapshot->mtw, ribbonGeometry, rta::view::mtwSeam);
+    }
+
+    // Finding 1 (station-4 fix pass): record §5 requires the per-band
+    // integration time on screen "because a coherence trace that fills in
+    // from the top over five seconds is otherwise read as a fault" --
+    // visible whenever ANY pane's source resolved to Mtw, not only when
+    // every pane did, since the strip states a fact about the MTW engine's
+    // own layout rather than about which curve happens to be on screen.
+    if (magnitudeSource == TransferSource::Mtw || phaseSource == TransferSource::Mtw ||
+        coherenceSource == TransferSource::Mtw) {
+        drawMtwIntegrationStrip(g, *snapshot->mtw, magnitudeGeometry);
     }
 
     if (library_ != nullptr) storedMagnitude_.draw(g, *library_, magnitudeGeometry);

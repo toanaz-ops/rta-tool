@@ -121,4 +121,11 @@ inline const juce::Colour ghost = az::ui::dim;
 /// line".
 inline const juce::Colour mtwSeam = az::ui::dim;
 
+/// The per-band integration-seconds strip (record §5: "the view must show
+/// the per-band seconds"). The same token `mtwSeam` and `axisText` already
+/// alias -- it is furniture stating a fact about the MTW engine's own
+/// layout, not data -- kept as its own name so a grep at this call site
+/// reads "why", the same discipline every other alias in this file follows.
+inline const juce::Colour mtwReadout = az::ui::dim;
+
 }  // namespace rta::view

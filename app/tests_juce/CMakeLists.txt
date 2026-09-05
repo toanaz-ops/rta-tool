@@ -74,6 +74,9 @@ add_executable(rtatool_view_tests
     #   view/MtwLayer.h/.cpp -> the MTW-specific per-band alpha and seam
     #     drawing, JUCE-using so it lives here rather than in ColumnMap.h.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/MtwLayer.cpp
+    # view/MtwReadout.h/.cpp -> the per-band integration-seconds strip
+    # (record §5, station-4 fix pass finding 1), same JUCE-using reason.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/MtwReadout.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
