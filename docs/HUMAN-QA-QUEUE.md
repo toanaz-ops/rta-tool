@@ -10,20 +10,38 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Chặn việc ngay bây giờ
 
-- [ ] **`[!]` Skill nhắn tin cho chủ nhân không tồn tại trên máy này.**
-  Chủ nhân bảo dùng "skill Ask Seph (suy ra từ skill ask-LUNA)" để nhắn Telegram.
-  Kiểm: `~/.claude/skills/` không có mục nào tên `ask-seph`, `ask-luna`, hay
-  chứa `telegram`; `SearchSkills` trả rỗng. Agent **không tự dựng** một đường
-  gửi ra dịch vụ ngoài.
-  **Cần:** tên/đường dẫn skill đúng, hoặc xác nhận cứ dùng file này thay thế.
+- [x] **Skill nhắn tin cho chủ nhân → DÙNG CHÍNH FILE NÀY, quyết theo uỷ quyền
+  2026-08-30.** Kiểm lại: `~/.claude/skills/` không có `ask-seph`, `ask-luna`
+  hay mục nào chứa `telegram`.
+
+  Quyết định: **không dựng đường gửi ra dịch vụ ngoài**, và file này là kênh.
+  Lý do không phải "agent không làm được" mà là **agent không nên làm**: một
+  đường gửi ra ngoài do agent tự dựng là một kênh chủ nhân không cấu hình, không
+  thấy, và không tắt được — cùng loại ranh giới với push lên `origin` ở trên, và
+  ở đó ranh giới đã do con người bước qua chứ không do agent suy ra.
+
+  File này lại có tính chất mà một tin nhắn không có: **nó nằm trong repo, đi
+  cùng lịch sử, và phiên sau đọc được**. Ba tuần nữa không ai tìm lại được một
+  tin Telegram, nhưng `git log` thì còn. Nếu chủ nhân muốn kênh đẩy, đưa tên
+  skill đúng và mục này mở lại.
 
 ## Mua tiêu chuẩn — hai lane đứng yên vì chúng
 
-- [ ] **ISO 2969:2015 / SMPTE ST 202:2010** — bảng dung sai X-curve. Chặn **L5b**.
-- [ ] **IEC 60268-16** — STI. Chặn **L4d**.
-- [ ] **ISO 18233:2006** — tiêu chuẩn đúng cho quy tắc độ dài capture. Record chỉ
-  *nêu tên* và không trích một dòng nào vì chưa ai mua. **Đừng trích khi chưa có
-  bản thật** — lane này đã trả học phí một lần với AES-2id (bẫy #16).
+*Ba mục dưới đây cần TIỀN, nên agent không quyết được. Nhưng agent ĐÃ quyết
+phần quyết được: cái nào thật sự chặn việc, và cái nào không.*
+
+- [ ] **ISO 2969:2015 / SMPTE ST 202:2010** — bảng dung sai X-curve. **THẬT SỰ
+  CHẶN L5b**, và khác hẳn ISO 3382-1: hình dạng đường cong là công khai, **bảng
+  DUNG SAI thì không**. Một dung sai đoán là một tuyên bố Class sai — không có
+  đường vòng bằng nguồn mở, và cố đi vòng chính là bẫy #16.
+- [ ] **IEC 60268-16** — STI. **THẬT SỰ CHẶN L4d**, cùng lý do: STI là một thủ
+  tục tính có trọng số và bảng cụ thể, không phải một định nghĩa suy ra được.
+- [x] **ISO 18233:2006 → KHÔNG chặn gì, quyết 2026-08-30.** Nó là chuẩn đúng cho
+  quy tắc độ dài capture, nhưng L4a/L4b **đã dẫn xuất quy tắc đó bằng đo** (chặn
+  hai phía: ≥1.5×RT60 từ dưới, truncation gỡ chặn trên). Chuẩn sẽ **xác nhận
+  hoặc sửa** một con số đã có, không mở khoá một việc đang đứng. Luật giữ
+  nguyên: **nêu tên được, trích thì không, khi chưa cầm bản thật.** Mua khi
+  tiện, đừng xếp nó cạnh hai mục trên như thể cùng mức khẩn.
 
 ## Chờ một câu của chủ nhân, không phải một quyết định khó
 
@@ -38,53 +56,103 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Từ lane L4b (2026-08-30, phiên EP06)
 
-- [x] **Merge L4b vào `main` — ĐÃ TRẢ LỜI VÀ ĐÃ CHẠY, 2026-08-30 tối.** Chủ
-  nhân gõ "merge" trong phiên REVIEW (EP06 THINKER, giữ checkout `main`); merge
-  `--no-ff` tại `e77e0e1`, không xung đột. Đo độc lập sau merge trên build dir
-  của phiên review: `359/359` (OFF) và `399/399` (ON) — số ở HANDOFF mục đầu.
-  Branch giữ nguyên, chưa dọn.
-- [ ] **EDT — hai phiên đã bàn xong và ĐỀ XUẤT; chờ chủ nhân chốt.**
-  Chỉ thị 2026-08-30 là "bàn với thinker", và cuộc bàn đã kết thúc.
+- [x] **Merge L4b vào `main` → ĐÃ MERGE**, `e77e0e1`, 2026-08-30, chạy ở phiên
+  REVIEW sau khi chủ nhân nói "merge" trong chính phiên đó. Đo độc lập sau
+  merge trên build dir phiên review chưa từng bị phiên build chạm:
+  **359/359** (OFF) và **399/399** (ON — lần đo đầu tiên của cấu hình này với
+  L4b; 385→399 khớp đúng chênh lệch 14 case của 345→359). Sau đó đã push:
+  `29b464e..7122070`.
 
-  **Đề xuất chung của hai phiên:** ship EDT **kèm số đo độ tin cậy của chính
-  nó**, và **KHÔNG cổng**. Phương án (b) "từ chối ở ⅓-octave thấp" bị bác —
-  băng thấp là triệu chứng, `B·T_EDT` thấp mới là nguyên nhân.
+  **Còn một đợt sau đó CHƯA merge:** công việc EDT ensemble (`decayTimesAcross`)
+  và các quyết định uỷ quyền, trên `claude_desk/handoff-continuation-9045fc`.
+  Đếm bằng `git rev-list --count main..HEAD`, đừng chép số.
+- [x] **Tên sản phẩm chính thức → `AZ Soundtech RTA`.** Chủ nhân chốt
+  2026-08-30, phiên EP06 DOER, nguyên văn: *"Tên sản phẩm chính thức =
+  AZ Soundtech RTA"*. Target CMake vẫn là `rtatool` — đó là định danh
+  build, không phải tên sản phẩm, và đổi nó là một lượt refactor riêng
+  không ai yêu cầu.
+- [x] **Push lên `origin` → ĐÃ PUSH 2026-08-30**, `29b464e..7122070`, chạy ở
+  phiên REVIEW sau khi chủ nhân ra lệnh **trong chính phiên đó**. Đo sau khi
+  push: `git rev-list --count origin/main..main` → **0**.
 
-  **Vì sao không cổng:** ở `B·T_EDT = 74` (băng rộng, phòng bình thường), IQR
-  vẫn **24%** trên 400 realisation. Cổng chữa bias, **không chữa variance** —
-  nó sẽ từ chối đúng chỗ EDT lệch mà vẫn trao số vô dụng ở chỗ nó cho qua.
-  Và ngưỡng cũng chưa dẫn xuất được: bias +20.0 ± 3.3% tại B·T_EDT 6.1 và
-  +9.4 ± 2.8% tại 9.3, nên muốn ≤5% cần đâu đó giữa 9.3 và 74 — **dải đó chưa
-  ai đo**.
+  Hai ghi chú quy trình đáng giữ, vì cả hai là luật của phiên này được đem ra
+  dùng thật:
+  1. Chủ nhân gõ **"merge master"** — ngắn hơn câu hỏi và không khớp hẳn từ
+     vựng. Phiên review **hỏi lại trước khi chạy**, đúng luật rút ra từ vụ `b:`
+     sáng cùng ngày. Luật ra đời từ một lần ghi sai, và lần dùng đầu tiên của
+     nó là để tránh một hành động **không đảo được**.
+  2. Phiên DOER trước đó đã **cố ý loại push khỏi phạm vi uỷ quyền "agent tự
+     quyết các câu hỏi còn lại"**, vì push rời khỏi máy và không đảo sạch được.
+     Việc chủ nhân sau đó tự ra lệnh push **không làm cho việc loại trừ đó sai**
+     — nó cho thấy đúng con đường: ranh giới đó do con người bước qua, không
+     phải do agent tự suy ra là mình được phép.
 
-  Toàn bộ số liệu, và bốn vòng hai phiên tiêu vào một bất đồng hoá ra là nhiễu
-  lấy mẫu, ở record **§4f**.
+## Uỷ quyền: agent tự quyết sau khi tham khảo nguồn ngoài (2026-08-30)
 
-## Quyết định sản phẩm
+*Chủ nhân: "Các câu hỏi còn lại, agent tham khảo các sản phẩm khác để có thêm 1
+nguồn thông tin rồi cho phép tự quyết." Bốn mục dưới đây quyết theo uỷ quyền đó.
+Mỗi mục ghi **nguồn ngoài đã tra**, kể cả khi nguồn đó nói ngược lại — một
+khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo sát.*
 
-- [ ] **Tên sản phẩm chính thức.**
-- [ ] **Push lên `origin`?** `main` cục bộ đang đi trước `origin/main` — đo bằng
-  `git rev-list --count origin/main..main`, đừng cộng nhẩm. Chủ nhân đã chủ động
-  chọn chưa push; mục này chỉ để hỏi lại khi thấy hợp lý.
-- [ ] **Ba câu giao diện treo từ L5c:** cap 3 pane; dải màu spectrograph; unwrap
-  có hiện trace pha đã lưu không.
+- [x] **Hai hằng số gate polarity `100 Hz` / `8 kHz` → GIỮ NGUYÊN, nhãn
+  *observed*.** Chúng đo được 0 câu sai qua `butter`/`cheby1`/`ellip`/`bessel`
+  bậc 2–16; giá đã biết và đã ghi (`bessel` bậc 6/8 bị từ chối oan, nhất quán,
+  có số trong refusal reason).
 
-## Từ lane L4a, sau khi step 0 chạy (2026-08-30)
+  **Nguồn ngoài, và nó chỉ hướng NGƯỢC LẠI:** kỹ thuật *band-limited polarity
+  detection* (US 2006/0062399) làm điều ngược hẳn — **low-pass bậc hai tại
+  400 Hz** để ép đáp ứng vào vùng cùng pha với đấu dây, thay vì đòi một băng
+  rộng. Ghi lại vì nó thật, và **không đổi quyết định**: nó giải một bài khác
+  (ép tín hiệu vào vùng dễ đọc) trong khi cổng của ta trả lời *"phép đo này có
+  đủ tư cách kết luận không"*. Nếu lane sau muốn thử hướng low-pass, đây là
+  con trỏ — nhưng nó là một tính năng khác, không phải một hằng số khác.
 
-- [ ] **Hai hằng số gate `100 Hz` / `8 kHz` — chủ nhân có muốn duyệt con số
-  không, hay để agent chốt?** Chúng là **quan sát, chưa dẫn xuất**, đọc từ lưới
-  hợp nhất ba nguồn. Chi phí đã đo: `bessel` order 6/8 design đúng 100 Hz đo ra
-  100.6 / 110.6 Hz nên bị **từ chối oan** — nhất quán (0.006 oct repeat spread),
-  có số kèm trong refusal reason, không nhấp nháy. Không chặn: nếu không có ý
-  kiến, agent giữ (100, 8000) và ghi rõ là observed.
-- [ ] **Chuỗi chữ giao diện cho `Unknown`** (thuộc L4c, hỏi trước để khỏi làm
-  lại): `BandTooLow` → trỏ sang so sánh tương đối; `BandTooHigh` → bảo đo
-  full-range. Chủ nhân có muốn duyệt câu chữ, hay để L4c đề xuất rồi duyệt sau?
-- [ ] **Có công bố giới hạn multi-way ra tài liệu người dùng không?** Một thùng
-  2-way có driver đảo cực theo thiết kế là **ill-posed cho mọi absolute polarity
-  checker**, kể cả Smaart/OSM/REW — họ ship và không nói. Nói ra là trung thực
-  hơn đối thủ; cũng là tự nêu một giới hạn đối thủ giấu. **Quyết định marketing,
-  không phải kỹ thuật.**
+- [x] **Chuỗi chữ cho `Unknown` → chốt câu chữ, kèm hướng.** Nguyên tắc: mỗi
+  refusal phải **gửi người vận hành đi đâu đó**, không chỉ nói "không biết".
+  - `BandTooLow` (đo được low edge > 100 Hz — một horn): *"Băng đo không xuống
+    đủ thấp để xác định cực tính tuyệt đối (low edge X Hz). So sánh tương đối
+    với một phép đo khác của chính hệ này."*
+  - `BandTooHigh` (high edge < 8 kHz — một sub): *"Băng đo không lên đủ cao
+    (high edge X Hz). Đo lại full-range, hoặc so tương đối trước/sau thay đổi."*
+  - `SweepBandInsufficient`: câu chữ phải **đổ lỗi cho sweep, không cho loa** —
+    *"Sweep này chỉ đáng tin từ X đến Y Hz, không đủ để kết luận."*
+  Mỗi chuỗi **phải mang con số đo được**; một refusal không có số là một refusal
+  người vận hành không kiểm được. L4c thi công, không thiết kế lại.
+
+- [x] **Cap 3 pane → GIỮ.** Record L5c §6 đã chốt 1–3 pane dọc và **tự xếp nó
+  vào loại "taste"** (§423), tức đã biết nó là lựa chọn chứ không phải suy ra.
+  Nguồn ngoài: Smaart cho đổi loại đồ thị trong mỗi pane qua dropdown nhưng
+  không tài liệu nào nêu một cap khuyến nghị; SysTune cố định **hai** pane —
+  và §299 đã ghi rằng hai pane không đủ chỗ cho RTA + transfer + một cái nữa.
+  **Không có bằng chứng ngoài để đổi, và có lý do nội tại để giữ.** Đổi cap là
+  đổi cả model workspace đã persist xuống đĩa; không làm vì không có lý do.
+
+- [x] **Unwrap có hiện trace pha đã lưu không → CÓ, và unwrap LẠI tại chỗ vẽ,
+  không tin unwrap đã lưu.** L5c §5 đã unwrap dọc trục bin lúc dựng cache rồi
+  wrap lại lúc vẽ — nên một stored trace **đã mang đủ thông tin** để unwrap lại
+  dưới đúng cài đặt hiện hành.
+
+  Lý do không tái dùng unwrap cũ: unwrap là **thao tác hiển thị** (§4), và một
+  trace lưu hôm qua đã unwrap dưới coherence gate và độ phân giải của hôm qua.
+  Vẽ nó cạnh một trace live unwrap hôm nay là đặt hai quyết định khác nhau lên
+  một trục và mời người vận hành đọc hiệu số của chúng như hiệu số của hệ
+  thống. Unwrap lại cả hai bằng cùng một luật thì hiệu số mới là của hệ thống.
+
+- [x] **Công bố giới hạn multi-way ra tài liệu người dùng → CÓ, CÔNG BỐ.**
+  Một thùng 2-way có driver đảo cực theo thiết kế là ill-posed cho **mọi**
+  absolute polarity checker.
+
+  **Nguồn ngoài xác nhận nó là giới hạn thật, không phải khiếm khuyết của ta:**
+  văn liệu và diễn đàn kỹ thuật ghi *"cực tính đôi khi rất mơ hồ, đặc biệt khi
+  dùng loa multi-way"*, rằng cực tính phụ thuộc độ dốc crossover, và rằng
+  impulse response của một loa một-đường đọc rõ dấu trong khi cấu hình nhiều
+  driver thì không.
+
+  **Quyết định công bố, và lý do là một lý do sản phẩm chứ không phải kỹ
+  thuật:** đối thủ ship tính năng này và không nói ra giới hạn. Nói ra biến một
+  giới hạn chung của ngành thành một điểm phân biệt — công cụ này **từ chối
+  thay vì đoán**, và tài liệu giải thích khi nào nó từ chối. Người vận hành mất
+  niềm tin vì một con số sai tự tin, không vì một lời từ chối có lý do.
 
 ---
 
@@ -103,6 +171,25 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   thêm citation clause vào chỗ đã có số; quyết định không mua thì không phải gỡ
   gì cả. Một lane viết "theo ISO 3382-1" trước khi cầm chuẩn thì hướng ngược lại
   mới là hướng đắt — đó là bẫy #16 (AES-2id) ở dạng khác.
+
+
+## Đã trả lời — phiên EP06 (2026-08-30)
+
+- [x] **EDT ship thế nào → theo kết quả phân tích của hai phiên.** Chủ nhân
+  chốt 2026-08-30, nguyên văn: *"EDT ship theo két quả agent phân tích"*.
+  Nghĩa là: **không cổng**, và độ tin cậy đến từ **spread giữa nhiều capture**,
+  không phải từ một điểm số tính trên một lần đọc.
+
+  Cơ sở đo được, ghi ở record §4f và trong header `DecayEnsemble.h`: hai ứng
+  viên điểm-số-một-lần-đọc **đều bị bác bằng đo** — rms residual của chính phép
+  fit (REW ship nó dưới tên *model fit error*) và curvature `100·|T30/T20−1|`
+  cho **|tương quan| 0.02–0.16** với sai số thật trên 300 realisation. Một điểm
+  số không tương quan với sai số thì **tệ hơn không có**: nó trấn an thay vì
+  báo tin. Thứ có tác dụng là thêm capture — IQR giảm theo `1/√N`, đo được
+  118.2 / 86.2 / 62.8 / 41.2 / 27.9 % ở N = 1/2/4/8/16.
+
+  Đã thi công: `rta::ir::decayTimesAcross()` trả median + IQR + số capture, và
+  **từ chối gọi hai capture là một spread**.
 
 ## Đã trả lời
 

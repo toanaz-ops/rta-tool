@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "rta/ir/Decay.h"
+#include "rta/ir/DecayEnsemble.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -375,4 +376,77 @@ TEST_CASE("Energy the filter moved before the arrival counts as early",
     REQUIRE(c.d50.has());
     CHECK_THAT(c.d50.value, WithinRel((preOrigin + early) / total, 1e-6));
     CHECK(c.d50.value > early / total);   // i.e. NOT the excluding convention
+}
+
+TEST_CASE("Several captures report what they agree on and how much they do not",
+          "[ir][decay]") {
+    // The shipped answer to EDT's variance. A per-reading confidence score was
+    // measured and rejected -- neither the fit residual nor the curvature
+    // correlates with the actual error (|corr| 0.02 to 0.16 over 300
+    // realisations) -- so the only honest figure is the spread across captures
+    // actually taken. Averaging shrinks it as 1/sqrt(N), measured.
+    std::vector<rta::ir::EnergyDecayCurve> curves;
+    for (unsigned seed : {11u, 22u, 33u, 44u, 55u}) {
+        const auto h = makeDecay(0.6, 2.4, 55.0, seed);
+        const auto band = rta::ir::bandFilterZeroPhase(h, 566.0, 1132.0, kFs);
+        auto curve = rta::ir::energyDecayCurve(band, kLeadIn, kFs, 566.0);
+        REQUIRE(curve.has());
+        curves.push_back(std::move(curve));
+    }
+
+    const auto across = rta::ir::decayTimesAcross(curves);
+    REQUIRE(across.t30.value.has());
+    CHECK(across.t30.captures == 5);
+    CHECK(across.t30.spreadIsMeaningful());
+    CHECK_THAT(across.t30.value.seconds, WithinRel(0.6, 0.10));
+
+    // A spread of exactly zero across five independent captures would mean the
+    // caller passed the same capture five times -- the failure this type exists
+    // to make visible rather than to hide.
+    CHECK(across.t30.spreadPercent > 0.0);
+}
+
+TEST_CASE("Two captures report a value but refuse to call it a spread",
+          "[ir][decay]") {
+    // With two points an inter-quartile range is the gap between them. Reporting
+    // that as a spread would read as precision while carrying none, which is the
+    // same false reassurance the rejected per-reading score would have given.
+    std::vector<rta::ir::EnergyDecayCurve> curves;
+    for (unsigned seed : {11u, 22u}) {
+        const auto h = makeDecay(0.6, 2.4, 55.0, seed);
+        const auto band = rta::ir::bandFilterZeroPhase(h, 566.0, 1132.0, kFs);
+        curves.push_back(rta::ir::energyDecayCurve(band, kLeadIn, kFs, 566.0));
+    }
+
+    const auto across = rta::ir::decayTimesAcross(curves);
+    REQUIRE(across.t30.value.has());
+    CHECK(across.t30.captures == 2);
+    CHECK_FALSE(across.t30.spreadIsMeaningful());
+    CHECK(across.t30.spreadPercent == 0.0);
+}
+
+TEST_CASE("When every capture refuses, the reason survives the aggregation",
+          "[ir][decay]") {
+    // A caller shown "no decay found" when the real answer was "this band is
+    // too narrow for this room" goes looking in the wrong place. The first
+    // reason is carried through rather than replaced by a generic one.
+    //
+    // The curves are constructed rather than measured, deliberately. An earlier
+    // version of this test built them from a 40 Hz third-octave against a 0.4 s
+    // room and REQUIREd each to refuse -- and it went red, because that cell
+    // sits at a measured B*T of about 5.3 to 5.7 against a threshold of 6.0 and
+    // some realisations land above. That margin of 0.29 is documented in the
+    // header as thin; a test of the AGGREGATION should not also be a bet on
+    // which side of it a seed falls.
+    rta::ir::EnergyDecayCurve refused;
+    refused.sampleRate = kFs;
+    refused.refusal = rta::ir::DecayRefusal::BandwidthTimeTooSmall;
+    const std::vector<rta::ir::EnergyDecayCurve> curves(3, refused);
+
+    const auto across = rta::ir::decayTimesAcross(curves);
+    CHECK_FALSE(across.t30.value.has());
+    CHECK(across.t30.captures == 0);
+    CHECK(across.t30.value.refusal == rta::ir::DecayRefusal::BandwidthTimeTooSmall);
+    CHECK_FALSE(across.edt.value.has());
+    CHECK(across.edt.value.refusal == rta::ir::DecayRefusal::BandwidthTimeTooSmall);
 }

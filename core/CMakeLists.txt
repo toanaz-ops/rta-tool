@@ -30,6 +30,7 @@ add_library(rta_core STATIC
     src/gen/Synthetic.cpp
     src/ir/Deconvolver.cpp
     src/ir/Decay.cpp
+    src/ir/DecayEnsemble.cpp
     src/ir/DecayLundeby.cpp
     src/ir/IrSpectrum.cpp
     src/ir/Polarity.cpp
