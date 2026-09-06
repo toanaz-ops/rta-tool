@@ -43,6 +43,25 @@ rta::dsp::DualFftEngine::Config toDualConfig(const Analyser::Config& config) {
     return dualConfig;
 }
 
+rta::dsp::MtwConfig toMtwConfig(const Analyser::Config& config) {
+    rta::dsp::MtwConfig mtwConfig;
+    mtwConfig.topFftSize = config.mtwTopFftSize;
+    mtwConfig.octaveCount = config.mtwOctaveCount;
+    mtwConfig.sampleRate = config.sampleRate;
+    mtwConfig.window = config.window;
+    mtwConfig.averaging = config.mtwAveraging;
+    mtwConfig.fifoDepth = config.mtwFifoDepth;
+    mtwConfig.timeConstantFrames = config.mtwTimeConstantFrames;
+    // Every band runs at full rate (record §2), so the same integer sample
+    // count compensates the delay in every band -- see MtwEngine.cpp's own
+    // bandConfig() for why there is no fractional path to invent.
+    mtwConfig.referenceDelaySamples = config.referenceDelaySamples;
+    // minimumEffectiveAverages left at MtwConfig's own default (8.0, same as
+    // DualFftEngine's) -- Analyser::Config exposes no override for the fixed
+    // engine's gate either.
+    return mtwConfig;
+}
+
 /// Fills `out` from one role's engine + the shared band weights, in the
 /// app's own units (hertz, dBFS) -- the conversion `RtaView` and the tests
 /// both read against, defined once in Levels.h.
@@ -82,7 +101,11 @@ Analyser::Analyser(const Config& config)
     // DualFftEngine has no default constructor, so it must be built here from
     // Config rather than assigned later -- see the Config field comments for
     // why an RTA-only session still pays for these buffers.
-    , dual_(toDualConfig(config)) {}
+    , dual_(toDualConfig(config))
+    // Same reasoning as dual_ -- MtwEngine has no default constructor either,
+    // and is built unconditionally regardless of mtwEnabled (Analyser.h's own
+    // comment on mtw_).
+    , mtw_(toMtwConfig(config)) {}
     // latest_ default-constructs to an empty atomic<shared_ptr>, i.e. latest()
     // returns nullptr until the first publish().
 
@@ -116,6 +139,14 @@ void Analyser::pushPair(std::span<const float> reference, std::span<const float>
 
     dual_.process(reference, measurement);
     dualEngaged_ = true;
+
+    // A second engine fed the SAME pair, not a decimated or resampled one
+    // (record §2's "no decimation" decision) -- mtwEnabled gates whether this
+    // runs at all, so a caller who wants no MTW cost pays none per hop.
+    if (config_.mtwEnabled) {
+        mtw_.process(reference, measurement);
+        mtwEngaged_ = true;
+    }
 }
 
 void Analyser::reset() noexcept {
@@ -124,6 +155,8 @@ void Analyser::reset() noexcept {
     referencePushed_ = false;
     dual_.reset();
     dualEngaged_ = false;
+    mtw_.reset();
+    mtwEngaged_ = false;
 }
 
 SnapshotPtr Analyser::publish(std::uint64_t droppedSamples) {
@@ -184,6 +217,55 @@ SnapshotPtr Analyser::publish(std::uint64_t droppedSamples) {
         block.effectiveAverages = tf.effectiveAverages;
         block.appliedDelaySamples = config_.referenceDelaySamples;
         snapshot->transfer = std::move(block);
+    }
+
+    if (mtwEngaged_) {
+        // The ONE place an MtwResult is stitched from bands, mirroring the
+        // fixed engine's own makeSnapshot() call three lines above -- and the
+        // one place a flat per-point coherence array is written from it
+        // (record §5's guard note: core's MtwResult carries no coherence
+        // member of its own precisely so this copy has to happen here,
+        // outside check_coherence_gate.cmake's reach, after the gate already
+        // ran inside makeSnapshot()).
+        const auto mtwResult = rta::dsp::makeMtwResult(mtw_, config_.estimator);
+        MtwBlock block;
+        block.frequencyHz = mtwResult.frequencyHz;
+        block.magnitudeDb = mtwResult.magnitudeDb;
+        block.phaseDeg.resize(mtwResult.phaseRadians.size());
+        for (std::size_t i = 0; i < mtwResult.phaseRadians.size(); ++i) {
+            block.phaseDeg[i] =
+                mtwResult.phaseRadians[i] * static_cast<float>(180.0 / std::numbers::pi);
+        }
+        // 0.0f, not left uninitialised, for indices whose owning band has not
+        // yet passed its own gate -- MtwBandDescriptor::coherenceAvailable is
+        // what a reader must check before trusting an entry here, never the
+        // value itself.
+        block.coherence.assign(mtwResult.frequencyHz.size(), 0.0f);
+        block.bands.reserve(mtwResult.bands.size());
+        for (std::size_t b = 0; b < mtwResult.bands.size(); ++b) {
+            const auto& band = mtwResult.bands[b];
+            const auto& bandSnapshot = mtwResult.bandSnapshots[b];
+
+            MtwBandDescriptor descriptor;
+            descriptor.firstIndex = band.firstIndex;
+            descriptor.pointCount = band.lastBin - band.firstBin + 1;
+            descriptor.fftSize = band.fftSize;
+            descriptor.windowSeconds = static_cast<float>(band.windowSeconds);
+            descriptor.integrationSeconds = static_cast<float>(band.integrationSeconds);
+            descriptor.effectiveAverages = bandSnapshot.effectiveAverages;
+            descriptor.seamHz = static_cast<float>(band.lowerEdgeHz);
+            descriptor.coherenceAvailable = bandSnapshot.coherence.has_value();
+
+            if (descriptor.coherenceAvailable) {
+                for (std::size_t i = 0; i < descriptor.pointCount; ++i) {
+                    block.coherence[descriptor.firstIndex + i] =
+                        (*bandSnapshot.coherence)[band.firstBin + i];
+                }
+            }
+            block.bands.push_back(descriptor);
+        }
+        block.appliedDelaySamples = config_.referenceDelaySamples;
+        snapshot->mtw = std::move(block);
     }
 
     SnapshotPtr result(snapshot);

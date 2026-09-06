@@ -162,7 +162,7 @@ interface — that exercises the whole chain on real hardware.
 | 0 | repo, CMake, CI on three OSes, `rta_core` skeleton, test harness, licence, docs |
 | 1 | RTA + SPL + generator (this spec) |
 | 2 | dual-FFT: cross-spectrum, `H = Sxy/Sxx`, coherence, delay finder, phase unwrap, group delay, FIFO ring averaging, environment input (temperature -> speed of sound, delay-drift warning) |
-| 3 | multi-time-window engine (decimation cascade, per-band FFT sizes, band stitching), running CONCURRENTLY with the fixed-FFT engine on one measurement |
+| 3 | multi-time-window engine (decimation cascade, per-band FFT sizes, band stitching), running CONCURRENTLY with the fixed-FFT engine on one measurement (built 2026-09-06 without decimation; see record) |
 | 4 | swept-sine measurement mode (short log sweep -> complex FR + IR in one shot) and impulse response analysis: Farina deconvolution, ETC, Schroeder integration with Lundeby truncation, EDT/T20/T30, C50/C80/D50, STI/STIPA, THD readout, polarity checker, offline dual-FFT vs reference WAV, minimum/excess-phase split, drag-adjustable IR gating |
 | 5 | spectrograph, trace library, target curves (incl. cinema X-curve presets), Bode paired layout, multi-plot workspaces, cepstrum and wavelet views, trace maths, session persistence |
 | 6 | full multichannel routing, presets, remote API, SPL logging/alarms/PDF reports/web viewer, noise dose (IEC 61252), spatial multi-mic averaging with coherence weighting, measurement sequencing with auto-discard, i18n (VI/EN), installers |

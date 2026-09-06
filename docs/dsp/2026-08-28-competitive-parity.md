@@ -19,7 +19,7 @@ API (P6).
 | # | Gap | Source | Lands in |
 |---|---|---|---|
 | G1 | FIFO averaging (2..16 ring) alongside Welch/exponential | Smaart RT | **P2** (small, same engine surface) |
-| G2 | MTW and fixed-FFT engines running CONCURRENTLY on one TF | Smaart v9 | **P3** (scope amendment: the MTW engine sits beside, not instead of, the fixed engine — the P2 interface already anticipated swappable engines; now it must allow two at once) |
+| G2 | MTW and fixed-FFT engines running CONCURRENTLY on one TF | Smaart v9 | **P3** (scope amendment: the MTW engine sits beside, not instead of, the fixed engine — the P2 interface already anticipated swappable engines; now it must allow two at once); landed in L3, 2026-09-06 |
 | G3 | THD readout on the RTA | Smaart Suite | **P4b** (needs the sweep/stepped-sine machinery; grouped with distortion) |
 | G4 | STI / STIPA speech intelligibility from IR | Smaart Suite | **P4** (extends the IR-analysis list; IEC 60268-16 is paywalled — same acquisition problem as the Class-1 table, tracked in the same open-items list) |
 | G5 | Cinema X-curve named target presets | Smaart | **P5** (data, not code) |

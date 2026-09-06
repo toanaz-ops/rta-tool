@@ -57,6 +57,56 @@ struct TransferBlock {
     int appliedDelaySamples = 0;
 };
 
+/// One band of the multi-time-window engine's own layout, in the app's own
+/// units. Mirrors `rta::dsp::MtwBand` (core/include/rta/dsp/MtwLayout.h) but
+/// carries only what a view needs to draw a seam and a per-band readout --
+/// never the FFT internals (`hopSize`, `firstBin`, `lastBin`) a drawing layer
+/// has no use for.
+struct MtwBandDescriptor {
+    std::size_t firstIndex = 0;
+    std::size_t pointCount = 0;
+    std::size_t fftSize = 0;
+    /// fftSize / fs -- the window's own length.
+    float windowSeconds = 0.0f;
+    /// fifoDepth * hopSize / fs. NOT windowSeconds, and NOT the same in every
+    /// band: record §5 buys uniform effectiveAverages with non-uniform
+    /// seconds, 85 ms at the top and 5.461 s below 187.5 Hz, and the view
+    /// must print which -- a coherence trace that fills in from the top over
+    /// five seconds is read as a fault unless the number is on screen.
+    float integrationSeconds = 0.0f;
+    /// 8.5866271 in EVERY band once filled (record §5, conflict C3): uniform
+    /// Neff bought with non-uniform integrationSeconds above.
+    double effectiveAverages = 0.0;
+    /// The lower edge of this band's owned octave, and therefore the seam
+    /// the view draws. 0 for the bottom band, which has no lower neighbour.
+    float seamHz = 0.0f;
+    /// False when this band has not passed its own gate. Absence of
+    /// coherence is PER BAND here, not per block: the bottom band can still
+    /// be filling while the top has been measuring for seconds (record §5,
+    /// conflict C3). A single std::optional on the block would force the
+    /// whole curve to read coherence-less because of the slowest band.
+    bool coherenceAvailable = false;
+};
+
+/// The multi-time-window transfer function, stitched into one curve with an
+/// EXPLICIT frequency vector -- unlike `TransferBlock`, whose axis is
+/// `i * sampleRate/fftSize` and needs nothing else. Record §6
+/// (docs/dsp/2026-09-05-mtw-l3.md): `Trace` derives its own axis from
+/// `fftSize` on purpose, so this block is LIVE-ONLY until an L5 amendment
+/// gives storage a frequency vector of its own.
+struct MtwBlock {
+    std::vector<double> frequencyHz;   ///< strictly increasing; [0] is DC (0 Hz)
+    std::vector<float> magnitudeDb;
+    std::vector<float> phaseDeg;       ///< the same radians->degrees crossing TransferBlock uses
+    /// Meaningful only where the OWNING band's own descriptor says so
+    /// (`bands[b].coherenceAvailable`) -- record §5's per-band fill time, not
+    /// a per-block gate. An index whose band has not yet passed the gate
+    /// holds 0.0f here and must not be read as a measured zero.
+    std::vector<float> coherence;
+    std::vector<MtwBandDescriptor> bands;  ///< ascending in frequency
+    int appliedDelaySamples = 0;
+};
+
 /// One immutable measurement, published by the analysis thread and read by
 /// the message thread through an atomic pointer swap (decision record: "one
 /// struct, published by atomic pointer swap"; trap T-5).
@@ -86,6 +136,12 @@ struct Snapshot {
     /// Absent when no reference was fed. A single-channel capture has no
     /// transfer function; it does not have a flat one.
     std::optional<TransferBlock> transfer;
+
+    /// The multi-time-window transfer function, absent under the exact same
+    /// condition as `transfer` (no reference fed / MTW disabled) -- see
+    /// `MtwBlock`'s own comment for why it carries its own frequency vector
+    /// instead of reusing `fftSize`.
+    std::optional<MtwBlock> mtw;
 
     bool hasReference = false;
     std::vector<BandReading> referenceBands;

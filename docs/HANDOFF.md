@@ -5,6 +5,88 @@
 
 ---
 
+# 2026-09-06 — **L3 (MTW) ĐÃ XÂY, CHƯA MERGE** — nhánh `claude_desk/fable-orchestration-planning-bebcb3`
+
+**Đọc mục này trước tiên.** Lane L3 đi trọn năm trạm trong một phiên
+orchestrator (Fable). Record `docs/dsp/2026-09-05-mtw-l3.md`, plan
+`docs/plans/2026-09-05-L3-mtw-impl-plan.md`, report `docs/reports/005-mtw-engine.md`.
+Đọc record TRƯỚC plan; trong record đọc §5 **bản đã đảo** (frames-uniform),
+không phải bản nháp "seconds" mà plan mục C3 trích lại làm bằng chứng.
+
+## Baseline đo được (dán từ lệnh) — re-measure ĐỘC LẬP trên `55d7314`
+
+Build dir riêng của verifier cuối, `--clean-first`, generator Visual Studio,
+MSVC 14.51.36231:
+
+```
+ctest --test-dir build-final-off -C Release   -> 390/390, 0 failed   (RTA_BUILD_APP=OFF)
+ctest --test-dir build-final-on  -C Release   -> 436/436, 0 failed    (RTA_BUILD_APP=ON)
+warning C trong cả hai build log               -> 0
+```
+
+Trước lane: 362 (OFF) / 402 (ON), đo trên `7e10eb6` cùng phiên. Guard sau lane:
+`core_has_no_framework_deps` 96 file (87), `coherence_gate_is_not_bypassed`
+62 (57), `filter_design_has_no_polynomial_form` 113 (103),
+`measure_has_no_framework_deps` 30 (29) — cả bốn đã được làm ĐỎ rồi XANH.
+
+## Đã hạ cánh
+- `core/`: `MtwLayout`, `MtwEngine`, `MtwResult` — **không decimate**, bảy
+  `DualFftEngine` full-rate với fftSize nhân đôi mỗi octave xuống; 1281 điểm,
+  0.73 Hz dưới 187.5 Hz; golden `core/tests/golden/mtw.txt` từ `tools/gen_mtw.py`.
+- `app/`: `Snapshot::mtw` (vector tần số riêng), `Analyser` chạy hai engine
+  song song trên cùng cặp mẫu (G2), `TransferView` vẽ từ vector tần số, seam
+  hairline trên cả ba pane, toggle nguồn per-plot (mặc định MTW), strip
+  `MtwReadout` in thời gian tích phân từng band.
+- `DualFftEngine.cpp` / `test_dualfft.cpp` KHÔNG bị đụng (321 / 400 dòng).
+
+## Ba con số phiên sau KHÔNG được suy diễn lại
+1. **Averaging theo FRAME đồng nhất, không theo giây.** Bản nháp đầu chọn giây;
+   với 0.5 s ba band đáy không bao giờ mở cổng coherence 8 (Neff trần 2.06 /
+   3.55 / 6.58). Neff/giây ~ 1/T_window nên giây đồng nhất không thể cho độ tin
+   cậy đồng nhất. Giây được **báo** từng band: 0.09 s trên cùng, **5.5 s dưới
+   187.5 Hz** ở depth 16.
+2. **`exponentialEffectiveAverages` không đạt `(2-a)/a`** — trả về
+   `1 + (Neff_raw - 1)/D`, `D = 1.9246` với Hann overlap 75 %, giống nhau ở mọi
+   fftSize. `fifoEffectiveAverages(hann, N/4, 16) = 8.5866`, cổng 8 mở lần đầu
+   ở frame 15.
+3. **Bin sở hữu là `N_0/8..N_0/4-1 = 128..255` ở MỌI band**, không phải `N_k/8`.
+   Tổng 1281, không 1282 (1282 nghĩa là trùng 187.5 Hz tại seam).
+
+## Việc còn mở
+- **Chưa merge.** `git rev-list --count main..HEAD` — đo, đừng chép. Merge là
+  lệnh của chủ nhân.
+- **Chưa có fixture snapshot mang `MtwBlock`** — bằng chứng hình ảnh đến từ patch
+  tạm vào `tools/snapshot.cpp` (đã revert ba lần); PNG của verifier cuối nằm ở
+  scratchpad phiên này, không trong cây. Follow-up nhỏ.
+- **Toggle nguồn per-plot chưa có control UI** — chỉ là API; mặc định MTW.
+- **MTW trace live-only.** Lưu trace MTW là amendment L5 (`Trace.h:91-93` lấy trục
+  từ `fftSize` có chủ ý).
+- **Câu hỏi sân khấu, không phải số học:** 5.5 s fill dưới 187.5 Hz có bị người
+  vận hành đọc thành lỗi không — cần một người với hệ thống thật. Strip readout
+  tồn tại để họ có con số trước mắt.
+- Lane kế theo MASTER-EXECUTION-PLAN mục 5: **L6b**, rồi **L7**.
+
+## Người có thể tự chạy gì
+```bash
+ctest --test-dir build-final-off -C Release
+```
+```bash
+ctest --test-dir build-final-on -C Release
+```
+(hoặc cấu hình lại theo lệnh trong report 005). Để NHÌN: chạy `rtatool`, bật
+synthetic mode (gán role Reference/Measurement sẵn, delay 4 mẫu), mở pane
+Transfer — seam tại 187.5 / 375 / 750 / 1500 / 3000 / 6000 Hz, strip
+`< 188 Hz 5.5 s | 188-375 2.7 s | ... | > 6000 0.09 s`, đầu thấp mịn hơn đầu cao.
+
+## Bẫy phiên này gặp
+- Verifier mutate `core/src/dsp/*.cpp` trong worktree đang có builder khác build —
+  đã revert sạch, không hỏng gì, nhưng **verifier phải build trong scratch
+  worktree riêng** (verifier L3b và verifier cuối đã làm đúng vậy).
+- Diagnostics clang trong IDE báo hàng chục lỗi "file not found" trên file mới —
+  IDE thiếu include path và C++20; MSVC build thật xanh. Bỏ qua.
+
+---
+
 # 2026-09-05 — **EDT ENSEMBLE ĐÃ MERGE VÀO `main` tại `a2cbd02`**
 
 **Đọc mục này trước tiên.** Chủ nhân ra lệnh "merge hết code mới về master"
@@ -40,9 +122,18 @@ Sáu guard kiến trúc/biểu diễn đều PASS; `core_has_no_framework_deps` 
 code mới, không chỉ còn xanh.
 
 ## Việc còn mở của đợt này
-- **`RTA_BUILD_APP=ON` CHƯA đo lại sau merge này.** Đây là việc còn mở DUY NHẤT
-  không cần quyết định của con người. L4b từng đo 399/399 (ON); con số ON với
-  EDT ensemble chưa có — đừng đoán.
+- ~~`RTA_BUILD_APP=ON` CHƯA đo lại sau merge này~~ — **ĐÃ ĐO 2026-09-05** trên
+  HEAD `7e10eb6`, build dir riêng `build-verify-app`, generator Visual Studio,
+  MSVC 14.51.36231, JUCE qua `RTA_JUCE_PATH`:
+
+  ```
+  ctest --test-dir build-verify-app -C Release   -> 402/402, 0 failed   (ON)
+  ```
+
+  402 = 362 (OFF) + 40 test chỉ build khi ON (1 guard callback-shape + 10
+  platform-JUCE + 4 az_ui + 25 view), phân rã đọc từ cấu trúc gating trong
+  bốn file CMakeLists, không chỉ trừ hai tổng. 0 `warning C` trên app target.
+  Bốn guard PASS: core 87 file, polynomial-form 103, platform-types 5, measure 29.
 - **Golden vector cho `rta::ir` decay/EDT vẫn chưa viết** (nợ mang sang từ L4b;
   ⚠️ ràng buộc "hai bất đối xứng Python/C++ trong bộ sinh golden" ở mục L4b bên
   dưới **vẫn hiệu lực**, phải đo trước khi commit golden đầu tiên).
