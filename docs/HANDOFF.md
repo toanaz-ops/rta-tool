@@ -5,7 +5,21 @@
 
 ---
 
-# 2026-09-06 — **L3 (MTW) ĐÃ XÂY, CHƯA MERGE** — nhánh `claude_desk/fable-orchestration-planning-bebcb3`
+# 2026-09-06 — **L3 (MTW) ĐÃ MERGE VÀO `main` tại `a1a9ebf`**
+
+Chủ nhân nói "Merge" trong phiên orchestrator L3. Merge `--no-ff` trong checkout
+`main` (sạch, đang ở `04bc1ab`), không xung đột; `git diff --stat 4fc30ea a1a9ebf`
+chỉ ra **duy nhất `CLAUDE.md` +2 dòng** (commit `04bc1ab` bên `main`), nên các con
+số 436/390 verify trên `55d7314` vẫn đúng cho cây đã merge — không cần rebuild
+(memory "re-verify what the change could have changed"). `main` **chưa push**
+(`git rev-list --count origin/main..main` — đo, đừng chép). Nhánh và worktree
+`continue-6bacde` giữ nguyên; dọn hay không là quyết định của chủ nhân.
+
+Mục dưới đây là trạng thái lúc xây, giữ làm lịch sử cùng ngày.
+
+---
+
+# 2026-09-06 — L3 (MTW) đã xây — nhánh `claude_desk/fable-orchestration-planning-bebcb3`
 
 **Đọc mục này trước tiên.** Lane L3 đi trọn năm trạm trong một phiên
 orchestrator (Fable). Record `docs/dsp/2026-09-05-mtw-l3.md`, plan
