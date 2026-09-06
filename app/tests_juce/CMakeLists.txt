@@ -150,3 +150,39 @@ target_compile_definitions(rtatool_view_tests PRIVATE
 # (catch_discover_tests names each ctest case after the TEST_CASE name, not its
 # tags, so a tag is not selectable from ctest at all).
 catch_discover_tests(rtatool_view_tests TEST_PREFIX "view/")
+
+# --- Routing, live (task B2) ------------------------------------------------
+# AnalysisThread is JUCE-owning (juce::Thread) but carries NO GUI: this
+# target links juce_core only, never juce_gui_basics/az_ui, which is why it
+# is a separate executable from rtatool_view_tests above rather than folded
+# into it. Proves record §11 T11 (two transfer functions sharing a reference
+# get equal hop counters; two naming different references get independent
+# ones) against a REAL CaptureBus + AnalysisThread + poll loop -- the pure
+# routing DECISION itself is already covered OFF-build by
+# app/tests/test_routing_plan.cpp.
+add_executable(rtatool_routing_live_tests
+    test_routing_live.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
+)
+
+target_include_directories(rtatool_routing_live_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+target_link_libraries(rtatool_routing_live_tests PRIVATE
+    rta::core
+    rta::platform_types
+    juce::juce_core
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+    Catch2::Catch2WithMain
+)
+
+target_compile_definitions(rtatool_routing_live_tests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_STANDALONE_APPLICATION=1
+)
+
+catch_discover_tests(rtatool_routing_live_tests TEST_PREFIX "routing_live/")
