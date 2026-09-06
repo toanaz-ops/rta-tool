@@ -60,6 +60,10 @@ target_sources(rtatool PRIVATE
     # length cap (see that file's own header comment for why).
     src/view/TransferView.cpp
     src/view/TransferRibbon.cpp
+    # TransferViewDraw.cpp is TransferView.cpp's own drawing-helper split
+    # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md), moved out ahead of
+    # L6b adding more to TransferView.cpp.
+    src/view/TransferViewDraw.cpp
     # MtwLayer.cpp is the MTW-specific per-band alpha and seam drawing (task 7
     # of the MTW plan), split out to keep TransferView.cpp under the cap.
     src/view/MtwLayer.cpp
@@ -99,6 +103,10 @@ target_sources(rtatool PRIVATE
     # rtatool_snapshot): one static library would not receive the
     # JUCE_MODULE_AVAILABLE_* defines juce_add_gui_app injects.
     src/measure/Analyser.cpp
+    # AnalyserPublish.cpp is Analyser.cpp's publish()-site block-builder split
+    # (task B0) -- JUCE-free, same one-static-library reason as Analyser.cpp
+    # itself, so it is named explicitly in both GUI binaries' source lists.
+    src/measure/AnalyserPublish.cpp
     # PhaseUnwrap.cpp is what TransferView.cpp's unwrap toggle (decision 4)
     # calls into -- JUCE-free, but the same one-static-library caveat above
     # applies, so it is named explicitly in both GUI binaries' source lists.
@@ -167,6 +175,9 @@ target_sources(rtatool_snapshot PRIVATE
     # its ribbon half, split out to keep TransferView.cpp under the file-
     # length cap. Needed here for transfer.png below.
     src/view/TransferView.cpp
+    # TransferViewDraw.cpp is TransferView.cpp's own drawing-helper split
+    # (task B0), needed here for the same reason.
+    src/view/TransferViewDraw.cpp
     src/view/TransferRibbon.cpp
     # MtwLayer.cpp is the MTW-specific per-band alpha and seam drawing (task 7
     # of the MTW plan), needed here for the specimen render.
@@ -193,6 +204,10 @@ target_sources(rtatool_snapshot PRIVATE
     # toggle (decision 4), JUCE-free but named explicitly for the same
     # one-static-library reason as Analyser.cpp above it.
     src/measure/Analyser.cpp
+    # AnalyserPublish.cpp is Analyser.cpp's publish()-site block-builder split
+    # (task B0) -- needed here for the same one-static-library reason as
+    # Analyser.cpp itself.
+    src/measure/AnalyserPublish.cpp
     src/measure/SyntheticSnapshot.cpp
     src/measure/PhaseUnwrap.cpp
     # main-live.png additionally renders the real MainComponent in synthetic

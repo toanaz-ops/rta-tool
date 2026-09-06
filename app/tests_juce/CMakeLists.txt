@@ -71,6 +71,9 @@ add_executable(rtatool_view_tests
     #     one-translation-unit reason app/CMakeLists.txt names it explicitly
     #     in both GUI binaries).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferView.cpp
+    # TransferViewDraw.cpp: TransferView.cpp's own drawing-helper split
+    # (task B0) -- TransferView.cpp calls into it now.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferViewDraw.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferRibbon.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PlotAxes.cpp
     # test_transfer_view_mtw.cpp's own additional dependency (task 7):
@@ -88,6 +91,9 @@ add_executable(rtatool_view_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
+    # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
+    # (task B0) -- Analyser.cpp calls into it now.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
     # test_workspace_view.cpp's own additional dependency set (task 10):
     #   view/WorkspaceView.h/.cpp -> the pane container under test; needs
     #     az::ui::splitVertically, already linked in through az_ui below.
