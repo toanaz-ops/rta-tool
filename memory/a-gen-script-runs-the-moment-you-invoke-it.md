@@ -28,3 +28,10 @@ Both halves are worth keeping:
 
 Treat `tools/gen_*.py` as a write to the repository, not as a program with a
 CLI. If you only want to know what it does, read it.
+
+## Correction, 2026-09-06 (L6b station 1)
+
+`tools/gen_mtw.py` (L3) already follows this rule: real `argparse`, `--out`,
+`--help` exits before any write — the only one of the eight `gen_*.py` that
+does, verified by `grep -l argparse tools/*.py`. The seven older scripts still
+run on import. A new generator copies `gen_mtw.py`, not the older seven.
