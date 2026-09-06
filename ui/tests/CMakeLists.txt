@@ -11,7 +11,7 @@
 # No `include(Catch)` here -- core/tests/CMakeLists.txt loads that module once
 # for the whole configure run and root CMakeLists.txt orders it first. Same
 # reasoning as app/tests_juce/CMakeLists.txt.
-add_executable(az_ui_tests test_layout.cpp)
+add_executable(az_ui_tests test_layout.cpp test_grid_panel.cpp)
 
 target_link_libraries(az_ui_tests PRIVATE
     az_ui

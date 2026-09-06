@@ -12,6 +12,7 @@
 #include "view/MtwReadout.h"
 #include "view/PhaseDecimator.h"
 #include "view/PlotAxes.h"
+#include "view/Readouts.h"
 #include "view/TraceDecimator.h"
 #include "view/TraceStroke.h"
 #include "view/TransferRibbon.h"
@@ -23,6 +24,7 @@
 #include <algorithm>
 #include <cmath>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace rta::view {
@@ -251,6 +253,46 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
         const auto extents = bridgeGaps(decimateToColumns(magnitudeDb, columns, columnCountInt));
         strokeMagnitudeExtents(g, extents, magnitudeGeometry, 0, alpha, rta::view::trace);
         if (useMtw) drawMtwSeams(g, *snapshot->mtw, magnitudeGeometry, rta::view::mtwSeam);
+    }
+
+    // Task B7 (record §6): the group's spatial average, when present, is a
+    // SECOND trace over the FIXED grid -- AverageBlock is built from
+    // rta::dsp::spatialAverage, the fixed-engine combine, never the MTW
+    // variant (SyntheticSnapshot.h's own comment on why). Drawn regardless
+    // of magnitudeSource: it is a different curve from either engine's own,
+    // not a third option for that toggle.
+    if (snapshot->average.has_value()) {
+        const auto& average = *snapshot->average;
+        const std::size_t bins = average.magnitudeDb.size();
+        const double averageBinHz =
+            snapshot->fftSize > 0 ? snapshot->sampleRate / static_cast<double>(snapshot->fftSize) : 0.0;
+        const auto averageColumns = absoluteColumnsForBins(magnitudeGeometry, averageBinHz, bins, columnCount);
+        const auto averageExtents =
+            bridgeGaps(decimateToColumns(average.magnitudeDb, averageColumns, columnCountInt));
+        strokeMagnitudeExtents(g, averageExtents, magnitudeGeometry, 0, {}, rta::view::secondaryTrace);
+
+        // The one readout line this pane states in prose (CLAUDE.md's
+        // readout rules): the contributor count and phase agreement at the
+        // first PRESENT bin -- a scalar summary beside a curve, same
+        // pairing Readouts.h's own readoutLine() gives the RTA plot's peak.
+        int contributorCount = 0;
+        float agreement = 0.0f;
+        for (std::size_t k = 0; k < bins; ++k) {
+            if (average.absence[k] == rta::dsp::SpatialAbsence::Present) {
+                contributorCount = static_cast<int>(average.contributors[k]);
+                agreement = average.phaseAgreement[k];
+                break;
+            }
+        }
+        const std::string readout = formatContributors(contributorCount,
+                                                        static_cast<int>(snapshot->positions.size())) +
+                                    "   R " + formatAgreement(static_cast<double>(agreement));
+        g.setColour(rta::view::readoutText);
+        g.setFont(az::ui::monoFont(az::ui::readoutFontSize));
+        g.drawText(juce::String(readout),
+                  juce::Rectangle<int>(static_cast<int>(magnitudeGeometry.left),
+                                        static_cast<int>(magnitudeGeometry.top), 260, 18),
+                  juce::Justification::centredLeft, false);
     }
 
     // Stored traces are always drawn WRAPPED (StoredTraceLayer's own

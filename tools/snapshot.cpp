@@ -151,6 +151,16 @@ int main (int argc, char** argv)
         // temporary patch applied and reverted by hand each time someone
         // wants to look.
         snapshot->mtw = rta::measure::makeSyntheticMtw ();
+        // Task B7: the spatial-average trace and the four-position summary
+        // list, on the SAME fixed grid as `snapshot->transfer` above (see
+        // makeSyntheticAverage's own comment for why it is that grid and
+        // not the MTW one).
+        {
+            auto [average, positions] = rta::measure::makeSyntheticAverage (
+                snapshot->fftSize, snapshot->sampleRate, 4);
+            snapshot->average = std::move (average);
+            snapshot->positions = std::move (positions);
+        }
         const rta::measure::StaticSnapshotSource source (snapshot);
 
         rta::view::TransferView component (source);
@@ -172,6 +182,13 @@ int main (int argc, char** argv)
         snapshot->transfer = rta::measure::makeSyntheticTransfer (snapshot->fftSize, snapshot->sampleRate, 18);
         // Same MTW fixture transfer.png carries -- see that block's comment.
         snapshot->mtw = rta::measure::makeSyntheticMtw ();
+        // Same average fixture transfer.png carries -- see that block's comment.
+        {
+            auto [average, positions] = rta::measure::makeSyntheticAverage (
+                snapshot->fftSize, snapshot->sampleRate, 4);
+            snapshot->average = std::move (average);
+            snapshot->positions = std::move (positions);
+        }
         const rta::measure::StaticSnapshotSource source (snapshot);
 
         rta::view::WorkspaceView component (

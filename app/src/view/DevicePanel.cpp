@@ -7,8 +7,6 @@
 
 #include <az_ui/az_ui.h>
 
-#include <cmath>
-
 namespace rta::view {
 
 namespace {
@@ -19,14 +17,6 @@ constexpr int kFaultPollHz = 4;
 // real clip/danger light elsewhere in the app -- this line sits under
 // controls the user is looking at anyway, not flashing for attention.
 const juce::Colour kFaultColour = az::ui::danger.withAlpha(0.7f);
-
-/// Whole hertz, no decimal -- CLAUDE.md "Reading out numbers". A sample
-/// rate is the same unit and the same convention as every other Hz figure
-/// in the app, even though this one is a device property, not a frequency
-/// axis label.
-juce::String formatHz(double hz) {
-    return juce::String(static_cast<juce::int64>(std::llround(hz))) + " Hz";
-}
 
 juce::String formatSamples(int size) { return juce::String(size) + " samples"; }
 
@@ -103,7 +93,13 @@ void DevicePanel::refreshFromState() {
     int rateSelectedId = 0;
     for (std::size_t i = 0; i < cachedRates_.size(); ++i) {
         const int itemId = static_cast<int>(i) + 1;
-        sampleRateCombo_.addItem(formatHz(cachedRates_[i]), itemId);
+        // rta::view::formatHz (Readouts.h, task B7): whole hertz, no decimal
+        // -- CLAUDE.md "Reading out numbers". A sample rate is the same unit
+        // and the same convention as every other Hz figure in the app, even
+        // though this one is a device property, not a frequency axis label.
+        // Wrapped in juce::String -- the combo box's own API, not this
+        // function's concern.
+        sampleRateCombo_.addItem(juce::String(formatHz(cachedRates_[i])), itemId);
         if (cachedRates_[i] == state.sampleRate) rateSelectedId = itemId;
     }
     sampleRateCombo_.setSelectedId(rateSelectedId, juce::dontSendNotification);

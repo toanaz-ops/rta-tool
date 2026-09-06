@@ -10,6 +10,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace rta::measure {
 
@@ -71,5 +73,21 @@ struct SyntheticSpec {
 /// recomputed from a window here.
 [[nodiscard]] MtwBlock makeSyntheticMtw(const rta::dsp::MtwConfig& config = rta::dsp::MtwConfig{},
                                         int delaySamples = 0);
+
+/// A deterministic spatial-average fixture (task B7): `positionCount`
+/// synthetic positions combined on the SAME fixed grid `makeSyntheticTransfer`
+/// uses (`fftSize`/`sampleRate`) -- reusing that function's own closed-form
+/// magnitude/coherence curves so the specimen's average trace stays visually
+/// coherent next to the per-position curve it stands in for.
+///
+/// Deliberately `fftSize`/`sampleRate`, NOT `rta::dsp::MtwConfig`: `Snapshot::
+/// average` (task B3) is built from `rta::dsp::spatialAverage`, the FIXED-
+/// engine combine, not `spatialAverageMtw` -- B3 did not wire the MTW
+/// spatial average into any app-layer type, so a fixture for the MTW
+/// variant would have nothing in `app/` to feed. Every position reports the
+/// SAME curves here (a real group's positions would differ); this fixture
+/// exists to prove the DISPLAY reads the fields, not to model a real room.
+[[nodiscard]] std::pair<AverageBlock, std::vector<PositionSummary>> makeSyntheticAverage(
+    std::size_t fftSize, double sampleRate, int positionCount);
 
 }  // namespace rta::measure

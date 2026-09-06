@@ -39,6 +39,10 @@ add_executable(rtatool_view_tests
     # (docs/reports/005-mtw-engine.md "Known gaps").
     test_transfer_source_toggle.cpp
     test_workspace_view.cpp
+    # test_routing_matrix.cpp: task B7's routing matrix (record §6, §7) --
+    # composes az_ui's GridPanel, JUCE-using for the same reason
+    # TransferSourceToggle.cpp already gives.
+    test_routing_matrix.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)
     #   trace/TraceLibrary.h    -> needs TraceLibrary.cpp linked (entries/revision/setVisible)
@@ -103,6 +107,9 @@ add_executable(rtatool_view_tests
     #     target, hence not listed until now.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/WorkspaceView.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RtaView.cpp
+    # RoutingMatrix.cpp: test_routing_matrix.cpp's own dependency (task B7).
+    # Links rta::platform_types (below) for ChannelConfig.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RoutingMatrix.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:
@@ -122,6 +129,9 @@ target_link_libraries(rtatool_view_tests PRIVATE
     # dependency chain, see the target_sources comment above) links against
     # rta_core's DSP engines.
     rta::core
+    # rta::platform_types: RoutingMatrix.cpp/test_routing_matrix.cpp's own
+    # ChannelConfig dependency (task B7).
+    rta::platform_types
     juce::juce_gui_basics
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags

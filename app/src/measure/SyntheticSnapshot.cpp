@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cmath>
 #include <span>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace rta::measure {
@@ -228,6 +230,49 @@ MtwBlock makeSyntheticMtw(const rta::dsp::MtwConfig& config, int delaySamples) {
     block.appliedDelaySamples = 0;
 
     return block;
+}
+
+std::pair<AverageBlock, std::vector<PositionSummary>> makeSyntheticAverage(std::size_t fftSize,
+                                                                           double sampleRate,
+                                                                           int positionCount) {
+    AverageBlock average;
+    const std::size_t bins = fftSize > 0 ? fftSize / 2 + 1 : 0;
+    const double binHz = fftSize > 0 ? sampleRate / static_cast<double>(fftSize) : 0.0;
+
+    average.magnitudeDb.resize(bins);
+    average.phaseDeg.resize(bins);
+    average.phaseAgreement.resize(bins);
+    average.weightedCoherence.resize(bins);
+    average.contributors.assign(bins, static_cast<std::uint16_t>(positionCount));
+    average.absence.assign(bins, rta::dsp::SpatialAbsence::Present);
+
+    for (std::size_t k = 0; k < bins; ++k) {
+        const double hz = static_cast<double>(k) * binHz;
+        average.magnitudeDb[k] = static_cast<float>(magnitudeDbAt(hz));
+        // R (phaseAgreement) and weightedCoherence are two DIFFERENT
+        // quantities (record §4) -- given two different curves here, not
+        // the same one twice, so a reader of the specimen can tell them
+        // apart the same way the real display must.
+        average.phaseAgreement[k] = static_cast<float>(coherenceAt(hz));
+        average.weightedCoherence[k] = static_cast<float>(coherenceAt(hz) * 0.9);
+        average.phaseDeg[k] = 0.0f;  // this fixture states no phase slope
+    }
+
+    std::vector<PositionSummary> positions;
+    positions.reserve(static_cast<std::size_t>(positionCount));
+    for (int i = 0; i < positionCount; ++i) {
+        PositionSummary summary;
+        summary.tfIndex = i;
+        summary.name = "POS " + std::to_string(i + 1);
+        summary.levelDb = static_cast<float>(magnitudeDbAt(1000.0) - i);
+        summary.weightedCoherence = static_cast<float>(coherenceAt(1000.0));
+        summary.effectiveAverages = kSyntheticEffectiveAverages;
+        summary.gatePassed = true;
+        summary.overloaded = false;
+        positions.push_back(std::move(summary));
+    }
+
+    return {std::move(average), std::move(positions)};
 }
 
 }  // namespace rta::measure

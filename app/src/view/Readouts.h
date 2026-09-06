@@ -65,4 +65,33 @@ namespace rta::view {
     return std::format("{}    {} FRAMES", head, snapshot->framesAnalysed);
 }
 
+/// Task B7, CLAUDE.md's "Reading out numbers": frequency is a whole number
+/// of hertz -- one-hertz resolution is already finer than any decision made
+/// while tuning a system, and a decimal that never carries information costs
+/// a character on every readout and invites a false sense of precision.
+[[nodiscard]] inline std::string formatHz(double hz) {
+    return std::format("{} Hz", std::llround(hz));
+}
+
+/// dB keeps one decimal (CLAUDE.md: "0.1 dB is a real, actionable
+/// difference; 0.1 Hz is not"). Used for a position's own trim (record §7),
+/// always signed by `std::format`'s own default for a floating value.
+[[nodiscard]] inline std::string formatTrim(double trimDb) {
+    return std::format("{:.1f} dB", trimDb);
+}
+
+/// Coherence and `phaseAgreement` (record §2's `R`) are 0..1 with two
+/// decimals -- CLAUDE.md's own rule, restated here because `R` is not a
+/// coherence estimate (record §4) and must not be tempted into the dB or Hz
+/// rule by proximity to either on screen.
+[[nodiscard]] inline std::string formatAgreement(double agreement) {
+    return std::format("{:.2f}", agreement);
+}
+
+/// A contributor count is a bare integer pair, no decimal of any kind --
+/// "3 of 4" states a fact a fractional readout would only obscure.
+[[nodiscard]] inline std::string formatContributors(int contributors, int total) {
+    return std::format("{} of {}", contributors, total);
+}
+
 }  // namespace rta::view
