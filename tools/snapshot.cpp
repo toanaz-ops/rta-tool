@@ -143,6 +143,14 @@ int main (int argc, char** argv)
         snapshot->sampleRate = 48000.0;
         snapshot->fftSize = 4096;
         snapshot->transfer = rta::measure::makeSyntheticTransfer (snapshot->fftSize, snapshot->sampleRate, 18);
+        // The MTW half of the picture (docs/reports/005-mtw-engine.md "Known
+        // gaps": "no committed snapshot fixture carries an MtwBlock") -- the
+        // default MtwConfig, so the seams this fixture draws land at the
+        // record's own frequencies (187.5/375/750/1500/3000/6000 Hz) and the
+        // per-band integration-seconds strip has real numbers to print, not a
+        // temporary patch applied and reverted by hand each time someone
+        // wants to look.
+        snapshot->mtw = rta::measure::makeSyntheticMtw ();
         const rta::measure::StaticSnapshotSource source (snapshot);
 
         rta::view::TransferView component (source);
@@ -162,6 +170,8 @@ int main (int argc, char** argv)
         const rta::measure::SyntheticSpec spec;
         auto snapshot = std::make_shared<rta::measure::Snapshot> (*rta::measure::makeSyntheticSnapshot (spec));
         snapshot->transfer = rta::measure::makeSyntheticTransfer (snapshot->fftSize, snapshot->sampleRate, 18);
+        // Same MTW fixture transfer.png carries -- see that block's comment.
+        snapshot->mtw = rta::measure::makeSyntheticMtw ();
         const rta::measure::StaticSnapshotSource source (snapshot);
 
         rta::view::WorkspaceView component (

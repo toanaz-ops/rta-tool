@@ -6,6 +6,8 @@
 #include "measure/Analyser.h"
 #include "measure/Snapshot.h"
 
+#include "rta/dsp/MtwLayout.h"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -49,5 +51,25 @@ struct SyntheticSpec {
 /// has to be reviewable as a byte-for-byte diff.
 [[nodiscard]] TransferBlock makeSyntheticTransfer(std::size_t fftSize, double sampleRate,
                                                   int delaySamples);
+
+/// The MTW twin of `makeSyntheticTransfer`: the SAME closed-form magnitude and
+/// coherence curves (`magnitudeDbAt` / `coherenceAt`), evaluated at the MTW
+/// engine's own explicit, per-band frequency vector (`rta::dsp::mtwFrequencies`)
+/// instead of a fixed bin width -- so a picture built from this fixture stays
+/// recognisable next to `transfer.png`'s fixed curve. Every band descriptor
+/// (`seamHz`, `firstIndex`, `windowSeconds`, `integrationSeconds`) comes
+/// straight from `rta::dsp::mtwBands`, never a hand-picked number, which is
+/// what puts the seams at the record's own frequencies (187.5/375/750/1500/
+/// 3000/6000 Hz at the default `config`) rather than wherever this fixture
+/// happened to draw a line.
+///
+/// `effectiveAverages` is fixed at the record's own closed-form constant for
+/// a FULLY FILLED FIFO at the default depth (docs/dsp/2026-09-05-mtw-l3.md
+/// §5; `test_analyser_mtw.cpp` checks the same digits against the real
+/// engine) -- this fixture states a completed measurement, not a mid-fill
+/// one, so `coherenceAvailable` is true in every band and this is never
+/// recomputed from a window here.
+[[nodiscard]] MtwBlock makeSyntheticMtw(const rta::dsp::MtwConfig& config = rta::dsp::MtwConfig{},
+                                        int delaySamples = 0);
 
 }  // namespace rta::measure
