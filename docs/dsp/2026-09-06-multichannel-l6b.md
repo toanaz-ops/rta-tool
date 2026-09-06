@@ -240,7 +240,12 @@ averaging reuses `makeSnapshot()`, the gate, and the stitch unchanged.
 beside the role (still relaxed atomics, so the callback stays lock-free), and a
 lookup that returns *all* channels of a role. `AnalysisThread` holds
 `std::vector<std::unique_ptr<Analyser>>`, one per transfer function, built once
-and never resized, each with its own measurement scratch. **Each transfer
+and never resized, each with its own measurement scratch. *Amended at build
+(2026-09-06, task B2):* the per-channel index is a **grouping tag** — two
+measurement channels that share a reference share it — and is therefore not
+a unique key; the `Analyser` array is indexed by each route's **ordinal in the
+routing plan**, which is unique by construction. The builder found the
+collision while wiring and resolved it this way; the record adopts it. **Each transfer
 function names its own reference channel** (Smaart's per-engine model, and the
 `[tf]` field §9 persists); the drain reads every distinct reference channel
 once per hop and hands each `Analyser` the one it names. In the common case

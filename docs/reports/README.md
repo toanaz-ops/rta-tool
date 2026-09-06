@@ -33,3 +33,4 @@ what the verifier refuted, and the exact commands + output that prove the state.
 | 002 | Phase 1: the audio chain end to end | [002-phase1-audio-chain.md](002-phase1-audio-chain.md) |
 | 003 | Lane L2: the dual-FFT transfer-function engine | [003-dual-fft-engine.md](003-dual-fft-engine.md) |
 | 005 | Lane L3: the multi-time-window engine | [005-mtw-engine.md](005-mtw-engine.md) |
+| 006 | Lane L6b: multichannel workflows — spatial average, coherence weighting, routing, sequencing, presets | [006-multichannel.md](006-multichannel.md) |

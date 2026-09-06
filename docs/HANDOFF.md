@@ -5,6 +5,98 @@
 
 ---
 
+# 2026-09-06 — L6b (multichannel) đã xây — nhánh `claude_desk/l6b-multichannel-research-4b3876`
+
+**Đọc mục này trước tiên.** Lane L6b đi trọn năm trạm trong một phiên
+orchestrator (Fable). Research `docs/research/2026-09-06-l6b-station1-research.md`,
+record `docs/dsp/2026-09-06-multichannel-l6b.md`, plan
+`docs/plans/2026-09-06-L6b-impl-plan.md`, report `docs/reports/006-multichannel.md`.
+Đọc record TRƯỚC plan; trong record, §3 (hai lý do vắng mặt), §6 (average là
+trace được publish, kèm amendment B2 về chỉ số ordinal) và §8 (không có
+đường output generator) là ba chỗ phiên sau dễ suy diễn ngược.
+
+## Baseline đo được (dán từ lệnh) — re-measure ĐỘC LẬP trên `e048443`
+
+Verifier cuối, scratch `git worktree` riêng, `--clean-first`, generator Visual
+Studio, MSVC 14.51:
+
+```
+ctest --test-dir build-off -C Release  -> 447/447, 0 failed   (RTA_BUILD_APP=OFF)
+ctest --test-dir build-on  -C Release  -> 508/508, 0 failed   (RTA_BUILD_APP=ON)
+warning C trong cả hai build log        -> 0
+```
+
+Đo trên `e048443` (commit cuối của lane, fix F3). Cùng verifier đo `10dd94f`
+(trước F3): 446 / 505, cũng sạch.
+
+Đầu phiên, đo trên `60ba99c`: 390 (OFF) / 436 (ON). Guard sau lane, đã làm
+ĐỎ rồi XANH: `core_has_no_framework_deps` 107 (96), `coherence_gate_is_not_bypassed`
+68 (62), `filter_design_has_no_polynomial_form` 125 (113),
+`measure_has_no_framework_deps` 42 (30), `platform_types` 5.
+
+## Đã hạ cánh
+- `core/`: `spatialAverage` / `spatialAverageBins` (trung bình dB có trọng số
+  `W = u·γ²`, tuỳ chọn power; pha = trung bình vòng có `R`; `weightedCoherence`,
+  `phaseAgreement`; hai lý do vắng `NoContributor` / `NoWeight`),
+  `spatialAverageMtw` (từng band rồi stitch cũ), `hasOverload` (≥ 3 mẫu liên
+  tiếp tại `1 − 2⁻¹⁵`); golden `spatial.txt` từ `tools/gen_spatial.py` (argparse).
+- `platform/`: `ChannelConfig` có chỉ số TF per channel (tag nhóm) và lookup
+  mọi channel của một role. Audio callback KHÔNG đổi.
+- `app/`: N `Analyser` sau `RoutingPlan`; `AverageGroup` nối vào publish thật
+  (average + một solo, còn lại `PositionSummary`); `LevelAlign`;
+  `CaptureSequencer` từ chối `Overload` / `GateNotCleared`, không phát output;
+  session schema 3 (`[tf]`, `[average]`, device theo tên VÀ số channel,
+  unbound khi lệch); `RoutingMatrix` gắn vào `MainComponent`; `ui/` thêm
+  `GridPanel` chung, không từ vựng đo lường.
+- `DualFftEngine.{h,cpp}`, `test_dualfft.cpp`, `AudioIo.cpp` không bị đụng.
+
+## Ba con số / quyết định phiên sau KHÔNG được suy diễn lại
+1. **`W = u·γ²`, không phải inverse-variance `n_d·γ²/(1−γ²)`.** Vị trí mic
+   không phải replicate của một đại lượng; trọng số tối ưu thống kê cho một
+   mic sạch 0.99 thắng mic 0.9 với tỉ lệ 11:1. Memory `positions-are-not-replicates`.
+2. **Hai lý do vắng mặt là hai sự kiện khác nhau.** `NoWeight` với
+   `contributors = 2` là hợp lệ (γ² đúng bằng 0 tại một bin). Placeholder cho
+   band `nullopt` từng xoá nó — fix `1b7d9a0`.
+3. **Không có đường output generator.** Callback xoá mọi output theo thiết
+   kế Phase 1; solo/mute tự động là record riêng, không "viết thêm vào callback".
+
+## Việc còn mở
+- **Chưa merge.** `git rev-list --count main..HEAD` — đo, đừng chép. Merge là
+  lệnh của chủ nhân.
+- Route thứ 9+ (vượt cap 8 `Analyser`) không được cấp audio nhưng vẫn có thể
+  đọc `Member` (`AnalysisThread.cpp:204`) — cần một trạng thái membership
+  riêng; và test ba-route chưa chứng minh average loại route bị từ chối
+  bằng số (ba analyser nghe cùng audio). Cả hai là NOTE của verifier F3.
+- Ba câu hỏi chủ nhân trong `HUMAN-QA-QUEUE` (mục L6b): ngưỡng trusted-fraction,
+  remote API bind/read-only, generator output là lane riêng hay gộp L7.
+- Một average group live; reference thứ hai là trạng thái hiển thị, chưa phải
+  group thứ hai.
+- Average trace live-only (kế thừa amendment L5 của MTW).
+
+## Người có thể tự chạy gì
+```bash
+ctest --test-dir build-l6b -C Release
+```
+```bash
+ctest --test-dir build-l6b-on -C Release
+```
+Để NHÌN: build target `rtatool_snapshot` rồi chạy
+`rtatool_snapshot.exe shots 1100 760`; `shots/transfer.png` có trace average
+trắng phủ lên và readout `4 of 4   R 0.32`; `shots/main-live.png` có
+`RoutingMatrix` với hàng 0 = MEAS / AVG, hàng 1 = REF / `--` ở synthetic mode.
+
+## Bẫy phiên này gặp
+- **Hai agent trong một worktree dùng chung git index** — `git add` đường
+  dẫn tường minh xen kẽ có thể gói file của agent kia vào commit của mình.
+  Phiên này tuần tự hoá: fix core đợi builder app xong. Verifier luôn build
+  trong scratch worktree riêng.
+- Baseline trong plan (390 OFF) lỗi thời ngay khi commit nợ nhỏ hạ cánh
+  (393); builder đo lại và báo, đúng luật.
+- MSBuild trong cây build dưới `%TEMP%` không recompile `.cpp` chỉ phụ thuộc
+  header đã đổi (verifier L6b-a phải xoá `.obj`/`.exe` để mutation chạy thật).
+
+---
+
 # 2026-09-06 — **L3 (MTW) ĐÃ MERGE VÀO `main` tại `a1a9ebf`**
 
 Chủ nhân nói "Merge" trong phiên orchestrator L3. Merge `--no-ff` trong checkout
