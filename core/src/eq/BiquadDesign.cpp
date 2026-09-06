@@ -25,6 +25,25 @@ void validate(const FilterSpec& spec, double sampleRate) {
     if (spec.q <= 0.0) {
         throw std::invalid_argument("designBiquad: q must be positive");
     }
+    // Shelves only: the Q-parameterised alpha (shelfAlpha below, RBJ cookbook
+    // Sec.6) is sqrt((A + 1/A)*(1/Q - 1) + 2), real only while that radicand
+    // stays non-negative. High Q with a large |gainDb| drives it negative
+    // (e.g. HighShelf/LowShelf at Q=8, gainDb=-15: (A+1/A)=2.793,
+    // (1/Q-1)=-0.875, product -2.444, +2 = -0.444), which sqrt() turns into
+    // NaN that then poisons every coefficient below -- this is the domain
+    // boundary of the Q-parameterised form itself, not a numerical accident,
+    // so it is refused here at the door rather than left to surface as NaN.
+    // Peaking's alpha never depends on gain (designPeaking above), so it has
+    // no such term and is not checked.
+    if (spec.type == FilterType::LowShelf || spec.type == FilterType::HighShelf) {
+        const double A = std::pow(10.0, spec.gainDb / 40.0);
+        const double radicand = (A + 1.0 / A) * (1.0 / spec.q - 1.0) + 2.0;
+        if (radicand <= 0.0) {
+            throw std::invalid_argument(
+                "designBiquad: shelf Q/gainDb combination is out of the "
+                "Q-parameterised alpha's domain (radicand <= 0)");
+        }
+    }
 }
 
 /// a0 is normalised away here, once, so every design function below can write

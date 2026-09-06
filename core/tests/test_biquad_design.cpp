@@ -279,3 +279,33 @@ TEST_CASE("An out-of-domain spec is refused, not silently clamped", "[biquad_des
                                   48000.0),
                      std::invalid_argument);
 }
+
+TEST_CASE("A shelf Q/gain pair that would NaN alpha is refused, not silently NaN'd",
+          "[biquad_design]") {
+    // T9 (STATION-4 latent-bug fix). shelfAlpha's radicand
+    // (A + 1/A)*(1/Q - 1) + 2 (BiquadDesign.cpp shelfAlpha, RBJ cookbook Sec.6
+    // Q-parameterised shelf alpha) goes negative for high-Q, large-|gain|
+    // shelves -- T6's own comment already derives the boundary
+    // (Q <= ~1.526 at |G|=30) and restricts its sweep to stay inside it. This
+    // case is the boundary made explicit: HighShelf/LowShelf at Q=8, G=-15dB
+    // put the radicand at (2.793)*(-0.875)+2 = -0.444 < 0, so sqrt() is NaN
+    // and every coefficient below inherits it. Peaking has no such term
+    // (T4's comment: its alpha never depends on gain) so it is unaffected and
+    // not tested here.
+    CHECK_THROWS_AS(
+        designBiquad(FilterSpec{ FilterType::HighShelf, 1000.0, 8.0, -15.0 }, 48000.0),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        designBiquad(FilterSpec{ FilterType::LowShelf, 1000.0, 8.0, -15.0 }, 48000.0),
+        std::invalid_argument);
+
+    // Guard against over-rejection: a well-inside-domain shelf must still
+    // succeed and produce finite coefficients -- Q=0.707 (Butterworth), a
+    // gain the domain comfortably admits at any Q up to 1.0 (T6's sweep).
+    const auto c = designBiquad(FilterSpec{ FilterType::LowShelf, 1000.0, 0.707, 6.0 }, 48000.0);
+    CHECK(std::isfinite(c.b0));
+    CHECK(std::isfinite(c.b1));
+    CHECK(std::isfinite(c.b2));
+    CHECK(std::isfinite(c.a1));
+    CHECK(std::isfinite(c.a2));
+}
