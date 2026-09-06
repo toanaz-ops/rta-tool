@@ -36,6 +36,9 @@ const char* membershipLabel(rta::measure::Membership membership) {
     switch (membership) {
         case rta::measure::Membership::Member: return "AVG";
         case rta::measure::Membership::ExcludedDifferentReference: return "REF!=";
+        // Past the kMaxTransferFunctions cap: this route has no Analyser, so it
+        // is drawn but excluded from the average (measure/AnalysisPublish.cpp).
+        case rta::measure::Membership::ExcludedOverCapacity: return "CAP";
     }
     return kNotApplicable;
 }
