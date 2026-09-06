@@ -45,21 +45,24 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
 
 ## Từ lane L6b (2026-09-06, record `docs/dsp/2026-09-06-multichannel-l6b.md`)
 
-- [ ] **Ngưỡng "capture xấu" theo phần băng tần coherence tin được.** Record §8
-  chỉ TỪ CHỐI capture trên hai tiêu chí không cần bịa số (overload ≥ 3 mẫu
-  liên tiếp tại full scale; engine chưa qua cổng 8 average). Phần băng tần
-  coherence-tin-được được *báo* theo từng capture, không *chặn*. Không nguồn
-  nào (Smaart, SysTune, REW, M1, SMPTE ST 202) công bố quy tắc "dưới X trên
-  Y % băng" — một con số ở đây sẽ là phát minh của dự án, và theo memory
-  `a-threshold-read-off-a-grid-is-that-grids-floor` nó cần một hệ thống thật.
-  Câu hỏi: sau vài buổi đo thật, capture bị bỏ ở mức nào? Chưa chặn việc.
-- [ ] **Remote API — hai quyết định chủ nhân cần nói một câu**: (a) bind
-  localhost mặc định (REW) hay mọi adapter kèm password (Smaart)? Record §10
-  đề xuất localhost; (b) API có được *ghi* routing không, hay chỉ đọc? Record
-  đề xuất read-only trước. Không chặn L6b-a/L6b-b; chặn lane remote.
-- [ ] **Đường output generator (auto solo/mute, G20)** — record §8 để ngoài L6b
-  vì nó đổi hợp đồng audio callback. Chủ nhân muốn nó là lane riêng sau L6b,
-  hay gộp vào L7 (solvers cũng cần phát tín hiệu)? Không chặn.
+- [x] **Ngưỡng "capture xấu" theo phần băng tần coherence tin được → GIỮ
+  REPORT-ONLY, 2026-09-06.** Chủ nhân chốt: v1 ship với hai refusal cứng
+  (overload, gate-8) và phần băng tin-được chỉ *báo*, KHÔNG bịa một ngưỡng số
+  không nguồn nào công bố (memory `a-threshold-read-off-a-grid-is-that-grids-floor`).
+  Cơ chế mềm kiểu SysTune (down-weight block lệch running average) chuyển sang
+  `docs/UPGRADE-BACKLOG.md` cho version sau. Nguồn phân tích: record §8.
+- [x] **Remote API — hai quyết định, 2026-09-06.** (a) **Bind localhost mặc
+  định** (REW model, record §10); LAN-bind + password là opt-in về sau. (b)
+  **Read-only trước** — API phơi `SnapshotSource`, không ghi routing; write
+  routing chuyển sang `docs/UPGRADE-BACKLOG.md` (ghi routing lúc show là gần-
+  không-đảo-được, cần auth trước). Cả hai không chặn L6b; lane remote khi mở
+  đọc hai quyết định này.
+- [x] **Đường output generator (auto solo/mute, G20) → GỘP VÀO L7, 2026-09-06.**
+  Chủ nhân chốt: không lane riêng. Vì mọi solver L7 cũng cần phát tín hiệu, đường
+  output lock-free được thiết kế MỘT LẦN trong trạm 1 của L7 (prerequisite),
+  phục vụ cả solver excitation lẫn G20 auto solo/mute. Nó đổi hợp đồng audio
+  callback nên trạm 1 phải mở bằng research đường output. Ghi ở master plan hàng
+  L7. Nguồn: record §8.
 
 ## Chờ một câu của chủ nhân, không phải một quyết định khó
 

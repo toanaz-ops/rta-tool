@@ -52,11 +52,17 @@ refusal → test số học FAILED (average thành 3-way) → revert → GREEN. 
   `memory/a-verifier-with-bash-can-git-checkout-your-uncommitted-fix.md`. **Commit
   trước khi dispatch verifier chạy lệnh git.**
 
-## Còn mở (không đổi so với mục merge L6b bên dưới)
-- **Chưa commit, chưa push.** Commit là lệnh của chủ nhân; push càng vậy.
-- Ba câu hỏi chủ nhân trong `HUMAN-QA-QUEUE` (mục L6b) vẫn treo.
-- Lane lớn kế tiếp theo master plan: **L7 (Solvers)** — cần một lượt research
-  trạm 1 (chưa có decision record).
+## Còn mở
+- **Đã commit `404739a`; chưa merge, chưa push.** Merge và push đều là lệnh của
+  chủ nhân, chưa nói trong phiên này.
+- ~~Ba câu hỏi chủ nhân L6b~~ **ĐÃ TRẢ LỜI 2026-09-06** (xem `HUMAN-QA-QUEUE`
+  mục L6b): (1) capture gate = giữ report-only, SysTune soft down-weight →
+  `docs/UPGRADE-BACKLOG.md`; (2) remote API = localhost mặc định + read-only
+  trước, write routing → backlog; (3) generator output = **gộp vào L7**.
+- Lane lớn kế tiếp theo master plan: **L7 (Solvers)** — cần research trạm 1
+  (chưa có decision record). Prompt mở lane đã soạn trong phiên này. Theo quyết
+  định (3), trạm 1 của L7 **mở bằng research đường output lock-free** trước
+  (prerequisite cho mọi solver + G20). G17 là câu hỏi PHA (wizard hỏi topology).
 
 ---
 
