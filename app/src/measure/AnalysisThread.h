@@ -4,7 +4,10 @@
 // T-1 / T-3 / T-4 / T-5.
 #pragma once
 
+#include "measure/AnalysisPublish.h"
 #include "measure/Analyser.h"
+#include "measure/AverageGroup.h"
+#include "measure/RoutingPlan.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 
@@ -13,6 +16,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -21,6 +25,19 @@
 #include <vector>
 
 namespace rta::measure {
+
+/// The compile-time cap on live transfer functions (record §6, task B2's own
+/// "not decided here" note): `Analyser` is neither movable nor copyable
+/// (`DualFftEngine`/`MtwEngine` hold `RingBuffer`s with atomic members), so
+/// `analysers_` below is built once, at this size, and never resized -- there
+/// is no way to grow a `vector<unique_ptr<Analyser>>` mid-run without either
+/// resizing (fine, `unique_ptr` moves are cheap) or ever shrinking it below
+/// this cap while routes still name higher indices. 8 positions cost 424 MB
+/// resident at the MTW engine's defaults (record §6's own arithmetic,
+/// `docs/research/2026-09-06-l6b-station1-research.md` Part C) -- a memory
+/// policy, not a DSP decision, so it is set and stated here rather than
+/// derived, for the owner to move if 8 is ever not enough.
+inline constexpr int kMaxTransferFunctions = 8;
 
 /// The thin, JUCE-owning wrapper plan §1.3 promises around the pure
 /// `Analyser` body: drains a live `rta::platform::CaptureBus` (fed by a real
@@ -66,6 +83,27 @@ public:
     /// `std::string`, never a `juce::String`, crosses this boundary).
     [[nodiscard]] rta::platform::Fault lastFault() const;
 
+    /// How many paired hops the route currently at position `routeIndex` of
+    /// the live `RoutingPlan` has been fed, or 0 for an out-of-range index.
+    ///
+    /// Deliberately keyed by ROUTE POSITION (ascending measurement channel,
+    /// the same order `planRouting` returns), not by `TransferRoute::tfIndex`
+    /// directly: `tfIndex` is the GROUPING tag two routes share on purpose
+    /// when they name the same reference channel (record §6), so using it as
+    /// the `analysers_` slot would make two same-reference routes collide on
+    /// one Analyser instead of getting one each -- exactly the "N Analysers"
+    /// property this task exists to provide. Position in `plan.routes` is
+    /// always distinct per measurement channel, which is what `analysers_`
+    /// is actually indexed by (see `drainPaired`'s own comment).
+    ///
+    /// An `std::atomic` counter this class owns and increments itself (task
+    /// B2/T11), NOT `Analyser::framesAnalysed()` -- that is a plain,
+    /// unsynchronised counter written only by this thread, and reading it
+    /// from another thread with no atomic between them would be a data race
+    /// even though a stale value would look harmless. Safe from any thread
+    /// for the same reason `latest()` is.
+    [[nodiscard]] std::uint64_t routeHopCount(int routeIndex) const noexcept;
+
 private:
     /// Trap T-3: `SpectrumEngine::process` (reached through
     /// `Analyser::pushMeasurement` / `pushReference`) can throw. An
@@ -75,34 +113,61 @@ private:
     void run() override;
     void runBody();
 
-    void rebuildAnalyserIfEpochChanged();
+    void rebuildAnalysersIfEpochChanged();
     void drain();
-    void drainPaired(int referenceChannel, int measurementChannel);
+    /// Peeks `refChannel`'s ring and every route in `plan.routes` naming it
+    /// as `referenceChannel`, discarding NOTHING until every one of those
+    /// peeks has succeeded for the hop about to be consumed (PairedDrain.h's
+    /// precedent, one level up: a short read on any ring in the group after
+    /// an earlier one was already discarded would misalign that whole
+    /// group). Two routes sharing `refChannel` are therefore always driven
+    /// the SAME number of hops in the same call (R6's "identical reference
+    /// hops" case); a route naming a DIFFERENT reference channel is driven
+    /// by a separate call to this function, with its own independently
+    /// computed hop count (R6's "independent counters" case) -- the grouping
+    /// is what makes the two halves of T11 both true from the same drain.
+    void drainPaired(int refChannel, const RoutingPlan& plan);
     void drainRole(rta::platform::ChannelRole role, bool isReference);
     void publishIfDue();
     void recordFault(rta::platform::Fault::Kind kind, const std::string& message);
 
     rta::platform::CaptureBus& bus_;
     Analyser::Config baseConfig_;
-    std::unique_ptr<Analyser> analyser_;
+    /// Built once, at `kMaxTransferFunctions`, and never resized -- see that
+    /// constant's own comment for why. `analysers_[0]` also serves the plain
+    /// single-channel RTA path (drainRole, publishIfDue) when no route
+    /// exists at all, exactly as the single `analyser_` this replaces did;
+    /// B3's `AverageGroup` is what gives every OTHER index its own published
+    /// output, and is out of scope here.
+    std::vector<std::unique_ptr<Analyser>> analysers_;
     std::uint64_t lastEpoch_ = 0;
 
-    /// Exactly one hop's worth of scratch, allocated once here rather than
-    /// per drain call -- the analysis thread may allocate (T-4 says so
-    /// explicitly for `publish()`), but there is no reason to here. Shared by
-    /// `drainRole` for whichever single role it is called with (reference or
-    /// measurement, one at a time), and by `drainPaired` for the measurement
-    /// half of a paired hop.
-    std::vector<float> hopScratch_;
+    /// One hop's worth of scratch PER CHANNEL, allocated once here rather
+    /// than per drain call (T-4: the analysis thread may allocate, but there
+    /// is no reason to here). Indexed by channel number directly -- simpler
+    /// than tracking which channels are "in use" this hop, and
+    /// `kMaxChannels` vectors of `hopSize` floats is a few hundred KB, paid
+    /// once at construction, never during a live drain.
+    std::array<std::vector<float>, static_cast<std::size_t>(rta::platform::kMaxChannels)>
+        channelScratch_;
 
-    /// The reference channel's half of a paired hop, sized alongside
-    /// `hopScratch_` in the constructor. Kept separate rather than reused
-    /// because `drainPaired` needs both channels' current hop live at once
-    /// (peek both before discarding either -- see PairedDrain.h).
-    std::vector<float> referenceScratch_;
+    /// Paired-hop count per transfer function, read back by `routeHopCount`.
+    std::array<std::atomic<std::uint64_t>, static_cast<std::size_t>(kMaxTransferFunctions)>
+        routeHopCounts_{};
 
     std::atomic<SnapshotPtr> latest_;
     std::uint32_t lastPublishMs_ = 0;
+
+    /// Task F2 (record §6): the one live group this thread publishes.
+    /// Written and read from this thread ALONE (`publishIfDue`'s own call to
+    /// `syncAverageGroupMembership`/`publishAverageGroup`, both in
+    /// AnalysisPublish.h) -- there is no cross-thread accessor, so no lock
+    /// is needed the way `faultLock_` below needs one for a value the
+    /// message thread also reads.
+    AverageGroup averageGroup_;
+    /// `syncAverageGroupMembership`'s own memory of what it last built
+    /// `averageGroup_` from -- see that function's header comment.
+    std::vector<int> lastGroupTfIndices_;
 
     mutable std::mutex faultLock_;
     rta::platform::Fault fault_;

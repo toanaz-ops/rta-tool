@@ -60,6 +60,10 @@ target_sources(rtatool PRIVATE
     # length cap (see that file's own header comment for why).
     src/view/TransferView.cpp
     src/view/TransferRibbon.cpp
+    # TransferViewDraw.cpp is TransferView.cpp's own drawing-helper split
+    # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md), moved out ahead of
+    # L6b adding more to TransferView.cpp.
+    src/view/TransferViewDraw.cpp
     # MtwLayer.cpp is the MTW-specific per-band alpha and seam drawing (task 7
     # of the MTW plan), split out to keep TransferView.cpp under the cap.
     src/view/MtwLayer.cpp
@@ -67,6 +71,10 @@ target_sources(rtatool PRIVATE
     # station-4 fix pass finding 1), split out for the same file-length
     # reason MtwLayer.cpp already gives.
     src/view/MtwReadout.cpp
+    # TransferSourceToggle.cpp is the per-plot MTW/Fixed control
+    # (docs/reports/005-mtw-engine.md "Known gaps"), split out for the same
+    # file-length reason MtwLayer.cpp/MtwReadout.cpp already give.
+    src/view/TransferSourceToggle.cpp
     # WorkspaceView.cpp is task 10's pane container (decision 6) -- the file
     # that finally attaches TraceLibrary to a real pane. Deliberately does
     # NOT include RtaView.h/TransferView.h itself (see its own class
@@ -86,7 +94,15 @@ target_sources(rtatool PRIVATE
     # makeSyntheticSnapshot() instead (see its own target_sources below) and
     # must not link juce_audio_devices.
     src/measure/AnalysisThread.cpp
+    # AnalysisPublish.cpp is AnalysisThread's own wiring of AverageGroup
+    # into its publish path (task F2, record §6) -- JUCE-free, same
+    # one-static-library reason as Analyser.cpp below, so it is named
+    # explicitly in both GUI binaries' source lists.
+    src/measure/AnalysisPublish.cpp
+    src/measure/AverageGroup.cpp
     src/measure/SyntheticInput.cpp
+    # RoutingMatrix.cpp: task F2 mounts it in MainComponent's rail.
+    src/view/RoutingMatrix.cpp
     # Analyser.cpp is JUCE-free and already listed in rtatool_snapshot below,
     # but that is a SEPARATE binary -- AnalysisThread.cpp's calls into
     # rta::measure::Analyser need the definition linked into rtatool too, not
@@ -95,6 +111,10 @@ target_sources(rtatool PRIVATE
     # rtatool_snapshot): one static library would not receive the
     # JUCE_MODULE_AVAILABLE_* defines juce_add_gui_app injects.
     src/measure/Analyser.cpp
+    # AnalyserPublish.cpp is Analyser.cpp's publish()-site block-builder split
+    # (task B0) -- JUCE-free, same one-static-library reason as Analyser.cpp
+    # itself, so it is named explicitly in both GUI binaries' source lists.
+    src/measure/AnalyserPublish.cpp
     # PhaseUnwrap.cpp is what TransferView.cpp's unwrap toggle (decision 4)
     # calls into -- JUCE-free, but the same one-static-library caveat above
     # applies, so it is named explicitly in both GUI binaries' source lists.
@@ -163,6 +183,9 @@ target_sources(rtatool_snapshot PRIVATE
     # its ribbon half, split out to keep TransferView.cpp under the file-
     # length cap. Needed here for transfer.png below.
     src/view/TransferView.cpp
+    # TransferViewDraw.cpp is TransferView.cpp's own drawing-helper split
+    # (task B0), needed here for the same reason.
+    src/view/TransferViewDraw.cpp
     src/view/TransferRibbon.cpp
     # MtwLayer.cpp is the MTW-specific per-band alpha and seam drawing (task 7
     # of the MTW plan), needed here for the specimen render.
@@ -170,6 +193,9 @@ target_sources(rtatool_snapshot PRIVATE
     # MtwReadout.cpp is the per-band integration-seconds strip (record §5,
     # station-4 fix pass finding 1), needed here for the same reason.
     src/view/MtwReadout.cpp
+    # TransferSourceToggle.cpp is the per-plot MTW/Fixed control, needed here
+    # for the same reason -- TransferView owns one per pane unconditionally.
+    src/view/TransferSourceToggle.cpp
     # WorkspaceView.cpp is task 10's pane container (decision 6), needed here
     # for workspace.png. Deliberately does NOT include RtaView.h/
     # TransferView.h itself -- see its own class comment.
@@ -186,6 +212,10 @@ target_sources(rtatool_snapshot PRIVATE
     # toggle (decision 4), JUCE-free but named explicitly for the same
     # one-static-library reason as Analyser.cpp above it.
     src/measure/Analyser.cpp
+    # AnalyserPublish.cpp is Analyser.cpp's publish()-site block-builder split
+    # (task B0) -- needed here for the same one-static-library reason as
+    # Analyser.cpp itself.
+    src/measure/AnalyserPublish.cpp
     src/measure/SyntheticSnapshot.cpp
     src/measure/PhaseUnwrap.cpp
     # main-live.png additionally renders the real MainComponent in synthetic
@@ -198,7 +228,10 @@ target_sources(rtatool_snapshot PRIVATE
     src/MainComponent.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
+    src/view/RoutingMatrix.cpp
     src/measure/AnalysisThread.cpp
+    src/measure/AnalysisPublish.cpp
+    src/measure/AverageGroup.cpp
     src/measure/SyntheticInput.cpp
 )
 

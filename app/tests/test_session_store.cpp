@@ -136,7 +136,7 @@ TEST_CASE("a newer schema on disk is refused", "[store]") {
     CHECK(store.readIndex(back) == StoreStatus::NewerSchema);
 }
 
-TEST_CASE("a loaded v1 session is written back as v2", "[store]") {
+TEST_CASE("a loaded v1 session is written back at the current schema version", "[store]") {
     // Without the stamp in writeIndex, a document decoded from a v1 file
     // keeps schemaVersion == 1 in memory, and saving it after adding a pane
     // would write a v1 file carrying v2 [pane] content -- the one file this
@@ -162,11 +162,16 @@ TEST_CASE("a loaded v1 session is written back as v2", "[store]") {
     REQUIRE(store.writeIndex(doc) == StoreStatus::Ok);
 
     // Read the raw bytes back -- not through readIndex, which would parse
-    // "schema=2" into an int and hide a bug where writeIndex wrote the wrong
-    // literal text (e.g. "schema=1" verbatim, or a stray whitespace that
-    // still happens to parse as 2).
+    // "schema=<N>" into an int and hide a bug where writeIndex wrote the
+    // wrong literal text (e.g. "schema=1" verbatim, or a stray whitespace
+    // that still happens to parse as the right number). Compared against
+    // kSchemaVersion itself, not a hardcoded literal, so this test does not
+    // need editing on the next schema bump (task B6 raised it to 3; this
+    // test's own name is the only thing schema-version-specific left, and
+    // its point -- "loaded at an OLDER schema, saved at the CURRENT one" --
+    // still holds for whatever kSchemaVersion is today).
     std::ifstream in(dir.path / "session.index", std::ios::binary);
     std::string firstLine;
     std::getline(in, firstLine);
-    CHECK(firstLine == "schema=2");
+    CHECK(firstLine == "schema=" + std::to_string(kSchemaVersion));
 }

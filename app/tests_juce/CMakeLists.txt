@@ -35,7 +35,14 @@ add_executable(rtatool_view_tests
     # case.
     test_transfer_view_unwrap.cpp
     test_transfer_view_mtw.cpp
+    # test_transfer_source_toggle.cpp: the per-plot MTW/Fixed UI control
+    # (docs/reports/005-mtw-engine.md "Known gaps").
+    test_transfer_source_toggle.cpp
     test_workspace_view.cpp
+    # test_routing_matrix.cpp: task B7's routing matrix (record §6, §7) --
+    # composes az_ui's GridPanel, JUCE-using for the same reason
+    # TransferSourceToggle.cpp already gives.
+    test_routing_matrix.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)
     #   trace/TraceLibrary.h    -> needs TraceLibrary.cpp linked (entries/revision/setVisible)
@@ -68,6 +75,9 @@ add_executable(rtatool_view_tests
     #     one-translation-unit reason app/CMakeLists.txt names it explicitly
     #     in both GUI binaries).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferView.cpp
+    # TransferViewDraw.cpp: TransferView.cpp's own drawing-helper split
+    # (task B0) -- TransferView.cpp calls into it now.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferViewDraw.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferRibbon.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PlotAxes.cpp
     # test_transfer_view_mtw.cpp's own additional dependency (task 7):
@@ -77,9 +87,17 @@ add_executable(rtatool_view_tests
     # view/MtwReadout.h/.cpp -> the per-band integration-seconds strip
     # (record §5, station-4 fix pass finding 1), same JUCE-using reason.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/MtwReadout.cpp
+    # test_transfer_source_toggle.cpp's own additional dependency:
+    #   view/TransferSourceToggle.h/.cpp -> the per-plot MTW/Fixed control
+    #     under test, JUCE-using (juce::TextButton) for the same reason
+    #     MtwLayer.cpp/MtwReadout.cpp already give.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferSourceToggle.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
+    # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
+    # (task B0) -- Analyser.cpp calls into it now.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
     # test_workspace_view.cpp's own additional dependency set (task 10):
     #   view/WorkspaceView.h/.cpp -> the pane container under test; needs
     #     az::ui::splitVertically, already linked in through az_ui below.
@@ -89,6 +107,9 @@ add_executable(rtatool_view_tests
     #     target, hence not listed until now.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/WorkspaceView.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RtaView.cpp
+    # RoutingMatrix.cpp: test_routing_matrix.cpp's own dependency (task B7).
+    # Links rta::platform_types (below) for ChannelConfig.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RoutingMatrix.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:
@@ -108,6 +129,9 @@ target_link_libraries(rtatool_view_tests PRIVATE
     # dependency chain, see the target_sources comment above) links against
     # rta_core's DSP engines.
     rta::core
+    # rta::platform_types: RoutingMatrix.cpp/test_routing_matrix.cpp's own
+    # ChannelConfig dependency (task B7).
+    rta::platform_types
     juce::juce_gui_basics
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
@@ -136,3 +160,46 @@ target_compile_definitions(rtatool_view_tests PRIVATE
 # (catch_discover_tests names each ctest case after the TEST_CASE name, not its
 # tags, so a tag is not selectable from ctest at all).
 catch_discover_tests(rtatool_view_tests TEST_PREFIX "view/")
+
+# --- Routing, live (task B2) ------------------------------------------------
+# AnalysisThread is JUCE-owning (juce::Thread) but carries NO GUI: this
+# target links juce_core only, never juce_gui_basics/az_ui, which is why it
+# is a separate executable from rtatool_view_tests above rather than folded
+# into it. Proves record §11 T11 (two transfer functions sharing a reference
+# get equal hop counters; two naming different references get independent
+# ones) against a REAL CaptureBus + AnalysisThread + poll loop -- the pure
+# routing DECISION itself is already covered OFF-build by
+# app/tests/test_routing_plan.cpp.
+add_executable(rtatool_routing_live_tests
+    test_routing_live.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
+    # AverageGroup.cpp / AnalysisPublish.cpp: task F2 wires AnalysisThread's
+    # publishIfDue() through both -- AnalysisThread.h now includes
+    # measure/AverageGroup.h and measure/AnalysisPublish.h, so this target
+    # needs their definitions linked even though this file's own tests
+    # exercise routing, not the group publish.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.cpp
+)
+
+target_include_directories(rtatool_routing_live_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+target_link_libraries(rtatool_routing_live_tests PRIVATE
+    rta::core
+    rta::platform_types
+    juce::juce_core
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+    Catch2::Catch2WithMain
+)
+
+target_compile_definitions(rtatool_routing_live_tests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_STANDALONE_APPLICATION=1
+)
+
+catch_discover_tests(rtatool_routing_live_tests TEST_PREFIX "routing_live/")

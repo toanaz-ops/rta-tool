@@ -192,3 +192,66 @@ TEST_CASE("makeSyntheticTransfer is deterministic", "[synthetic-transfer]") {
         CHECK((*a.coherence)[i] == (*b.coherence)[i]);
     }
 }
+
+// ---------------------------------------------------------------------
+// makeSyntheticMtw: the per-band fixture behind the MTW half of transfer.png
+// and workspace.png (docs/reports/005-mtw-engine.md "Known gaps": "no
+// committed snapshot fixture carries an MtwBlock"). Point count and seam
+// frequencies are checked against the SAME closed forms
+// test_analyser_mtw.cpp checks the real engine against -- 1281 points, seams
+// at 187.5/375/750/1500/3000/6000 Hz for the default MtwConfig -- not a
+// number this fixture invented for itself.
+// ---------------------------------------------------------------------
+
+// CATCHES: an off-by-one in mtwFrequencies' own point count reaching this
+// fixture wrong, or a fixture that filled its arrays from the wrong source
+// (fftSize/2+1 instead of the MTW engine's own stitched length).
+TEST_CASE("makeSyntheticMtw's arrays are all mtwPointCount long and strictly increasing",
+          "[synthetic-mtw]") {
+    const auto block = makeSyntheticMtw();
+
+    REQUIRE(block.frequencyHz.size() == 1281);
+    CHECK(block.magnitudeDb.size() == 1281);
+    CHECK(block.phaseDeg.size() == 1281);
+    CHECK(block.coherence.size() == 1281);
+
+    for (std::size_t i = 1; i < block.frequencyHz.size(); ++i) {
+        CAPTURE(i);
+        CHECK(block.frequencyHz[i] > block.frequencyHz[i - 1]);
+    }
+}
+
+// CATCHES: band descriptors built from a hand-picked table instead of
+// rta::dsp::mtwBands -- a seam at the wrong frequency, or a band marked
+// available before its coherence is meant to exist.
+TEST_CASE("makeSyntheticMtw's band descriptors carry the record's own seam frequencies",
+          "[synthetic-mtw]") {
+    const auto block = makeSyntheticMtw();
+    REQUIRE(block.bands.size() == 7);
+
+    const std::vector<float> expectedSeamHz{ 0.0f, 187.5f, 375.0f, 750.0f, 1500.0f, 3000.0f, 6000.0f };
+    std::size_t totalPoints = 0;
+    for (std::size_t i = 0; i < block.bands.size(); ++i) {
+        CAPTURE(i);
+        CHECK(block.bands[i].seamHz == Catch::Approx(expectedSeamHz[i]));
+        CHECK(block.bands[i].coherenceAvailable);
+        totalPoints += block.bands[i].pointCount;
+    }
+    CHECK(totalPoints == 1281);
+}
+
+// CATCHES: hidden state (an uninitialised buffer, a static counter) that
+// would make the MTW half of transfer.png non-reproducible across runs, the
+// same property makeSyntheticTransfer already guarantees for the fixed half.
+TEST_CASE("makeSyntheticMtw is deterministic", "[synthetic-mtw]") {
+    const auto a = makeSyntheticMtw();
+    const auto b = makeSyntheticMtw();
+
+    REQUIRE(a.frequencyHz.size() == b.frequencyHz.size());
+    for (std::size_t i = 0; i < a.frequencyHz.size(); ++i) {
+        CHECK(a.frequencyHz[i] == b.frequencyHz[i]);
+        CHECK(a.magnitudeDb[i] == b.magnitudeDb[i]);
+        CHECK(a.phaseDeg[i] == b.phaseDeg[i]);
+        CHECK(a.coherence[i] == b.coherence[i]);
+    }
+}

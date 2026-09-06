@@ -6,8 +6,12 @@
 #include "measure/Analyser.h"
 #include "measure/Snapshot.h"
 
+#include "rta/dsp/MtwLayout.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace rta::measure {
 
@@ -49,5 +53,41 @@ struct SyntheticSpec {
 /// has to be reviewable as a byte-for-byte diff.
 [[nodiscard]] TransferBlock makeSyntheticTransfer(std::size_t fftSize, double sampleRate,
                                                   int delaySamples);
+
+/// The MTW twin of `makeSyntheticTransfer`: the SAME closed-form magnitude and
+/// coherence curves (`magnitudeDbAt` / `coherenceAt`), evaluated at the MTW
+/// engine's own explicit, per-band frequency vector (`rta::dsp::mtwFrequencies`)
+/// instead of a fixed bin width -- so a picture built from this fixture stays
+/// recognisable next to `transfer.png`'s fixed curve. Every band descriptor
+/// (`seamHz`, `firstIndex`, `windowSeconds`, `integrationSeconds`) comes
+/// straight from `rta::dsp::mtwBands`, never a hand-picked number, which is
+/// what puts the seams at the record's own frequencies (187.5/375/750/1500/
+/// 3000/6000 Hz at the default `config`) rather than wherever this fixture
+/// happened to draw a line.
+///
+/// `effectiveAverages` is fixed at the record's own closed-form constant for
+/// a FULLY FILLED FIFO at the default depth (docs/dsp/2026-09-05-mtw-l3.md
+/// §5; `test_analyser_mtw.cpp` checks the same digits against the real
+/// engine) -- this fixture states a completed measurement, not a mid-fill
+/// one, so `coherenceAvailable` is true in every band and this is never
+/// recomputed from a window here.
+[[nodiscard]] MtwBlock makeSyntheticMtw(const rta::dsp::MtwConfig& config = rta::dsp::MtwConfig{},
+                                        int delaySamples = 0);
+
+/// A deterministic spatial-average fixture (task B7): `positionCount`
+/// synthetic positions combined on the SAME fixed grid `makeSyntheticTransfer`
+/// uses (`fftSize`/`sampleRate`) -- reusing that function's own closed-form
+/// magnitude/coherence curves so the specimen's average trace stays visually
+/// coherent next to the per-position curve it stands in for.
+///
+/// Deliberately `fftSize`/`sampleRate`, NOT `rta::dsp::MtwConfig`: `Snapshot::
+/// average` (task B3) is built from `rta::dsp::spatialAverage`, the FIXED-
+/// engine combine, not `spatialAverageMtw` -- B3 did not wire the MTW
+/// spatial average into any app-layer type, so a fixture for the MTW
+/// variant would have nothing in `app/` to feed. Every position reports the
+/// SAME curves here (a real group's positions would differ); this fixture
+/// exists to prove the DISPLAY reads the fields, not to model a real room.
+[[nodiscard]] std::pair<AverageBlock, std::vector<PositionSummary>> makeSyntheticAverage(
+    std::size_t fftSize, double sampleRate, int positionCount);
 
 }  // namespace rta::measure

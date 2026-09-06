@@ -43,6 +43,24 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
   nguyên: **nêu tên được, trích thì không, khi chưa cầm bản thật.** Mua khi
   tiện, đừng xếp nó cạnh hai mục trên như thể cùng mức khẩn.
 
+## Từ lane L6b (2026-09-06, record `docs/dsp/2026-09-06-multichannel-l6b.md`)
+
+- [ ] **Ngưỡng "capture xấu" theo phần băng tần coherence tin được.** Record §8
+  chỉ TỪ CHỐI capture trên hai tiêu chí không cần bịa số (overload ≥ 3 mẫu
+  liên tiếp tại full scale; engine chưa qua cổng 8 average). Phần băng tần
+  coherence-tin-được được *báo* theo từng capture, không *chặn*. Không nguồn
+  nào (Smaart, SysTune, REW, M1, SMPTE ST 202) công bố quy tắc "dưới X trên
+  Y % băng" — một con số ở đây sẽ là phát minh của dự án, và theo memory
+  `a-threshold-read-off-a-grid-is-that-grids-floor` nó cần một hệ thống thật.
+  Câu hỏi: sau vài buổi đo thật, capture bị bỏ ở mức nào? Chưa chặn việc.
+- [ ] **Remote API — hai quyết định chủ nhân cần nói một câu**: (a) bind
+  localhost mặc định (REW) hay mọi adapter kèm password (Smaart)? Record §10
+  đề xuất localhost; (b) API có được *ghi* routing không, hay chỉ đọc? Record
+  đề xuất read-only trước. Không chặn L6b-a/L6b-b; chặn lane remote.
+- [ ] **Đường output generator (auto solo/mute, G20)** — record §8 để ngoài L6b
+  vì nó đổi hợp đồng audio callback. Chủ nhân muốn nó là lane riêng sau L6b,
+  hay gộp vào L7 (solvers cũng cần phát tín hiệu)? Không chặn.
+
 ## Chờ một câu của chủ nhân, không phải một quyết định khó
 
 - [x] **`[!]` Merge lane L4a vào `main` — ĐÃ MERGE 2026-08-30**, commit

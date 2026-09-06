@@ -12,8 +12,16 @@
 #include "view/StoredTraceLayer.h"
 
 #include <array>
+#include <memory>
 
 namespace rta::view {
+
+/// Forward-declared, not included: TransferSourceToggle.h includes THIS
+/// header (it needs the full `TransferPane`/`TransferSource` enums and a
+/// `TransferView&` to call `setSource`/`source` on), so this header can only
+/// hold pointers to it. TransferView.cpp includes the real header where the
+/// three toggles are actually constructed.
+class TransferSourceToggle;
 
 /// The three curves the Bode composite draws -- NOT the three stacked
 /// `PaneRect`s in `BodePanes` (ribbon/magnitude/phase), though Coherence
@@ -50,6 +58,13 @@ public:
     [[nodiscard]] TransferSource source(TransferPane pane) const noexcept {
         return sources_[static_cast<std::size_t>(pane)];
     }
+
+    /// The on-screen control for `pane`'s source toggle (docs/reports/
+    /// 005-mtw-engine.md "Known gaps": this used to be an API with no
+    /// control). Production API existing so a test can drive the actual
+    /// click-to-`setSource` wiring, the same trade `panes()` documents on
+    /// its own declaration above.
+    [[nodiscard]] TransferSourceToggle& sourceToggle(TransferPane pane) noexcept;
 
     /// Nullable, null by default -- same contract RtaView::setLibrary states.
     /// `override`: implements `LibraryConsumer` (view/PaneRegistry.h), the
@@ -116,6 +131,13 @@ private:
     /// three by default (record §6).
     std::array<TransferSource, 3> sources_{ TransferSource::Mtw, TransferSource::Mtw,
                                             TransferSource::Mtw };
+
+    /// One toggle per pane, same indexing as `sources_` above, built in the
+    /// body of the constructor (after `sources_` is already default-
+    /// initialised, which is what `sourceToggle`'s own `refresh()` reads on
+    /// construction) -- `unique_ptr` because `TransferSourceToggle` is only
+    /// forward-declared here.
+    std::array<std::unique_ptr<TransferSourceToggle>, 3> toggles_;
 
     /// One cached layer per pane. The O(1)-in-trace-count property L5a bought
     /// has to survive multiplication by panes, which is what

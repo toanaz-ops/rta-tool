@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cmath>
 #include <span>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace rta::measure {
@@ -178,6 +180,99 @@ TransferBlock makeSyntheticTransfer(std::size_t fftSize, double sampleRate, int 
     block.appliedDelaySamples = 0;
 
     return block;
+}
+
+// 8.5866271: fifoEffectiveAverages(hann(N), N/4, 16) -- the record's own
+// digits (docs/dsp/2026-09-05-mtw-l3.md §5) for a FULLY FILLED FIFO at the
+// default depth, identical in every band because hop/N = 1/4 everywhere.
+// test_analyser_mtw.cpp checks this same constant against the real engine;
+// this fixture states a completed measurement, so it is never recomputed
+// from a window here.
+constexpr double kSyntheticMtwEffectiveAverages = 8.5866271;
+
+MtwBlock makeSyntheticMtw(const rta::dsp::MtwConfig& config, int delaySamples) {
+    MtwBlock block;
+    block.frequencyHz = rta::dsp::mtwFrequencies(config);
+    const std::size_t n = block.frequencyHz.size();
+
+    block.magnitudeDb.resize(n);
+    block.phaseDeg.resize(n);
+    block.coherence.resize(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double hz = block.frequencyHz[i];
+        block.magnitudeDb[i] = static_cast<float>(magnitudeDbAt(hz));
+        // The same pure-delay closed form makeSyntheticTransfer's phase uses,
+        // evaluated at this point's own frequency rather than a fixed bin
+        // width -- see this function's header comment for why the frequency
+        // vector itself has to be per-point.
+        const double phaseDeg = -360.0 * hz * static_cast<double>(delaySamples) / config.sampleRate;
+        block.phaseDeg[i] = wrapDegrees180(phaseDeg);
+        block.coherence[i] = static_cast<float>(coherenceAt(hz));
+    }
+
+    const auto bands = rta::dsp::mtwBands(config);
+    block.bands.reserve(bands.size());
+    for (const auto& band : bands) {
+        MtwBandDescriptor descriptor;
+        descriptor.firstIndex = band.firstIndex;
+        descriptor.pointCount = band.lastBin - band.firstBin + 1;
+        descriptor.fftSize = band.fftSize;
+        descriptor.windowSeconds = static_cast<float>(band.windowSeconds);
+        descriptor.integrationSeconds = static_cast<float>(band.integrationSeconds);
+        descriptor.effectiveAverages = kSyntheticMtwEffectiveAverages;
+        descriptor.seamHz = static_cast<float>(band.lowerEdgeHz);
+        // A fully filled fixture (this function's own contract comment) --
+        // every band has passed its own gate, unlike Analyser::publish's live
+        // per-band fill (Snapshot.h's own comment on coherenceAvailable).
+        descriptor.coherenceAvailable = true;
+        block.bands.push_back(descriptor);
+    }
+    block.appliedDelaySamples = 0;
+
+    return block;
+}
+
+std::pair<AverageBlock, std::vector<PositionSummary>> makeSyntheticAverage(std::size_t fftSize,
+                                                                           double sampleRate,
+                                                                           int positionCount) {
+    AverageBlock average;
+    const std::size_t bins = fftSize > 0 ? fftSize / 2 + 1 : 0;
+    const double binHz = fftSize > 0 ? sampleRate / static_cast<double>(fftSize) : 0.0;
+
+    average.magnitudeDb.resize(bins);
+    average.phaseDeg.resize(bins);
+    average.phaseAgreement.resize(bins);
+    average.weightedCoherence.resize(bins);
+    average.contributors.assign(bins, static_cast<std::uint16_t>(positionCount));
+    average.absence.assign(bins, rta::dsp::SpatialAbsence::Present);
+
+    for (std::size_t k = 0; k < bins; ++k) {
+        const double hz = static_cast<double>(k) * binHz;
+        average.magnitudeDb[k] = static_cast<float>(magnitudeDbAt(hz));
+        // R (phaseAgreement) and weightedCoherence are two DIFFERENT
+        // quantities (record §4) -- given two different curves here, not
+        // the same one twice, so a reader of the specimen can tell them
+        // apart the same way the real display must.
+        average.phaseAgreement[k] = static_cast<float>(coherenceAt(hz));
+        average.weightedCoherence[k] = static_cast<float>(coherenceAt(hz) * 0.9);
+        average.phaseDeg[k] = 0.0f;  // this fixture states no phase slope
+    }
+
+    std::vector<PositionSummary> positions;
+    positions.reserve(static_cast<std::size_t>(positionCount));
+    for (int i = 0; i < positionCount; ++i) {
+        PositionSummary summary;
+        summary.tfIndex = i;
+        summary.name = "POS " + std::to_string(i + 1);
+        summary.levelDb = static_cast<float>(magnitudeDbAt(1000.0) - i);
+        summary.weightedCoherence = static_cast<float>(coherenceAt(1000.0));
+        summary.effectiveAverages = kSyntheticEffectiveAverages;
+        summary.gatePassed = true;
+        summary.overloaded = false;
+        positions.push_back(std::move(summary));
+    }
+
+    return {std::move(average), std::move(positions)};
 }
 
 }  // namespace rta::measure

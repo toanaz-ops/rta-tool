@@ -3,12 +3,12 @@
 // See docs/plans/2026-08-27-audioio-rta-impl-plan.md §1.3, §3.4.
 #include "measure/Analyser.h"
 
+#include "measure/AnalyserPublish.h"
 #include "measure/Levels.h"
 
 #include "rta/dsp/OctaveBands.h"
 
 #include <algorithm>
-#include <numbers>
 #include <stdexcept>
 #include <utility>
 
@@ -200,72 +200,19 @@ SnapshotPtr Analyser::publish(std::uint64_t droppedSamples) {
 
     if (dualEngaged_ && dual_.frameCount() > 0) {
         const auto tf = rta::dsp::makeSnapshot(dual_, config_.estimator);
-        TransferBlock block;
-        block.magnitudeDb = tf.magnitudeDb;
-        block.phaseDeg.resize(tf.phaseRadians.size());
-        // The one radians -> degrees crossing in the whole application: core
-        // wraps to (-pi, pi] because that is the natural output of a complex
-        // division, but every consumer in view/ works in degrees because
-        // PlotGeometry's phase pane runs +180 to -180.
-        for (std::size_t i = 0; i < tf.phaseRadians.size(); ++i) {
-            block.phaseDeg[i] =
-                tf.phaseRadians[i] * static_cast<float>(180.0 / std::numbers::pi);
-        }
-        // Copies the optional itself, not its value -- absence of coherence
-        // (below the effective-average gate) must survive this hop unchanged.
-        block.coherence = tf.coherence;
-        block.effectiveAverages = tf.effectiveAverages;
-        block.appliedDelaySamples = config_.referenceDelaySamples;
-        snapshot->transfer = std::move(block);
+        snapshot->transfer = makeTransferBlock(tf, config_.referenceDelaySamples);
     }
 
     if (mtwEngaged_) {
         // The ONE place an MtwResult is stitched from bands, mirroring the
-        // fixed engine's own makeSnapshot() call three lines above -- and the
-        // one place a flat per-point coherence array is written from it
-        // (record §5's guard note: core's MtwResult carries no coherence
-        // member of its own precisely so this copy has to happen here,
-        // outside check_coherence_gate.cmake's reach, after the gate already
-        // ran inside makeSnapshot()).
+        // fixed engine's own makeSnapshot() call three lines above. The block
+        // builder itself -- including the one place a flat per-point
+        // coherence array is written from the per-band gated snapshots
+        // (record §5's guard note) -- lives in AnalyserPublish.cpp, outside
+        // check_coherence_gate.cmake's reach, after the gate already ran
+        // inside makeMtwResult().
         const auto mtwResult = rta::dsp::makeMtwResult(mtw_, config_.estimator);
-        MtwBlock block;
-        block.frequencyHz = mtwResult.frequencyHz;
-        block.magnitudeDb = mtwResult.magnitudeDb;
-        block.phaseDeg.resize(mtwResult.phaseRadians.size());
-        for (std::size_t i = 0; i < mtwResult.phaseRadians.size(); ++i) {
-            block.phaseDeg[i] =
-                mtwResult.phaseRadians[i] * static_cast<float>(180.0 / std::numbers::pi);
-        }
-        // 0.0f, not left uninitialised, for indices whose owning band has not
-        // yet passed its own gate -- MtwBandDescriptor::coherenceAvailable is
-        // what a reader must check before trusting an entry here, never the
-        // value itself.
-        block.coherence.assign(mtwResult.frequencyHz.size(), 0.0f);
-        block.bands.reserve(mtwResult.bands.size());
-        for (std::size_t b = 0; b < mtwResult.bands.size(); ++b) {
-            const auto& band = mtwResult.bands[b];
-            const auto& bandSnapshot = mtwResult.bandSnapshots[b];
-
-            MtwBandDescriptor descriptor;
-            descriptor.firstIndex = band.firstIndex;
-            descriptor.pointCount = band.lastBin - band.firstBin + 1;
-            descriptor.fftSize = band.fftSize;
-            descriptor.windowSeconds = static_cast<float>(band.windowSeconds);
-            descriptor.integrationSeconds = static_cast<float>(band.integrationSeconds);
-            descriptor.effectiveAverages = bandSnapshot.effectiveAverages;
-            descriptor.seamHz = static_cast<float>(band.lowerEdgeHz);
-            descriptor.coherenceAvailable = bandSnapshot.coherence.has_value();
-
-            if (descriptor.coherenceAvailable) {
-                for (std::size_t i = 0; i < descriptor.pointCount; ++i) {
-                    block.coherence[descriptor.firstIndex + i] =
-                        (*bandSnapshot.coherence)[band.firstBin + i];
-                }
-            }
-            block.bands.push_back(descriptor);
-        }
-        block.appliedDelaySamples = config_.referenceDelaySamples;
-        snapshot->mtw = std::move(block);
+        snapshot->mtw = makeMtwBlock(mtwResult, config_.referenceDelaySamples);
     }
 
     SnapshotPtr result(snapshot);

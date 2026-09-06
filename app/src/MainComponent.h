@@ -15,6 +15,7 @@
 #include "trace/TraceLibrary.h"
 #include "view/ChannelRoleTable.h"
 #include "view/DevicePanel.h"
+#include "view/RoutingMatrix.h"
 #include "view/WorkspaceView.h"
 
 #include <memory>
@@ -90,6 +91,19 @@ private:
     /// mode.
     void refreshChannelNamesFromDevice();
 
+    /// Station-4 fix F3 (record §6): pushes the AVG column from the latest
+    /// published Snapshot's `positions`. Called from BOTH `timerCallback()`
+    /// (2 Hz, live/interactive use) AND `resized()` -- NOT the timer alone,
+    /// because `juce::Timer` fires through the message loop, and
+    /// tools/snapshot.cpp's offscreen render drives this class through a
+    /// blocking `juce::Thread::sleep()` with no message loop pumped at all,
+    /// the same reason `renderComponent()` there has to call `resized()`
+    /// explicitly (that file's own comment on trap T-6). Without this second
+    /// call site, main-live.png would show every row's ROLE (set eagerly by
+    /// `setSyntheticMode()`) but every row's AVG stuck at its
+    /// construction-time "--", never having had a chance to run.
+    void refreshMembershipFromSnapshot();
+
     // --- Trap T-1: declaration order is load-bearing. See the class comment.
     rta::platform::AudioIo audioIo_;
     rta::measure::AnalysisThread analysisThread_;
@@ -99,6 +113,15 @@ private:
     juce::TextButton modeSwitch_{"SYNTHETIC"};
     rta::view::DevicePanel devicePanel_;
     rta::view::ChannelRoleTable channelRoleTable_;
+    /// Task F2 (record §6, §7): assigns Measurement/Reference roles and a
+    /// transfer-function index per channel (`ChannelConfig::setRole` /
+    /// `setTransferFunction`, task B1) -- the two facts `planRouting`
+    /// resolves into the routes `AnalysisThread` averages. Fixed at
+    /// `rta::measure::kMaxTransferFunctions` rows (RoutingMatrix.h has no
+    /// dynamic resize API, task B7's own limit): routing more channels than
+    /// this app can hold live `Analyser`s for has no route to assign them
+    /// to anyway.
+    rta::view::RoutingMatrix routingMatrix_;
 
     // --- library_ before workspace_ is load-bearing too. See the class
     // comment's extension of trap T-1.

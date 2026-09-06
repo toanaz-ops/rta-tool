@@ -41,13 +41,13 @@ REW Pro. URLs in the research transcript. Thirteen further gaps adopted:
 
 | # | Gap | Seen at | Lands in |
 |---|---|---|---|
-| G14 | Spatial multi-mic averaging with per-mic weighting and SPL alignment | REW Pro, M1 | **P6** |
-| G15 | Coherence-weighted blending of multi-mic captures (down-weight a noisy position) | REW Pro + SysTune SSA concept | **P6** |
+| G14 | Spatial multi-mic averaging with per-mic weighting and SPL alignment | REW Pro, M1 | **P6** — **BUILT 2026-09-06 (L6b)**, `docs/dsp/2026-09-06-multichannel-l6b.md` |
+| G15 | Coherence-weighted blending of multi-mic captures (down-weight a noisy position) | ~~REW Pro + SysTune SSA concept~~ **Smaart only** — corrected by L6b station 1: REW has no coherence weighting, and SysTune "SSA" is *Spectrally Selective Accumulation*, a temporal bad-data filter (a G20 precedent) | **P6** — **BUILT 2026-09-06 (L6b)** |
 | G16 | Environment compensation: temperature/humidity → speed of sound, delay-drift warning | CrossLite+, AudioTools | **P2** (delay finder gains an optional environment input) |
 | G17 | Sub/main alignment wizard — guided or one-click delay/polarity proposal | M1 Autoalign, SATlive Delay-Suggestion | **P7** (UI front end over G11's summation prediction) |
 | G18 | Crossover design surface (LR/Butterworth/Bessel 12-48 dB/oct + FIR) with phase-alignment cursor | CrossLite+ | **P7** (UI mode over G10/G11 math, no new DSP) |
 | G19 | Network-audio input at protocol level (Dante/AVB/Milan) | M1 (Milan via P1) | **P8** — own research pass; scoped to protocol input, never vendor-hardware coupling |
-| G20 | Measurement sequencing with auto solo/mute and automatic bad-capture discard | M1 | **P6** |
+| G20 | Measurement sequencing with auto solo/mute and automatic bad-capture discard | M1 (only "Autosolo" and auto-grouping are attested; **no reachable M1 document defines a discard criterion** — L6b station 1) | **P6** — **PARTLY BUILT 2026-09-06 (L6b)**: sequencer + refusal on overload / gate-not-cleared; **auto solo/mute needs a generator output path that does not exist** — own record, see `HUMAN-QA-QUEUE` |
 | G21 | One-click polarity checker (sign of first arrival) | AudioTools, SysTune delay module | **P4** (cheap IR-toolkit add) |
 | G22 | Offline dual-FFT against a reference WAV with latency compensation | WaveCapture, REW | **P4** |
 | G23 | Cepstrum and wavelet / cycle-wavelet views | WaveCapture, CLIO | **P5** |

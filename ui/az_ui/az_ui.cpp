@@ -4,6 +4,7 @@
 #include "theme/Layout.cpp"
 #include "theme/Typography.cpp"
 #include "theme/Primitives.cpp"
+#include "theme/GridPanel.cpp"
 #include "theme/AzLookAndFeel.cpp"
 #include "theme/AzLookAndFeel_Buttons.cpp"
 #include "theme/AzLookAndFeel_Widgets.cpp"
