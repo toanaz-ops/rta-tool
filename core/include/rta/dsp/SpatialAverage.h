@@ -67,4 +67,24 @@ struct SpatialAverageResult {
     std::span<const TransferSnapshot> positions, std::span<const double> u,
     SpatialMode mode = SpatialMode::Db);
 
+/// The always-returning combine underneath spatialAverage(): identical
+/// validation and per-bin arithmetic, but never collapses an all-absent
+/// result to std::nullopt -- every bin's real SpatialBinState (Present,
+/// NoContributor or NoWeight, and its true contributor count) comes back
+/// regardless of whether any bin in THIS call happened to be Present.
+///
+/// spatialAverage() is a thin wrapper: call this, then return std::nullopt
+/// iff no bin is Present. spatialAverageMtw() (SpatialMtw.h) calls this
+/// function once per band and applies that same "all-absent -> nullopt" rule
+/// exactly once, over the whole stitched result -- never per band. Combining
+/// per-band nullopts by substituting a placeholder for the missing band would
+/// discard that band's real per-bin absence reason (a bin with contributors
+/// but zero weight is NOT the same as a bin nobody measured), which is the
+/// defect memory/a-fixed-defect-returns-through-the-silent-fallback.md
+/// describes: a fix that adds a better path must make its other branch
+/// refuse, not quietly degrade to a wrong default.
+[[nodiscard]] SpatialAverageResult spatialAverageBins(std::span<const TransferSnapshot> positions,
+                                                       std::span<const double> u,
+                                                       SpatialMode mode = SpatialMode::Db);
+
 }  // namespace rta::dsp

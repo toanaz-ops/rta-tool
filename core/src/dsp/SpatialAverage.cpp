@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "rta/dsp/SpatialAverage.h"
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -39,8 +40,8 @@ void validateInputs(std::span<const TransferSnapshot> positions, std::span<const
 
 }  // namespace
 
-std::optional<SpatialAverageResult> spatialAverage(std::span<const TransferSnapshot> positions,
-                                                    std::span<const double> u, SpatialMode mode) {
+SpatialAverageResult spatialAverageBins(std::span<const TransferSnapshot> positions,
+                                         std::span<const double> u, SpatialMode mode) {
     validateInputs(positions, u);
 
     const std::size_t bins = positions.front().h.size();
@@ -53,8 +54,6 @@ std::optional<SpatialAverageResult> spatialAverage(std::span<const TransferSnaps
     result.phaseAgreement.assign(bins, 0.0f);
     result.weightedCoherence.assign(bins, 0.0f);
     result.bins.assign(bins, SpatialBinState{});
-
-    bool anyPresent = false;
 
     for (std::size_t k = 0; k < bins; ++k) {
         double sumW = 0.0;            // Sum W_i over contributors with W_i != 0
@@ -115,7 +114,6 @@ std::optional<SpatialAverageResult> spatialAverage(std::span<const TransferSnaps
             continue;
         }
 
-        anyPresent = true;
         result.bins[k].absence = SpatialAbsence::Present;
 
         const double combined = (mode == SpatialMode::Db)
@@ -138,6 +136,22 @@ std::optional<SpatialAverageResult> spatialAverage(std::span<const TransferSnaps
             r > static_cast<double>(contributors) * std::numeric_limits<double>::epsilon();
     }
 
+    return result;
+}
+
+std::optional<SpatialAverageResult> spatialAverage(std::span<const TransferSnapshot> positions,
+                                                    std::span<const double> u, SpatialMode mode) {
+    SpatialAverageResult result = spatialAverageBins(positions, u, mode);
+    // The record's rule applied exactly once, here: nullopt iff every bin's
+    // weights summed to zero -- a curve of nothing must not masquerade as a
+    // result (memory/a-fixed-defect-returns-through-the-silent-fallback.md).
+    // spatialAverageBins() itself never makes this judgement, so callers that
+    // need the real per-bin state of an all-absent slice (spatialAverageMtw,
+    // one band at a time) can bypass it.
+    const bool anyPresent = std::any_of(result.bins.begin(), result.bins.end(),
+                                         [](const SpatialBinState& bin) {
+                                             return bin.absence == SpatialAbsence::Present;
+                                         });
     if (!anyPresent) {
         return std::nullopt;
     }

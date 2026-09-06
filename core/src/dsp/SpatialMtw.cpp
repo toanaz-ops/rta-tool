@@ -30,24 +30,6 @@ void validateInputs(std::span<const MtwResult> positions, std::span<const double
     }
 }
 
-/// The stand-in for a band whose own spatialAverage() returned nullopt (every
-/// weight zero in every bin of that band): a same-shaped, all-absent result,
-/// so the stitch below never has to special-case a missing band -- it looks
-/// exactly like what spatialAverage() itself leaves "untouched" per bin.
-SpatialAverageResult emptyBandResult(const TransferSnapshot& sample, SpatialMode mode) {
-    SpatialAverageResult result;
-    result.mode = mode;
-    result.sampleRate = sample.sampleRate;
-    result.binWidthHz = sample.binWidthHz;
-    const std::size_t bins = sample.h.size();
-    result.magnitudeDb.assign(bins, 0.0f);
-    result.phaseRadians.assign(bins, 0.0f);
-    result.phaseAgreement.assign(bins, 0.0f);
-    result.weightedCoherence.assign(bins, 0.0f);
-    result.bins.assign(bins, SpatialBinState{});
-    return result;
-}
-
 }  // namespace
 
 std::optional<SpatialMtwResult> spatialAverageMtw(std::span<const MtwResult> positions,
@@ -78,23 +60,29 @@ std::optional<SpatialMtwResult> spatialAverageMtw(std::span<const MtwResult> pos
             bandPositions[i] = positions[i].bandSnapshots[b];
         }
 
-        auto bandResult = spatialAverage(bandPositions, u, mode);
-        if (bandResult.has_value()) {
-            anyPresent = true;
-        } else {
-            bandResult = emptyBandResult(bandPositions.front(), mode);
-        }
+        // spatialAverageBins(), never spatialAverage(): the always-returning
+        // form carries this band's REAL per-bin SpatialBinState even when
+        // every bin of THIS band is absent -- a bin with contributors but
+        // zero weight (NoWeight) must not collapse to the same
+        // {NoContributor, 0} a truly unmeasured bin would report. The
+        // all-absent -> nullopt rule is applied once, below, over the whole
+        // stitched result (memory/a-fixed-defect-returns-through-the-silent-
+        // fallback.md).
+        auto bandResult = spatialAverageBins(bandPositions, u, mode);
 
         const auto& band = bandLayout[b];
         for (std::size_t bin = band.firstBin; bin <= band.lastBin; ++bin) {
             const std::size_t index = band.firstIndex + (bin - band.firstBin);
-            result.magnitudeDb[index] = bandResult->magnitudeDb[bin];
-            result.phaseRadians[index] = bandResult->phaseRadians[bin];
-            result.phaseAgreement[index] = bandResult->phaseAgreement[bin];
-            result.weightedCoherence[index] = bandResult->weightedCoherence[bin];
-            result.bins[index] = bandResult->bins[bin];
+            result.magnitudeDb[index] = bandResult.magnitudeDb[bin];
+            result.phaseRadians[index] = bandResult.phaseRadians[bin];
+            result.phaseAgreement[index] = bandResult.phaseAgreement[bin];
+            result.weightedCoherence[index] = bandResult.weightedCoherence[bin];
+            result.bins[index] = bandResult.bins[bin];
+            if (bandResult.bins[bin].absence == SpatialAbsence::Present) {
+                anyPresent = true;
+            }
         }
-        result.bands.push_back(std::move(*bandResult));
+        result.bands.push_back(std::move(bandResult));
     }
 
     if (!anyPresent) {
