@@ -53,8 +53,11 @@ refusal → test số học FAILED (average thành 3-way) → revert → GREEN. 
   trước khi dispatch verifier chạy lệnh git.**
 
 ## Còn mở
-- **Đã commit `404739a`; chưa merge, chưa push.** Merge và push đều là lệnh của
-  chủ nhân, chưa nói trong phiên này.
+- **ĐÃ MERGE VÀO `main` VÀ PUSH LÊN `origin`, 2026-09-06.** Chủ nhân ra lệnh
+  "merge to main and push" cuối phiên. Merge `--no-ff` trong primary worktree
+  (`git -C`, đã kiểm primary sạch trước) tại `ed2a5e0`; `git push origin main`
+  → `7122070..ed2a5e0`; `git rev-list --count origin/main..main` → 0 (đo, đừng
+  chép). Hai commit của phiên: `404739a` (fix) + `cbca9bf` (docs).
 - ~~Ba câu hỏi chủ nhân L6b~~ **ĐÃ TRẢ LỜI 2026-09-06** (xem `HUMAN-QA-QUEUE`
   mục L6b): (1) capture gate = giữ report-only, SysTune soft down-weight →
   `docs/UPGRADE-BACKLOG.md`; (2) remote API = localhost mặc định + read-only
