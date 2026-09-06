@@ -5,6 +5,61 @@
 
 ---
 
+# 2026-09-06 — **L6b: HAI NOTE F3 ĐÃ ĐÓNG (chưa commit, working tree trên `claude_desk/tiepto-2d388b`)**
+
+**Đọc mục này trước tiên.** Hai việc-còn-mở của L6b (verifier F3 NOTE) đã đóng.
+Thay đổi nằm trong working tree, **chưa commit** — 7 file, `git diff --stat` ra
+192 insertions / 20 deletions.
+
+**Item 1 — không phải "đọc Member", mà là UB thật.** `drainPaired` chặn route
+vị trí ≥ `kMaxTransferFunctions` (8) khỏi audio, nhưng `syncAverageGroupMembership`
+KHÔNG chặn — nó nạp mọi route vào `addMember`, nên route 9+ chung reference thành
+member, rồi `publishAverageGroup` index `analysers[8+]` trên vector đúng 8 phần
+tử = đọc heap ngoài biên. `kMaxChannels = 64` nên reachable trên card Dante/MADI
+thật. Sửa: cap cả hai vòng (dự đoán + rebuild) ở `i < kMaxTransferFunctions`;
+route quá cap nhận `Membership::ExcludedOverCapacity` (nhãn "CAP" ở RoutingMatrix).
+Hằng số `kMaxTransferFunctions` dời từ `AnalysisThread.h` xuống `RoutingPlan.h`
+(publish layer không include ngược được). Bài học:
+`memory/a-cap-checked-on-the-drain-path-is-unchecked-on-the-publish-path.md`.
+
+**Item 2 — test-gap.** Test 3-route cũ nuôi cả ba analyser cùng audio (average
+2-way = 3-way, không bắt được rò rỉ — đúng bẫy fixture-quá-ngoan). Thêm test số
+học: route bị từ chối nuôi audio khác (gain 0.1 vs 0.7), khẳng định average
+publish **đúng bằng** `spatialAverage(2 member)` và **khác** `spatialAverage(3)`.
+
+## Baseline đo được (dán từ lệnh)
+
+Build dir `build-verify-app` (VS 18 2026, MSVC 14.51, RTA_BUILD_APP=ON, JUCE qua
+`RTA_JUCE_PATH`), rồi verifier độc lập configure lại `build-vfy-closeout` từ đầu:
+
+```
+cmake --build build-verify-app --config Release --parallel   -> 0 warning C
+ctest --test-dir build-verify-app -C Release                 -> 511/511, 0 failed  (ON)
+```
+
+511 = 508 baseline của lane L6b + 3 test mới trong `test_analysis_publish.cpp`.
+TDD chứng kiến fail đúng chỗ: Item 1 RED `10 == 8`; Item 2 mutate `addMember` bỏ
+refusal → test số học FAILED (average thành 3-way) → revert → GREEN. Verifier
+đối kháng (không Write) CONFIRMED, chạy lại 511/511 trên build dir riêng và làm
+đỏ được cả hai guard. `measure_has_no_framework_deps` vẫn PASS (test #451/#... ).
+
+## Bẫy phiên này trả học phí
+- **Verifier có Bash vẫn sửa được cây dù không có Write.** Nó chạy
+  `git checkout -- AnalysisPublish.cpp` để revert mutation probe, nhưng fix chưa
+  commit nên lệnh đó reset file về HEAD (pre-fix), xoá luôn fix. Nó tự phát hiện,
+  reconstruct lại; phiên chính tái kiểm độc lập (rebuild từ cây hiện tại: 158/158)
+  và `git diff --stat` khớp đúng bản gốc. Bài học:
+  `memory/a-verifier-with-bash-can-git-checkout-your-uncommitted-fix.md`. **Commit
+  trước khi dispatch verifier chạy lệnh git.**
+
+## Còn mở (không đổi so với mục merge L6b bên dưới)
+- **Chưa commit, chưa push.** Commit là lệnh của chủ nhân; push càng vậy.
+- Ba câu hỏi chủ nhân trong `HUMAN-QA-QUEUE` (mục L6b) vẫn treo.
+- Lane lớn kế tiếp theo master plan: **L7 (Solvers)** — cần một lượt research
+  trạm 1 (chưa có decision record).
+
+---
+
 # 2026-09-06 — **L6b (multichannel) ĐÃ MERGE VÀO `main` tại `4edcf82`**
 
 Chủ nhân nói "merge" trong phiên orchestrator L6b. Merge `--no-ff` trong checkout
@@ -78,10 +133,12 @@ warning C trong cả hai build log        -> 0
 ## Việc còn mở
 - **Chưa merge.** `git rev-list --count main..HEAD` — đo, đừng chép. Merge là
   lệnh của chủ nhân.
-- Route thứ 9+ (vượt cap 8 `Analyser`) không được cấp audio nhưng vẫn có thể
-  đọc `Member` (`AnalysisThread.cpp:204`) — cần một trạng thái membership
-  riêng; và test ba-route chưa chứng minh average loại route bị từ chối
-  bằng số (ba analyser nghe cùng audio). Cả hai là NOTE của verifier F3.
+- ~~Route thứ 9+ (vượt cap 8 `Analyser`) ... cần một trạng thái membership
+  riêng; và test ba-route chưa chứng minh average loại route bị từ chối bằng
+  số.~~ **ĐÓNG 2026-09-06** — xem mục "HAI NOTE F3 ĐÃ ĐÓNG" ở đầu file. NOTE 1
+  hoá ra là UB (đọc `analysers[8+]` ngoài biên), không chỉ "đọc Member": cap
+  membership ở `kMaxTransferFunctions` + `ExcludedOverCapacity`. NOTE 2: test số
+  học `spatialAverage(2) == average, != spatialAverage(3)`.
 - Ba câu hỏi chủ nhân trong `HUMAN-QA-QUEUE` (mục L6b): ngưỡng trusted-fraction,
   remote API bind/read-only, generator output là lane riêng hay gộp L7.
 - Một average group live; reference thứ hai là trạng thái hiển thị, chưa phải

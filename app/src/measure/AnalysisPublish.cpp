@@ -32,9 +32,17 @@ std::vector<std::size_t> syncAverageGroupMembership(AverageGroup& group,
     const int predictedReference =
         group.members().empty() ? plan.routes.front().referenceChannel
                                  : group.members().front().referenceChannel;
+    // Only route POSITIONS below kMaxTransferFunctions can ever be members:
+    // there are exactly that many Analysers, indexed by position, and a route
+    // past the cap has neither an Analyser nor audio (AnalysisThread::drainPaired
+    // stops at the same bound). Capping the PREDICTION too keeps it in step with
+    // the real rebuild below -- otherwise a plan with more than the cap of
+    // shared-reference routes would predict a member set the rebuild can never
+    // match, forcing a needless rebuild on every 50 ms publish tick.
+    const std::size_t cap = static_cast<std::size_t>(kMaxTransferFunctions);
     std::vector<std::size_t> predictedMemberIndices;
     std::vector<int> desiredTfIndices;
-    for (std::size_t i = 0; i < plan.routes.size(); ++i) {
+    for (std::size_t i = 0; i < plan.routes.size() && i < cap; ++i) {
         if (plan.routes[i].referenceChannel != predictedReference) continue;
         predictedMemberIndices.push_back(i);
         desiredTfIndices.push_back(plan.routes[i].tfIndex);
@@ -59,7 +67,7 @@ std::vector<std::size_t> syncAverageGroupMembership(AverageGroup& group,
 
     std::vector<std::size_t> memberAnalyserIndices;
     std::vector<int> newTfIndices;
-    for (std::size_t i = 0; i < plan.routes.size(); ++i) {
+    for (std::size_t i = 0; i < plan.routes.size() && i < cap; ++i) {
         const auto& route = plan.routes[i];
         double trim = 1.0;
         for (const auto& old : oldMembers) {
@@ -126,7 +134,14 @@ std::vector<PositionSummary> mergeRoutePositions(const RoutingPlan& plan,
         PositionSummary excluded;
         excluded.tfIndex = plan.routes[routeIndex].tfIndex;
         excluded.name = "TF " + std::to_string(plan.routes[routeIndex].tfIndex);
-        excluded.membership = Membership::ExcludedDifferentReference;
+        // Position tells us WHY this route is not a member, with no ambiguity:
+        // a route at or past kMaxTransferFunctions has no Analyser at all
+        // (ExcludedOverCapacity), while a route below the cap that is still not
+        // a member can only have been refused by AverageGroup::addMember for
+        // naming a different reference -- that is addMember's one refusal.
+        excluded.membership = routeIndex >= static_cast<std::size_t>(kMaxTransferFunctions)
+                                  ? Membership::ExcludedOverCapacity
+                                  : Membership::ExcludedDifferentReference;
         merged.push_back(std::move(excluded));
     }
     return merged;

@@ -37,6 +37,13 @@ namespace rta::measure {
 /// return value" into a visible `Membership::ExcludedDifferentReference`
 /// summary instead of no summary at all.
 ///
+/// Only route POSITIONS below `kMaxTransferFunctions` are considered at all:
+/// there are exactly that many `Analyser`s (indexed by position), so a route
+/// past the cap has no engine and no audio and must never become a member --
+/// admitting one made `publishAverageGroup` index `analysers` out of bounds on
+/// a real multichannel interface. Such a route also gets a summary from
+/// `mergeRoutePositions`, marked `Membership::ExcludedOverCapacity`.
+///
 /// `lastTfIndices` is the caller's own memory of what was last synced --
 /// pass the SAME vector back on every call. The (expensive) group rebuild
 /// is skipped when the PREDICTED member set has not changed since last time

@@ -26,18 +26,10 @@
 
 namespace rta::measure {
 
-/// The compile-time cap on live transfer functions (record §6, task B2's own
-/// "not decided here" note): `Analyser` is neither movable nor copyable
-/// (`DualFftEngine`/`MtwEngine` hold `RingBuffer`s with atomic members), so
-/// `analysers_` below is built once, at this size, and never resized -- there
-/// is no way to grow a `vector<unique_ptr<Analyser>>` mid-run without either
-/// resizing (fine, `unique_ptr` moves are cheap) or ever shrinking it below
-/// this cap while routes still name higher indices. 8 positions cost 424 MB
-/// resident at the MTW engine's defaults (record §6's own arithmetic,
-/// `docs/research/2026-09-06-l6b-station1-research.md` Part C) -- a memory
-/// policy, not a DSP decision, so it is set and stated here rather than
-/// derived, for the owner to move if 8 is ever not enough.
-inline constexpr int kMaxTransferFunctions = 8;
+// `kMaxTransferFunctions` -- the compile-time cap on live transfer functions --
+// now lives in RoutingPlan.h (included above), because it is a routing fact the
+// publish-membership sync in AnalysisPublish must also honour and that file
+// cannot include this one. See its comment there for the memory arithmetic.
 
 /// The thin, JUCE-owning wrapper plan §1.3 promises around the pure
 /// `Analyser` body: drains a live `rta::platform::CaptureBus` (fed by a real

@@ -14,6 +14,20 @@
 
 namespace rta::measure {
 
+/// The compile-time cap on live transfer functions (record §6, task B2's own
+/// "not decided here" note): `Analyser` is neither movable nor copyable
+/// (`DualFftEngine`/`MtwEngine` hold `RingBuffer`s with atomic members), so
+/// `AnalysisThread::analysers_` is built once, at this size, and never resized.
+/// It lives HERE rather than in `AnalysisThread.h` because it is the cap on how
+/// many routes can have an `Analyser` at all -- a routing fact both the drain
+/// (`AnalysisThread`) and the publish-membership sync (`AnalysisPublish`) must
+/// agree on, and `AnalysisPublish` cannot include `AnalysisThread.h` (that
+/// dependency points the other way). 8 positions cost 424 MB resident at the
+/// MTW engine's defaults (record §6's own arithmetic,
+/// `docs/research/2026-09-06-l6b-station1-research.md` Part C) -- a memory
+/// policy, not a DSP decision, for the owner to move if 8 is ever not enough.
+inline constexpr int kMaxTransferFunctions = 8;
+
 /// One transfer function's two channels, resolved from `ChannelConfig`'s
 /// per-channel role + tfIndex table (`ChannelConfig::channelsWithRole` /
 /// `transferFunction`, task B1).

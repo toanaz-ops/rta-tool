@@ -138,11 +138,19 @@ struct AverageBlock {
 /// `AverageGroup`'s own `MemberRefusal::None` one layer down
 /// (measure/AverageGroup.h) without this framework-free header including
 /// that one (AverageGroup.h already includes THIS file -- the dependency
-/// only goes one way). Every other value mirrors a real refusal reason
-/// `AverageGroup::addMember` actually returned for this route; there is no
-/// value here that is not backed by a real refusal, because a state nothing
-/// in the code can produce is a claim the enum would be making on its own.
-enum class Membership { Member, ExcludedDifferentReference };
+/// only goes one way). Every value here is backed by a real, reachable
+/// condition, because a state nothing in the code can produce is a claim the
+/// enum would be making on its own:
+/// - `ExcludedDifferentReference` mirrors `AverageGroup::addMember`'s own
+///   `MemberRefusal::DifferentReference` -- a route naming a second reference.
+/// - `ExcludedOverCapacity` is decided one layer up, in the publish membership
+///   sync (measure/AnalysisPublish.cpp), NOT by `addMember`: a route whose
+///   POSITION in the plan is at or past `kMaxTransferFunctions` has no
+///   `Analyser` and no audio (there are exactly `kMaxTransferFunctions` of
+///   them, and `AnalysisThread::drainPaired` feeds no higher index), so it
+///   cannot contribute a curve -- reachable on any interface routing more than
+///   `kMaxTransferFunctions` measurement channels against one reference.
+enum class Membership { Member, ExcludedDifferentReference, ExcludedOverCapacity };
 
 /// One group member's summary -- level, trust, gate state -- with NO per-bin
 /// array (record §6: publish cost must be O(1) in N, and a per-bin array
