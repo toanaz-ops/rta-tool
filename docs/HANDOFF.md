@@ -102,6 +102,33 @@ vào `core/CMakeLists`.
 - **Wave 2**: L7-DELAY ∥ L7-EQ (cả hai cần OUT; serialize integration core).
 - **Wave 3**: L7-ALIGN (cần OUT + DELAY + biquad dùng chung + ρ).
 
+## Wave 0 ĐÃ XÂY VÀ VERIFY (2026-09-07)
+Bốn commit trên nhánh: `b2172b3` BiquadResponse, `24e3093` MinimumPhase (cepstral,
+log KHÔNG halved, floor −120 dB), `08723bd` FilterSpec + RBJ `designBiquad`,
+`c61b5dc` fix domain guard shelf. **470/470 OFF** (build-l7w0, Visual Studio gen,
+`--clean-first`), 0 warning. Acceptance TOÀN closed-form, KHÔNG golden vector.
+
+Verifier độc lập (scratch worktree riêng tại `08723bd`) không bác được gì: rebuild
+469/469 (trước fix shelf), tolerance nới VẪN giết mutation (perturb `A` divisor →
+192/192 đỏ ở 1e-9; bỏ fold-doubling → 2060/4096 đỏ ở 3e-7), fixture MinimumPhase
+sửa cho conjugate-symmetric là HỢP LỆ (đường vào thật của kernel là `|FFT(h_lin)|`
+của dữ liệu real nên đối xứng theo cấu trúc; `Re(IFFT(L))` chỉ là phần chẵn của L).
+Guard còn canh: framework 117 file, polynomial 135.
+
+**Bug thật đã sửa (`c61b5dc`):** `designBiquad` shelf Q cao + cut lớn (vd Q=8,
+−15 dB) cho radicand `(A+1/A)(1/Q−1)+2 < 0` → alpha NaN → coefficient NaN.
+`validate()` nay throw `std::invalid_argument` (đúng convention có sẵn) cho shelf
+ngoài miền; Peaking KHÔNG dính (alpha peaking không có gain term).
+
+**Tech-debt còn mở (KHÔNG sửa, ghi lại):** `Biquad.h::maxPoleRadius` dùng
+`std::max(0.0, NaN)` = 0.0 nên một filter NaN đọc thành "ổn định tối đa". Đã MOOT
+trên đường shelf (NaN không còn sinh ra) nhưng là bẫy cho MỌI nguồn NaN sau. Không
+sửa vì `Biquad.h` là file frozen; cần một task riêng nếu chủ nhân muốn.
+
+**Record touch-up còn nợ (closeout):** ALIGN record §5 nói `|H|` = `sectionAttenuationDb`
+nhưng field đó là attenuation (+=xuống); plan W0-R3 đã khoá đúng `−attenuationDb`,
+record cần sửa một dòng để khỏi lạc plan (bẫy #17).
+
 ## Verifier đã xác nhận (đọc file thật)
 - OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output
   + `ScopedNoDenormals` là câu ĐẦU + guard `audioio_scoped_no_denormals_is_first`;
