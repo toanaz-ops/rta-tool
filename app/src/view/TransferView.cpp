@@ -16,6 +16,7 @@
 #include "view/TraceDecimator.h"
 #include "view/TraceStroke.h"
 #include "view/TransferRibbon.h"
+#include "view/TransferSourceToggle.h"
 
 #include <az_ui/az_ui.h>
 
@@ -142,6 +143,16 @@ UnwrappedPhase computeUnwrappedPhase(const rta::measure::TransferBlock& transfer
 
 TransferView::TransferView(const rta::measure::SnapshotSource& source) : source_(&source) {
     startTimerHz(kTimerHz);
+
+    // Built here, in the constructor BODY, not the mem-initialiser list:
+    // each toggle's own constructor reads `sources_` back through `*this`
+    // (TransferSourceToggle::refresh -> TransferView::source), and the body
+    // only starts once every member's own initialiser -- `sources_`
+    // included -- has already run, regardless of declaration order.
+    for (std::size_t i = 0; i < toggles_.size(); ++i) {
+        toggles_[i] = std::make_unique<TransferSourceToggle>(*this, static_cast<TransferPane>(i));
+        addAndMakeVisible(*toggles_[i]);
+    }
 }
 
 TransferView::~TransferView() {
@@ -183,6 +194,20 @@ void TransferView::paint(juce::Graphics& g) {
 
 void TransferView::resized() {
     panes_ = bodePanes(PaneRect{ 0, 0, getWidth(), getHeight() }, az::ui::gap);
+
+    // Top-right corner of each pane's own rectangle, height trimmed for the
+    // ribbon's own 34 px furniture -- see placeInPane's own comment.
+    constexpr int kToggleHeight = 18;
+    constexpr int kRibbonToggleHeight = 16;
+    toggles_[static_cast<std::size_t>(TransferPane::Magnitude)]->placeInPane(panes_.magnitude,
+                                                                             kToggleHeight);
+    toggles_[static_cast<std::size_t>(TransferPane::Phase)]->placeInPane(panes_.phase, kToggleHeight);
+    toggles_[static_cast<std::size_t>(TransferPane::Coherence)]->placeInPane(panes_.ribbon,
+                                                                             kRibbonToggleHeight);
+}
+
+TransferSourceToggle& TransferView::sourceToggle(TransferPane pane) noexcept {
+    return *toggles_[static_cast<std::size_t>(pane)];
 }
 
 void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const {

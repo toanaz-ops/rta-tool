@@ -67,6 +67,10 @@ target_sources(rtatool PRIVATE
     # station-4 fix pass finding 1), split out for the same file-length
     # reason MtwLayer.cpp already gives.
     src/view/MtwReadout.cpp
+    # TransferSourceToggle.cpp is the per-plot MTW/Fixed control
+    # (docs/reports/005-mtw-engine.md "Known gaps"), split out for the same
+    # file-length reason MtwLayer.cpp/MtwReadout.cpp already give.
+    src/view/TransferSourceToggle.cpp
     # WorkspaceView.cpp is task 10's pane container (decision 6) -- the file
     # that finally attaches TraceLibrary to a real pane. Deliberately does
     # NOT include RtaView.h/TransferView.h itself (see its own class
@@ -170,6 +174,9 @@ target_sources(rtatool_snapshot PRIVATE
     # MtwReadout.cpp is the per-band integration-seconds strip (record §5,
     # station-4 fix pass finding 1), needed here for the same reason.
     src/view/MtwReadout.cpp
+    # TransferSourceToggle.cpp is the per-plot MTW/Fixed control, needed here
+    # for the same reason -- TransferView owns one per pane unconditionally.
+    src/view/TransferSourceToggle.cpp
     # WorkspaceView.cpp is task 10's pane container (decision 6), needed here
     # for workspace.png. Deliberately does NOT include RtaView.h/
     # TransferView.h itself -- see its own class comment.

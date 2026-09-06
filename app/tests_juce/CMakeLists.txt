@@ -35,6 +35,9 @@ add_executable(rtatool_view_tests
     # case.
     test_transfer_view_unwrap.cpp
     test_transfer_view_mtw.cpp
+    # test_transfer_source_toggle.cpp: the per-plot MTW/Fixed UI control
+    # (docs/reports/005-mtw-engine.md "Known gaps").
+    test_transfer_source_toggle.cpp
     test_workspace_view.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)
@@ -77,6 +80,11 @@ add_executable(rtatool_view_tests
     # view/MtwReadout.h/.cpp -> the per-band integration-seconds strip
     # (record §5, station-4 fix pass finding 1), same JUCE-using reason.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/MtwReadout.cpp
+    # test_transfer_source_toggle.cpp's own additional dependency:
+    #   view/TransferSourceToggle.h/.cpp -> the per-plot MTW/Fixed control
+    #     under test, JUCE-using (juce::TextButton) for the same reason
+    #     MtwLayer.cpp/MtwReadout.cpp already give.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferSourceToggle.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
