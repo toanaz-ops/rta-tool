@@ -69,7 +69,10 @@ R      = |z|                                                  phase agreement, 0
 `R` is the mean resultant length of circular statistics: 1 when every position
 agrees in phase, 0 when they cancel. It is bounded by construction, so it needs
 no threshold to be meaningful, and it is what the operator reads instead of a
-phase trace that quietly means nothing.
+phase trace that quietly means nothing. The phase is reported **absent** where
+`R ≤ contributors · DBL_EPSILON` — the rounding floor of a sum of that many
+unit vectors, derived rather than read off a grid; `R` itself is always
+reported.
 
 **Why dB and not power, against the standard that says power.** SMPTE ST 202
 §A.3.5 averages by "the sum of the squares" and allows arithmetic averaging
@@ -114,7 +117,8 @@ per-position weight (linear, default 1; a dB trim in the UI) and `γ²_i(k)` is
 `nullopt` — the engine has not cleared `minimumEffectiveAverages` — is
 **excluded** from every bin, and the result carries the number of contributors
 per bin. A position with `u_i = 0` is a muted member: it is excluded everywhere,
-exactly as if ungated. **Two distinct absences are defined, because the
+exactly as if ungated, and **does not count as a contributor** — an all-muted
+group reports `noContributor`, never `noWeight`. **Two distinct absences are defined, because the
 weights can legitimately sum to zero where contributors exist**:
 `magnitudeSquaredCoherence` returns exactly `0.0` at a gate-passed bin when
 `sxx` or `syy` is non-positive (`TransferEstimator.cpp:39-48`), so every
@@ -377,8 +381,8 @@ Core tests in `core/tests/test_spatial_average.cpp`, app tests in
    precision, phase equals, `R = 1.0` exactly, contributors `N` at every bin.
 2. **Opposition.** Two snapshots `H` and `−H`, equal magnitude, equal
    coherence: `L` equals the input magnitude (a vector mean would give the
-   floor), `R = 0.0`, and the result's phase is marked absent where `R` is
-   below float resolution.
+   floor), `R = 0.0`, and the result's phase is marked absent under the §2 floor
+   `R ≤ contributors · DBL_EPSILON`.
 3. **Weight identity.** Position A with coherence 1.0 and level `a`, position
    B with coherence `c` and level `a + Δ`: `L = a + c·Δ/(1 + c)` closed-form;
    with `u_B = 0`, `L = a` exactly; with `u` all equal and `c = 1`,
@@ -401,23 +405,31 @@ Core tests in `core/tests/test_spatial_average.cpp`, app tests in
    `R` is `cos(π·f/fs)`-shaped and closed-form per bin.
 8. **Golden.** scipy computes N cross-spectra for N positions of a synthetic
    system with independent noise at known SNRs; the golden holds the expected
-   `L`, phase, `weightedCoherence` and `R` at the two-term float tolerance
-   `memory/float32-fft-precision.md` prescribes.
+   `L`, phase, `weightedCoherence` and `R`. Tolerance follows the path: where
+   a real engine feeds the combine (T7), the two-term float form of
+   `memory/float32-fft-precision.md`; where the combine is checked against
+   golden doubles with nothing float32 in the path but the result's own
+   storage (T8), a relative 1e-6 — about 8× float32 epsilon.
 9. **Overload detector.** Three consecutive samples at `1 − 2⁻¹⁵` flag; two do
    not; int16-full-scale-shaped and float-1.0 fixtures flag; a sine peaking at
    `1 − 2⁻¹⁴` does not.
-10. **Guards.** `coherence_gate_is_not_bypassed` stays green with the new file
-    scanned (62 → 64); made RED once by writing `result.coherence = …` in the
-    new file and watching it fail. `core_has_no_framework_deps` 96 → 99,
-    `filter_design_has_no_polynomial_form` 113 → 116; `measure_has_no_framework_deps`
-    grows by exactly the number of new `app/measure` files added to its explicit
-    list.
+10. **Guards.** `coherence_gate_is_not_bypassed` stays green with the new
+    files scanned; made RED once by writing `result.coherence = …` in
+    `SpatialAverage.cpp` and watching it fail. The counts after the lane are
+    **read from each guard's own output**, not predicted here: the plan
+    enumerates the files it adds against the real globs (3 headers, 3 sources,
+    4 tests, 1 `.py` for L6b-a → core 96 → 106, gate 62 → 68, polynomial
+    113 → 124), and `measure_has_no_framework_deps` grows by exactly the number
+    of new `app/measure` files added to its explicit list.
 11. **Routing.** `ChannelConfig` returns all channels of a role in index
-    order; a config with two `Measurement` channels drives two `Analyser`s
-    that receive identical reference hops (asserted by sequence counters).
-12. **Publish churn.** A counting allocator around one publish at N = 4
-    asserts bytes allocated are within 2× of the N = 1 figure — the "average
-    plus one solo" scaling of §6.
+    order; two transfer functions that name the **same** reference channel
+    receive identical reference hops (equal sequence counters), and two that
+    name different references receive independent ones.
+12. **Publish churn.** A counting allocator around one publish asserts the
+    property §6 buys — cost O(1) in N: `bytes(N = 8) − bytes(N = 4) ≤
+    4·sizeof(PositionSummary) + 4096`, which four full per-position publishes
+    (≈ 2.21 MB each) cannot satisfy. The "within 2× of N = 1" figure is a
+    report headline, not the assertion.
 13. **Preset round trip.** Schema-3 encode → decode preserves every `[tf]` and
     `[average]` field; a schema-2 document decodes with no transfer functions;
     a device-name match with a different channel count loads unbound.
