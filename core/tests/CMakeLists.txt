@@ -18,6 +18,7 @@ add_executable(rta_core_tests
     test_mtw_engine.cpp
     test_mtw_response.cpp
     test_mtw_golden.cpp
+    test_spatial_average.cpp
     test_group_delay.cpp
     test_window.cpp
     test_ringbuffer.cpp
