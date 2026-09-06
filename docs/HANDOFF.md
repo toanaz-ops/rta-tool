@@ -5,6 +5,21 @@
 
 ---
 
+# 2026-09-06 — **L6b (multichannel) ĐÃ MERGE VÀO `main` tại `4edcf82`**
+
+Chủ nhân nói "merge" trong phiên orchestrator L6b. Merge `--no-ff` trong checkout
+`main` (sạch, đang ở `60ba99c` = merge-base, không có commit nào ngoài nhánh),
+không xung đột. `git diff --stat 1eacb6a main` rỗng và `git diff --stat e048443
+main -- . ':!docs'` chỉ ra **bốn file `memory/`**, nên các con số 447/508 verify
+trên `e048443` vẫn đúng cho cây đã merge — không cần rebuild (memory "re-verify
+what the change could have changed"). `main` **chưa push**
+(`git rev-list --count origin/main..main` — đo, đừng chép). Nhánh và worktree
+`continue-pending-work-f8aa84` giữ nguyên; dọn hay không là quyết định của chủ nhân.
+
+Mục dưới đây là trạng thái lúc xây, giữ làm lịch sử cùng ngày.
+
+---
+
 # 2026-09-06 — L6b (multichannel) đã xây — nhánh `claude_desk/l6b-multichannel-research-4b3876`
 
 **Đọc mục này trước tiên.** Lane L6b đi trọn năm trạm trong một phiên
