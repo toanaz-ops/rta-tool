@@ -11,6 +11,7 @@
 add_library(rta_core STATIC
     src/dsp/AverageCount.cpp
     src/dsp/BandWeights.cpp
+    src/dsp/BiquadResponse.cpp
     src/dsp/ButterworthDesign.cpp
     src/dsp/DelayFinder.cpp
     src/dsp/DualFftEngine.cpp

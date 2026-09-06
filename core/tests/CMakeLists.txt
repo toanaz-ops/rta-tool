@@ -32,6 +32,7 @@ add_executable(rta_core_tests
     test_bandweights.cpp
     test_synthetic.cpp
     test_biquad.cpp
+    test_biquad_response.cpp
     test_butterworth.cpp
     test_filterbank.cpp
     test_weighting.cpp
