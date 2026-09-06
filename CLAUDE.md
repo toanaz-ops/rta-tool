@@ -66,6 +66,7 @@ Windows SDK 10.0.26100, CMake 4.3.2, Ninja 1.13.2, Python 3.14.6.
 
 - `docs/specs/` — design documents, one per phase
 - `docs/dsp/` — derivations (coherence, MTW band stitching, Schroeder integration)
+- `docs/research/` — station-1 research findings per lane, with the decision→evidence table
 - `memory/MEMORY.md` — durable project knowledge index
 - `docs/HANDOFF.md` — current handoff for the next session
 

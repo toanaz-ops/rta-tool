@@ -63,6 +63,9 @@ band's integration time.
 
 ## What the research changed about the plan
 
+*Full research findings and the decision→evidence→rejected-alternative table:
+`docs/research/2026-09-05-mtw-station1-research.md`.*
+
 Three things, each of which the roadmap had assumed the other way.
 
 1. **No decimation.** The master plan's L3 row said "decimation cascade"; so
