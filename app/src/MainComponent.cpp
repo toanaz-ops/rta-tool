@@ -25,6 +25,14 @@ constexpr int kRailWidth = 360;
 // the bottom costs nothing.
 constexpr int kDevicePanelHeight = 300;
 
+// Task F2: az::ui::GridPanel divides whatever bounds it is given across its
+// header row plus rta::measure::kMaxTransferFunctions (8) data rows -- it
+// has no minimum-row-height floor of its own (GridPanel.h's own class
+// comment: "geometry only"), so this is a flat pixel budget rather than a
+// per-row metric multiplied out: comfortably readable for 9 rows (header +
+// 8 channels) without crowding channelRoleTable_ below it out of the rail.
+constexpr int kRoutingMatrixHeight = 220;
+
 // SyntheticInput has no device of its own to name channels after (a device
 // panel is not involved), so this class names them itself. Two names, not
 // one per role: SyntheticInput writes two channels regardless of which
@@ -55,6 +63,7 @@ MainComponent::MainComponent()
     : analysisThread_(audioIo_.bus(), rta::measure::Analyser::Config{}),
       devicePanel_(audioIo_),
       channelRoleTable_(audioIo_.bus().config()),
+      routingMatrix_(audioIo_.bus().config(), rta::measure::kMaxTransferFunctions),
       // The default workspace when none has been loaded: exactly one `rta`
       // pane, so the app's opening screen stays byte-for-byte what it was
       // before this task (task brief, step 3). Nothing in this class loads
@@ -68,6 +77,7 @@ MainComponent::MainComponent()
 
     addAndMakeVisible(devicePanel_);
     addAndMakeVisible(channelRoleTable_);
+    addAndMakeVisible(routingMatrix_);
 
     addAndMakeVisible(workspace_);
     // The seam this whole task exists for (docs/HANDOFF.md): a library was
@@ -131,6 +141,14 @@ void MainComponent::setSyntheticMode(bool enabled) {
 
         lastChannelNames_ = kSyntheticChannelNames;
         channelRoleTable_.setChannelNames(lastChannelNames_);
+        // routingMatrix_ caches cell TEXT rather than reading config_ live
+        // at paint time the way channelRoleTable_'s ListBox does
+        // (RoutingMatrix.h's own class comment: refreshFromConfig() is
+        // "production API" precisely because nothing calls it
+        // automatically) -- without this, the two role assignments just
+        // above would show as UNUSED here until the next timerCallback tick
+        // or an operator's own click.
+        routingMatrix_.refreshFromConfig();
     } else {
         // Order matters: destroy the synthetic writer before re-enabling the
         // panel that lets a user start a real one, so there is never a
@@ -162,6 +180,7 @@ void MainComponent::setSyntheticMode(bool enabled) {
         devicePanel_.setEnabled(true);
         lastChannelNames_.clear();
         refreshChannelNamesFromDevice();
+        routingMatrix_.refreshFromConfig();
     }
 
     modeSwitch_.setToggleState(enabled, juce::dontSendNotification);
@@ -176,6 +195,14 @@ void MainComponent::modeSwitchClicked() {
 }
 
 void MainComponent::timerCallback() {
+    // routingMatrix_ caches its cell text (RoutingMatrix.h's own class
+    // comment) rather than reading rta::platform::ChannelConfig live at
+    // paint time, so it needs an explicit poke to notice a role change made
+    // anywhere OTHER than its own click -- channelRoleTable_'s clicks in
+    // LIVE mode, chiefly. Cheap: kMaxTransferFunctions (8) cells, twice a
+    // second.
+    routingMatrix_.refreshFromConfig();
+
     if (isSyntheticMode()) {
         return;  // fixed list, set once in setSyntheticMode()
     }
@@ -226,6 +253,12 @@ void MainComponent::resized() {
     rail.removeFromTop(az::ui::gap * 2);
 
     devicePanel_.setBounds(rail.removeFromTop(kDevicePanelHeight));
+    rail.removeFromTop(az::ui::gap * 2);
+
+    // Fixed height for kMaxTransferFunctions rows plus a header row --
+    // RoutingMatrix has no dynamic resize the way channelRoleTable_'s
+    // ListBox does, so it gets a fixed slice rather than "whatever is left".
+    routingMatrix_.setBounds(rail.removeFromTop(kRoutingMatrixHeight));
     rail.removeFromTop(az::ui::gap * 2);
 
     // Fills whatever is left of the rail -- a shrunk window trims rows off

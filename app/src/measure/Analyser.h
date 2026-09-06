@@ -150,6 +150,37 @@ public:
         return rta::dsp::makeSnapshot(dual_, config_.estimator);
     }
 
+    /// Task F2 (record §6): the same geometry `transferSnapshot()` would
+    /// report, ALWAYS -- `dual_` is constructed unconditionally in the
+    /// member-initialiser list, so `dual_.config().sampleRate`,
+    /// `dual_.binWidthHz()` and `dual_.numBins()` are stable and correct
+    /// whether or not this position has engaged yet. A not-yet-engaged
+    /// position reads exactly like one that has not cleared the coherence
+    /// gate: `coherence` stays `std::nullopt`, which is what
+    /// `rta::dsp::spatialAverage` already treats as "excluded everywhere"
+    /// (record §3) -- never a thrown exception and never a missing entry
+    /// that would misalign `AverageGroupPublish::positions` against
+    /// `AverageGroup`'s own member list. Callers that need "is this
+    /// position actually live" still have `transferSnapshot()`'s
+    /// `has_value()` for that; this function exists so a group publish can
+    /// treat every member uniformly regardless of engagement state.
+    [[nodiscard]] rta::dsp::TransferSnapshot transferSnapshotForAverage() const {
+        if (const auto real = transferSnapshot(); real.has_value()) {
+            return *real;
+        }
+        rta::dsp::TransferSnapshot snap;
+        snap.estimator = config_.estimator;
+        snap.sampleRate = dual_.config().sampleRate;
+        snap.binWidthHz = dual_.binWidthHz();
+        const std::size_t bins = dual_.numBins();
+        snap.h.assign(bins, std::complex<double>(0.0, 0.0));
+        snap.magnitudeDb.assign(bins, rta::dsp::TransferSnapshot::kMagnitudeFloorDb);
+        snap.phaseRadians.assign(bins, 0.0f);
+        // coherence left at its default (nullopt): see this function's own
+        // header comment for why that IS the "not engaged yet" state.
+        return snap;
+    }
+
 private:
     Config config_;
     rta::dsp::BandWeights weights_;

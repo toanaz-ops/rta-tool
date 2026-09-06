@@ -94,7 +94,15 @@ target_sources(rtatool PRIVATE
     # makeSyntheticSnapshot() instead (see its own target_sources below) and
     # must not link juce_audio_devices.
     src/measure/AnalysisThread.cpp
+    # AnalysisPublish.cpp is AnalysisThread's own wiring of AverageGroup
+    # into its publish path (task F2, record §6) -- JUCE-free, same
+    # one-static-library reason as Analyser.cpp below, so it is named
+    # explicitly in both GUI binaries' source lists.
+    src/measure/AnalysisPublish.cpp
+    src/measure/AverageGroup.cpp
     src/measure/SyntheticInput.cpp
+    # RoutingMatrix.cpp: task F2 mounts it in MainComponent's rail.
+    src/view/RoutingMatrix.cpp
     # Analyser.cpp is JUCE-free and already listed in rtatool_snapshot below,
     # but that is a SEPARATE binary -- AnalysisThread.cpp's calls into
     # rta::measure::Analyser need the definition linked into rtatool too, not
@@ -220,7 +228,10 @@ target_sources(rtatool_snapshot PRIVATE
     src/MainComponent.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
+    src/view/RoutingMatrix.cpp
     src/measure/AnalysisThread.cpp
+    src/measure/AnalysisPublish.cpp
+    src/measure/AverageGroup.cpp
     src/measure/SyntheticInput.cpp
 )
 

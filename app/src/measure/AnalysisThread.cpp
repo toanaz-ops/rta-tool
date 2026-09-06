@@ -253,23 +253,41 @@ void AnalysisThread::publishIfDue() {
     // most 20 times a second -- never in the audio callback, which is what
     // test_capture_bus.cpp's allocation test is for.
     //
-    // Corrected (task B3(d), record §6): a single AverageGroup::publish()
-    // call measured 20 079 bytes at N = 1 member -- NOT "~8 KB, mostly
-    // spectrumDb" as an earlier comment here budgeted -- and the cost stays
-    // O(1) IN N from there: bytes(8) - bytes(4) measured at 288 bytes,
-    // against a bound of 4*sizeof(PositionSummary) + 4096 = 4352
-    // (app/tests/test_average_group.cpp's own counting-allocator case).
-    // That property holds because AverageGroup::publish() reads its
+    // Task F2 wires B3's AverageGroup into this call; the orchestration
+    // itself lives in buildPublishedSnapshot() (AnalysisPublish.h) so this
+    // file stays under the project's line cap and so that logic is
+    // testable with no bus and no thread in the path.
+    //
+    // Corrected AGAIN (task F2, record §6): app/tests/test_average_group.cpp
+    // now measures AverageGroup::publish() alone, fed REAL TransferSnapshots
+    // from REAL Analysers routed through a REAL RoutingPlan (not the
+    // hand-built snapshots B3's own version of this comment cited) --
+    // bytes(1) = 1359, bytes(4) = 1575, bytes(8) = 1863 in that test's own
+    // small fixture (bin count is fixture-specific, so the ABSOLUTE figures
+    // move with fftSize; what does not move is bytes(8) - bytes(4) = 288,
+    // against a bound of 4*sizeof(PositionSummary) + 4096 = 4352, because
+    // that delta comes from N additional small structs, never from bin
+    // count. That property holds because AverageGroup::publish() reads its
     // TransferSnapshot span straight into rta::dsp::spatialAverage, which
     // allocates only 5 vectors sized by BIN COUNT, never by member count
     // (SpatialAverage.cpp) -- the design answer record §6 gives to the
     // 2.21 MB-per-position-per-publish churn a naive N-Analyser publish
-    // would otherwise cost. analysers_[0] only publishes THROUGH this call
-    // today; B3's AverageGroup exists as a standalone, tested class (this
-    // task's scope) and is not yet wired to a live per-hop TransferSnapshot
-    // source here -- that wiring, and the operator-facing group
-    // configuration it needs, is left to a follow-up task.
-    SnapshotPtr snapshot = analysers_[0]->publish(bus_.totalDrops());
+    // (a FULL app-level TransferBlock+MtwBlock per position) would
+    // otherwise cost.
+    //
+    // What that bound deliberately does NOT cover: publishAverageGroup()
+    // below also gathers each member's OWN TransferSnapshot every publish
+    // (transferSnapshotForAverage(), a raw core-level read -- a few KB at
+    // realistic bin counts, nothing like the app-level duplication above) --
+    // an unavoidable, N-scaling, but much smaller cost every design pays,
+    // measured and reported (not bounded) in the same test: bytes(1) =
+    // 3343, bytes(4) = 9511, bytes(8) = 17735 in that same small fixture.
+    // buildPublishedSnapshot()'s own base-Snapshot copy is a THIRD, separate
+    // cost -- FIXED, sized by bins, the same every
+    // publish regardless of N -- not the quantity T12 bounds.
+    const RoutingPlan plan = planRouting(bus_.config(), bus_.numChannels());
+    SnapshotPtr snapshot = buildPublishedSnapshot(analysers_, averageGroup_, lastGroupTfIndices_,
+                                                   plan, bus_.totalDrops());
     latest_.store(std::move(snapshot), std::memory_order_release);
 }
 

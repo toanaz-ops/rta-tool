@@ -175,6 +175,13 @@ add_executable(rtatool_routing_live_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
+    # AverageGroup.cpp / AnalysisPublish.cpp: task F2 wires AnalysisThread's
+    # publishIfDue() through both -- AnalysisThread.h now includes
+    # measure/AverageGroup.h and measure/AnalysisPublish.h, so this target
+    # needs their definitions linked even though this file's own tests
+    # exercise routing, not the group publish.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.cpp
 )
 
 target_include_directories(rtatool_routing_live_tests PRIVATE

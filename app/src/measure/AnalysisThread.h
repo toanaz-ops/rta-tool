@@ -4,7 +4,9 @@
 // T-1 / T-3 / T-4 / T-5.
 #pragma once
 
+#include "measure/AnalysisPublish.h"
 #include "measure/Analyser.h"
+#include "measure/AverageGroup.h"
 #include "measure/RoutingPlan.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
@@ -155,6 +157,17 @@ private:
 
     std::atomic<SnapshotPtr> latest_;
     std::uint32_t lastPublishMs_ = 0;
+
+    /// Task F2 (record §6): the one live group this thread publishes.
+    /// Written and read from this thread ALONE (`publishIfDue`'s own call to
+    /// `syncAverageGroupMembership`/`publishAverageGroup`, both in
+    /// AnalysisPublish.h) -- there is no cross-thread accessor, so no lock
+    /// is needed the way `faultLock_` below needs one for a value the
+    /// message thread also reads.
+    AverageGroup averageGroup_;
+    /// `syncAverageGroupMembership`'s own memory of what it last built
+    /// `averageGroup_` from -- see that function's header comment.
+    std::vector<int> lastGroupTfIndices_;
 
     mutable std::mutex faultLock_;
     rta::platform::Fault fault_;
