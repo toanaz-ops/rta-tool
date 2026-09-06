@@ -18,11 +18,14 @@
 #include "measure/RoutingPlan.h"
 
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
 using rta::measure::Analyser;
 using rta::measure::AverageGroup;
+using rta::measure::buildPublishedSnapshot;
+using rta::measure::Membership;
 using rta::measure::publishAverageGroup;
 using rta::measure::RoutingPlan;
 using rta::measure::syncAverageGroupMembership;
@@ -179,4 +182,45 @@ TEST_CASE("a not-yet-engaged member is excluded like an ungated one, not thrown"
     // check at the core level.
     REQUIRE(published.average.has_value());
     for (const float v : published.average->magnitudeDb) CHECK(std::isfinite(v));
+}
+
+TEST_CASE("a route naming a different reference gets its own excluded summary, not silence",
+          "[analysispublish]") {
+    // Station-4 fix F3 (record §6, NOTE 1): before this fix,
+    // syncAverageGroupMembership() filtered plan.routes down to the ones
+    // sharing plan.routes.front()'s reference BEFORE ever calling
+    // AverageGroup::addMember(), so a route naming a second reference was
+    // dropped from buildPublishedSnapshot()'s output entirely -- no
+    // PositionSummary, no average contribution, no field in Snapshot. This
+    // is the RED this test was written against: two summaries, not three
+    // (see this task's own commit message / docs/HANDOFF.md for the pasted
+    // failure). The fix makes every route produce a summary, the excluded
+    // one carrying Membership::ExcludedDifferentReference instead of
+    // vanishing.
+    auto analysers = makeEngagedAnalysers(3);
+    AverageGroup group;
+    std::vector<int> lastTfIndices;
+
+    RoutingPlan plan;
+    plan.routes.push_back(TransferRoute{0, 0, 1});  // reference 0 -- the live group
+    plan.routes.push_back(TransferRoute{1, 0, 2});  // reference 0 -- the live group
+    plan.routes.push_back(TransferRoute{2, 5, 3});  // reference 5 -- refused
+    plan.distinctReferences = {0, 5};
+
+    std::uint64_t droppedSamples = 0;
+    const auto snapshot = buildPublishedSnapshot(analysers, group, lastTfIndices, plan, droppedSamples);
+
+    REQUIRE(snapshot->positions.size() == 3);
+    CHECK(snapshot->positions[0].membership == Membership::Member);
+    CHECK(snapshot->positions[1].membership == Membership::Member);
+    CHECK(snapshot->positions[2].membership == Membership::ExcludedDifferentReference);
+    CHECK(snapshot->positions[2].tfIndex == 2);
+
+    // The average is built from the two real members only -- the excluded
+    // route contributes nothing, but its absence from the average is not
+    // the same fact as its absence from the Snapshot (the bug conflated
+    // the two).
+    REQUIRE(snapshot->average.has_value());
+    CHECK(snapshot->positions[0].gatePassed);
+    CHECK(snapshot->positions[1].gatePassed);
 }

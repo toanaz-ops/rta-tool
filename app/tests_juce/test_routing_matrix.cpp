@@ -11,6 +11,12 @@
 
 #include "view/RoutingMatrix.h"
 
+#include <vector>
+
+using rta::measure::Membership;
+using rta::measure::PositionSummary;
+using rta::measure::RoutingPlan;
+using rta::measure::TransferRoute;
 using rta::platform::ChannelConfig;
 using rta::platform::ChannelRole;
 using rta::view::RoutingMatrix;
@@ -59,4 +65,46 @@ TEST_CASE("refreshFromConfig reflects a role change made elsewhere", "[routing_m
     REQUIRE(config.setRole(0, ChannelRole::Reference));
     matrix.refreshFromConfig();
     CHECK(matrix.grid().cellText(0, 0) == "REF");
+}
+
+TEST_CASE("updateMembership renders a refused route's row differently from an ordinary member's",
+          "[routing_matrix]") {
+    // Station-4 fix F3 (record §6): a route naming a different reference is
+    // refused by AverageGroup::addMember and must be VISIBLE as such here,
+    // not indistinguishable from a route that joined the average, and not
+    // indistinguishable from a channel no route names at all.
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 4);
+
+    RoutingPlan plan;
+    plan.routes.push_back(TransferRoute{0, 0, 1});  // measurement channel 1: member
+    plan.routes.push_back(TransferRoute{1, 5, 2});  // measurement channel 2: refused
+
+    std::vector<PositionSummary> positions(2);
+    positions[0].membership = Membership::Member;
+    positions[1].membership = Membership::ExcludedDifferentReference;
+
+    matrix.updateMembership(plan, positions);
+
+    CHECK(matrix.grid().cellText(1, 1) == "AVG");
+    CHECK(matrix.grid().cellText(2, 1) == "REF!=");
+    // Channels 0 and 3 are named by no route at all -- neither state above.
+    CHECK(matrix.grid().cellText(0, 1) == "--");
+    CHECK(matrix.grid().cellText(3, 1) == "--");
+}
+
+TEST_CASE("updateMembership clears a stale row when the route naming it disappears",
+          "[routing_matrix]") {
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 2);
+
+    RoutingPlan plan;
+    plan.routes.push_back(TransferRoute{0, 0, 0});
+    std::vector<PositionSummary> positions(1);
+    positions[0].membership = Membership::Member;
+    matrix.updateMembership(plan, positions);
+    REQUIRE(matrix.grid().cellText(0, 1) == "AVG");
+
+    matrix.updateMembership(RoutingPlan{}, {});
+    CHECK(matrix.grid().cellText(0, 1) == "--");
 }

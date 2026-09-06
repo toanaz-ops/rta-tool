@@ -18,16 +18,25 @@ std::vector<std::size_t> syncAverageGroupMembership(AverageGroup& group,
         return {};
     }
 
-    // Record §6: a route naming a DIFFERENT reference than the first route's
-    // is a different group, not built here yet (this function's own header
-    // comment states the limitation) -- filter to the routes that share
-    // plan.routes.front()'s reference before touching `group` at all.
-    const int firstReference = plan.routes.front().referenceChannel;
-    std::vector<std::size_t> memberAnalyserIndices;
+    // Cheap, non-mutating PREDICTION of which routes would join the group,
+    // using the group's own already-established reference when it has one
+    // (an empty group would accept anything, so predict against the first
+    // route's reference the same way `addMember` would for a brand new
+    // group). This restates `AverageGroup::addMember`'s one-line rule
+    // purely to answer "did anything routing-related change since last
+    // sync", never to decide membership itself -- that decision is made
+    // for real, by a real `addMember` call, in the rebuild below (station-4
+    // fix F3: the old code filtered routes to this same prediction BEFORE
+    // ever calling `addMember`, which made its `DifferentReference` refusal
+    // unreachable in production).
+    const int predictedReference =
+        group.members().empty() ? plan.routes.front().referenceChannel
+                                 : group.members().front().referenceChannel;
+    std::vector<std::size_t> predictedMemberIndices;
     std::vector<int> desiredTfIndices;
     for (std::size_t i = 0; i < plan.routes.size(); ++i) {
-        if (plan.routes[i].referenceChannel != firstReference) continue;
-        memberAnalyserIndices.push_back(i);
+        if (plan.routes[i].referenceChannel != predictedReference) continue;
+        predictedMemberIndices.push_back(i);
         desiredTfIndices.push_back(plan.routes[i].tfIndex);
     }
 
@@ -36,7 +45,7 @@ std::vector<std::size_t> syncAverageGroupMembership(AverageGroup& group,
         // counted publish window (that is publishAverageGroup()'s job
         // alone), but there is no reason to churn membership on every
         // 50 ms publish tick when nothing routing-related has changed.
-        return memberAnalyserIndices;
+        return predictedMemberIndices;
     }
 
     // Every surviving member's trim (record §7: an operator-set dB trim
@@ -48,8 +57,10 @@ std::vector<std::size_t> syncAverageGroupMembership(AverageGroup& group,
     const int oldSolo = group.solo();
     group = AverageGroup{};
 
-    for (const std::size_t analyserIndex : memberAnalyserIndices) {
-        const auto& route = plan.routes[analyserIndex];
+    std::vector<std::size_t> memberAnalyserIndices;
+    std::vector<int> newTfIndices;
+    for (std::size_t i = 0; i < plan.routes.size(); ++i) {
+        const auto& route = plan.routes[i];
         double trim = 1.0;
         for (const auto& old : oldMembers) {
             if (old.tfIndex == route.tfIndex) {
@@ -57,19 +68,71 @@ std::vector<std::size_t> syncAverageGroupMembership(AverageGroup& group,
                 break;
             }
         }
-        // Never refused: every route gathered above already agrees with
-        // `firstReference` by construction, and `addMember`'s only refusal
-        // is a reference mismatch (record §6).
-        (void)group.addMember(route.tfIndex, route.referenceChannel,
-                              "TF " + std::to_string(route.tfIndex), trim);
+        // EVERY route is offered to addMember(), including ones the
+        // prediction above already expects to lose -- this is the real
+        // refusal path (record §6), not the prediction, deciding who
+        // becomes a member. A refused route is still represented: it is
+        // simply absent from `memberAnalyserIndices`, and
+        // `mergeRoutePositions` (below) gives it its own
+        // `Membership::ExcludedDifferentReference` summary instead of
+        // silently vanishing from the published Snapshot.
+        const MemberRefusal refusal = group.addMember(
+            route.tfIndex, route.referenceChannel, "TF " + std::to_string(route.tfIndex), trim);
+        if (refusal == MemberRefusal::None) {
+            memberAnalyserIndices.push_back(i);
+            newTfIndices.push_back(route.tfIndex);
+        }
     }
     if (oldSolo >= 0) {
         group.setSolo(oldSolo);
     }
 
-    lastTfIndices = std::move(desiredTfIndices);
+    lastTfIndices = std::move(newTfIndices);
     return memberAnalyserIndices;
 }
+
+namespace {
+
+/// One `PositionSummary` per `plan.routes` entry, in route order, ALWAYS
+/// (station-4 fix F3, record §6): `memberSummaries` (from
+/// `AverageGroup::publish()`, via `publishAverageGroup` above) covers only
+/// the routes `memberAnalyserIndices` names, in that same ascending order
+/// (`syncAverageGroupMembership`'s own guarantee) -- so this is a single
+/// merge pass, never a search. A route index NOT in `memberAnalyserIndices`
+/// was refused by the real `AverageGroup::addMember` call
+/// (`syncAverageGroupMembership`'s own comment) for naming a different
+/// reference; it gets a `PositionSummary` carrying only its own identity
+/// (`tfIndex`, `name`) and `Membership::ExcludedDifferentReference` -- the
+/// same "no data, no crash" shape `AverageGroup::publish()`'s own
+/// size-mismatch fallback already uses for a summary with nothing behind
+/// it, because this route was never handed to that class as a member in
+/// the first place, so there is no `TransferSnapshot` of its own to read a
+/// level or a coherence from here.
+std::vector<PositionSummary> mergeRoutePositions(const RoutingPlan& plan,
+                                                  std::span<const std::size_t> memberAnalyserIndices,
+                                                  std::vector<PositionSummary> memberSummaries) {
+    std::vector<PositionSummary> merged;
+    merged.reserve(plan.routes.size());
+
+    std::size_t memberCursor = 0;
+    for (std::size_t routeIndex = 0; routeIndex < plan.routes.size(); ++routeIndex) {
+        if (memberCursor < memberAnalyserIndices.size() &&
+            memberAnalyserIndices[memberCursor] == routeIndex) {
+            merged.push_back(std::move(memberSummaries[memberCursor]));
+            ++memberCursor;
+            continue;
+        }
+
+        PositionSummary excluded;
+        excluded.tfIndex = plan.routes[routeIndex].tfIndex;
+        excluded.name = "TF " + std::to_string(plan.routes[routeIndex].tfIndex);
+        excluded.membership = Membership::ExcludedDifferentReference;
+        merged.push_back(std::move(excluded));
+    }
+    return merged;
+}
+
+}  // namespace
 
 AverageGroupPublish publishAverageGroup(const AverageGroup& group,
                                         std::span<const std::size_t> memberAnalyserIndices,
@@ -102,8 +165,12 @@ SnapshotPtr buildPublishedSnapshot(std::vector<std::unique_ptr<Analyser>>& analy
 
     auto snapshot = std::make_shared<Snapshot>(*base);
     snapshot->average = std::move(grouped.average);
-    snapshot->positions = std::move(grouped.positions);
     snapshot->soloTransfer = std::move(grouped.soloTransfer);
+    // Every route gets a summary, member or not (station-4 fix F3) -- see
+    // mergeRoutePositions's own comment for why this is a single ordered
+    // merge, not a search.
+    snapshot->positions =
+        mergeRoutePositions(plan, memberAnalyserIndices, std::move(grouped.positions));
     return snapshot;
 }
 

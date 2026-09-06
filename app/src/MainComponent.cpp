@@ -202,6 +202,7 @@ void MainComponent::timerCallback() {
     // LIVE mode, chiefly. Cheap: kMaxTransferFunctions (8) cells, twice a
     // second.
     routingMatrix_.refreshFromConfig();
+    refreshMembershipFromSnapshot();
 
     if (isSyntheticMode()) {
         return;  // fixed list, set once in setSyntheticMode()
@@ -214,6 +215,22 @@ void MainComponent::refreshChannelNamesFromDevice() {
     if (names != lastChannelNames_) {
         lastChannelNames_ = names;
         channelRoleTable_.setChannelNames(lastChannelNames_);
+    }
+}
+
+void MainComponent::refreshMembershipFromSnapshot() {
+    // The AVG column reflects the live AverageGroup membership from the
+    // most recently PUBLISHED Snapshot, read through the same
+    // planRouting() AnalysisThread itself used to build it -- recomputed
+    // here rather than stored, because it is a pure function of config_
+    // (RoutingPlan.h's own class comment). A stale call racing a routing
+    // change mid-tick can only mismatch `snapshot->positions` against
+    // `plan` for one tick -- updateMembership's own bounds handle that
+    // without reading past either span (RoutingMatrix.h's own comment).
+    if (const auto snapshot = analysisThread_.latest()) {
+        const auto plan =
+            rta::measure::planRouting(audioIo_.bus().config(), rta::measure::kMaxTransferFunctions);
+        routingMatrix_.updateMembership(plan, snapshot->positions);
     }
 }
 
@@ -241,6 +258,12 @@ void MainComponent::paint(juce::Graphics& g) {
 }
 
 void MainComponent::resized() {
+    // Station-4 fix F3: also called here, not only from the 2 Hz timer --
+    // see refreshMembershipFromSnapshot()'s own comment for why a caller
+    // driving this class with no message loop pumped (tools/snapshot.cpp)
+    // would otherwise never see the AVG column populated at all.
+    refreshMembershipFromSnapshot();
+
     auto area = getLocalBounds().reduced(az::ui::gap * 2);
 
     mastheadArea_ = area.removeFromTop(az::ui::transportHeight / 2);

@@ -91,6 +91,19 @@ private:
     /// mode.
     void refreshChannelNamesFromDevice();
 
+    /// Station-4 fix F3 (record §6): pushes the AVG column from the latest
+    /// published Snapshot's `positions`. Called from BOTH `timerCallback()`
+    /// (2 Hz, live/interactive use) AND `resized()` -- NOT the timer alone,
+    /// because `juce::Timer` fires through the message loop, and
+    /// tools/snapshot.cpp's offscreen render drives this class through a
+    /// blocking `juce::Thread::sleep()` with no message loop pumped at all,
+    /// the same reason `renderComponent()` there has to call `resized()`
+    /// explicitly (that file's own comment on trap T-6). Without this second
+    /// call site, main-live.png would show every row's ROLE (set eagerly by
+    /// `setSyntheticMode()`) but every row's AVG stuck at its
+    /// construction-time "--", never having had a chance to run.
+    void refreshMembershipFromSnapshot();
+
     // --- Trap T-1: declaration order is load-bearing. See the class comment.
     rta::platform::AudioIo audioIo_;
     rta::measure::AnalysisThread analysisThread_;

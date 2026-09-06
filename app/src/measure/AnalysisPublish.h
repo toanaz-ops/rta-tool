@@ -26,23 +26,36 @@ namespace rta::measure {
 /// systems measured against two references are two groups, not one
 /// average" -- this app runs exactly ONE live group per AnalysisThread
 /// today, so when `plan` names more than one distinct reference, only the
-/// routes sharing the FIRST route's reference channel become members; the
-/// rest are not yet represented in any published summary. That is a real
-/// limitation (multiple simultaneous groups is a follow-up task's scope),
-/// stated here rather than silently dropping data this function invented.
+/// routes sharing the group's established reference channel become
+/// members. EVERY route -- member or not -- is now fed to
+/// `AverageGroup::addMember` (station-4 fix F3: a route naming a different
+/// reference must be REFUSED by that real call, not filtered out before it
+/// ever runs, which had made `MemberRefusal::DifferentReference`
+/// unreachable in production). A refused route is not lost: it is still
+/// represented in the published `Snapshot` by `mergeRoutePositions`
+/// (AnalysisPublish.cpp), which is what turns "excluded from this function's
+/// return value" into a visible `Membership::ExcludedDifferentReference`
+/// summary instead of no summary at all.
 ///
 /// `lastTfIndices` is the caller's own memory of what was last synced --
-/// pass the SAME vector back on every call. Membership (and, with it, any
-/// allocation) is only rebuilt when the filtered route set actually
-/// changed; a surviving member's trim and the group's solo selection carry
-/// over unchanged, matched by `TransferRoute::tfIndex`, so a routing change
-/// on an unrelated channel never resets a trim the operator already set.
+/// pass the SAME vector back on every call. The (expensive) group rebuild
+/// is skipped when the PREDICTED member set has not changed since last time
+/// -- a cheap, non-mutating restatement of `AverageGroup::addMember`'s own
+/// one-line rule against the group's current state, used only to decide
+/// whether to rebuild, never to decide who is actually a member (that
+/// decision always comes from a real `addMember` call inside the rebuild).
+/// A surviving member's trim and the group's solo selection carry over
+/// unchanged across a rebuild, matched by `TransferRoute::tfIndex`, so a
+/// routing change on an unrelated channel never resets a trim the operator
+/// already set.
 ///
 /// Returns the position, in `plan.routes` (the SAME order `analysers_` is
 /// indexed by -- AnalysisThread's own class comment), of each surviving
 /// member, in the order `group.members()` now holds -- what the caller
 /// needs in order to read each member's TransferSnapshot from the right
-/// `Analyser`.
+/// `Analyser`. Ascending by construction (both the prediction and the real
+/// rebuild walk `plan.routes` in order), which is what lets
+/// `mergeRoutePositions` zip it against `plan.routes` in one pass.
 [[nodiscard]] std::vector<std::size_t> syncAverageGroupMembership(
     AverageGroup& group, std::vector<int>& lastTfIndices, const RoutingPlan& plan);
 
@@ -79,6 +92,13 @@ namespace rta::measure {
 /// fixed cost, sized by bins, the SAME every publish regardless of N; it is
 /// deliberately not the quantity T12 bounds (`publishAverageGroup` above
 /// is).
+///
+/// `positions` is `mergeRoutePositions`'s own result (AnalysisPublish.cpp,
+/// station-4 fix F3): one `PositionSummary` per `plan.routes` entry, in
+/// route order, ALWAYS -- a route `AverageGroup::addMember` refused for
+/// naming a different reference gets a summary too, marked
+/// `Membership::ExcludedDifferentReference`, rather than being missing from
+/// the Snapshot entirely.
 [[nodiscard]] SnapshotPtr buildPublishedSnapshot(std::vector<std::unique_ptr<Analyser>>& analysers,
                                                  AverageGroup& group,
                                                  std::vector<int>& lastTfIndices,

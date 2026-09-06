@@ -131,11 +131,31 @@ struct AverageBlock {
     std::vector<rta::dsp::SpatialAbsence> absence;
 };
 
+/// Why a route's `PositionSummary` reads the way it does -- station-4 fix F3
+/// (docs/dsp/2026-09-06-multichannel-l6b.md §6: "a spatial average group
+/// requires its members to share one reference channel, and the group
+/// refuses a member that does not"). `Member` is the accepted case, mirroring
+/// `AverageGroup`'s own `MemberRefusal::None` one layer down
+/// (measure/AverageGroup.h) without this framework-free header including
+/// that one (AverageGroup.h already includes THIS file -- the dependency
+/// only goes one way). Every other value mirrors a real refusal reason
+/// `AverageGroup::addMember` actually returned for this route; there is no
+/// value here that is not backed by a real refusal, because a state nothing
+/// in the code can produce is a claim the enum would be making on its own.
+enum class Membership { Member, ExcludedDifferentReference };
+
 /// One group member's summary -- level, trust, gate state -- with NO per-bin
 /// array (record §6: publish cost must be O(1) in N, and a per-bin array
 /// here is exactly the N-scaling churn that decision refuses). The full
 /// per-bin blocks exist only for the group's average and for at most one
 /// SOLOED member (see `Snapshot::soloTransfer` below).
+///
+/// Built for EVERY route in the routing plan, not only the ones that joined
+/// the live average -- a route refused for naming a different reference
+/// still gets one, with `membership` stating why it contributes nothing to
+/// `Snapshot::average`, rather than vanishing from the Snapshot entirely
+/// (the silent drop station-4 fix F3 closed; see
+/// AnalysisPublish.cpp's `mergeRoutePositions`).
 struct PositionSummary {
     int tfIndex = -1;
     std::string name;
@@ -154,6 +174,12 @@ struct PositionSummary {
     /// there is no overload check upstream of AverageGroup yet, and a
     /// summary must not claim a fact nothing has measured.
     bool overloaded = false;
+    /// Defaults to `Member` because every summary `AverageGroup::publish()`
+    /// itself produces IS one (its `members_` list holds only accepted
+    /// members by construction) -- only `mergeRoutePositions`'s synthesized
+    /// entry for a route `AverageGroup::addMember` actually refused sets
+    /// this to anything else.
+    Membership membership = Membership::Member;
 };
 
 /// One immutable measurement, published by the analysis thread and read by
