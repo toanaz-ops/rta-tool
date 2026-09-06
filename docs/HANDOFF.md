@@ -69,10 +69,15 @@ Trước lane: 362 (OFF) / 402 (ON), đo trên `7e10eb6` cùng phiên. Guard sau
 ## Việc còn mở
 - **Chưa merge.** `git rev-list --count main..HEAD` — đo, đừng chép. Merge là
   lệnh của chủ nhân.
-- **Chưa có fixture snapshot mang `MtwBlock`** — bằng chứng hình ảnh đến từ patch
-  tạm vào `tools/snapshot.cpp` (đã revert ba lần); PNG của verifier cuối nằm ở
-  scratchpad phiên này, không trong cây. Follow-up nhỏ.
-- **Toggle nguồn per-plot chưa có control UI** — chỉ là API; mặc định MTW.
+- ~~**Chưa có fixture snapshot mang `MtwBlock`**~~ — **ĐÓNG 2026-09-06** tại
+  `a777887` (`makeSyntheticMtw`, `tools/snapshot.cpp` render `transfer.png` và
+  `workspace.png` có seam + strip). Verifier độc lập build trong scratch
+  worktree: 442/442 (ON), 0 warning C. Lưu ý: `specimen.png` là bảng swatch
+  design-system, không mang `Snapshot`; hình MTW nằm ở `transfer.png`.
+- ~~**Toggle nguồn per-plot chưa có control UI**~~ — **ĐÓNG 2026-09-06** tại
+  `959a197` (`TransferSourceToggle`, nút MTW/FIXED trên cả ba pane; test âm
+  "FIXED bỏ mọi seam" render pixel thật; mutation sai-pane bị bắt 15/28).
+  `TransferView.cpp` 388 dòng — lần thêm sau phải tách.
 - **MTW trace live-only.** Lưu trace MTW là amendment L5 (`Trace.h:91-93` lấy trục
   từ `fftSize` có chủ ý).
 - **Câu hỏi sân khấu, không phải số học:** 5.5 s fill dưới 187.5 Hz có bị người

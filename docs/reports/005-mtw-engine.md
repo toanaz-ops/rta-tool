@@ -130,13 +130,14 @@ an uncompensated backstop.
 
 - **MTW traces are live-only.** `Trace` derives its axis from `fftSize` on
   purpose; storing an MTW trace is an L5 amendment with its own record.
-- **The per-plot source toggle has no UI control yet** — it exists as an API
-  the tests and a future control can call. The default (MTW everywhere) is what
-  a user sees.
-- **No committed snapshot fixture carries an `MtwBlock`.** The only rendered
-  evidence is from a temporary patch to `tools/snapshot.cpp`, applied and
-  reverted three times (two builders, one verifier). A committed fixture is a
-  small follow-up.
+- ~~The per-plot source toggle has no UI control yet~~ — **closed 2026-09-06**
+  at `959a197`: `TransferSourceToggle` puts an MTW/FIXED button pair on each
+  pane; the negative test renders and inspects pixels for the absence of every
+  seam under FIXED; a wrong-pane mutation failed 15 of 28 assertions.
+- ~~No committed snapshot fixture carries an `MtwBlock`~~ — **closed
+  2026-09-06** at `a777887`: `makeSyntheticMtw` feeds `tools/snapshot.cpp`;
+  `transfer.png` and `workspace.png` now show seams, strip and toggles.
+  Independent verifier, scratch worktree, clean build: 442/442 ON, 0 warnings.
 - **5.5 s of fill below 187.5 Hz at the default depth** is the operator-facing
   cost of frames-uniform averaging. Whether a coherence trace filling in from
   the top reads as a fault on a real stage is a question for a person with a
