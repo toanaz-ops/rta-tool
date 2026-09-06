@@ -69,6 +69,80 @@ refusal → test số học FAILED (average thành 3-way) → revert → GREEN. 
 
 ---
 
+# 2026-09-06 (tối) — L7 (Solvers) TRẠM 1+2 XONG cho cả năm sub-lane — nhánh `claude_desk/l7-solvers-station-1-874518`
+
+**Đọc mục này trước.** Phiên orchestrator L7 (Opus) đi trạm 1 (research) và trạm 2
+(decision record) cho toàn bộ lane L7, chia **năm sub-lane**. **Chưa viết một dòng
+code nào** (trạm 3 chưa mở). Mọi claim mã-nguồn trong record đã qua verifier độc lập
+(đọc file thật, không đọc record). Nhánh đã fast-forward absorb `main` tại `4b05049`.
+
+## Quyết định của chủ nhân trong phiên này
+1. **Q3 — đường output generator GỘP VÀO L7, research TRƯỚC** (đã có trên `main` qua
+   `cbca9bf`; phiên này xác nhận và mở sub-lane **L7-OUT** làm prerequisite).
+2. **Hai tiền đề chưa xây GỘP vào sub-lane phụ thuộc**: G24 (min/excess-phase) vào
+   **L7-EQ**; relative-polarity ρ vào **L7-ALIGN**. Không xây lane riêng.
+3. **Lane split = Wave 0 shared-foundation trước**, rồi solver theo sóng (dưới).
+4. **Solo default = CÓ setting, mặc định option 1**: sequencer/auto-step strict
+   single-output solo; manual toggle additive. Trả lời chung OUT §13.2 + DELAY §14.2.
+
+## Năm research doc + năm decision record
+- research: `docs/research/2026-09-06-l7-{output-path,auto-delay,auto-eq,fir-export,alignment-wizard}-station1-research.md`
+- record:  `docs/dsp/2026-09-06-l7-{output-path,auto-delay,auto-eq,fir-export,alignment-wizard}.md`
+- Đọc record TRƯỚC research. L7-OUT là interface mà bốn record kia trích dẫn.
+
+## Thành phần core DÙNG CHUNG (Wave 0) — ba record hội tụ độc lập
+`MinimumPhase` (EQ + FIR), `FilterSpec` (EQ/FIR/ALIGN), biquad design/response
+(EQ `designBiquad` + ALIGN `BiquadResponse`). Verifier xác nhận **chưa có cái nào
+trong core hôm nay**. Xây MỘT LẦN ở Wave 0, tránh ba lane cùng thêm file chồng nhau
+vào `core/CMakeLists`.
+
+## Kế hoạch sóng (trạm 3 viết impl plan theo đây)
+- **Wave 0**: shared foundation (MinimumPhase, FilterSpec, BiquadDesign, BiquadResponse) — core-only, một integration.
+- **Wave 1**: L7-OUT (platform/app, KHÔNG đụng core) ∥ L7-FIR (core+app).
+- **Wave 2**: L7-DELAY ∥ L7-EQ (cả hai cần OUT; serialize integration core).
+- **Wave 3**: L7-ALIGN (cần OUT + DELAY + biquad dùng chung + ρ).
+
+## Verifier đã xác nhận (đọc file thật)
+- OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output
+  + `ScopedNoDenormals` là câu ĐẦU + guard `audioio_scoped_no_denormals_is_first`;
+  sáu source RT-safe; `Oscillator.h:69-77` "one ramp for the whole generator".
+- EQ/ALIGN/DELAY 8/8: coherence gate CHƯA xây (chỉ mockup dev-preview
+  `TargetMatchPreview.cpp`); không MinimumPhase trong core; không RBJ design (chỉ
+  Biquad apply-only); `Biquad.h` né `<complex>`; `Trace` ba vector real, không
+  VirtualTrace; `findDelayPhat` 0 caller trong `app/` + không có raw-capture path;
+  `DelayEstimate::peak` whitened 1e-10 khác ρ; `Mls` tuần hoàn.
+
+## Ba quyết định phiên sau KHÔNG suy diễn lại
+1. **G24 null test: a<1 = comb MIN-phase (boost được), chỉ a>1 mới NON-min-phase.**
+   `|1+a·e^{-jθ}| = a·|1+(1/a)·e^{-jθ}|` nên hai loại CÙNG magnitude, chỉ pha tách.
+   Ngưỡng = swing excess-phase phụ thuộc độ sâu `S*=2·arcsin r_D`, KHÔNG phải sàn lưới.
+2. **Topology là MỘT closed form**: BW-N HP dẫn LP `N·90°` ở mọi tần số; LR-N kế thừa.
+   Wizard HỎI topology + hỏi thêm "processor đã đảo một output chưa" (180° wiring =
+   180° topology, đo không phân biệt được). Bác "maximize measured sum" (tái suy
+   topology từ đo). Sửa lỗi research D1/D6: BW2 chưa đảo là NULL, đảo mới +3 dB.
+3. **Auto-delay hai mode do TOÁN ép**, không phải taste: Locate (linear corr, span
+   riêng, không coherence) vs Track (circular corr trên `Sxy` averaged, coherence là
+   trọng số). Bác first-arrival-fraction (PHAT tạo ghost đảo pha ở `D₁−Δ` cao ≈ a/2)
+   và phase-slope (cần unwrap, cấm trong core theo L2 §6).
+
+## Câu hỏi chờ chủ nhân (KHÔNG chặn trạm 3 Wave 0/1)
+- **Order-4 mâu thuẫn** (ALIGN §13.1): identity `N·90°` dự đoán ĐÚNG dấu ở BW4, nhưng
+  L4a ĐO sai dấu ở bậc 2 VÀ 4. Cần trí nhớ chủ nhân về fixture L4a, hoặc một ô grid.
+  Chỉ ảnh hưởng Wave 3 (ALIGN). Đề xuất: probe settle trước khi ALIGN build.
+- Judgement record tự chọn default, chờ duyệt: `G_cap +6dB` / `Q_max` 10-20 (EQ §12.2),
+  N cap (EQ §12.3), NotMinimumPhase→V2 (EQ §12.4), −120dB floor cho `|H|` đo (EQ §12.5),
+  plausibility window Locate (DELAY §14.1), tracker on-by-default (DELAY §14.3),
+  64-output hardware check (OUT §13.1), device-reconfig-while-armed (OUT §13.3, đã chọn default).
+
+## Việc còn mở
+- **Chưa merge, chưa push. Trạm 3 (impl plan) + trạm 4 (build) chưa mở.**
+- Record FIR + EQ còn claim NGOÀI (scipy/rePhase/REW/CamillaDSP/RBJ coefficient) đánh
+  dấu UNVERIFIED trong §ledger — plan phải đọc lại cookbook / venv main-checkout TRƯỚC
+  khi build (bẫy AES-2id / parity-table). FIR đã web-verify và bác 2 premise (Toeplitz
+  +Hankel không phải Levinson; WAV sample-rate KHÔNG an toàn — CamillaDSP bỏ qua field).
+
+---
+
 # 2026-09-06 — **L6b (multichannel) ĐÃ MERGE VÀO `main` tại `4edcf82`**
 
 Chủ nhân nói "merge" trong phiên orchestrator L6b. Merge `--no-ff` trong checkout

@@ -64,6 +64,27 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
   callback nên trạm 1 phải mở bằng research đường output. Ghi ở master plan hàng
   L7. Nguồn: record §8.
 
+## Từ lane L7 (2026-09-06, phiên orchestrator trạm 1+2)
+
+- [x] **Hai tiền đề chưa xây → GỘP vào sub-lane phụ thuộc, 2026-09-06.** Chủ nhân
+  chốt: G24 (min/excess-phase) xây trong **L7-EQ**; relative-polarity ρ xây trong
+  **L7-ALIGN** (dùng để hoà giải hai tín hiệu polarity mâu thuẫn: `DelayFinder`
+  `inverted` vs L4a `Polarity`). Không xây lane riêng. Master plan `:120` vẫn liệt
+  G24 dưới L4c — closeout cập nhật một dòng. Nguồn: record `docs/dsp/2026-09-06-l7-auto-eq.md` §5, `docs/dsp/2026-09-06-l7-alignment-wizard.md` §7-8.
+- [x] **Lane split → Wave 0 shared-foundation trước, 2026-09-06.** MinimumPhase +
+  FilterSpec + BiquadDesign/Response xây một lần làm nền, rồi OUT+FIR → DELAY+EQ →
+  ALIGN. Chi tiết ở `docs/HANDOFF.md` mục đầu.
+- [x] **Solo mặc định khi phát output → CÓ setting, mặc định option 1, 2026-09-06.**
+  Sequencer/auto-step: strict single-output solo. Manual toggle: additive. Operator
+  đổi được. Trả lời chung cho OUT §13.2 và DELAY §14.2.
+- [ ] **Order-4 mâu thuẫn (ALIGN §13.1)** — identity `N·90°` dự đoán ĐÚNG dấu ở BW4,
+  L4a ĐO sai dấu ở bậc 2 VÀ 4. Cần trí nhớ chủ nhân về fixture L4a hoặc một ô grid
+  độc lập. KHÔNG chặn Wave 0/1/2; chặn Wave 3 (ALIGN) build. Đề xuất probe settle.
+- [ ] **Judgement L7 chờ duyệt (default đã chọn, không chặn)**: `G_cap +6dB`/`Q_max`
+  (EQ §12.2), N cap (§12.3), NotMinimumPhase→V2 (§12.4), −120dB floor cho `|H|` đo
+  (§12.5), plausibility window Locate (DELAY §14.1), tracker on-by-default (§14.3),
+  64-output hardware check (OUT §13.1).
+
 ## Chờ một câu của chủ nhân, không phải một quyết định khó
 
 - [x] **`[!]` Merge lane L4a vào `main` — ĐÃ MERGE 2026-08-30**, commit
