@@ -10,6 +10,7 @@
 #include "measure/Snapshot.h"
 
 #include "rta/dsp/MtwResult.h"
+#include "rta/dsp/SpatialAverage.h"
 #include "rta/dsp/TransferEstimator.h"
 
 namespace rta::measure {
@@ -30,5 +31,11 @@ namespace rta::measure {
 /// here, outside check_coherence_gate.cmake's reach, after the gate already
 /// ran inside makeMtwResult()/makeSnapshot()).
 [[nodiscard]] MtwBlock makeMtwBlock(const rta::dsp::MtwResult& mtwResult, int appliedDelaySamples);
+
+/// Converts one `SpatialAverageResult` (task B3, record §6) into the app's
+/// own `AverageBlock` -- the same radians -> degrees crossing
+/// `makeTransferBlock` makes, and the same reason (`view/` works in degrees
+/// throughout).
+[[nodiscard]] AverageBlock makeAverageBlock(const rta::dsp::SpatialAverageResult& result);
 
 }  // namespace rta::measure

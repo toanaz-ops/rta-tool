@@ -68,4 +68,22 @@ MtwBlock makeMtwBlock(const rta::dsp::MtwResult& mtwResult, int appliedDelaySamp
     return block;
 }
 
+AverageBlock makeAverageBlock(const rta::dsp::SpatialAverageResult& result) {
+    AverageBlock block;
+    block.magnitudeDb = result.magnitudeDb;
+    block.phaseDeg.resize(result.phaseRadians.size());
+    for (std::size_t i = 0; i < result.phaseRadians.size(); ++i) {
+        block.phaseDeg[i] = result.phaseRadians[i] * static_cast<float>(180.0 / std::numbers::pi);
+    }
+    block.phaseAgreement = result.phaseAgreement;
+    block.weightedCoherence = result.weightedCoherence;
+    block.contributors.resize(result.bins.size());
+    block.absence.resize(result.bins.size());
+    for (std::size_t i = 0; i < result.bins.size(); ++i) {
+        block.contributors[i] = result.bins[i].contributors;
+        block.absence[i] = result.bins[i].absence;
+    }
+    return block;
+}
+
 }  // namespace rta::measure

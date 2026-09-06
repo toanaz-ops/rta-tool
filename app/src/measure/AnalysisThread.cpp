@@ -251,9 +251,24 @@ void AnalysisThread::publishIfDue() {
 
     // Trap T-4: this allocation belongs here, on the analysis thread, at
     // most 20 times a second -- never in the audio callback, which is what
-    // test_capture_bus.cpp's allocation test is for. analysers_[0] only,
-    // same publish surface as before this task; B3's AverageGroup is what
-    // publishes the other positions' summaries.
+    // test_capture_bus.cpp's allocation test is for.
+    //
+    // Corrected (task B3(d), record §6): a single AverageGroup::publish()
+    // call measured 20 079 bytes at N = 1 member -- NOT "~8 KB, mostly
+    // spectrumDb" as an earlier comment here budgeted -- and the cost stays
+    // O(1) IN N from there: bytes(8) - bytes(4) measured at 288 bytes,
+    // against a bound of 4*sizeof(PositionSummary) + 4096 = 4352
+    // (app/tests/test_average_group.cpp's own counting-allocator case).
+    // That property holds because AverageGroup::publish() reads its
+    // TransferSnapshot span straight into rta::dsp::spatialAverage, which
+    // allocates only 5 vectors sized by BIN COUNT, never by member count
+    // (SpatialAverage.cpp) -- the design answer record §6 gives to the
+    // 2.21 MB-per-position-per-publish churn a naive N-Analyser publish
+    // would otherwise cost. analysers_[0] only publishes THROUGH this call
+    // today; B3's AverageGroup exists as a standalone, tested class (this
+    // task's scope) and is not yet wired to a live per-hop TransferSnapshot
+    // source here -- that wiring, and the operator-facing group
+    // configuration it needs, is left to a follow-up task.
     SnapshotPtr snapshot = analysers_[0]->publish(bus_.totalDrops());
     latest_.store(std::move(snapshot), std::memory_order_release);
 }

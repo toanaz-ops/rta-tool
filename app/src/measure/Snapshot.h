@@ -5,10 +5,13 @@
 
 #include "measure/Levels.h"
 
+#include "rta/dsp/SpatialAverage.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace rta::measure {
@@ -107,6 +110,52 @@ struct MtwBlock {
     int appliedDelaySamples = 0;
 };
 
+/// The stitched spatial average (task B3, record §6), the app's own
+/// conversion of `rta::dsp::SpatialAverageResult` -- same one radians ->
+/// degrees crossing `TransferBlock` makes, for the same reason (`view/`
+/// works in degrees throughout). Absent exactly when
+/// `rta::dsp::spatialAverage` returned `std::nullopt`: every position's
+/// weights summed to zero at every bin, which is a state worth showing as
+/// "no average", never as a flat curve of zeros.
+struct AverageBlock {
+    std::vector<float> magnitudeDb;
+    std::vector<float> phaseDeg;
+    std::vector<float> phaseAgreement;         ///< R, record §2 -- NOT a coherence estimate
+    std::vector<float> weightedCoherence;      ///< Sum(u*g2)/Sum(u), record §4 -- NOT one either
+    std::vector<std::uint16_t> contributors;   ///< gate-passed AND u_i > 0 at this bin
+    /// `rta::dsp::SpatialAbsence` per bin, stored as the same enum: Present /
+    /// NoContributor / NoWeight (record §3). Kept as the core enum rather
+    /// than re-declared here -- this file already links rta::core through
+    /// Analyser.h's own dependency chain, so there is no framework-guard
+    /// reason to duplicate it.
+    std::vector<rta::dsp::SpatialAbsence> absence;
+};
+
+/// One group member's summary -- level, trust, gate state -- with NO per-bin
+/// array (record §6: publish cost must be O(1) in N, and a per-bin array
+/// here is exactly the N-scaling churn that decision refuses). The full
+/// per-bin blocks exist only for the group's average and for at most one
+/// SOLOED member (see `Snapshot::soloTransfer` below).
+struct PositionSummary {
+    int tfIndex = -1;
+    std::string name;
+    /// A single scalar standing in for the whole magnitude curve -- the
+    /// arithmetic mean of `TransferBlock::magnitudeDb`, in dB, over every
+    /// bin (including floored ones: a position sitting mostly at the floor
+    /// should read as quiet, not be excluded from its own average).
+    float levelDb = static_cast<float>(kLevelFloorDb);
+    /// The mean of this position's OWN gated coherence, over bins where it
+    /// is present -- not `AverageBlock::weightedCoherence`, which is a
+    /// property of the GROUP, not of one member.
+    float weightedCoherence = 0.0f;
+    double effectiveAverages = 0.0;
+    bool gatePassed = false;   ///< this position's own coherence.has_value()
+    /// Latched by the capture sequencer (task B5); B3 never sets this true --
+    /// there is no overload check upstream of AverageGroup yet, and a
+    /// summary must not claim a fact nothing has measured.
+    bool overloaded = false;
+};
+
 /// One immutable measurement, published by the analysis thread and read by
 /// the message thread through an atomic pointer swap (decision record: "one
 /// struct, published by atomic pointer swap"; trap T-5).
@@ -154,6 +203,24 @@ struct Snapshot {
 
     float peakBandLevelDb = static_cast<float>(kLevelFloorDb);
     float peakBandCentreHz = 0.0f;
+
+    /// Task B3 (record §6): the group's own spatial average, absent when no
+    /// group is configured or `rta::dsp::spatialAverage` itself returned
+    /// nothing (every position's weights summed to zero everywhere).
+    std::optional<AverageBlock> average;
+
+    /// One summary per group member, always -- this is the O(1)-in-N part
+    /// of the publish (record §6's own cost argument, task B3(d)'s counting
+    /// allocator). Empty when no group is configured.
+    std::vector<PositionSummary> positions;
+
+    /// The full per-bin transfer function of at most ONE soloed position --
+    /// `nullopt` unless the operator asked for one. This, plus `average`
+    /// above, is the ONLY per-bin data an N-member group publishes; every
+    /// other position's curve is summarised in `positions`, not carried in
+    /// full (record §6: "the spatial average is the published trace, plus
+    /// one soloed position").
+    std::optional<TransferBlock> soloTransfer;
 };
 
 /// Readers only ever see a `const Snapshot`: nothing downstream of

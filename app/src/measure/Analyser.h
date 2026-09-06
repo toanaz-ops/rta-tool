@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -133,6 +134,21 @@ public:
     /// The most recently published snapshot, or `nullptr` before the first
     /// `publish()`. Safe to call from any thread (see class comment).
     [[nodiscard]] SnapshotPtr latest() const override;
+
+    /// The RAW dual-FFT result this position's engine currently holds --
+    /// `std::nullopt` under the exact same condition `publish()`'s own
+    /// `transfer` field is (no reference pushed yet, or no frame analysed
+    /// yet). This is what `rta::dsp::spatialAverage` (task B3, record §6)
+    /// needs and `Snapshot::transfer` cannot give it: `TransferBlock` is
+    /// already converted to degrees and has thrown away `h` (the complex
+    /// value) and `binWidthHz`/`sampleRate`, which the combine's own grid
+    /// check requires. Not thread-safe across calls the way `latest()` is --
+    /// call only from the same thread that calls `pushPair`/`publish`
+    /// (the analysis thread), exactly like `pushMeasurement` etc.
+    [[nodiscard]] std::optional<rta::dsp::TransferSnapshot> transferSnapshot() const {
+        if (!dualEngaged_ || dual_.frameCount() == 0) return std::nullopt;
+        return rta::dsp::makeSnapshot(dual_, config_.estimator);
+    }
 
 private:
     Config config_;
