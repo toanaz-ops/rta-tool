@@ -33,6 +33,7 @@ add_executable(rta_core_tests
     test_synthetic.cpp
     test_biquad.cpp
     test_biquad_response.cpp
+    test_minimum_phase.cpp
     test_butterworth.cpp
     test_filterbank.cpp
     test_weighting.cpp
