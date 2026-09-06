@@ -22,6 +22,7 @@ add_library(rta_core STATIC
     src/dsp/OctaveBands.cpp
     src/dsp/RealFft.cpp
     src/dsp/SpatialAverage.cpp
+    src/dsp/SpatialMtw.cpp
     src/dsp/SpectrumEngine.cpp
     src/dsp/TransferEstimator.cpp
     src/dsp/Weighting.cpp
