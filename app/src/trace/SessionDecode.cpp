@@ -14,7 +14,8 @@ namespace rta::trace {
 
 using namespace rta::trace::detail;
 
-DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
+DecodeStatus decodeIndex(std::string_view text, SessionDocument& out,
+                         const CurrentDevice* currentDevice) {
     // Split into lines without copying the whole buffer; std::string_view
     // slices reference `text`, which outlives this function. `out` is never
     // touched until the single assignment at the very end of this function,
@@ -48,7 +49,7 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
     SessionDocument doc;
     doc.schemaVersion = schemaVersion;
 
-    enum class Section { None, Capture, Entry, Pane };
+    enum class Section { None, Capture, Entry, Pane, Tf, Average, Routing };
     Section section = Section::None;
 
     for (std::size_t i = 1; i < lines.size(); ++i) {
@@ -67,6 +68,25 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
         if (line == "[pane]") {
             doc.panes.emplace_back();
             section = Section::Pane;
+            continue;
+        }
+        if (line == "[tf]") {
+            doc.transferFunctions.emplace_back();
+            section = Section::Tf;
+            continue;
+        }
+        if (line == "[average]") {
+            // At most one per document (SessionCodec.h's own comment): a
+            // second [average] section simply replaces the first, same as
+            // every other "one instance, most-recently-seen wins" case
+            // this format has no rule against.
+            doc.average = AverageSpec{};
+            section = Section::Average;
+            continue;
+        }
+        if (line == "[routing]") {
+            doc.routing = RoutingSpec{};
+            section = Section::Routing;
             continue;
         }
         if (!splitLine(line, key, value)) return DecodeStatus::Malformed;
@@ -134,9 +154,64 @@ DecodeStatus decodeIndex(std::string_view text, SessionDocument& out) {
             if (key == "view") p.view = v;
             else if (key == "weight") { if (!tryParse(v, p.weight)) return DecodeStatus::Malformed; }
             else return DecodeStatus::Malformed;
+        } else if (section == Section::Tf) {
+            if (doc.transferFunctions.empty()) return DecodeStatus::Malformed;
+            TransferFunctionSpec& tf = doc.transferFunctions.back();
+            if (key == "name") tf.name = v;
+            else if (key == "measurementChannel") { if (!tryParse(v, tf.measurementChannel)) return DecodeStatus::Malformed; }
+            else if (key == "referenceChannel") { if (!tryParse(v, tf.referenceChannel)) return DecodeStatus::Malformed; }
+            else if (key == "delaySamples") { if (!tryParse(v, tf.delaySamples)) return DecodeStatus::Malformed; }
+            else if (key == "trimDb") { if (!tryParse(v, tf.trimDb)) return DecodeStatus::Malformed; }
+            else if (key == "polarity") {
+                if (v == "1") tf.polarityInverted = true;
+                else if (v == "0") tf.polarityInverted = false;
+                else return DecodeStatus::Malformed;
+            }
+            else if (key == "memberOfAverage") {
+                if (v == "1") tf.memberOfAverage = true;
+                else if (v == "0") tf.memberOfAverage = false;
+                else return DecodeStatus::Malformed;
+            }
+            else if (key == "averagingMode") {
+                if (v == "global") tf.averagingMode = AveragingMode::Global;
+                else if (v == "pinned") tf.averagingMode = AveragingMode::Pinned;
+                else return DecodeStatus::Malformed;
+            }
+            else if (key == "fifoDepth") { if (!tryParse(v, tf.fifoDepth)) return DecodeStatus::Malformed; }
+            else return DecodeStatus::Malformed;
+        } else if (section == Section::Average) {
+            if (!doc.average.has_value()) return DecodeStatus::Malformed;
+            if (key == "mode") {
+                if (v == "db") doc.average->mode = AverageModeName::Db;
+                else if (v == "power") doc.average->mode = AverageModeName::Power;
+                else return DecodeStatus::Malformed;
+            }
+            // "member" is the ONE repeated key in this whole format: every
+            // OTHER section's "last write wins" rule (encodeIndex never
+            // writes a key twice under one section, so decodeIndex has
+            // never needed to distinguish "overwrite" from "append") does
+            // not apply here, because a group can have any number of
+            // members and each needs its own line.
+            else if (key == "member") doc.average->members.push_back(v);
+            else return DecodeStatus::Malformed;
+        } else if (section == Section::Routing) {
+            if (!doc.routing.has_value()) return DecodeStatus::Malformed;
+            if (key == "deviceName") doc.routing->deviceName = v;
+            else if (key == "inputChannelCount") { if (!tryParse(v, doc.routing->inputChannelCount)) return DecodeStatus::Malformed; }
+            else return DecodeStatus::Malformed;
         } else {
             return DecodeStatus::Malformed;
         }
+    }
+
+    // `bound` is computed here, never read from the file (RoutingSpec's own
+    // comment): a session opened with no current device at all, or on a
+    // device that disagrees on EITHER field, loads its routing visibly
+    // unbound rather than guessing.
+    if (doc.routing.has_value()) {
+        doc.routing->bound = currentDevice != nullptr &&
+                             currentDevice->name == doc.routing->deviceName &&
+                             currentDevice->inputChannelCount == doc.routing->inputChannelCount;
     }
 
     out = std::move(doc);

@@ -17,6 +17,7 @@ add_executable(rtatool_analysis_tests
     test_trace.cpp
     test_trace_decimator.cpp
     test_session_codec.cpp
+    test_session_presets.cpp
     test_session_store.cpp
     test_trace_library.cpp
     test_repaint_gate.cpp

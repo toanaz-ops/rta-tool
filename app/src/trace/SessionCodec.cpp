@@ -50,6 +50,40 @@ std::string encodeIndex(const SessionDocument& doc) {
         writeNumeric(out, "weight", p.weight);
     }
 
+    for (const auto& tf : doc.transferFunctions) {
+        out += "[tf]\n";
+        writeLine(out, "name", tf.name);
+        writeNumeric(out, "measurementChannel", tf.measurementChannel);
+        writeNumeric(out, "referenceChannel", tf.referenceChannel);
+        writeNumeric(out, "delaySamples", tf.delaySamples);
+        writeNumeric(out, "trimDb", tf.trimDb);
+        writeLine(out, "polarity", tf.polarityInverted ? "1" : "0");
+        writeLine(out, "memberOfAverage", tf.memberOfAverage ? "1" : "0");
+        writeLine(out, "averagingMode", tf.averagingMode == AveragingMode::Pinned ? "pinned" : "global");
+        writeNumeric(out, "fifoDepth", tf.fifoDepth);
+    }
+
+    if (doc.average.has_value()) {
+        out += "[average]\n";
+        writeLine(out, "mode", doc.average->mode == AverageModeName::Power ? "power" : "db");
+        // Repeated key, one line per member -- decodeIndex APPENDS on each
+        // "member=" it sees inside this section rather than overwriting,
+        // the one place this format's usual "last write wins" per-key rule
+        // does not apply (see SessionDecode.cpp's own comment there).
+        for (const auto& member : doc.average->members) {
+            writeLine(out, "member", member);
+        }
+    }
+
+    if (doc.routing.has_value()) {
+        out += "[routing]\n";
+        // `bound` is NEVER written -- it is a decode-time fact about the
+        // CURRENT machine, not something the file itself states (see
+        // RoutingSpec's own comment).
+        writeLine(out, "deviceName", doc.routing->deviceName);
+        writeNumeric(out, "inputChannelCount", doc.routing->inputChannelCount);
+    }
+
     return out;
 }
 
