@@ -30,6 +30,7 @@ add_library(rta_core STATIC
     src/dsp/TransferEstimator.cpp
     src/dsp/Weighting.cpp
     src/dsp/Window.cpp
+    src/eq/BiquadDesign.cpp
     src/gen/Mls.cpp
     src/gen/Noise.cpp
     src/gen/Oscillator.cpp
