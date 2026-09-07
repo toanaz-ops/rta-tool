@@ -172,7 +172,18 @@ catch_discover_tests(rtatool_view_tests TEST_PREFIX "view/")
 # app/tests/test_routing_plan.cpp.
 add_executable(rtatool_routing_live_tests
     test_routing_live.cpp
+    # test_delay_locate.cpp: lane L7-DELAY task F2 (record docs/dsp/
+    # 2026-09-06-l7-auto-delay.md sec.11.2, sec.1.6, sec.8) -- the raw-
+    # capture accumulator wired into drainPaired, and Apply's rebuild --
+    # against the SAME real AnalysisThread/CaptureBus shape
+    # test_routing_live.cpp uses, so it lives in this target too.
+    test_delay_locate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
+    # DelayLocator.cpp is NOT needed here: this target's tests exercise
+    # AnalysisThread's own armLocateCapture/applyReferenceDelay directly,
+    # not the JUCE-free DelayLocator state machine (that lives entirely in
+    # rtatool_analysis_tests, task F1).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RawCaptureBuffer.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
     # AverageGroup.cpp / AnalysisPublish.cpp: task F2 wires AnalysisThread's
@@ -203,3 +214,41 @@ target_compile_definitions(rtatool_routing_live_tests PRIVATE
 )
 
 catch_discover_tests(rtatool_routing_live_tests TEST_PREFIX "routing_live/")
+
+# --- FIR WAV export (lane L7-FIR, task F5) ----------------------------------
+# The one JUCE-using half of the FIR export writers (FirWavWriter.cpp --
+# WavAudioFormat); the JUCE-free text writer (FirTextWriter.cpp, task F4)
+# lives in rtatool_analysis_tests instead. Links rta::core (FirDesign.h's
+# FirResult) and juce::juce_audio_formats directly -- already transitively
+# present via juce_audio_utils (record Sec.6, verified
+# juce_audio_utils.h:54), named explicitly anyway per this file's own
+# rtatool_view_tests convention of stating the modules a target's own code
+# includes rather than inheriting them from a neighbour.
+add_executable(rtatool_export_tests
+    test_fir_wav.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirWavWriter.cpp
+    # FirTextWriter.cpp: JUCE-free (rtatool_analysis_tests' own copy, task
+    # F4), linked here too because it defines firFilenameStem() -- test_fir_wav
+    # T3's own target, and FirWavWriter.cpp only calls
+    # computeNormalizationScale (header-only, FirExport.h).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirTextWriter.cpp
+)
+
+target_include_directories(rtatool_export_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+target_link_libraries(rtatool_export_tests PRIVATE
+    rta::core
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+    Catch2::Catch2WithMain
+)
+
+target_compile_definitions(rtatool_export_tests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_STANDALONE_APPLICATION=1
+)
+
+catch_discover_tests(rtatool_export_tests TEST_PREFIX "export/")

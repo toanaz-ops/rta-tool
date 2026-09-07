@@ -6,6 +6,10 @@
 add_executable(rta_platform_tests
     test_channel_config.cpp
     test_capture_bus.cpp
+    # test_output_engine.cpp: lane L7-OUT task B (record docs/dsp/
+    # 2026-09-06-l7-output-path.md sec.6, sec.10) -- the lock-free generator
+    # output path, JUCE-free like the rest of this target.
+    test_output_engine.cpp
 )
 
 target_link_libraries(rta_platform_tests PRIVATE
@@ -40,4 +44,30 @@ if(RTA_BUILD_APP)
         COMMAND ${CMAKE_COMMAND}
                 -DSOURCE=${CMAKE_SOURCE_DIR}/platform/src/AudioIo.cpp
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/check_callback_shape.cmake)
+endif()
+
+# --- RT-hazard guards (L7-OUT task C; record docs/dsp/2026-09-06-
+# l7-output-path.md sec.7, sec.10 T11; OUT-R3) -------------------------------
+# A forbidden-token grep over ONE named function's body -- see
+# check_no_rt_hazards.cmake's own header comment for the mechanism and why
+# this, plus a documented review, IS the no-alloc proof (there is no
+# allocation-counting harness anywhere in this repo).
+#
+# output_render_has_no_rt_hazards is UNCONDITIONAL: OutputEngine.cpp lives in
+# rta_platform_types, which builds even when RTA_BUILD_APP is OFF.
+add_test(NAME output_render_has_no_rt_hazards
+    COMMAND ${CMAKE_COMMAND}
+            -DSOURCE=${CMAKE_SOURCE_DIR}/platform/types/src/OutputEngine.cpp
+            -DFUNCTION=OutputEngine::render
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_rt_hazards.cmake)
+
+# audioio_callback_has_no_rt_hazards is ON-only for the same reason the
+# callback-shape guard above is: platform/src/AudioIo.cpp does not exist in
+# an RTA_BUILD_APP=OFF tree.
+if(RTA_BUILD_APP)
+    add_test(NAME audioio_callback_has_no_rt_hazards
+        COMMAND ${CMAKE_COMMAND}
+                -DSOURCE=${CMAKE_SOURCE_DIR}/platform/src/AudioIo.cpp
+                -DFUNCTION=audioDeviceIOCallbackWithContext
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_rt_hazards.cmake)
 endif()

@@ -11,6 +11,9 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(rta_core_tests
     test_average_count.cpp
     test_delay_finder.cpp
+    test_delay_policy.cpp
+    test_delay_policy_trust.cpp
+    test_residual_tracker.cpp
     test_dualfft.cpp
     test_transfer_estimator.cpp
     test_transfer_golden.cpp
@@ -32,6 +35,16 @@ add_executable(rta_core_tests
     test_bandweights.cpp
     test_synthetic.cpp
     test_biquad.cpp
+    test_biquad_response.cpp
+    test_minimum_phase.cpp
+    test_fir_design.cpp
+    test_fir_design_minphase.cpp
+    test_fir_golden.cpp
+    test_biquad_design.cpp
+    test_excess_phase.cpp
+    test_dip_classifier.cpp
+    test_eq_allocator.cpp
+    test_eq_allocator_placement.cpp
     test_butterworth.cpp
     test_filterbank.cpp
     test_weighting.cpp

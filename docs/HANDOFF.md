@@ -69,6 +69,203 @@ refusal → test số học FAILED (average thành 3-way) → revert → GREEN. 
 
 ---
 
+# 2026-09-06 (tối) — L7 (Solvers) TRẠM 1+2 XONG cho cả năm sub-lane — nhánh `claude_desk/l7-solvers-station-1-874518`
+
+**Đọc mục này trước.** Phiên orchestrator L7 (Opus) đi trạm 1 (research) và trạm 2
+(decision record) cho toàn bộ lane L7, chia **năm sub-lane**. **Chưa viết một dòng
+code nào** (trạm 3 chưa mở). Mọi claim mã-nguồn trong record đã qua verifier độc lập
+(đọc file thật, không đọc record). Nhánh đã fast-forward absorb `main` tại `4b05049`.
+
+## Quyết định của chủ nhân trong phiên này
+1. **Q3 — đường output generator GỘP VÀO L7, research TRƯỚC** (đã có trên `main` qua
+   `cbca9bf`; phiên này xác nhận và mở sub-lane **L7-OUT** làm prerequisite).
+2. **Hai tiền đề chưa xây GỘP vào sub-lane phụ thuộc**: G24 (min/excess-phase) vào
+   **L7-EQ**; relative-polarity ρ vào **L7-ALIGN**. Không xây lane riêng.
+3. **Lane split = Wave 0 shared-foundation trước**, rồi solver theo sóng (dưới).
+4. **Solo default = CÓ setting, mặc định option 1**: sequencer/auto-step strict
+   single-output solo; manual toggle additive. Trả lời chung OUT §13.2 + DELAY §14.2.
+
+## Năm research doc + năm decision record
+- research: `docs/research/2026-09-06-l7-{output-path,auto-delay,auto-eq,fir-export,alignment-wizard}-station1-research.md`
+- record:  `docs/dsp/2026-09-06-l7-{output-path,auto-delay,auto-eq,fir-export,alignment-wizard}.md`
+- Đọc record TRƯỚC research. L7-OUT là interface mà bốn record kia trích dẫn.
+
+## Thành phần core DÙNG CHUNG (Wave 0) — ba record hội tụ độc lập
+`MinimumPhase` (EQ + FIR), `FilterSpec` (EQ/FIR/ALIGN), biquad design/response
+(EQ `designBiquad` + ALIGN `BiquadResponse`). Verifier xác nhận **chưa có cái nào
+trong core hôm nay**. Xây MỘT LẦN ở Wave 0, tránh ba lane cùng thêm file chồng nhau
+vào `core/CMakeLists`.
+
+## Kế hoạch sóng (trạm 3 viết impl plan theo đây)
+- **Wave 0**: shared foundation (MinimumPhase, FilterSpec, BiquadDesign, BiquadResponse) — core-only, một integration.
+- **Wave 1**: L7-OUT (platform/app, KHÔNG đụng core) ∥ L7-FIR (core+app).
+- **Wave 2**: L7-DELAY ∥ L7-EQ (cả hai cần OUT; serialize integration core).
+- **Wave 3**: L7-ALIGN (cần OUT + DELAY + biquad dùng chung + ρ).
+
+## Wave 0 ĐÃ XÂY VÀ VERIFY (2026-09-07)
+Bốn commit trên nhánh: `b2172b3` BiquadResponse, `24e3093` MinimumPhase (cepstral,
+log KHÔNG halved, floor −120 dB), `08723bd` FilterSpec + RBJ `designBiquad`,
+`c61b5dc` fix domain guard shelf. **470/470 OFF** (build-l7w0, Visual Studio gen,
+`--clean-first`), 0 warning. Acceptance TOÀN closed-form, KHÔNG golden vector.
+
+Verifier độc lập (scratch worktree riêng tại `08723bd`) không bác được gì: rebuild
+469/469 (trước fix shelf), tolerance nới VẪN giết mutation (perturb `A` divisor →
+192/192 đỏ ở 1e-9; bỏ fold-doubling → 2060/4096 đỏ ở 3e-7), fixture MinimumPhase
+sửa cho conjugate-symmetric là HỢP LỆ (đường vào thật của kernel là `|FFT(h_lin)|`
+của dữ liệu real nên đối xứng theo cấu trúc; `Re(IFFT(L))` chỉ là phần chẵn của L).
+Guard còn canh: framework 117 file, polynomial 135.
+
+**Bug thật đã sửa (`c61b5dc`):** `designBiquad` shelf Q cao + cut lớn (vd Q=8,
+−15 dB) cho radicand `(A+1/A)(1/Q−1)+2 < 0` → alpha NaN → coefficient NaN.
+`validate()` nay throw `std::invalid_argument` (đúng convention có sẵn) cho shelf
+ngoài miền; Peaking KHÔNG dính (alpha peaking không có gain term).
+
+**Tech-debt còn mở (KHÔNG sửa, ghi lại):** `Biquad.h::maxPoleRadius` dùng
+`std::max(0.0, NaN)` = 0.0 nên một filter NaN đọc thành "ổn định tối đa". Đã MOOT
+trên đường shelf (NaN không còn sinh ra) nhưng là bẫy cho MỌI nguồn NaN sau. Không
+sửa vì `Biquad.h` là file frozen; cần một task riêng nếu chủ nhân muốn.
+
+**Record touch-up còn nợ (closeout):** ALIGN record §5 nói `|H|` = `sectionAttenuationDb`
+nhưng field đó là attenuation (+=xuống); plan W0-R3 đã khoá đúng `−attenuationDb`,
+record cần sửa một dòng để khỏi lạc plan (bẫy #17).
+
+## Wave 1 ĐÃ XÂY VÀ VERIFY (2026-09-07) — FIR rồi OUT (tuần tự, tránh git-index race)
+
+**Số cuối Wave 1: OFF 505/505, ON 571/571, 0 warning cả hai** (Wave 0 tip: 470 OFF).
+FIR: 470→489 OFF, →553 ON. OUT: 489→505 OFF, 553→571 ON. Đo, không chép.
+
+**FIR (G10) — commit `4facbd8..74bd03a` + `d0246fe`.** Freq-sampling linear +
+min-phase (dùng lại `minimumPhaseFromMagnitude` verbatim), log-f interp, text +
+32-bit-float WAV export (`app/src/export/`), golden `fir.txt` (scipy second author,
+`gen_fir.py --check` byte-identical). Verifier độc lập: 489/489, guard canh (framework
+122, polynomial 142 gồm `gen_fir.py`), symmetry test bắt được mutation, T7 N=511 là
+trần mô hình thật (không phải né tolerance).
+
+**⚠️ G24 CAVEAT — LOAD-BEARING cho Wave 2 (EQ).** FIR ship oversampling cepstral
+**8×**. Bằng chứng "magnitude-identity residual phẳng mọi factor" mà builder đầu nêu
+là **tautology đại số** (`Re(FFT(fold(c)))==FFT(c)`, không phân biệt factor đủ/thiếu)
+— comment `FirDesign.cpp` đã sửa (`d0246fe`). Bằng chứng THẬT: hội tụ impulse
+min-phase; 8× đủ **CHỈ VÌ** `designLinearPhaseCore` cửa sổ hoá target TRƯỚC, giới hạn
+độ sắc notch. **G24 (excess-phase trong L7-EQ) DÙNG CHUNG kernel này nhưng có thể nạp
+magnitude ĐO THÔ không qua cửa sổ → 8× có thể alias → G24 phải TỰ biện minh
+oversampling, KHÔNG tái dùng lập luận 8× của FIR.** (verifier Wave 1)
+
+**OUT (output path) — commit `881862b..16ec825`.** `RampedGain::prepare`,
+`OutputEngine` (platform/types, JUCE-free), callback render MỘT dòng sau
+`pushFromCallback` (`ScopedNoDenormals` vẫn câu đầu), `OutputPolicy` strict-solo/
+additive. Verifier: **render RT-SAFE** (không alloc/lock/IO/FFT — scratch prealloc ở
+ctor, `std::visit` trên source trivially-copyable, `Sweep::buildInverseFilter` không
+với tới được), guard mới `check_no_rt_hazards` (render unconditional + callback ON)
+đỏ-rồi-xanh. `kRequestedOutputChannels` 2→`kMaxChannels`, không over-read.
+
+**Hai ghi chú OUT phiên sau cần biết:**
+1. **G20 auto solo/mute là KHẢ NĂNG + binding pattern, CHƯA nối UI sống.** Không
+   `CaptureSequencer` nào có chủ UI hôm nay; nối `onStep` vào MainComponent = phải
+   dựng panel sequencer (record §12 ngoài phạm vi). `soloOutput` + pattern chứng minh
+   device-free ở `test_output_policy.cpp`. Solo default = **SETTING, mặc định option 1**.
+2. **Test "complementary handover" chứng minh reversal-continuity, KHÔNG chứng minh
+   HÌNH DẠNG ramp** (mọi đường đối xứng lẻ thoả `g(p)+g(1-p)=1`). Hình dạng do hai
+   test anh em bắt (raised-cosine closed-form + ramped-sine, cả hai đỏ dưới mutation).
+   Không lỗi sống; đừng lặp lại claim "handover chứng minh raised-cosine".
+
+**Tech-debt Wave 0 vẫn mở:** `Biquad.h::maxPoleRadius` dùng `std::max(0.0,NaN)`=0.0
+(moot trên đường shelf sau fix `c61b5dc`, nhưng bẫy cho nguồn NaN khác; `Biquad.h` frozen).
+
+## Wave 2 (2026-09-07): DELAY XONG+verify; EQ CORE (A-D) XONG+verify; EQ E/F (app) CHƯA XÂY
+
+**Số:** DELAY OFF 505→529 / ON 571→597. EQ core OFF 529→551 (ON chưa đo — E/F chưa
+xây). 0 warning mọi nơi. Tuần tự DELAY rồi EQ (git-index + core/CMakeLists contention).
+
+**DELAY — commit `7e1c209..753d522`, verify SOUND.** `suggestDelay` (policy trên
+`findDelayPhat`, refactor bit-for-bit qua `PhatCorrelation.h` private — verify diff
+verbatim vs `6d22342^`), trust=peak/f_band vs null floor `√(ln m/M_in)` c=4 (survey
+105 trial 0 sai), `ResidualDelayTracker` (đọc γ² không ghi, zero-alloc chứng minh
+bằng counting allocator THẬT), `RawCaptureBuffer` + `DelayLocator` (Mls từ chối,
+strict solo qua OutputEngine). Sub-sample gap frac 0.3/0.7 ~0.19 mẫu = bias nội suy
+parabol 3 điểm đã biết (≈4µs@48k, bỏ qua được), KHÔNG phải bug (verify đo độc lập).
+
+**EQ CORE (A-D) — commit `7756da9..6940f92`, verify SOUND.** `excessPhase` (rta::dsp,
+EQ-R1) + `classifyDip` (rta::eq, `S*=2·asin r_D`) + `solveGains` (ridge Cholesky,
+golden mang cond) + `EqAllocator` (greedy peaking placement + autoEq). Mọi claim
+load-bearing mutate-test ĐỎ-ĐƯỢC: sign/negation (bỏ negate → residual TĂNG, D5 đỏ),
+S* threshold, hai guard. Wave 0 kernel diff RỖNG (tái dùng verbatim).
+
+**⚠️ G24 CAVEAT ĐÃ CHỨNG MINH (không bị bác):** oversampling cho raw measured magnitude
+cần tối thiểu **64×**, ship **128×** (= 16× của FIR 8×). Nếu G24 mù quáng tái dùng 8×
+của FIR thì min-phase null test ALIAS trên phép đo thật → phân loại dip sai. Đúng là
+thứ pipeline sinh ra để bắt.
+
+**CONCERN precision (SỬA ở EQ closeout — CHƯA sửa):** 64× bị đẩy gần như HOÀN TOÀN
+bởi metric phụ **tail-energy** (proxy nhiễm aliasing cepstral), KHÔNG bởi excess-phase
+**swing** mà `classifyDip` thực đọc (swing hội tụ ở 8×-16× mọi fixture). 128× vẫn đúng
+và bảo thủ hợp lý, nhưng docstring `tools/gen_autoeq_algo.py` + framing record "64× là
+F nhỏ nhất swing hội tụ" KHÔNG chính xác — phải sửa thành "tail-energy quyết định 64×".
+
+**EQ E/F CHƯA XÂY (app, ON) — việc đầu tiên của phiên sau:** Task E (`EqSession` +
+trust mask `kEqTrustFloor=0.7` + text export) và Task F (`EqVerify` qua OutputEngine).
+Builder hết budget sau core. BA điều người xây E phải biết:
+1. **Sign convention (LOAD-BEARING):** ghost `m+ΣR` chỉ hội tụ khi solve fit
+   `−workingResidual`; `EqAllocator` đã negate trước khi gọi `solveGains`. Xác nhận
+   với EQ-R3 TRƯỚC khi ghost của E land.
+2. Deviation đã ship: **mean KHÔNG median** cho broadband delay (record §4.3.4 nói
+   median; đo 57.5 mẫu lệch vs 0.28 → chuyển mean). `EqInput` thêm field `hHalfGrid`.
+3. **Shelves CHƯA đặt** (chỉ peaking pass này) — shelf domain clamp (EQ-R5/D6) chưa
+   thực thi; người thêm shelf phải clamp `(Q,gainDb)` trước `designBiquad` (nó throw
+   `std::invalid_argument` ngoài miền — Wave 0 `c61b5dc`).
+
+**Bẫy build (verifier gặp 2 lần, đã thành memory):** `cmake --build --target X` báo
+"-> X.exe" mà KHÔNG relink thật (exe byte-identical) → mutation test đọc binary cũ,
+false PASS. Xoá `.exe` TRƯỚC mỗi rebuild khi mutation-test. Xem
+`memory/mutation-testing-needs-the-exe-deleted-first.md`.
+
+**Còn lại của L7:** EQ E/F (app), rồi **Wave 3 (ALIGN)** — G11 virtual processor +
+G17 wizard (HỎI topology) + G18 crossover + relative-polarity ρ fold (dựng lại ngưỡng
+hai lưới độc lập, đừng ship số một-lưới). ALIGN record `docs/dsp/2026-09-06-l7-alignment-wizard.md`.
+
+## Verifier đã xác nhận (đọc file thật)
+- OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output
+  + `ScopedNoDenormals` là câu ĐẦU + guard `audioio_scoped_no_denormals_is_first`;
+  sáu source RT-safe; `Oscillator.h:69-77` "one ramp for the whole generator".
+- EQ/ALIGN/DELAY 8/8: coherence gate CHƯA xây (chỉ mockup dev-preview
+  `TargetMatchPreview.cpp`); không MinimumPhase trong core; không RBJ design (chỉ
+  Biquad apply-only); `Biquad.h` né `<complex>`; `Trace` ba vector real, không
+  VirtualTrace; `findDelayPhat` 0 caller trong `app/` + không có raw-capture path;
+  `DelayEstimate::peak` whitened 1e-10 khác ρ; `Mls` tuần hoàn.
+
+## Ba quyết định phiên sau KHÔNG suy diễn lại
+1. **G24 null test: a<1 = comb MIN-phase (boost được), chỉ a>1 mới NON-min-phase.**
+   `|1+a·e^{-jθ}| = a·|1+(1/a)·e^{-jθ}|` nên hai loại CÙNG magnitude, chỉ pha tách.
+   Ngưỡng = swing excess-phase phụ thuộc độ sâu `S*=2·arcsin r_D`, KHÔNG phải sàn lưới.
+2. **Topology là MỘT closed form**: BW-N HP dẫn LP `N·90°` ở mọi tần số; LR-N kế thừa.
+   Wizard HỎI topology + hỏi thêm "processor đã đảo một output chưa" (180° wiring =
+   180° topology, đo không phân biệt được). Bác "maximize measured sum" (tái suy
+   topology từ đo). Sửa lỗi research D1/D6: BW2 chưa đảo là NULL, đảo mới +3 dB.
+3. **Auto-delay hai mode do TOÁN ép**, không phải taste: Locate (linear corr, span
+   riêng, không coherence) vs Track (circular corr trên `Sxy` averaged, coherence là
+   trọng số). Bác first-arrival-fraction (PHAT tạo ghost đảo pha ở `D₁−Δ` cao ≈ a/2)
+   và phase-slope (cần unwrap, cấm trong core theo L2 §6).
+
+## Câu hỏi chờ chủ nhân (KHÔNG chặn trạm 3 Wave 0/1)
+- **Order-4 mâu thuẫn** (ALIGN §13.1): identity `N·90°` dự đoán ĐÚNG dấu ở BW4, nhưng
+  L4a ĐO sai dấu ở bậc 2 VÀ 4. Cần trí nhớ chủ nhân về fixture L4a, hoặc một ô grid.
+  Chỉ ảnh hưởng Wave 3 (ALIGN). Đề xuất: probe settle trước khi ALIGN build.
+- Judgement record tự chọn default, chờ duyệt: `G_cap +6dB` / `Q_max` 10-20 (EQ §12.2),
+  N cap (EQ §12.3), NotMinimumPhase→V2 (EQ §12.4), −120dB floor cho `|H|` đo (EQ §12.5),
+  plausibility window Locate (DELAY §14.1), tracker on-by-default (DELAY §14.3),
+  64-output hardware check (OUT §13.1), device-reconfig-while-armed (OUT §13.3, đã chọn default).
+
+## Việc còn mở
+- **Chưa merge, chưa push.** Wave 0 + Wave 1 (FIR+OUT) + **Wave 2 DELAY + Wave 2 EQ
+  CORE (A-D) ĐÃ XÂY + verify** (OFF 551, ON 597 — EQ core chưa đo ON). **VIỆC ĐẦU
+  TIÊN phiên sau: EQ Task E/F (app, ON) — CHƯA XÂY**; rồi **Wave 3 (ALIGN)**. Xem mục
+  "Wave 2" dưới cho ba điều người xây E phải biết + CONCERN precision cần sửa.
+- Record FIR + EQ còn claim NGOÀI (scipy/rePhase/REW/CamillaDSP/RBJ coefficient) đánh
+  dấu UNVERIFIED trong §ledger — plan phải đọc lại cookbook / venv main-checkout TRƯỚC
+  khi build (bẫy AES-2id / parity-table). FIR đã web-verify và bác 2 premise (Toeplitz
+  +Hankel không phải Levinson; WAV sample-rate KHÔNG an toàn — CamillaDSP bỏ qua field).
+
+---
+
 # 2026-09-06 — **L6b (multichannel) ĐÃ MERGE VÀO `main` tại `4edcf82`**
 
 Chủ nhân nói "merge" trong phiên orchestrator L6b. Merge `--no-ff` trong checkout

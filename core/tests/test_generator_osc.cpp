@@ -261,3 +261,66 @@ TEST_CASE("A ramp interrupted mid-rise falls from where it was") {
     CHECK(maxStep <= maxNaturalStep + 1e-6);
     CHECK(ramp.state() == RampedGain::State::Idle);
 }
+
+// L7-OUT task A (docs/plans/2026-09-07-L7-out-impl-plan.md, record §5, §10 T8):
+// prepare(sampleRate) lets the device thread retarget a gate's ramp length on
+// a rate change without rebuilding the (non-movable, non-copyable) object.
+TEST_CASE("RampedGain::prepare re-scales the ramp length and resets position") {
+    // A1: ramp length re-scales. Built at 48 kHz, retargeted to 96 kHz -- a
+    // full rise now takes lround(96000*0.010) = 960 samples, and the
+    // raised-cosine midpoint (n=480, p=0.5) reads g=0.5 exactly as at any
+    // other rate, since g is a pure function of p = pos_/rampLenSamples_.
+    // Same sample-index convention as "RampedGain follows the raised-cosine
+    // closed form" above: call n (0-based) reads gain at p = n/rampLen, and
+    // call `rampLen` itself is the first Running-state sample (p=1 -> g=1).
+    constexpr int rampLen = 960;  // lround(96000 * 0.010), exact
+
+    RampedGain gain(48000.0);
+    gain.prepare(96000.0);
+    gain.requestOn();
+
+    std::vector<double> rising(rampLen + 1);
+    for (int n = 0; n <= rampLen; ++n) {
+        float g = gain.nextGain();
+        double p = double(n) / double(rampLen);
+        double expected = 0.5 * (1.0 - std::cos(std::numbers::pi * p));
+        CHECK_THAT(double(g), WithinAbs(expected, 1e-6));
+        rising[static_cast<std::size_t>(n)] = g;
+    }
+    CHECK_THAT(rising[0], WithinAbs(0.0, 1e-6));
+    CHECK_THAT(rising[480], WithinAbs(0.5, 1e-6));  // midpoint, p=0.5
+    CHECK_THAT(rising.back(), WithinAbs(1.0, 1e-6));
+}
+
+TEST_CASE("RampedGain::prepare resets state to Idle and position to 0 regardless of prior state") {
+    // A2: state is reset regardless of prior. Drive to Running, then
+    // prepare(): state() must read Idle, and the very next nextGain() after a
+    // FRESH requestOn() must start from g(0) = 0.0 -- i.e. pos_ is back at 0,
+    // not wherever the pre-prepare ramp left it.
+    RampedGain gain(48000.0);
+    gain.requestOn();
+    for (int n = 0; n < 480; ++n) gain.nextGain();  // drive to Running
+    REQUIRE(gain.state() == RampedGain::State::Running);
+
+    gain.prepare(96000.0);
+    CHECK(gain.state() == RampedGain::State::Idle);
+
+    gain.requestOn();
+    float first = gain.nextGain();
+    CHECK_THAT(double(first), WithinAbs(0.0, 1e-6));
+}
+
+TEST_CASE("RampedGain::prepare never touches target_: a pending requestOn survives") {
+    // A3: target_ survives. requestOn() published BEFORE prepare() is still
+    // honoured after it -- prepare() rewrites only rampLenSamples_/pos_/
+    // state_ (record §5: "rewrites only the audio-thread-owned fields").
+    RampedGain gain(48000.0);
+    gain.requestOn();
+    gain.prepare(96000.0);
+
+    std::vector<float> rising(961);
+    for (int n = 0; n <= 960; ++n) rising[static_cast<std::size_t>(n)] = gain.nextGain();
+    CHECK_THAT(double(rising[0]), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(double(rising[960]), WithinAbs(1.0, 1e-6));
+    CHECK(gain.state() == RampedGain::State::Running);
+}

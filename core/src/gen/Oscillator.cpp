@@ -67,7 +67,8 @@ void DualSine::process(std::span<float> out) noexcept {
 }
 
 RampedGain::RampedGain(double sampleRate, double rampSeconds) noexcept
-    : rampLenSamples_(std::max(1, static_cast<int>(std::lround(sampleRate * rampSeconds)))) {}
+    : rampLenSamples_(std::max(1, static_cast<int>(std::lround(sampleRate * rampSeconds)))),
+      rampSeconds_(rampSeconds) {}
 
 void RampedGain::requestOn() noexcept {
     target_.store(true, std::memory_order_relaxed);
@@ -125,6 +126,16 @@ float RampedGain::nextGain() noexcept {
 
 void RampedGain::apply(std::span<float> block) noexcept {
     for (float& sample : block) sample *= nextGain();
+}
+
+void RampedGain::prepare(double sampleRate) noexcept {
+    // Same clamp the ctor uses, applied to the STORED rampSeconds_ rather
+    // than a fresh parameter, so a rate change reproduces the ctor's
+    // original ramp duration in samples at the new rate.
+    rampLenSamples_ = std::max(1, static_cast<int>(std::lround(sampleRate * rampSeconds_)));
+    pos_ = 0;
+    state_ = State::Idle;
+    // target_ is deliberately untouched -- see the header's contract.
 }
 
 }  // namespace rta::gen
