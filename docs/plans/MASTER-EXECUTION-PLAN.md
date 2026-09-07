@@ -7,11 +7,25 @@ session prompt is: "Read docs/plans/MASTER-EXECUTION-PLAN.md lane <X>, then
 docs/reports/README.md, then the decision records it names. Continue the
 pipeline from the current git state."*
 
+## Status snapshot — 2026-09-07
+
+Built + verified, merged to `main` (local, **not pushed**): **P1, P2 (L2), P3 (L3),
+P4 (L4a + L4b), L5a, L5c, P6-multichannel (L6b), and P7 Wave 0 (shared foundation) +
+Wave 1 (OUT, FIR) + Wave 2 (DELAY, EQ core A–D).** L7 landed at merge `a937a98`.
+Live test counts live in `docs/HANDOFF.md`'s baseline blocks — do NOT copy them here
+(this doc has twice carried a rotted number).
+
+**Open / next:** the P7 remainder — **EQ app tasks E/F**, then **Wave 3 ALIGN**
+(G11 + G17 + G18, relative-polarity ρ). The L7 branch is fully merged, so branch fresh
+from `main`. L6a (SPL-pro) waits on the Meters track. **Blocked on a purchase only:**
+L5b (ISO 2969 / SMPTE ST 202 X-curve tolerances) and P4b (IEC 60268-16, STI). P8
+research + P9 productization last.
+
 ## Ground truth at time of writing
 
 *Ground truth re-measured 2026-08-28. The 103/103 figure this section carried
 was two waves out of date; treat any count in a plan as a claim to re-verify,
-not as a fact.*
+not as a fact. (Superseded by the Status snapshot above — kept as history.)*
 
 Done (**226/226 tests**, zero /W4 warnings on a clean rebuild): core
 FFT/RealFft, OctaveBands, SpectrumEngine, BandWeights, IEC 61260 FilterBank
@@ -50,13 +64,13 @@ graph LR
     P1["<b>P1</b> · RTA / SPL / generator<br/><i>built — M2 + M7 by hand</i>"]
     P2["<b>P2</b> · dual-FFT engine<br/><i>BUILT 2026-08-29 · report 003</i>"]
     P3["<b>P3</b> · MTW<br/><i>BUILT 2026-09-06</i>"]
-    P4["<b>P4</b> · sweep / IR<br/><i>Farina, Schroeder, RT60</i>"]
+    P4["<b>P4</b> · sweep / IR<br/><i>L4a+L4b BUILT 2026-08-30</i>"]
     P4b["<b>P4b</b> · THD / STI<br/><i>needs IEC 60268-16</i>"]
     L5a["<b>L5a</b> · trace library + session<br/><i>BUILT · wired by L5c</i>"]
     L5b["<b>L5b</b> · targets / corridor / score<br/><i>needs ISO 2969 or SMPTE ST 202</i>"]
     L5c["<b>L5c</b> · Bode layout + workspaces<br/><i>BUILT 2026-08-29</i>"]
-    P6["<b>P6</b> · SPL-pro + multichannel"]
-    P7["<b>P7</b> · solvers<br/><i>auto-EQ, auto-delay, wizard</i>"]
+    P6["<b>P6</b> · SPL-pro + multichannel<br/><i>L6b multichannel BUILT 2026-09-06 · L6a SPL-pro TODO</i>"]
+    P7["<b>P7</b> · solvers<br/><i>OUT+FIR+DELAY+EQcore BUILT 2026-09-07 · EQ E/F + ALIGN TODO</i>"]
     P8["<b>P8</b> · research lanes<br/><i>read-only, safe anytime</i>"]
     P9["<b>P9</b> · productization<br/><i>i18n, installers, manual</i>"]
 
@@ -78,10 +92,10 @@ graph LR
     classDef blocked fill:#3d1f1f,stroke:#f87171,stroke-width:2px,color:#fde8e8
     classDef later fill:#26262b,stroke:#71717a,stroke-width:1px,color:#d4d4d8
 
-    class P1,P2,L5a,L5c,P3 done
-    class P4 next
+    class P1,P2,P3,P4,L5a,L5c done
+    class P6,P7 next
     class L5b,P4b blocked
-    class P6,P7,P8,P9 later
+    class P8,P9 later
 ```
 
 **Green** is built. **Amber** is what to open next. **Red** is blocked on a
