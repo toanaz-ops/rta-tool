@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// TDD sequence for FirDesign -- docs/plans/2026-09-07-L7-fir-impl-plan.md
-// task F1 (T1-T4), F2 (T5-T9), F3 (T10-T13). Written from the closed-form
+// TDD sequence for FirDesign's linear-phase mode -- docs/plans/
+// 2026-09-07-L7-fir-impl-plan.md task F1 (T1-T4). Minimum-phase mode (F2,
+// T5-T9) lives in test_fir_design_minphase.cpp -- split along that seam to
+// stay under the project's 400-line file cap. Written from the closed-form
 // acceptances in docs/dsp/2026-09-06-l7-fir-export.md Sec.7.
 //
 // Tolerance shapes (plan "Global constraints"):
