@@ -7,6 +7,7 @@
 #include "measure/AnalysisPublish.h"
 #include "measure/Analyser.h"
 #include "measure/AverageGroup.h"
+#include "measure/RawCaptureBuffer.h"
 #include "measure/RoutingPlan.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
@@ -25,6 +26,17 @@
 #include <vector>
 
 namespace rta::measure {
+
+/// L7-DELAY task F2's raw-capture handoff (docs/plans/2026-09-07-L7-delay-
+/// impl-plan.md; record docs/dsp/2026-09-06-l7-auto-delay.md sec.11.2): two
+/// spans of exactly the requested length, published once
+/// `AnalysisThread::armLocateCapture`'s accumulator fills. Owned by whoever
+/// reads `AnalysisThread::locateCapture()` -- a plain copy, not a view into
+/// the thread's own scratch, so it stays valid after the thread moves on.
+struct LocateCapture {
+    std::vector<float> reference;
+    std::vector<float> measurement;
+};
 
 // `kMaxTransferFunctions` -- the compile-time cap on live transfer functions --
 // now lives in RoutingPlan.h (included above), because it is a routing fact the
@@ -96,6 +108,41 @@ public:
     /// for the same reason `latest()` is.
     [[nodiscard]] std::uint64_t routeHopCount(int routeIndex) const noexcept;
 
+    /// L7-DELAY task F2 (record sec.11.2). Arms the raw-capture accumulator
+    /// for route `routeIndex` at `length` samples -- message-thread call,
+    /// picked up on the NEXT `drain()`, never inside the audio callback (the
+    /// accumulator lives entirely on this thread; see RawCaptureBuffer.h).
+    /// Overwrites any capture already in progress or already published and
+    /// not yet read: a second Locate before the first is consumed simply
+    /// restarts it, no queue -- this thread runs exactly one Locate at a
+    /// time, matching `DelayLocator`'s own one-shot shape.
+    void armLocateCapture(int routeIndex, std::size_t length) noexcept;
+
+    /// The most recently COMPLETED capture, or nullptr before the first one
+    /// finishes filling (or right after a fresh `armLocateCapture` clears
+    /// the previous result). Safe from any thread -- same atomic-pointer-
+    /// swap shape as `latest()`. The caller (`MainComponent`) is expected to
+    /// compare the returned pointer's identity against the last one it
+    /// handled, since this always reports the latest capture, published
+    /// exactly once per Locate.
+    [[nodiscard]] std::shared_ptr<const LocateCapture> locateCapture() const noexcept;
+
+    /// L7-DELAY task F2 (record sec.1.6, sec.8): an Apply is an explicit
+    /// engine rebuild, never a live nudge -- picked up on the next
+    /// `drain()`, rebuilding every `Analyser` (same "every position
+    /// together" rule `rebuildAnalysersIfEpochChanged` already follows) with
+    /// `Config::referenceDelaySamples = delaySamples`. Per-route delay
+    /// compensation and its persistence are explicitly deferred by the plan
+    /// (record sec.13: "already a [tf] field in L6b schema 3") -- this
+    /// session-only, whole-`baseConfig_` form is exactly that plan's scope,
+    /// not a shortcut past it.
+    void applyReferenceDelay(int delaySamples) noexcept;
+
+    /// The `referenceDelaySamples` the live `Analyser`s were LAST rebuilt
+    /// with -- 0 until the first `applyReferenceDelay`. Safe from any
+    /// thread; what a caller polls to confirm an Apply has taken effect.
+    [[nodiscard]] int appliedReferenceDelaySamples() const noexcept;
+
 private:
     /// Trap T-3: `SpectrumEngine::process` (reached through
     /// `Analyser::pushMeasurement` / `pushReference`) can throw. An
@@ -106,6 +153,7 @@ private:
     void runBody();
 
     void rebuildAnalysersIfEpochChanged();
+    void applyPendingReferenceDelay();
     void drain();
     /// Peeks `refChannel`'s ring and every route in `plan.routes` naming it
     /// as `referenceChannel`, discarding NOTHING until every one of those
@@ -163,6 +211,20 @@ private:
 
     mutable std::mutex faultLock_;
     rta::platform::Fault fault_;
+
+    // --- L7-DELAY task F2: raw-capture handoff and Apply ------------------
+    // This thread's OWN accumulator, never the callback's (RawCaptureBuffer.h).
+    RawCaptureBuffer locateBuffer_;
+    int locateRouteIndex_ = -1;     // analysis-thread-local once armed
+    bool locateCapturing_ = false;  // ditto
+    std::atomic<int> requestedRouteIndex_{-1};
+    std::atomic<std::size_t> requestedCaptureLength_{0};
+    std::atomic<bool> locateArmRequested_{false};
+    std::atomic<std::shared_ptr<const LocateCapture>> locateCapture_;
+
+    std::atomic<int> pendingReferenceDelay_{0};
+    std::atomic<bool> applyDelayRequested_{false};
+    std::atomic<int> appliedReferenceDelay_{0};
 };
 
 }  // namespace rta::measure

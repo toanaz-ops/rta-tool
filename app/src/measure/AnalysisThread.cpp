@@ -61,6 +61,29 @@ std::uint64_t AnalysisThread::routeHopCount(int routeIndex) const noexcept {
     return routeHopCounts_[static_cast<std::size_t>(routeIndex)].load(std::memory_order_relaxed);
 }
 
+void AnalysisThread::armLocateCapture(int routeIndex, std::size_t length) noexcept {
+    requestedRouteIndex_.store(routeIndex, std::memory_order_relaxed);
+    requestedCaptureLength_.store(length, std::memory_order_relaxed);
+    // Clear any stale result BEFORE the request is visible, so a caller that
+    // polls locateCapture() right after this call never mistakes the
+    // PREVIOUS Locate's answer for the one just armed.
+    locateCapture_.store(nullptr, std::memory_order_relaxed);
+    locateArmRequested_.store(true, std::memory_order_release);
+}
+
+std::shared_ptr<const LocateCapture> AnalysisThread::locateCapture() const noexcept {
+    return locateCapture_.load(std::memory_order_acquire);
+}
+
+void AnalysisThread::applyReferenceDelay(int delaySamples) noexcept {
+    pendingReferenceDelay_.store(delaySamples, std::memory_order_relaxed);
+    applyDelayRequested_.store(true, std::memory_order_release);
+}
+
+int AnalysisThread::appliedReferenceDelaySamples() const noexcept {
+    return appliedReferenceDelay_.load(std::memory_order_acquire);
+}
+
 void AnalysisThread::recordFault(rta::platform::Fault::Kind kind, const std::string& message) {
     const std::lock_guard<std::mutex> lock(faultLock_);
     fault_.kind = kind;
@@ -90,6 +113,7 @@ void AnalysisThread::runBody() {
         }
 
         rebuildAnalysersIfEpochChanged();
+        applyPendingReferenceDelay();
 
         drain();
 
@@ -124,7 +148,35 @@ void AnalysisThread::rebuildAnalysersIfEpochChanged() {
     }
 }
 
+void AnalysisThread::applyPendingReferenceDelay() {
+    if (!applyDelayRequested_.exchange(false, std::memory_order_acquire)) {
+        return;
+    }
+    baseConfig_.referenceDelaySamples = pendingReferenceDelay_.load(std::memory_order_relaxed);
+
+    // Same rebuild shape as rebuildAnalysersIfEpochChanged: every position
+    // together, sample rate re-read from the bus (record sec.1.6/sec.8 --
+    // an Apply is an engine rebuild, and the coherence gate re-fill that
+    // follows -- ~16 frames of nullopt before it reopens -- is the accepted
+    // cost, not a defect).
+    Analyser::Config cfg = baseConfig_;
+    const double rate = bus_.sampleRate();
+    if (rate > 0.0) {
+        cfg.sampleRate = rate;
+    }
+    for (auto& analyser : analysers_) {
+        analyser = std::make_unique<Analyser>(cfg);
+    }
+    appliedReferenceDelay_.store(baseConfig_.referenceDelaySamples, std::memory_order_release);
+}
+
 void AnalysisThread::drain() {
+    if (locateArmRequested_.exchange(false, std::memory_order_acquire)) {
+        locateRouteIndex_ = requestedRouteIndex_.load(std::memory_order_relaxed);
+        locateBuffer_.arm(requestedCaptureLength_.load(std::memory_order_relaxed));
+        locateCapturing_ = true;
+    }
+
     // bus_.numChannels(): the channel count this bus was last prepare()d
     // with (CaptureBus.h) -- the same bound ring()/config-consuming code
     // already trusts, not whatever the device advertised at open time.
@@ -206,6 +258,25 @@ void AnalysisThread::drainPaired(int refChannel, const RoutingPlan& plan) {
                 channelScratch_[static_cast<std::size_t>(route.measurementChannel)];
             analysers_[routeIndex]->pushPair(refScratch, measurementScratch);
             routeHopCounts_[routeIndex].fetch_add(1, std::memory_order_relaxed);
+
+            // L7-DELAY task F2: feed the SAME hops just pushed to the
+            // Analyser into the raw-capture accumulator, when this route is
+            // the one a Locate armed -- from these exact scratch buffers,
+            // never a second read of the ring (record sec.11.2: "from the
+            // same hops the engine already receives").
+            if (locateCapturing_ && locateRouteIndex_ >= 0 &&
+                routeIndex == static_cast<std::size_t>(locateRouteIndex_)) {
+                locateBuffer_.feedHop(refScratch, measurementScratch);
+                if (locateBuffer_.isFull()) {
+                    auto capture = std::make_shared<LocateCapture>();
+                    capture->reference.assign(locateBuffer_.reference().begin(),
+                                               locateBuffer_.reference().end());
+                    capture->measurement.assign(locateBuffer_.measurement().begin(),
+                                                 locateBuffer_.measurement().end());
+                    locateCapture_.store(std::move(capture), std::memory_order_release);
+                    locateCapturing_ = false;
+                }
+            }
         }
     }
 }

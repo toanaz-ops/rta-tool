@@ -11,6 +11,7 @@
 #include "measure/AnalysisThread.h"
 #include "measure/Analyser.h"
 #include "measure/SyntheticInput.h"
+#include "rta/dsp/DelayPolicy.h"
 #include "rta/platform/AudioIo.h"
 #include "trace/TraceLibrary.h"
 #include "view/ChannelRoleTable.h"
@@ -19,6 +20,7 @@
 #include "view/WorkspaceView.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -83,6 +85,24 @@ private:
     void timerCallback() override;
     void modeSwitchClicked();
 
+    /// L7-DELAY task F2 (record docs/dsp/2026-09-06-l7-auto-delay.md
+    /// sec.11.2-11.4). LOCATE: pink noise, strict solo on output channel 0
+    /// (record sec.3, DEL-R4 -- a Locate is a measurement action), armSource;
+    /// the settle wait and the capture itself run on `analysisThread_`
+    /// (armLocateCapture) and are polled from `pollLocatePipeline()`, not
+    /// blocked on here. APPLY: rebuilds every live Analyser with the found
+    /// delay (record sec.1.6, sec.8 -- an explicit rebuild, never a live
+    /// nudge), enabled only once a suggestion reads `Accepted`.
+    void locateClicked();
+    void applyClicked();
+
+    /// Called every `timerCallback()` tick: advances the Locate state
+    /// machine (settle wait -> arm the accumulator -> read the finished
+    /// capture -> suggestDelay -> disarm) without blocking the message
+    /// thread on any step of it.
+    void pollLocatePipeline();
+    void updateDelayReadout();
+
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
     /// the poll timer while in LIVE mode (a device can be opened, closed or
@@ -111,6 +131,18 @@ private:
     // -------------------------------------------------------------------
 
     juce::TextButton modeSwitch_{"SYNTHETIC"};
+
+    // --- L7-DELAY task F2: Locate / Apply ----------------------------------
+    juce::TextButton locateButton_{"LOCATE"};
+    juce::TextButton applyButton_{"APPLY"};
+    juce::Label delayReadout_;
+
+    bool locateWaitingForSettle_ = false;
+    bool locateCaptureArmed_ = false;
+    std::shared_ptr<const rta::measure::LocateCapture> lastHandledCapture_;
+    std::optional<rta::dsp::DelaySuggestion> delaySuggestion_;
+    // ------------------------------------------------------------------------
+
     rta::view::DevicePanel devicePanel_;
     rta::view::ChannelRoleTable channelRoleTable_;
     /// Task F2 (record §6, §7): assigns Measurement/Reference roles and a

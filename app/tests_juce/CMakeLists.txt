@@ -172,7 +172,18 @@ catch_discover_tests(rtatool_view_tests TEST_PREFIX "view/")
 # app/tests/test_routing_plan.cpp.
 add_executable(rtatool_routing_live_tests
     test_routing_live.cpp
+    # test_delay_locate.cpp: lane L7-DELAY task F2 (record docs/dsp/
+    # 2026-09-06-l7-auto-delay.md sec.11.2, sec.1.6, sec.8) -- the raw-
+    # capture accumulator wired into drainPaired, and Apply's rebuild --
+    # against the SAME real AnalysisThread/CaptureBus shape
+    # test_routing_live.cpp uses, so it lives in this target too.
+    test_delay_locate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
+    # DelayLocator.cpp is NOT needed here: this target's tests exercise
+    # AnalysisThread's own armLocateCapture/applyReferenceDelay directly,
+    # not the JUCE-free DelayLocator state machine (that lives entirely in
+    # rtatool_analysis_tests, task F1).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RawCaptureBuffer.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
     # AverageGroup.cpp / AnalysisPublish.cpp: task F2 wires AnalysisThread's

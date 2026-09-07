@@ -75,6 +75,18 @@ MainComponent::MainComponent()
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };
     addAndMakeVisible(modeSwitch_);
 
+    locateButton_.getProperties().set(az::ui::hintProperty, "pink noise, output ch 1, one-shot");
+    locateButton_.onClick = [this] { locateClicked(); };
+    addAndMakeVisible(locateButton_);
+
+    applyButton_.setEnabled(false);
+    applyButton_.onClick = [this] { applyClicked(); };
+    addAndMakeVisible(applyButton_);
+
+    delayReadout_.setText("delay: --", juce::dontSendNotification);
+    delayReadout_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(delayReadout_);
+
     addAndMakeVisible(devicePanel_);
     addAndMakeVisible(channelRoleTable_);
     addAndMakeVisible(routingMatrix_);
@@ -194,6 +206,9 @@ void MainComponent::modeSwitchClicked() {
     setSyntheticMode(modeSwitch_.getToggleState());
 }
 
+// locateClicked / pollLocatePipeline / updateDelayReadout / applyClicked:
+// MainComponentDelay.cpp (this file's own 400-line cap split).
+
 void MainComponent::timerCallback() {
     // routingMatrix_ caches its cell text (RoutingMatrix.h's own class
     // comment) rather than reading rta::platform::ChannelConfig live at
@@ -203,6 +218,7 @@ void MainComponent::timerCallback() {
     // second.
     routingMatrix_.refreshFromConfig();
     refreshMembershipFromSnapshot();
+    pollLocatePipeline();
 
     if (isSyntheticMode()) {
         return;  // fixed list, set once in setSyntheticMode()
@@ -273,6 +289,17 @@ void MainComponent::resized() {
     area.removeFromLeft(az::ui::gap * 2);
 
     modeSwitch_.setBounds(rail.removeFromTop(az::ui::buttonCellHeight));
+    rail.removeFromTop(az::ui::gap * 2);
+
+    // L7-DELAY task F2: one fixed row -- LOCATE, APPLY, and the readout
+    // sharing what's left of the row's width.
+    auto locateRow = rail.removeFromTop(az::ui::buttonCellHeight);
+    const int buttonWidth = (locateRow.getWidth() - az::ui::gap * 2) / 3;
+    locateButton_.setBounds(locateRow.removeFromLeft(buttonWidth));
+    locateRow.removeFromLeft(az::ui::gap);
+    applyButton_.setBounds(locateRow.removeFromLeft(buttonWidth));
+    locateRow.removeFromLeft(az::ui::gap);
+    delayReadout_.setBounds(locateRow);
     rail.removeFromTop(az::ui::gap * 2);
 
     devicePanel_.setBounds(rail.removeFromTop(kDevicePanelHeight));

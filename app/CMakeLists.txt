@@ -47,6 +47,7 @@ juce_generate_juce_header(rtatool)
 target_sources(rtatool PRIVATE
     src/Main.cpp
     src/MainComponent.cpp
+    src/MainComponentDelay.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
@@ -226,6 +227,7 @@ target_sources(rtatool_snapshot PRIVATE
     # line was written before this tool also had to construct MainComponent
     # itself, not only feed a StaticSnapshotSource into RtaView.
     src/MainComponent.cpp
+    src/MainComponentDelay.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
     src/view/RoutingMatrix.cpp
