@@ -172,3 +172,94 @@ TEST_CASE("Linear-phase symmetry is bitwise, and the phase is exactly linear", "
         }
     }
 }
+
+TEST_CASE("Target interpolation is linear in log10(f), linear in dB", "[fir_design]") {
+    // T10 (first, plan F3). (100 Hz, 0 dB), (1000 Hz, +6 dB) -> +3.0 dB at
+    // sqrt(10)*100 = 316.227... Hz exactly, in double, no FFT involved
+    // (record Sec.7 item 5).
+    const FirTarget target{ std::vector<double>{ 100.0, 1000.0 }, std::vector<double>{ 0.0, 6.0 } };
+    const double midpointHz = std::sqrt(10.0) * 100.0;
+    const double db = interpolateFirTargetDb(target, midpointHz);
+    CAPTURE(midpointHz, db);
+    CHECK(std::abs(db - 3.0) <= 1e-12);
+
+    // Edges clamp rather than extrapolate.
+    CHECK(std::abs(interpolateFirTargetDb(target, 10.0) - 0.0) <= 1e-12);
+    CHECK(std::abs(interpolateFirTargetDb(target, 100000.0) - 6.0) <= 1e-12);
+}
+
+TEST_CASE("FirResult metadata echoes the design inputs", "[fir_design]") {
+    // T11. groupDelaySamples, designFftSize, and the echoed inputs.
+    const FirTarget target{ std::vector<double>{ 100.0, 1000.0 }, std::vector<double>{ -2.0, 4.0 } };
+    constexpr std::size_t n = 100;   // M = nextPow2(8*100) = 1024
+    const auto result = designFir(target, 44100.0, n, FirPhase::Linear, WindowType::Hamming);
+
+    CHECK(result.groupDelaySamples == n / 2);   // even N
+    CHECK(result.sampleRate == 44100.0);
+    CHECK(result.phase == FirPhase::Linear);
+    CHECK(result.method == FirMethod::FrequencySampling);
+    CHECK(result.window == WindowType::Hamming);
+    REQUIRE(result.designFftSize >= 8 * n);
+    // A power of two: (x & (x-1)) == 0.
+    CHECK((result.designFftSize & (result.designFftSize - 1)) == 0);
+}
+
+TEST_CASE("designFir refuses malformed inputs", "[fir_design]") {
+    // T12 (record Sec.10).
+    const FirTarget flat{ std::vector<double>{ 20.0, 20000.0 }, std::vector<double>{ 0.0, 0.0 } };
+
+    CHECK_THROWS_AS(designFir(flat, 0.0, 64, FirPhase::Linear), std::invalid_argument);
+    CHECK_THROWS_AS(designFir(flat, -48000.0, 64, FirPhase::Linear), std::invalid_argument);
+    CHECK_THROWS_AS(designFir(flat, 48000.0, 4, FirPhase::Linear), std::invalid_argument);   // taps < 8
+
+    const FirTarget empty{ {}, {} };
+    CHECK_THROWS_AS(designFir(empty, 48000.0, 64, FirPhase::Linear), std::invalid_argument);
+
+    const FirTarget nonMonotonic{ std::vector<double>{ 1000.0, 100.0 }, std::vector<double>{ 0.0, 0.0 } };
+    CHECK_THROWS_AS(designFir(nonMonotonic, 48000.0, 64, FirPhase::Linear), std::invalid_argument);
+
+    // taps > M/2 is unreachable via the breakpoint overload (M is DERIVED as
+    // >= 8*taps there); the D2 per-bin overload fixes M from the grid size
+    // instead, so it is the one that can actually violate this.
+    std::vector<float> smallGrid(9, 1.0f);   // M = 16, M/2 = 8
+    CHECK_THROWS_AS(designFir(std::span<const float>(smallGrid), 48000.0, 64, FirPhase::Linear),
+                    std::invalid_argument);
+
+    // Per-bin grid size not 2^k+1.
+    std::vector<float> badGrid(100, 1.0f);
+    CHECK_THROWS_AS(designFir(std::span<const float>(badGrid), 48000.0, 8, FirPhase::Linear),
+                    std::invalid_argument);
+}
+
+TEST_CASE("The per-bin overload agrees with the breakpoint overload on the same sampled grid",
+          "[fir_design]") {
+    // T13. Two entry points, one design: feed the D2 overload EXACTLY the
+    // magnitude the breakpoint path would have sampled, and the taps must
+    // agree within Shape A.
+    const FirTarget target{ std::vector<double>{ 100.0, 1000.0, 10000.0 },
+                             std::vector<double>{ -3.0, 6.0, -2.0 } };
+    constexpr std::size_t n = 255;
+    const auto viaBreakpoints = designFir(target, 48000.0, n, FirPhase::Linear);
+
+    const std::size_t m = viaBreakpoints.designFftSize;
+    const std::size_t bins = m / 2 + 1;
+    std::vector<float> magnitude(bins);
+    for (std::size_t k = 0; k < bins; ++k) {
+        const double f = static_cast<double>(k) * 48000.0 / static_cast<double>(m);
+        const double db = interpolateFirTargetDb(target, f);
+        magnitude[k] = static_cast<float>(std::pow(10.0, db / 20.0));
+    }
+    const auto viaGrid =
+        designFir(std::span<const float>(magnitude), 48000.0, n, FirPhase::Linear);
+
+    REQUIRE(viaGrid.taps.size() == viaBreakpoints.taps.size());
+    const double peak = peakAbs(viaBreakpoints.taps);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double expected = viaBreakpoints.taps[i];
+        const double actual = viaGrid.taps[i];
+        const double tol = shapeATolerance(expected, peak);
+        const double residual = std::abs(actual - expected);
+        CAPTURE(i, actual, expected, residual, tol);
+        CHECK(residual <= tol);
+    }
+}

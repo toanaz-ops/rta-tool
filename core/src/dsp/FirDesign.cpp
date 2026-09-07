@@ -38,30 +38,6 @@ std::size_t nextPowerOfTwo(std::size_t n) {
     return m;
 }
 
-/// Linear interpolation in log10(f) and linear in dB (record Sec.6, plan D2):
-/// the rule a banded correction curve implies, and one T10 pins exactly. `f`
-/// outside the breakpoint range clamps to the nearest edge value rather than
-/// extrapolating -- a target has no opinion past its own edges.
-double interpolateTargetDb(const FirTarget& target, double f) {
-    const auto& fs = target.frequencyHz;
-    const auto& gs = target.gainDb;
-    if (f <= fs.front()) return gs.front();
-    if (f >= fs.back()) return gs.back();
-
-    // fs is strictly ascending (validated by the caller), so the first
-    // element >= f is the upper bracket; std::lower_bound is exact here, not
-    // an approximation of the search.
-    const auto it = std::lower_bound(fs.begin(), fs.end(), f);
-    const std::size_t hi = static_cast<std::size_t>(it - fs.begin());
-    const std::size_t lo = hi - 1;
-    if (fs[hi] == f) return gs[hi];
-
-    const double logLo = std::log10(fs[lo]);
-    const double logHi = std::log10(fs[hi]);
-    const double logF = std::log10(f);
-    const double t = (logF - logLo) / (logHi - logLo);
-    return gs[lo] + t * (gs[hi] - gs[lo]);
-}
 
 void validateCommon(double sampleRate, std::size_t taps) {
     if (sampleRate <= 0.0) {
@@ -86,14 +62,15 @@ void validateTarget(const FirTarget& target) {
 
 /// Sample a breakpoint target onto the M/2+1 half-grid (bin k at k*fs/M),
 /// in dB then converted to linear magnitude -- the interpolation itself
-/// (interpolateTargetDb) is what T10 pins; this just walks the grid.
+/// (the public interpolateFirTargetDb, defined below) is what T10 pins;
+/// this just walks the grid.
 std::vector<float> sampleTargetMagnitude(const FirTarget& target, double sampleRate,
                                           std::size_t m) {
     const std::size_t bins = m / 2 + 1;
     std::vector<float> magnitude(bins);
     for (std::size_t k = 0; k < bins; ++k) {
         const double f = static_cast<double>(k) * sampleRate / static_cast<double>(m);
-        const double db = interpolateTargetDb(target, f);
+        const double db = interpolateFirTargetDb(target, f);
         magnitude[k] = static_cast<float>(std::pow(10.0, db / 20.0));
     }
     return magnitude;
@@ -282,6 +259,30 @@ FirResult designFirCore(std::span<const float> magnitudeHalfGrid, std::size_t m,
 }
 
 }  // namespace
+
+double interpolateFirTargetDb(const FirTarget& target, double frequencyHz) {
+    const auto& fs = target.frequencyHz;
+    const auto& gs = target.gainDb;
+    if (fs.empty()) {
+        throw std::invalid_argument("interpolateFirTargetDb: target.frequencyHz must not be empty");
+    }
+    if (frequencyHz <= fs.front()) return gs.front();
+    if (frequencyHz >= fs.back()) return gs.back();
+
+    // fs is expected strictly ascending (designFir's own validateTarget
+    // enforces this on any target it designs from); std::lower_bound is
+    // exact here, not an approximation of the search.
+    const auto it = std::lower_bound(fs.begin(), fs.end(), frequencyHz);
+    const std::size_t hi = static_cast<std::size_t>(it - fs.begin());
+    const std::size_t lo = hi - 1;
+    if (fs[hi] == frequencyHz) return gs[hi];
+
+    const double logLo = std::log10(fs[lo]);
+    const double logHi = std::log10(fs[hi]);
+    const double logF = std::log10(frequencyHz);
+    const double t = (logF - logLo) / (logHi - logLo);
+    return gs[lo] + t * (gs[hi] - gs[lo]);
+}
 
 FirResult designFir(const FirTarget& target, double sampleRate, std::size_t taps, FirPhase phase,
                     WindowType window, FirMethod method) {

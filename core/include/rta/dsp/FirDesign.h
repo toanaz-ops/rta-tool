@@ -60,6 +60,14 @@ struct FirResult {
     std::size_t designFftSize = 0;             // M (freq sampling); nFft (minimum phase)
 };
 
+/// Linear in log10(f), linear in dB (record Sec.6, plan T10) -- the exact
+/// rule designFir() samples the target onto its design grid with, exposed so
+/// a caller (a preview, a test) can ask what the target reads at any
+/// frequency without paying for a full design. `f` outside the breakpoint
+/// range clamps to the nearest edge value; `target.frequencyHz` must have at
+/// least one entry (same precondition designFir() itself has).
+[[nodiscard]] double interpolateFirTargetDb(const FirTarget& target, double frequencyHz);
+
 /// @throws std::invalid_argument if sampleRate <= 0; taps < 8 or taps > M/2
 ///         (M is the design FFT size, record Sec.10 -- the window would be
 ///         wider than the circularly shifted response is long); target.frequencyHz
