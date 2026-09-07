@@ -17,6 +17,7 @@ add_library(rta_core STATIC
     src/dsp/DualFftEngine.cpp
     src/dsp/Fft.cpp
     src/dsp/FilterBank.cpp
+    src/dsp/FirDesign.cpp
     src/dsp/GroupDelay.cpp
     src/dsp/MinimumPhase.cpp
     src/dsp/MtwEngine.cpp
