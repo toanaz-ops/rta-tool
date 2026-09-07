@@ -101,6 +101,21 @@ public:
     float nextGain()   noexcept;   ///< audio thread, once per sample
     void  apply(std::span<float> block) noexcept;
 
+    /// Device thread, callback quiesced (L7-OUT record §5: `RampedGain` is
+    /// neither copyable nor movable, so a rate change cannot rebuild it by
+    /// assignment or `emplace` -- that would race the control thread's own
+    /// `requestOn()`/`requestOff()`, the exact use-after-free shape
+    /// `CaptureBus.h` closed for the capture side). Retargets ONLY the
+    /// audio-thread-owned fields this rewrites -- `rampLenSamples_` (from the
+    /// stored `rampSeconds_`, so a later rate change still honours the ctor's
+    /// original ramp duration), `pos_` (back to 0) and `state_` (back to
+    /// `Idle`) -- and NEVER `target_`: a `requestOn()`/`requestOff()` the
+    /// control thread published before this call is still the value the next
+    /// `nextGain()` rises or falls towards. Safe to call from the device
+    /// thread with no extra synchronisation for the same reason
+    /// `CaptureBus::prepare` is: the callback is quiesced first.
+    void prepare(double sampleRate) noexcept;
+
     [[nodiscard]] State state() const noexcept { return state_; }
 
 private:
@@ -110,6 +125,12 @@ private:
     int   rampLenSamples_;
     int   pos_ = 0;        ///< samples from Idle-end (0) towards Running-end (rampLenSamples_)
     State state_ = State::Idle;
+
+    /// Set once at construction, read again by every later `prepare()` --
+    /// the ctor computes `rampLenSamples_` from `sampleRate*rampSeconds_` and
+    /// would otherwise discard `rampSeconds_`, leaving `prepare(sampleRate)`
+    /// no way to recompute the length at the ORIGINAL ramp duration (OUT-R2).
+    double rampSeconds_;
 };
 
 }  // namespace rta::gen
