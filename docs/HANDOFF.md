@@ -171,6 +171,57 @@ với tới được), guard mới `check_no_rt_hazards` (render unconditional +
 **Tech-debt Wave 0 vẫn mở:** `Biquad.h::maxPoleRadius` dùng `std::max(0.0,NaN)`=0.0
 (moot trên đường shelf sau fix `c61b5dc`, nhưng bẫy cho nguồn NaN khác; `Biquad.h` frozen).
 
+## Wave 2 (2026-09-07): DELAY XONG+verify; EQ CORE (A-D) XONG+verify; EQ E/F (app) CHƯA XÂY
+
+**Số:** DELAY OFF 505→529 / ON 571→597. EQ core OFF 529→551 (ON chưa đo — E/F chưa
+xây). 0 warning mọi nơi. Tuần tự DELAY rồi EQ (git-index + core/CMakeLists contention).
+
+**DELAY — commit `7e1c209..753d522`, verify SOUND.** `suggestDelay` (policy trên
+`findDelayPhat`, refactor bit-for-bit qua `PhatCorrelation.h` private — verify diff
+verbatim vs `6d22342^`), trust=peak/f_band vs null floor `√(ln m/M_in)` c=4 (survey
+105 trial 0 sai), `ResidualDelayTracker` (đọc γ² không ghi, zero-alloc chứng minh
+bằng counting allocator THẬT), `RawCaptureBuffer` + `DelayLocator` (Mls từ chối,
+strict solo qua OutputEngine). Sub-sample gap frac 0.3/0.7 ~0.19 mẫu = bias nội suy
+parabol 3 điểm đã biết (≈4µs@48k, bỏ qua được), KHÔNG phải bug (verify đo độc lập).
+
+**EQ CORE (A-D) — commit `7756da9..6940f92`, verify SOUND.** `excessPhase` (rta::dsp,
+EQ-R1) + `classifyDip` (rta::eq, `S*=2·asin r_D`) + `solveGains` (ridge Cholesky,
+golden mang cond) + `EqAllocator` (greedy peaking placement + autoEq). Mọi claim
+load-bearing mutate-test ĐỎ-ĐƯỢC: sign/negation (bỏ negate → residual TĂNG, D5 đỏ),
+S* threshold, hai guard. Wave 0 kernel diff RỖNG (tái dùng verbatim).
+
+**⚠️ G24 CAVEAT ĐÃ CHỨNG MINH (không bị bác):** oversampling cho raw measured magnitude
+cần tối thiểu **64×**, ship **128×** (= 16× của FIR 8×). Nếu G24 mù quáng tái dùng 8×
+của FIR thì min-phase null test ALIAS trên phép đo thật → phân loại dip sai. Đúng là
+thứ pipeline sinh ra để bắt.
+
+**CONCERN precision (SỬA ở EQ closeout — CHƯA sửa):** 64× bị đẩy gần như HOÀN TOÀN
+bởi metric phụ **tail-energy** (proxy nhiễm aliasing cepstral), KHÔNG bởi excess-phase
+**swing** mà `classifyDip` thực đọc (swing hội tụ ở 8×-16× mọi fixture). 128× vẫn đúng
+và bảo thủ hợp lý, nhưng docstring `tools/gen_autoeq_algo.py` + framing record "64× là
+F nhỏ nhất swing hội tụ" KHÔNG chính xác — phải sửa thành "tail-energy quyết định 64×".
+
+**EQ E/F CHƯA XÂY (app, ON) — việc đầu tiên của phiên sau:** Task E (`EqSession` +
+trust mask `kEqTrustFloor=0.7` + text export) và Task F (`EqVerify` qua OutputEngine).
+Builder hết budget sau core. BA điều người xây E phải biết:
+1. **Sign convention (LOAD-BEARING):** ghost `m+ΣR` chỉ hội tụ khi solve fit
+   `−workingResidual`; `EqAllocator` đã negate trước khi gọi `solveGains`. Xác nhận
+   với EQ-R3 TRƯỚC khi ghost của E land.
+2. Deviation đã ship: **mean KHÔNG median** cho broadband delay (record §4.3.4 nói
+   median; đo 57.5 mẫu lệch vs 0.28 → chuyển mean). `EqInput` thêm field `hHalfGrid`.
+3. **Shelves CHƯA đặt** (chỉ peaking pass này) — shelf domain clamp (EQ-R5/D6) chưa
+   thực thi; người thêm shelf phải clamp `(Q,gainDb)` trước `designBiquad` (nó throw
+   `std::invalid_argument` ngoài miền — Wave 0 `c61b5dc`).
+
+**Bẫy build (verifier gặp 2 lần, đã thành memory):** `cmake --build --target X` báo
+"-> X.exe" mà KHÔNG relink thật (exe byte-identical) → mutation test đọc binary cũ,
+false PASS. Xoá `.exe` TRƯỚC mỗi rebuild khi mutation-test. Xem
+`memory/mutation-testing-needs-the-exe-deleted-first.md`.
+
+**Còn lại của L7:** EQ E/F (app), rồi **Wave 3 (ALIGN)** — G11 virtual processor +
+G17 wizard (HỎI topology) + G18 crossover + relative-polarity ρ fold (dựng lại ngưỡng
+hai lưới độc lập, đừng ship số một-lưới). ALIGN record `docs/dsp/2026-09-06-l7-alignment-wizard.md`.
+
 ## Verifier đã xác nhận (đọc file thật)
 - OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output
   + `ScopedNoDenormals` là câu ĐẦU + guard `audioio_scoped_no_denormals_is_first`;
@@ -204,9 +255,10 @@ với tới được), guard mới `check_no_rt_hazards` (render unconditional +
   64-output hardware check (OUT §13.1), device-reconfig-while-armed (OUT §13.3, đã chọn default).
 
 ## Việc còn mở
-- **Chưa merge, chưa push.** Wave 0 (shared foundation) + **Wave 1 (FIR + OUT) ĐÃ XÂY
-  + verify** (mục riêng dưới; OFF 505 / ON 571, 0 warning). **Tiếp theo: Wave 2
-  (DELAY ∥ EQ)** — trạm 3 chưa mở; EQ mang G24 fold + **G24 CAVEAT** (oversampling) ở trên.
+- **Chưa merge, chưa push.** Wave 0 + Wave 1 (FIR+OUT) + **Wave 2 DELAY + Wave 2 EQ
+  CORE (A-D) ĐÃ XÂY + verify** (OFF 551, ON 597 — EQ core chưa đo ON). **VIỆC ĐẦU
+  TIÊN phiên sau: EQ Task E/F (app, ON) — CHƯA XÂY**; rồi **Wave 3 (ALIGN)**. Xem mục
+  "Wave 2" dưới cho ba điều người xây E phải biết + CONCERN precision cần sửa.
 - Record FIR + EQ còn claim NGOÀI (scipy/rePhase/REW/CamillaDSP/RBJ coefficient) đánh
   dấu UNVERIFIED trong §ledger — plan phải đọc lại cookbook / venv main-checkout TRƯỚC
   khi build (bẫy AES-2id / parity-table). FIR đã web-verify và bác 2 premise (Toeplitz
