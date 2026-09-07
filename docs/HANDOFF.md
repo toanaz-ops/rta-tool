@@ -129,6 +129,48 @@ sửa vì `Biquad.h` là file frozen; cần một task riêng nếu chủ nhân 
 nhưng field đó là attenuation (+=xuống); plan W0-R3 đã khoá đúng `−attenuationDb`,
 record cần sửa một dòng để khỏi lạc plan (bẫy #17).
 
+## Wave 1 ĐÃ XÂY VÀ VERIFY (2026-09-07) — FIR rồi OUT (tuần tự, tránh git-index race)
+
+**Số cuối Wave 1: OFF 505/505, ON 571/571, 0 warning cả hai** (Wave 0 tip: 470 OFF).
+FIR: 470→489 OFF, →553 ON. OUT: 489→505 OFF, 553→571 ON. Đo, không chép.
+
+**FIR (G10) — commit `4facbd8..74bd03a` + `d0246fe`.** Freq-sampling linear +
+min-phase (dùng lại `minimumPhaseFromMagnitude` verbatim), log-f interp, text +
+32-bit-float WAV export (`app/src/export/`), golden `fir.txt` (scipy second author,
+`gen_fir.py --check` byte-identical). Verifier độc lập: 489/489, guard canh (framework
+122, polynomial 142 gồm `gen_fir.py`), symmetry test bắt được mutation, T7 N=511 là
+trần mô hình thật (không phải né tolerance).
+
+**⚠️ G24 CAVEAT — LOAD-BEARING cho Wave 2 (EQ).** FIR ship oversampling cepstral
+**8×**. Bằng chứng "magnitude-identity residual phẳng mọi factor" mà builder đầu nêu
+là **tautology đại số** (`Re(FFT(fold(c)))==FFT(c)`, không phân biệt factor đủ/thiếu)
+— comment `FirDesign.cpp` đã sửa (`d0246fe`). Bằng chứng THẬT: hội tụ impulse
+min-phase; 8× đủ **CHỈ VÌ** `designLinearPhaseCore` cửa sổ hoá target TRƯỚC, giới hạn
+độ sắc notch. **G24 (excess-phase trong L7-EQ) DÙNG CHUNG kernel này nhưng có thể nạp
+magnitude ĐO THÔ không qua cửa sổ → 8× có thể alias → G24 phải TỰ biện minh
+oversampling, KHÔNG tái dùng lập luận 8× của FIR.** (verifier Wave 1)
+
+**OUT (output path) — commit `881862b..16ec825`.** `RampedGain::prepare`,
+`OutputEngine` (platform/types, JUCE-free), callback render MỘT dòng sau
+`pushFromCallback` (`ScopedNoDenormals` vẫn câu đầu), `OutputPolicy` strict-solo/
+additive. Verifier: **render RT-SAFE** (không alloc/lock/IO/FFT — scratch prealloc ở
+ctor, `std::visit` trên source trivially-copyable, `Sweep::buildInverseFilter` không
+với tới được), guard mới `check_no_rt_hazards` (render unconditional + callback ON)
+đỏ-rồi-xanh. `kRequestedOutputChannels` 2→`kMaxChannels`, không over-read.
+
+**Hai ghi chú OUT phiên sau cần biết:**
+1. **G20 auto solo/mute là KHẢ NĂNG + binding pattern, CHƯA nối UI sống.** Không
+   `CaptureSequencer` nào có chủ UI hôm nay; nối `onStep` vào MainComponent = phải
+   dựng panel sequencer (record §12 ngoài phạm vi). `soloOutput` + pattern chứng minh
+   device-free ở `test_output_policy.cpp`. Solo default = **SETTING, mặc định option 1**.
+2. **Test "complementary handover" chứng minh reversal-continuity, KHÔNG chứng minh
+   HÌNH DẠNG ramp** (mọi đường đối xứng lẻ thoả `g(p)+g(1-p)=1`). Hình dạng do hai
+   test anh em bắt (raised-cosine closed-form + ramped-sine, cả hai đỏ dưới mutation).
+   Không lỗi sống; đừng lặp lại claim "handover chứng minh raised-cosine".
+
+**Tech-debt Wave 0 vẫn mở:** `Biquad.h::maxPoleRadius` dùng `std::max(0.0,NaN)`=0.0
+(moot trên đường shelf sau fix `c61b5dc`, nhưng bẫy cho nguồn NaN khác; `Biquad.h` frozen).
+
 ## Verifier đã xác nhận (đọc file thật)
 - OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output
   + `ScopedNoDenormals` là câu ĐẦU + guard `audioio_scoped_no_denormals_is_first`;
@@ -162,7 +204,9 @@ record cần sửa một dòng để khỏi lạc plan (bẫy #17).
   64-output hardware check (OUT §13.1), device-reconfig-while-armed (OUT §13.3, đã chọn default).
 
 ## Việc còn mở
-- **Chưa merge, chưa push. Trạm 3 (impl plan) + trạm 4 (build) chưa mở.**
+- **Chưa merge, chưa push.** Wave 0 (shared foundation) + **Wave 1 (FIR + OUT) ĐÃ XÂY
+  + verify** (mục riêng dưới; OFF 505 / ON 571, 0 warning). **Tiếp theo: Wave 2
+  (DELAY ∥ EQ)** — trạm 3 chưa mở; EQ mang G24 fold + **G24 CAVEAT** (oversampling) ở trên.
 - Record FIR + EQ còn claim NGOÀI (scipy/rePhase/REW/CamillaDSP/RBJ coefficient) đánh
   dấu UNVERIFIED trong §ledger — plan phải đọc lại cookbook / venv main-checkout TRƯỚC
   khi build (bẫy AES-2id / parity-table). FIR đã web-verify và bác 2 premise (Toeplitz
