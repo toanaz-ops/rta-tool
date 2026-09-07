@@ -13,18 +13,26 @@ namespace rta::dsp {
 
 namespace {
 
-/// MEASURED by tools/gen_fir.py's oversampling sweep (task F6, plan D6),
-/// not copied from scipy's uncontrolled ~200x default (record Sec.4). The
-/// sweep found the magnitude-identity residual and truncationLossDb BOTH
-/// flat across the whole tested range {4,8,16,...,256}x -- a pure
-/// linear-algebra identity (Re(FFT(fold(c))) == FFT(c) for any real+even
-/// cepstrum) that does not discriminate a sufficient factor from an
-/// insufficient one for the fixtures tried, including a -115 dB notch meant
-/// to stress it (core/tests/golden/fir.txt's fir_oversampling_sweep case,
-/// gen_fir.py's sweep_oversampling_factor docstring has the full finding,
-/// flagged for the record owner same as D5/OQ-A). 8 is one step of margin
-/// above the measured minimum (4), not the bare minimum -- still ~25x
-/// smaller than scipy's default, which D6 forbids copying regardless.
+/// The cepstral FFT is oversampled by this factor. MEASURED by
+/// tools/gen_fir.py's sweep (task F6, plan D6), not copied from scipy's
+/// uncontrolled ~200x default (record Sec.4).
+///
+/// What is and is not evidence for this value (verifier finding, Wave 1):
+///   - The magnitude-identity residual (|H_min| == |H_lin|) is NOT evidence.
+///     It is an algebraic tautology -- Re(FFT(fold(c))) == FFT(c) for any
+///     real, even cepstrum c -- so it stays flat at every factor and cannot
+///     tell a sufficient factor from an insufficient one.
+///   - The real evidence is convergence of the reconstructed minimum-phase
+///     impulse (equivalently truncationLossDb): 8x matches a 256x reference
+///     to float noise for every target reachable through designFir(), because
+///     designLinearPhaseCore windows the target FIRST and caps notch sharpness
+///     well below what would demand a large factor.
+///
+/// LOAD-BEARING: that safety depends on the windowing pre-step running before
+/// minimumPhaseFromMagnitude. A direct caller that feeds RAW measured
+/// magnitude (e.g. G24 excess-phase in L7-EQ, which shares this kernel) can
+/// alias at 8x and MUST re-justify its own factor -- do not reuse this one.
+/// 8 is one step of margin above the measured minimum (4).
 inline constexpr std::size_t kCepstralOversamplingFactor = 8;
 
 bool isPowerOfTwo(std::size_t n) noexcept {
