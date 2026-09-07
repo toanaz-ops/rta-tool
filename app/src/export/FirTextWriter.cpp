@@ -74,15 +74,9 @@ std::string renderFirText(const rta::dsp::FirResult& result, Normalization norma
         throw std::invalid_argument("renderFirText: bare (headerless) export is refused");
     }
 
-    // Peak0dBFS scales so max|tap| == 1.0; the trim that undoes it is
-    // -20*log10(coefficientPeak) -- a boost (peak > 1) needs a NEGATIVE
-    // trim (attenuation) to reach unity, which the sign already gives.
-    const bool peakNormalise = normalization == Normalization::Peak0dBFS;
-    const double scale =
-        (peakNormalise && result.coefficientPeak > 0.0) ? 1.0 / result.coefficientPeak : 1.0;
-    const double appliedTrimDb =
-        (peakNormalise && result.coefficientPeak > 0.0) ? -20.0 * std::log10(result.coefficientPeak)
-                                                          : 0.0;
+    // Shared with the WAV writer (FirExport.h) so the two formats cannot
+    // silently disagree on what "Peak0dBFS" means.
+    const auto [scale, appliedTrimDb] = computeNormalizationScale(result.coefficientPeak, normalization);
 
     std::string out;
     writeHeaderNumeric(out, "sample_rate_hz", result.sampleRate);
