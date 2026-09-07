@@ -11,6 +11,7 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(rta_core_tests
     test_average_count.cpp
     test_delay_finder.cpp
+    test_delay_policy.cpp
     test_dualfft.cpp
     test_transfer_estimator.cpp
     test_transfer_golden.cpp

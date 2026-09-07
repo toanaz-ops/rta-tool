@@ -14,6 +14,7 @@ add_library(rta_core STATIC
     src/dsp/BiquadResponse.cpp
     src/dsp/ButterworthDesign.cpp
     src/dsp/DelayFinder.cpp
+    src/dsp/DelayPolicy.cpp
     src/dsp/DualFftEngine.cpp
     src/dsp/Fft.cpp
     src/dsp/FilterBank.cpp
