@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "FakeAudioIODevice.h"
+#include "rta/gen/Oscillator.h"
 #include "rta/platform/AudioIo.h"
 
 #include <algorithm>
@@ -225,4 +226,55 @@ TEST_CASE(
     CHECK_FALSE(io.bus().isActive());
 
     SUCCEED("no crash across 20000 racing callbacks");
+}
+
+// --- L7-OUT task C: the callback renders OutputEngine (record docs/dsp/
+// 2026-09-06-l7-output-path.md sec.10 T10) --------------------------------
+//
+// Same call shape as the M6 tests above -- audioDeviceIOCallbackWithContext
+// driven directly, no real device. Proves: outputs are exactly 0.0f before
+// anything is armed (today's contract, preserved), and after
+// io.output().setSource/routeOutput/armSource, a routed channel goes
+// non-zero while an unrouted one stays exactly 0.0f.
+
+TEST_CASE(
+    "the callback renders OutputEngine into a routed output channel and "
+    "clears the unrouted one",
+    "[audio_io][l7out]") {
+    AudioIo io;
+    FakeAudioIODevice fake(48000.0, 256, 2, 2);
+    io.audioDeviceAboutToStart(&fake);
+
+    std::vector<float> in0(256, 0.0f), in1(256, 0.0f);
+    const float* inputs[2] = {in0.data(), in1.data()};
+    const juce::AudioIODeviceCallbackContext context;
+
+    // Before arming: outputs are exactly zero -- the contract the old clear
+    // loop gave, now produced by OutputEngine's own idle path instead.
+    {
+        std::vector<float> out0(256, 9.0f), out1(256, 9.0f);
+        float* outputs[2] = {out0.data(), out1.data()};
+        io.audioDeviceIOCallbackWithContext(inputs, 2, outputs, 2, 256, context);
+        CHECK(std::all_of(out0.begin(), out0.end(), [](float v) { return v == 0.0f; }));
+        CHECK(std::all_of(out1.begin(), out1.end(), [](float v) { return v == 0.0f; }));
+    }
+
+    REQUIRE(io.output().setSource(rta::gen::Oscillator(48000.0, 1000.0, -6.0)));
+    REQUIRE(io.output().routeOutput(0, true));
+    io.output().armSource();
+
+    // Several blocks so the 480-sample (10 ms @ 48 kHz) ramp is well past
+    // its rise -- channel 0 must be clearly non-zero by then; channel 1 was
+    // never routed and must stay exactly zero throughout.
+    bool channel0NonZero = false;
+    for (int block = 0; block < 4; ++block) {
+        std::vector<float> out0(256, 0.0f), out1(256, 0.0f);
+        float* outputs[2] = {out0.data(), out1.data()};
+        io.audioDeviceIOCallbackWithContext(inputs, 2, outputs, 2, 256, context);
+        if (std::any_of(out0.begin(), out0.end(), [](float v) { return v != 0.0f; })) {
+            channel0NonZero = true;
+        }
+        CHECK(std::all_of(out1.begin(), out1.end(), [](float v) { return v == 0.0f; }));
+    }
+    CHECK(channel0NonZero);
 }

@@ -13,6 +13,7 @@
 #include "rta/platform/CaptureBus.h"
 #include "rta/platform/DeviceState.h"
 #include "rta/platform/Fault.h"
+#include "rta/platform/OutputEngine.h"
 
 #include <atomic>
 #include <cstddef>
@@ -36,8 +37,11 @@ namespace rta::platform {
 ///    audio callback.
 ///  - `audioDeviceIOCallbackWithContext()`: the real-time audio thread. It
 ///    does exactly three things -- `ScopedNoDenormals`, one call into
-///    `bus_.pushFromCallback()`, clear the outputs -- and nothing else lives
-///    here on purpose (plan §1.2). No allocation, no locks.
+///    `bus_.pushFromCallback()`, one call into `output_.render()` (L7-OUT:
+///    renders the active generator source into the routed outputs and clears
+///    every other channel it was handed -- the single call that replaced the
+///    old unconditional clear loop) -- and nothing else lives here on
+///    purpose (plan §1.2). No allocation, no locks.
 ///  - `audioDeviceAboutToStart()` / `audioDeviceStopped()`: the device
 ///    thread, called by JUCE outside the audio callback's own dispatch (see
 ///    the comment on `audioDeviceAboutToStart` below for why that ordering
@@ -109,15 +113,25 @@ public:
     [[nodiscard]] CaptureBus& bus() noexcept { return bus_; }
     [[nodiscard]] const CaptureBus& bus() const noexcept { return bus_; }
 
+    /// L7-OUT (record docs/dsp/2026-09-06-l7-output-path.md sec.6): the
+    /// generator output path every solver and G20 auto solo/mute drive
+    /// through `setSource`/`routeOutput`/`armSource`. Never null, never
+    /// reseated -- same contract as `bus()`.
+    [[nodiscard]] OutputEngine& output() noexcept { return output_; }
+    [[nodiscard]] const OutputEngine& output() const noexcept { return output_; }
+
     // juce::AudioIODeviceCallback -------------------------------------------
 
     /// THE hard-real-time boundary. Body: `ScopedNoDenormals` first, one
-    /// call into `bus_.pushFromCallback`, clear the outputs. Everything the
-    /// decision record warns about (role bounds, short-write counting, the
-    /// validity check) lives inside `pushFromCallback`, not here -- see
-    /// `rta::platform::CaptureBus`. Parameter names kept even where unused
-    /// past the pass-through, for readability at the call site; none of
-    /// them can be omitted without also omitting ones that ARE used.
+    /// call into `bus_.pushFromCallback`, one call into `output_.render`.
+    /// Everything the decision record warns about (role bounds, short-write
+    /// counting, the validity check) lives inside `pushFromCallback`, not
+    /// here -- see `rta::platform::CaptureBus`. Everything the L7-OUT record
+    /// warns about (no alloc/lock/IO/FFT, JUCE's write-or-clear contract on
+    /// every output channel) lives inside `OutputEngine::render`, not here --
+    /// see `rta::platform::OutputEngine`. Parameter names kept even where
+    /// unused past the pass-through, for readability at the call site; none
+    /// of them can be omitted without also omitting ones that ARE used.
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
                                            int numInputChannels,
                                            float* const* outputChannelData,
@@ -129,10 +143,13 @@ public:
     /// every ring (decision record: "retargets rate-dependent state AND
     /// drains every ring" -- stale samples from the previous session would
     /// otherwise splice onto the new one and mislabel every bin-to-Hz
-    /// conversion). Safe to call `CaptureBus::prepare` here with no extra
-    /// synchronisation: JUCE calls this BEFORE inserting the callback into
-    /// its dispatch list, so the audio thread cannot be inside
-    /// `pushFromCallback` yet.
+    /// conversion). Also retargets `output_` (L7-OUT record sec.4-5): bumps
+    /// its epoch, disarms the active source, and rescales every gate's ramp
+    /// length to the new rate -- same "safe from here, no extra
+    /// synchronisation" reasoning as `bus_.prepare` below. Safe to call
+    /// `CaptureBus::prepare` here with no extra synchronisation: JUCE calls
+    /// this BEFORE inserting the callback into its dispatch list, so the
+    /// audio thread cannot be inside `pushFromCallback` yet.
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
 
     /// Marks the bus inactive BEFORE the device is torn down further, so a
@@ -152,6 +169,7 @@ private:
 
     juce::AudioDeviceManager deviceManager_;
     CaptureBus bus_;
+    OutputEngine output_;
 
     std::atomic<bool> running_{false};
 

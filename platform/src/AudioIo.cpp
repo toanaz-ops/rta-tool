@@ -11,16 +11,21 @@ namespace rta::platform {
 
 namespace {
 
-// Requested channel counts for AudioDeviceManager::initialise*(). Input asks
-// for the full role-table width (kMaxChannels, covering a MADI or Dante
-// interface, per plan §1.4); JUCE opens as many as the device actually has,
-// never more, so this is a ceiling, not a promise. Output asks for a modest
-// stereo pair purely so devices that require at least one active output
-// channel to open at all still succeed -- this deliverable never writes
-// anything but silence to it (the callback body below), and driving a
-// generator OUT to a device is explicitly out of scope (plan §0).
+// Requested channel counts for AudioDeviceManager::initialise*(). Both sides
+// now ask for the full role-table width (kMaxChannels, covering a MADI or
+// Dante interface): L7-OUT (decision record docs/dsp/2026-09-06-l7-output-
+// path.md sec.5) lifts the output side from a hardcoded stereo pair to match
+// the input side's own ceiling -- "the table would be a lie about its own
+// width" otherwise, since a wizard stepping through boxes needs to address
+// channel 3 or 7, not just 0/1. JUCE opens as many as the device actually
+// has, never more, so this is a ceiling, not a promise; OutputEngine::render
+// bounds every write against numOutputChannels RECEIVED this block (record
+// sec.5's bounds rule), so a smaller device is safe regardless of what was
+// requested here. Whether a real interface refuses a 64-output request is a
+// hardware question (record sec.13.1) with a one-line fallback -- lower this
+// constant to the device's own count -- not a design fork.
 constexpr int kRequestedInputChannels = kMaxChannels;
-constexpr int kRequestedOutputChannels = 2;
+constexpr int kRequestedOutputChannels = kMaxChannels;
 
 }  // namespace
 
@@ -123,7 +128,7 @@ void AudioIo::audioDeviceIOCallbackWithContext(
     // (platform/tests/) greps this exact function for the violation.
     const juce::ScopedNoDenormals noDenormals;
 
-    // Plan §1.2: the callback is reduced to this one call. Every rule the
+    // Plan §1.2: the callback is reduced to these two calls. Every rule the
     // decision record states about the callback body -- bounds against the
     // channel count THIS block actually received, count rather than
     // swallow short writes, do nothing when the bus is inactive -- lives
@@ -131,17 +136,15 @@ void AudioIo::audioDeviceIOCallbackWithContext(
     // plain C arrays and is therefore provable with no device at all.
     bus_.pushFromCallback(inputChannelData, numInputChannels, numSamples);
 
-    // JUCE requires every output channel to be written or cleared -- the
-    // buffers are NOT pre-cleared for us. This deliverable produces no audio
-    // output (plan §0: "generator output to a device" is out of scope), so
-    // clearing is the entire output-side contract.
-    if (outputChannelData != nullptr) {
-        for (int ch = 0; ch < numOutputChannels; ++ch) {
-            if (outputChannelData[ch] != nullptr) {
-                juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
-            }
-        }
-    }
+    // L7-OUT (decision record docs/dsp/2026-09-06-l7-output-path.md sec.6-7):
+    // renders the active generator source through its two gate stages and
+    // fans it out to every routed output, clearing every channel it was
+    // handed that is NOT currently receiving signal. This one call is the
+    // ENTIRE output-side contract now -- it satisfies JUCE's write-or-clear
+    // requirement (every output channel is written OR cleared) by itself,
+    // replacing the old unconditional clear loop; see OutputEngine::render
+    // for the real-time-safety accounting (record sec.7).
+    output_.render(outputChannelData, numOutputChannels, numSamples);
 }
 
 void AudioIo::audioDeviceAboutToStart(juce::AudioIODevice* device) {
@@ -176,6 +179,17 @@ void AudioIo::audioDeviceAboutToStart(juce::AudioIODevice* device) {
     // list (see the header), so the audio thread cannot be inside
     // pushFromCallback yet.
     bus_.prepare(sampleRate, numChannels);
+
+    // L7-OUT (decision record docs/dsp/2026-09-06-l7-output-path.md sec.4-5):
+    // the OUTPUT-side mirror of bus_.prepare() above -- same slot, same
+    // "safe here, no extra synchronisation" reasoning (the callback is not
+    // inserted yet). Bumps output_'s own epoch, disarms whatever source was
+    // armed, and rescales every gate's ramp length to the new rate. Mirrors
+    // the input side's own clamp: what the device reports active on the
+    // OUTPUT side, clamped to kMaxChannels.
+    const int activeOutputs = device->getActiveOutputChannels().countNumberOfSetBits();
+    const int numOutputs = activeOutputs > kMaxChannels ? kMaxChannels : activeOutputs;
+    output_.prepare(sampleRate, numOutputs);
 
     // Only NOW does the callback start doing anything: setActive(true) after
     // prepare() has finished, never before.
