@@ -255,10 +255,15 @@ hai lưới độc lập, đừng ship số một-lưới). ALIGN record `docs/d
   64-output hardware check (OUT §13.1), device-reconfig-while-armed (OUT §13.3, đã chọn default).
 
 ## Việc còn mở
-- **Chưa merge, chưa push.** Wave 0 + Wave 1 (FIR+OUT) + **Wave 2 DELAY + Wave 2 EQ
-  CORE (A-D) ĐÃ XÂY + verify** (OFF 551, ON 597 — EQ core chưa đo ON). **VIỆC ĐẦU
-  TIÊN phiên sau: EQ Task E/F (app, ON) — CHƯA XÂY**; rồi **Wave 3 (ALIGN)**. Xem mục
-  "Wave 2" dưới cho ba điều người xây E phải biết + CONCERN precision cần sửa.
+- **ĐÃ MERGE vào `main` tại `a937a98` (--no-ff, 2026-09-07), CHƯA push.** Chủ nhân nói
+  "Merge master local". `git diff a937a98^2 a937a98` rỗng → cây merge === tip nhánh đã
+  verify `afffedc`, nên OFF 551 / ON 597 vẫn đúng, không cần build lại. `origin/main..main`
+  > 0 (đo, đừng chép) — push là lệnh riêng. Nhánh `claude_desk/l7-solvers-station-1-874518`
+  + worktree giữ nguyên nhưng ĐÃ MERGE HẾT — phiên sau nên nhánh MỚI từ `main`, đừng commit
+  tiếp lên nhánh cũ (sẽ phân kỳ với merge commit). Wave 0 + Wave 1 (FIR+OUT) + **Wave 2
+  DELAY + Wave 2 EQ CORE (A-D) ĐÃ XÂY + verify**. **VIỆC ĐẦU TIÊN phiên sau: EQ Task E/F
+  (app, ON) — CHƯA XÂY**; rồi **Wave 3 (ALIGN)**. Xem mục "Wave 2" dưới cho ba điều người
+  xây E phải biết + CONCERN precision cần sửa.
 - Record FIR + EQ còn claim NGOÀI (scipy/rePhase/REW/CamillaDSP/RBJ coefficient) đánh
   dấu UNVERIFIED trong §ledger — plan phải đọc lại cookbook / venv main-checkout TRƯỚC
   khi build (bẫy AES-2id / parity-table). FIR đã web-verify và bác 2 premise (Toeplitz
