@@ -4,6 +4,7 @@
 
 #include "rta/eq/FilterSpec.h"
 
+#include <complex>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -28,6 +29,18 @@ struct EqInput {
     double qMaxBoost = 10.0; ///< fallback Q ceiling, boosts (no T60)
     double qMaxCut = 20.0;   ///< fallback Q ceiling, cuts (no T60)
     std::optional<double> roomT60Sec;  ///< ties Q_max when present (record Sec.3)
+
+    /// DEVIATION FROM THE PLAN'S DECLARED STRUCT, ADDED FOR TASK D: the
+    /// plan's "core API this lane builds" section lists EqInput without a
+    /// complex-H field, but EqAllocator's G24 gate (classifyDip, Task B)
+    /// needs excessPhase()'s own hHalfGrid argument, and |H| is exactly
+    /// abs(hHalfGrid) -- so this is the ONE extra field that makes the gate
+    /// callable at all, not a second magnitude field. Empty (default) means
+    /// "no complex transfer function available"; EqAllocator then places
+    /// boosts WITHOUT the G24 gate (labelled fallback, flagged to the
+    /// orchestrator alongside EQ-R1..R5) rather than refusing every boost
+    /// or silently assuming Boostable. solveGains itself never reads this.
+    std::span<const std::complex<double>> hHalfGrid;
 };
 
 /// gainsDb.size() == placed.size(); conditionNumber is cond(S^T W S + lambda*I)
