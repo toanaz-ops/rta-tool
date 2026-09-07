@@ -28,6 +28,7 @@ half of that split, not this one.
 from __future__ import annotations
 
 import numpy as np
+from scipy import signal
 
 FS = 48000.0
 
@@ -85,6 +86,10 @@ SWING_CONVERGE_DEG = 0.5
 # project ever floors or displays, so "converged" here means "physically
 # inconsequential", not "indistinguishable from the reference's own noise".
 TAIL_CONVERGE_FLOOR_DB = -200.0
+
+
+def fmt(values) -> str:
+    return " ".join(repr(float(v)) for v in values)
 
 
 def next_pow2(n: int) -> int:
@@ -224,3 +229,73 @@ def factor_with_margin(measured: int) -> int:
     IS enough, never prove the next one down is not (record Sec.4 caveat)."""
     idx = SWEEP_FACTORS.index(measured)
     return SWEEP_FACTORS[min(idx + 1, len(SWEEP_FACTORS) - 1)]
+
+
+# --------------------------------------------------------------------------
+# Task C: the ridge gain solve -- a SECOND author of core/src/eq/
+# EqGainSolve.cpp's own steps (record Sec.9.7), peaking-only (the fixtures
+# this lane's C1-C3 tests use are all peaking sections; EQ-R5 makes
+# responseDb exact, so a Q-form peaking SOS evaluated via sosfreqz is the
+# second, independent implementation -- the SOS response call, not the
+# polynomial-coefficient one the project's guard forbids project-wide.
+# --------------------------------------------------------------------------
+
+def design_peaking_sos(fc: float, q: float, gain_db: float, fs: float) -> np.ndarray:
+    """RBJ cookbook peaking, Q form -- BiquadDesign.cpp's designPeaking,
+    transcribed independently. One second-order section as an SOS row
+    ([b0,b1,b2,1,a1,a2], a0 normalised to 1), never a bare [b] polynomial
+    (the guard core/tests/check_no_polynomial_form.cmake forbids that
+    representation project-wide, not just in core/)."""
+    w0 = 2.0 * np.pi * fc / fs
+    a_gain = 10.0 ** (gain_db / 40.0)
+    alpha = np.sin(w0) / (2.0 * q)
+    cw = np.cos(w0)
+    b0, b1, b2 = 1.0 + alpha * a_gain, -2.0 * cw, 1.0 - alpha * a_gain
+    a0, a1, a2 = 1.0 + alpha / a_gain, -2.0 * cw, 1.0 - alpha / a_gain
+    return np.array([[b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0]])
+
+
+def peaking_response_db(fc: float, q: float, gain_db: float, fs: float,
+                        freqs_hz: np.ndarray) -> np.ndarray:
+    """20*log10|H(e^{jw})| via sosfreqz -- responseDb's own sign convention
+    (positive gain_db reads as a positive number here, matching
+    BiquadDesign.cpp's own -attenuationDb correction)."""
+    sos = design_peaking_sos(fc, q, gain_db, fs)
+    w = 2.0 * np.pi * np.asarray(freqs_hz, dtype=float) / fs
+    _, h = signal.sosfreqz(sos, worN=w)
+    return 20.0 * np.log10(np.maximum(np.abs(h), 1e-300))
+
+
+def solve_gains_numpy(specs: list[tuple[float, float]], hz: np.ndarray, residual_db: np.ndarray,
+                      coherence: np.ndarray, trusted: np.ndarray, excluded: np.ndarray,
+                      fs: float, g_cap_db: float) -> tuple[np.ndarray, float]:
+    """numpy.linalg.solve(S^T W S + lambda*I, S^T W r) -- EqGainSolve.cpp's
+    own steps (record Sec.3), specs as (fc, q) peaking pairs, gain fixed at
+    1 dB for the linearised column (EQ-R5). Returns (gains, cond) with cond
+    the 2-norm condition number numpy.linalg.cond reports for the SAME
+    regularised matrix the C++ side factorises."""
+    hz = np.asarray(hz, dtype=float)
+    r = np.asarray(residual_db, dtype=float)
+    coh = np.asarray(coherence, dtype=float)
+    trusted = np.asarray(trusted, dtype=bool)
+    excluded = np.asarray(excluded, dtype=bool)
+
+    weight = np.zeros_like(hz)
+    active = trusted & (~excluded) & (hz > 0)
+    weight[active] = coh[active] / hz[active]
+
+    n = len(specs)
+    s_matrix = np.zeros((len(hz), n))
+    for i, (fc, q) in enumerate(specs):
+        s_matrix[:, i] = peaking_response_db(fc, q, 1.0, fs, hz)
+
+    a_matrix = (s_matrix * weight[:, None]).T @ s_matrix
+    rhs = (s_matrix * weight[:, None]).T @ r
+
+    min_diag = float(np.min(np.diag(a_matrix)))
+    lam = 0.1 * min_diag / (g_cap_db - 0.1)
+    a_reg = a_matrix + lam * np.eye(n)
+
+    gains = np.linalg.solve(a_reg, rhs)
+    cond = float(np.linalg.cond(a_reg))
+    return gains, cond

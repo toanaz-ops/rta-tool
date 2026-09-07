@@ -43,6 +43,7 @@ add_executable(rta_core_tests
     test_biquad_design.cpp
     test_excess_phase.cpp
     test_dip_classifier.cpp
+    test_eq_allocator.cpp
     test_butterworth.cpp
     test_filterbank.cpp
     test_weighting.cpp

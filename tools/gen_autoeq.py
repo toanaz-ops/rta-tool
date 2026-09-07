@@ -88,6 +88,52 @@ def build(out_path: pathlib.Path) -> str:
         print("  WARNING: chosen factor does not exceed FIR's 8x -- the caveat this task "
               "exists to test would be REFUTED, not proven", file=sys.stderr)
 
+    # Section 2 (Task C): the ridge gain solve, C1's golden -- numpy.linalg.solve
+    # as a second author (record Sec.9.7), Shape B, cond written in.
+    lines.append("# Section 2 (Task C): the ridge gain solve. Fixed (fc, Q) peaking triplet,")
+    lines.append("# a synthetic residual with no special structure (this case is testing the")
+    lines.append("# LINEAR ALGEBRA, not a physical fixture), M=513 linear bins DC..24 kHz.")
+    lines.append("# kept in sync by hand with core/tests/test_eq_allocator.cpp's own")
+    lines.append("# gainSolveC1Fixture(), the fir_golden.cpp convention.")
+    lines.append("")
+
+    fs_c1 = 48000.0
+    m_c1 = 513
+    # core/include/rta/eq/EqGainSolve.h's EqInput carries hz/residualDb/
+    # coherence as std::span<const float> -- the C++ side sees these values
+    # AFTER float32 narrowing, so the golden must be built from the SAME
+    # narrowed values (memory/float32-fft-precision.md's convention,
+    # Golden.h's own comment: "the generator writes float32 inputs widened
+    # to float64, which is exact"), not the wider float64 values the naive
+    # numpy expressions below would otherwise produce.
+    hz_c1 = (np.arange(m_c1) * 24000.0 / (m_c1 - 1)).astype(np.float32).astype(np.float64)
+    residual_c1 = (2.0 * np.sin(2.0 * np.pi * np.arange(m_c1) / 97.0) -
+                   1.3 * np.cos(2.0 * np.pi * np.arange(m_c1) / 53.0)).astype(np.float32).astype(np.float64)
+    coherence_c1 = np.full(m_c1, 0.92, dtype=np.float32).astype(np.float64)
+    trusted_c1 = np.ones(m_c1, dtype=int)
+    excluded_c1 = np.zeros(m_c1, dtype=int)
+    specs_c1 = [(200.0, 1.0), (1000.0, 1.2), (5000.0, 0.8)]
+    g_cap_db_c1 = 6.0
+
+    gains_c1, cond_c1 = algo.solve_gains_numpy(specs_c1, hz_c1, residual_c1, coherence_c1,
+                                               trusted_c1, excluded_c1, fs_c1, g_cap_db_c1)
+    print(f"  C1 gain solve: gains={gains_c1}, cond={cond_c1:.6e}")
+
+    lines.append("case eq_gain_solve_c1")
+    lines.append(f"sample_rate {fs_c1}")
+    lines.append(f"g_cap_db {g_cap_db_c1}")
+    lines.append("fc_hz " + " ".join(repr(fc) for fc, _ in specs_c1))
+    lines.append("q " + " ".join(repr(q) for _, q in specs_c1))
+    lines.append("hz " + algo.fmt(hz_c1))
+    lines.append("residual_db " + algo.fmt(residual_c1))
+    lines.append("coherence " + algo.fmt(coherence_c1))
+    lines.append("trusted " + " ".join(str(int(v)) for v in trusted_c1))
+    lines.append("excluded " + " ".join(str(int(v)) for v in excluded_c1))
+    lines.append("gains_db " + algo.fmt(gains_c1))
+    lines.append(f"cond {cond_c1}")
+    lines.append("end")
+    lines.append("")
+
     text = NEWLINE.join(lines) + NEWLINE
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text, encoding="utf-8")
