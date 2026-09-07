@@ -16,6 +16,7 @@ add_library(rta_core STATIC
     src/dsp/DelayFinder.cpp
     src/dsp/DelayPolicy.cpp
     src/dsp/DualFftEngine.cpp
+    src/dsp/ExcessPhase.cpp
     src/dsp/Fft.cpp
     src/dsp/FilterBank.cpp
     src/dsp/FirDesign.cpp
