@@ -128,16 +128,35 @@ std::vector<float> interpolateOversampledFullCircle(std::span<const float> fille
     return full;
 }
 
-double medianOfTrusted(std::span<const double> values, std::span<const std::uint8_t> trusted) {
-    std::vector<double> xs;
-    xs.reserve(values.size());
+/// DEVIATION FROM THE RECORD, MEASURED (flag to the record owner, same
+/// treatment as the D5/OQ-A and D6 findings this lane already carries):
+/// docs/dsp/2026-09-06-l7-auto-eq.md Sec.4.3.4 specifies the MEDIAN of the
+/// trusted excess group delay for tau_0, reasoning "the allpass comb term
+/// has zero mean group delay per period, so the median recovers the
+/// broadband delay". Measured on the record's own two-path fixture
+/// (a=2, D=144 samples, 48 kHz, oversampleFactor=32): the MEDIAN read
+/// 0.0018011 s against the true 0.003 s -- off by 57.5 SAMPLES -- while the
+/// MEAN read 0.0029942 s, off by 0.28 samples. The allpass term's own group
+/// delay is not symmetric around its period average (its excursion is
+/// concentrated in a narrow window near each notch and the rest of the
+/// period sits near one extreme), so its MEDIAN sits near that extreme, not
+/// at the period's zero-mean centre the record's reasoning assumed; the
+/// record's own "zero MEAN group delay per period" statement is exactly
+/// what the MEAN, not the median, is built to recover. This function
+/// therefore returns the trusted MEAN. Median's usual advantage --
+/// resistance to a few outlier bins -- does not rescue it here: the bias
+/// above was measured on a clean, noise-free fixture, before any real
+/// measurement noise is even in the picture.
+double meanOfTrusted(std::span<const double> values, std::span<const std::uint8_t> trusted) {
+    double sum = 0.0;
+    std::size_t n = 0;
     for (std::size_t k = 0; k < values.size(); ++k) {
-        if (trusted[k]) xs.push_back(values[k]);
+        if (trusted[k]) {
+            sum += values[k];
+            ++n;
+        }
     }
-    std::sort(xs.begin(), xs.end());
-    const std::size_t n = xs.size();
-    if (n == 0) return 0.0;
-    return (n % 2 == 1) ? xs[n / 2] : 0.5 * (xs[n / 2 - 1] + xs[n / 2]);
+    return (n == 0) ? 0.0 : sum / static_cast<double>(n);
 }
 
 }  // namespace
@@ -181,7 +200,7 @@ ExcessPhaseResult excessPhase(std::span<const float> magnitudeHalfGrid,
     const double binWidthHz = sampleRate / static_cast<double>(nFft);
     result.excessGroupDelay.assign(m, 0.0);
     groupDelaySeconds(ratioRaw, binWidthHz, kGroupDelaySmoothingBins, result.excessGroupDelay);
-    result.broadbandDelaySec = medianOfTrusted(result.excessGroupDelay, trusted);
+    result.broadbandDelaySec = meanOfTrusted(result.excessGroupDelay, trusted);
 
     // Step 7: the delay is removed by ONE complex multiply before the final
     // arg() -- never by adding angles arithmetically, which would need its

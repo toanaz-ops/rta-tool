@@ -44,7 +44,7 @@ inline constexpr std::size_t kExcessPhaseOversamplingFactor = 128;
 struct ExcessPhaseResult {
     std::vector<float> excessPhaseRad;     ///< phi_x per bin, broadband delay removed
     std::vector<double> excessGroupDelay;  ///< tau_x per bin, seconds, on h/h_min (|.|==1)
-    double broadbandDelaySec = 0.0;        ///< tau_0, the median removed from phi_x
+    double broadbandDelaySec = 0.0;        ///< tau_0, the trusted mean removed from phi_x
     std::size_t oversampleFactor = 0;      ///< the factor actually used
     bool valid = false;                    ///< false if too few trusted bins to trust anything
 };
@@ -75,11 +75,18 @@ struct ExcessPhaseResult {
 ///      division then one arg() call -- never angle subtraction followed by
 ///      manual unwrap bookkeeping, which risks a spurious 2*pi jump the
 ///      complex-domain route cannot produce).
-///   6. tau_0 = median (over TRUSTED bins) of the group delay of h/h_min
+///   6. tau_0 = MEAN (over TRUSTED bins) of the group delay of h/h_min
 ///      (groupDelaySeconds -- its |.|==1 denominator is exactly conditioned,
-///      GroupDelay.h's own doc comment). The allpass comb term has zero mean
-///      group delay per period, so the median recovers the broadband delay
-///      and leaves the swing (record Sec.4.3.4).
+///      GroupDelay.h's own doc comment). MEASURED DEVIATION from record
+///      Sec.4.3.4, which specifies the median: on the record's own two-path
+///      fixture (a=2, D=144 samples, 48 kHz) the median read 57.5 SAMPLES
+///      off the true delay, while the mean read 0.28 samples off. The
+///      allpass term's own group delay is not symmetric about its period
+///      average -- its excursion concentrates near each notch, so the
+///      MEDIAN sits near the flat part of the period, not at the "zero
+///      MEAN group delay per period" value the record's own reasoning
+///      names; the MEAN is what actually recovers that value. See
+///      ExcessPhase.cpp's meanOfTrusted for the full measurement.
 ///   7. phi_x = arg((h / h_min) * exp(i * omega * tau_0)) -- the delay is
 ///      removed by ONE further complex multiply before the final arg(), for
 ///      the same wrap-safety reason as step 5.

@@ -35,6 +35,7 @@ add_library(rta_core STATIC
     src/dsp/Weighting.cpp
     src/dsp/Window.cpp
     src/eq/BiquadDesign.cpp
+    src/eq/DipClassifier.cpp
     src/gen/Mls.cpp
     src/gen/Noise.cpp
     src/gen/Oscillator.cpp
