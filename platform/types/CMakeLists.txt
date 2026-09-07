@@ -12,6 +12,10 @@
 
 add_library(rta_platform_types STATIC
     src/CaptureBus.cpp
+    # OutputEngine.cpp: lane L7-OUT's lock-free generator output path (record
+    # docs/dsp/2026-09-06-l7-output-path.md sec.6) -- JUCE-free like the rest
+    # of this target, so it is provable with no device (plan task B).
+    src/OutputEngine.cpp
 )
 
 add_library(rta::platform_types ALIAS rta_platform_types)

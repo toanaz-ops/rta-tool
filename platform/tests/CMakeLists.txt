@@ -6,6 +6,10 @@
 add_executable(rta_platform_tests
     test_channel_config.cpp
     test_capture_bus.cpp
+    # test_output_engine.cpp: lane L7-OUT task B (record docs/dsp/
+    # 2026-09-06-l7-output-path.md sec.6, sec.10) -- the lock-free generator
+    # output path, JUCE-free like the rest of this target.
+    test_output_engine.cpp
 )
 
 target_link_libraries(rta_platform_tests PRIVATE
