@@ -108,6 +108,30 @@ inline void validateSpans(std::span<const float> reference, std::span<const floa
     return peak;
 }
 
+/// The single global best peak over the FULL representable range, no window,
+/// no amplitude floor -- a plain single-pass argmax (ties broken to the
+/// lowest index, matching a `a > best` scan starting at index 0), refined.
+/// Allocation-free: no vector, no scratch beyond the return value. This is
+/// the path `findDelayPhat` and `ResidualDelayTracker::update` both take --
+/// the tracker's no-allocation contract (record sec.11) is why this exists
+/// as a separate function from `pickPeaks` rather than that function's
+/// K=1 case: `pickPeaks` allocates its candidate pool by design (it ranks
+/// up to K), which a per-publish tracker call must never do.
+[[nodiscard]] inline SpectralPeak pickBestPeak(std::span<const float> correlation,
+                                                std::size_t m) noexcept {
+    if (m == 0) return SpectralPeak{};
+    std::size_t bestIndex = 0;
+    double bestAbs = std::abs(static_cast<double>(correlation[0]));
+    for (std::size_t i = 1; i < m; ++i) {
+        const double a = std::abs(static_cast<double>(correlation[i]));
+        if (a > bestAbs) {
+            bestAbs = a;
+            bestIndex = i;
+        }
+    }
+    return refine(correlation, bestIndex, m);
+}
+
 /// Up to `maxCandidates` distinct candidates inside `[minLag, maxLag]`,
 /// ranked by |height| descending (ties keep ascending-index order, via
 /// std::stable_sort -- the same tie-break a single-pass `a > best` argmax

@@ -13,6 +13,7 @@ add_executable(rta_core_tests
     test_delay_finder.cpp
     test_delay_policy.cpp
     test_delay_policy_trust.cpp
+    test_residual_tracker.cpp
     test_dualfft.cpp
     test_transfer_estimator.cpp
     test_transfer_golden.cpp

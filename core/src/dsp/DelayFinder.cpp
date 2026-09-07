@@ -3,8 +3,6 @@
 
 #include "PhatCorrelation.h"
 
-#include <limits>
-
 namespace rta::dsp {
 
 // Re-expressed on the shared spectral half (DEL-R1,
@@ -14,13 +12,11 @@ namespace rta::dsp {
 // (ResidualTracker.cpp). This function's signature, its arithmetic and its
 // nine fixtures (test_delay_finder.cpp) are the refactor lock: a single best
 // pick over the FULL linear range with no amplitude floor -- detail::
-// pickPeaks(..., maxCandidates=1) with an unrestricted window and the same
-// tie-break (stable sort keeps the lowest index) as the original single-pass
-// `a > peakAbs` argmax, so this reproduces the pre-refactor output
-// bit-for-bit, including the silence case (an all-zero correlation yields no
-// candidate above nothing, and `peaks.empty()` leaves `result` at its
-// default-constructed {0, 0.0, 0.0, false} -- exactly what the original loop
-// computed for that input too).
+// pickBestPeak is the exact single-pass `a > bestAbs` argmax the original
+// code ran inline, moved verbatim, so this reproduces the pre-refactor
+// output bit-for-bit, including the silence case (an all-zero correlation
+// still has SOME index 0, and that is what both the old loop and this one
+// report).
 DelayEstimate findDelayPhat(std::span<const float> reference, std::span<const float> measurement,
                              const PhatOptions& options) {
     detail::validateSpans(reference, measurement, options.minHz, options.maxHz);
@@ -29,17 +25,13 @@ DelayEstimate findDelayPhat(std::span<const float> reference, std::span<const fl
                                                        options.regularisation, options.minHz,
                                                        options.maxHz);
 
-    const auto peaks = detail::pickPeaks(phat.correlation, phat.m,
-                                          std::numeric_limits<std::ptrdiff_t>::min(),
-                                          std::numeric_limits<std::ptrdiff_t>::max(), 1);
+    const auto peak = detail::pickBestPeak(phat.correlation, phat.m);
 
     DelayEstimate result;
-    if (!peaks.empty()) {
-        result.delaySamples = peaks.front().lag;
-        result.subSample = peaks.front().subSample;
-        result.peak = std::abs(peaks.front().height);
-        result.inverted = peaks.front().height < 0.0;
-    }
+    result.delaySamples = peak.lag;
+    result.subSample = peak.subSample;
+    result.peak = std::abs(peak.height);
+    result.inverted = peak.height < 0.0;
     return result;
 }
 

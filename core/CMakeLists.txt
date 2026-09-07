@@ -26,6 +26,7 @@ add_library(rta_core STATIC
     src/dsp/OctaveBands.cpp
     src/dsp/OverloadDetector.cpp
     src/dsp/RealFft.cpp
+    src/dsp/ResidualTracker.cpp
     src/dsp/SpatialAverage.cpp
     src/dsp/SpatialMtw.cpp
     src/dsp/SpectrumEngine.cpp
