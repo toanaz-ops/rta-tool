@@ -54,6 +54,13 @@ add_executable(rtatool_analysis_tests
     # of it (syncAverageGroupMembership/publishAverageGroup), exercised with
     # real Analysers and no bus/thread in the path.
     test_analysis_publish.cpp
+    # test_atomic_shared_ptr.cpp: the publish primitive itself
+    # (measure/AtomicSharedPtr.h), header-only and JUCE-free. Two
+    # implementations hide behind one interface and only one is compiled per
+    # toolchain, so it is tested HERE -- in the RTA_BUILD_APP=OFF target CI
+    # runs on all three operating systems -- rather than anywhere that only
+    # builds with the app.
+    test_atomic_shared_ptr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md) -- Analyser.cpp calls
@@ -100,6 +107,78 @@ target_link_libraries(rtatool_analysis_tests PRIVATE
 # exactly that reason.
 catch_discover_tests(rtatool_analysis_tests)
 
+# --- Which AtomicSharedPtr branch did this toolchain take? -----------------
+# AtomicSharedPtr.h compiles one of two implementations and only one runs on a
+# given machine, so "the tests pass" is silent about WHICH one was exercised.
+# It has to be said somewhere a CI log actually shows.
+#
+# Not from inside a test: CI runs `ctest --output-on-failure`, which prints
+# nothing at all for a passing test, so a WARN or a std::cout in the binary
+# reaches no log unless something has already gone wrong. The Configure step
+# is the channel that is always printed, on every runner, in full.
+#
+# The header answers for itself rather than CMake re-deriving the rule -- the
+# probe #includes it and static_asserts on RTA_ATOMIC_SHARED_PTR_IS_STD. Both
+# directions are probed and cross-checked, so a probe that fails to build for
+# some unrelated reason reports "undetermined" instead of quietly claiming the
+# fallback.
+include(CheckCXXSourceCompiles)
+
+# A function, NOT block(). block() is CMake 3.25 and the root project declares
+# a 3.22 floor, so it would have been a configure error on a 3.22..3.24 CMake
+# -- caught in review, not by any runner here, because every machine and every
+# GitHub image in play is newer. A function gets the same variable scoping on
+# 3.22, and the floor stays where the rest of the project put it.
+function(rta_report_atomic_shared_ptr_branch)
+    set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+    set(CMAKE_REQUIRED_QUIET TRUE)
+    if(RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
+        set(CMAKE_REQUIRED_DEFINITIONS -DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
+    endif()
+
+    # check_cxx_source_compiles memoises its answer in an INTERNAL cache
+    # variable and will not re-run while that variable exists -- and it does
+    # NOT invalidate it when CMAKE_REQUIRED_DEFINITIONS changes. So flipping
+    # RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK in an EXISTING build directory used
+    # to leave both probes at their first answers: the configure log printed
+    # "forcing the fallback" and "C++20 specialisation" in the same run while
+    # the binary being built was the fallback. A status line that can contradict
+    # itself is worse than no status line, since it is the one thing a reader
+    # has no way to double-check.
+    #
+    # Dropped from the cache before every probe, rather than keyed on the
+    # option's value. Keying on the option would fix the flip and nothing else:
+    # the answer also depends on the compiler and the standard library, so an
+    # Xcode or GCC upgrade under an existing build dir would go on reporting
+    # the old toolchain's answer. Two trivial try_compiles per configure is the
+    # right price for a line that is always about THIS configure.
+    unset(RTA_ASP_PROBE_SAYS_STD CACHE)
+    unset(RTA_ASP_PROBE_SAYS_FALLBACK CACHE)
+
+    check_cxx_source_compiles("
+        #include \"measure/AtomicSharedPtr.h\"
+        static_assert(RTA_ATOMIC_SHARED_PTR_IS_STD == 1);
+        int main() { return 0; }"
+        RTA_ASP_PROBE_SAYS_STD)
+    check_cxx_source_compiles("
+        #include \"measure/AtomicSharedPtr.h\"
+        static_assert(RTA_ATOMIC_SHARED_PTR_IS_STD == 0);
+        int main() { return 0; }"
+        RTA_ASP_PROBE_SAYS_FALLBACK)
+
+    if(RTA_ASP_PROBE_SAYS_STD AND NOT RTA_ASP_PROBE_SAYS_FALLBACK)
+        message(STATUS "AtomicSharedPtr: C++20 std::atomic<shared_ptr> specialisation")
+    elseif(RTA_ASP_PROBE_SAYS_FALLBACK AND NOT RTA_ASP_PROBE_SAYS_STD)
+        message(STATUS "AtomicSharedPtr: std::atomic_* free-function fallback (no P0718 here)")
+    else()
+        message(WARNING
+            "AtomicSharedPtr: branch undetermined -- the probe compiled both ways or "
+            "neither (std=${RTA_ASP_PROBE_SAYS_STD} fallback=${RTA_ASP_PROBE_SAYS_FALLBACK}). "
+            "The wrapper still works; this line just cannot say which half of it runs.")
+    endif()
+endfunction()
+rta_report_atomic_shared_ptr_branch()
+
 # --- Architectural guard ---------------------------------------------------
 # The measurement view model (app/src/measure/{Levels,Snapshot,SnapshotSource,
 # Analyser,SyntheticSnapshot}) and the plot's pure math (PlotGeometry.h) must
@@ -116,6 +195,6 @@ catch_discover_tests(rtatool_analysis_tests)
 # add them here.
 add_test(NAME measure_has_no_framework_deps
     COMMAND ${CMAKE_COMMAND}
-            "-DGLOBS=${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Levels.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Snapshot.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SnapshotSource.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PlotGeometry.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/Readouts.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/Trace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TraceDecimator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceBlobCodec.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionStore.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionStore.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RepaintGate.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/AxisMetrics.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/BodeLayout.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PhaseDecimator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CoherenceAlpha.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PairedDrain.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticImpairment.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/Workspace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PaneRegistry.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/ColumnMap.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodecDetail.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionDecode.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RoutingPlan.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/LevelAlign.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/OutputPolicy.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirExport.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirTextWriter.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RawCaptureBuffer.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.cpp"
+            "-DGLOBS=${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Levels.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Snapshot.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SnapshotSource.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AtomicSharedPtr.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PlotGeometry.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/Readouts.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/Trace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TraceDecimator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceBlobCodec.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionStore.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionStore.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RepaintGate.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/AxisMetrics.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/BodeLayout.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PhaseDecimator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CoherenceAlpha.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PairedDrain.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticImpairment.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/Workspace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PaneRegistry.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/ColumnMap.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodecDetail.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionDecode.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RoutingPlan.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/LevelAlign.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/OutputPolicy.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirExport.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirTextWriter.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RawCaptureBuffer.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.cpp"
             -DLABEL=app_measure
             -P ${CMAKE_SOURCE_DIR}/core/tests/check_no_framework_deps.cmake)

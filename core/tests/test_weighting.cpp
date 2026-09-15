@@ -119,21 +119,58 @@ TEST_CASE("Weighting cascades have the pole/zero structure Annex E implies", "[w
             CAPTURE(fs, toString(type));
             const Weighting w(type, fs);
 
-            // Exact DC and Nyquist rejection. There is no Weighting::response()
-            // returning a complex value (the plan assumed an API that does not
-            // exist) -- what exists is BiquadCascade::attenuationDb, which is
-            // -20*log10|H|, positive = down. A section's numerator vanishes
-            // EXACTLY in floating point at these two frequencies (e.g. the
-            // (1,-2,1) numerator evaluates 1-2+1=0 exactly at omega=0), so
-            // that section's attenuationDb is +inf and the cascade sum is
-            // +inf. This is a STRONGER, exact assertion than the plan's
-            // original WithinAbs(0.0, 1e-12) on |response| would have been.
+            // THE CLAIM: the cascade has a zero at z = +1 (DC) and a zero at
+            // z = -1 (Nyquist). State it where it is exactly true -- on the
+            // COEFFICIENTS. A numerator b0 + b1*z^-1 + b2*z^-2 vanishes at
+            // z = +1 iff b0 + b1 + b2 == 0 and at z = -1 iff b0 - b1 + b2 == 0.
+            // Both sums are exact in binary floating point for this design:
+            // the high-pass sections are literally (1, -2, 1) and the low-pass
+            // ones (b, 2b, b), so each sum cancels to a true zero with no
+            // rounding at all. No transcendental function is involved, so no
+            // toolchain can disagree.
+            bool zeroAtDc = false, zeroAtNyquist = false;
+            for (const auto& c : w.cascade().sections()) {
+                if (c.b0 + c.b1 + c.b2 == 0.0) zeroAtDc = true;
+                if (c.b0 - c.b1 + c.b2 == 0.0) zeroAtNyquist = true;
+            }
+            CHECK(zeroAtDc);
+            CHECK(zeroAtNyquist);
+
+            // THE CONSEQUENCE, in the response BiquadCascade actually reports
+            // (-20*log10|H|, positive = down). DC and Nyquist are NOT
+            // symmetric here, and the difference is why this test used to fail
+            // on macOS only:
+            //
+            //  - At omega = 0 the evaluation point is exact. cos(0) == 1.0 and
+            //    sin(0) == 0.0 with no error, so the numerator reduces to the
+            //    exact sum above and |H| is a true zero. +inf is safe to
+            //    assert, on any toolchain.
+            //
+            //  - At Nyquist it is not. `std::numbers::pi` is the double
+            //    NEAREST pi, off by d ~ 1.2246e-16 rad, so this evaluates the
+            //    response 1.2e-16 radians away from Nyquist, where |H| is
+            //    genuinely non-zero. It came out +inf on x86 only because
+            //    sin(pi_double) and sin(2*pi_double) happen to cancel exactly
+            //    under one particular rounding path; contract those two
+            //    products into an FMA -- which clang does by default, and
+            //    which is what arm64 macOS does -- and the residual survives
+            //    as ~1.7e-33 instead of 0. Asserting +inf was asserting a
+            //    property of x86 code generation, not of the filter.
+            //
+            // So bound it instead, with the margin argued rather than
+            // measured. The zero at z = -1 is DOUBLE ((1 + z^-1)^2), so near
+            // Nyquist |N| ~ |b0| * d^2 <= 4 * (1.23e-16)^2 ~ 6e-32: the
+            // attenuation cannot be below about 600 dB. Remove the zero and
+            // the numerator is O(b0) ~ 0.1..4, i.e. an attenuation of TENS of
+            // dB. The two cases are ~600 dB apart, and 200 dB sits in the
+            // empty middle of that gap -- far above any response a real filter
+            // produces, far below what the algebraic zero produces, and not
+            // sensitive to which rounding path a toolchain takes.
             const double dcAtten = w.cascade().attenuationDb(0.0);
             const double nyquistAtten = w.cascade().attenuationDb(std::numbers::pi);
             CHECK(std::isinf(dcAtten));
             CHECK(dcAtten > 0.0);
-            CHECK(std::isinf(nyquistAtten));
-            CHECK(nyquistAtten > 0.0);
+            CHECK(nyquistAtten > 200.0);
 
             // Stability, and the ascending-pole-radius ordering contract.
             double previousRadius = -1.0;

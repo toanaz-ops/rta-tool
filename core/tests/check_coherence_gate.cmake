@@ -1,5 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+# POLICY FLOOR -- required, not decorative. This file runs under `cmake -P`
+# (script mode), which does NOT inherit the root CMakeLists.txt's
+# cmake_minimum_required. Without a floor here the script starts with every
+# policy unset, and CMake's behaviour then depends on the CMake build on the
+# machine: `if(x IN_LIST list)` (CMP0057, introduced in 3.3) is a hard
+# "Unknown arguments specified" error under OLD. That is exactly how CI's
+# ubuntu-latest job went red on 2026-09-06 while windows and macos passed --
+# same script, different CMake, different policy defaults. Keep this line.
+cmake_minimum_required(VERSION 3.22)
+#
 # The coherence gate (docs/dsp/2026-08-28-dual-fft.md §3) is only real if
 # something enforces it. For ONE frame, |X*Y|^2 == |X|^2|Y|^2 identically, so
 # coherence is exactly 1.0 at every frequency and a broken engine looks
