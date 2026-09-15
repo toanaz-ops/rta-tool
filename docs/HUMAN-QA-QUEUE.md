@@ -88,7 +88,7 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
   cặp crossover matched-cutoff: offset hết hằng số (62.9° spread ở bậc 4), đỉnh
   cross-correlation rời khỏi lag 0 sang một lobe ngược dấu, trong khi **giá trị
   tại lag 0 (bậc 4) vẫn dương đúng như identity**. Luật tái hiện được là ρ
-  **un-whitened** của L4a quyết định 6b (`2026-08-30-sweep-ir-l4a.md:1195`) —
+  **un-whitened** của L4a quyết định 6b (`2026-08-30-sweep-ir-l4a.md:1181` — số dòng trên `main`) —
   luật này CHƯA build trong core. Correlator ĐANG ship là PHAT
   (`DelayFinder.cpp:34`) và nó **KHÔNG** tái hiện: trên đúng cặp đó nó đọc ngược
   lại — đúng ở bậc 4, sai ở bậc 8. Hai correlator cãi nhau trên một cặp loa không

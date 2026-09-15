@@ -183,7 +183,7 @@ The identity is exact analog and digital at every order 1–8 (worst deviation
 band-pass boxes** — the sub band-passed below as well as the main band-passed
 above — reproduces the L4a report at all four orders it names (right at 1,
 wrong at 2, wrong at 4, right at 8) **under decision 6b's un-whitened
-`ρ = |peak| / √(E₁E₂)` rule** (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1195`, an
+`ρ = |peak| / √(E₁E₂)` rule** (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1181` on `main`, an
 estimator this repo does not ship — `relativePolarity()` exists in no file),
 while no matched-cutoff pair does at any of them. The offset is no longer
 constant across the overlap (62.9° of spread at order 4 instead of 0°), which

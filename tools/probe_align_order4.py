@@ -327,7 +327,7 @@ def section_xcorr(args):
     print()
     print("  READ THE 'PHAT sign' COLUMN -- it is not decoration. 'peak sign' is")
     print("  the UN-WHITENED rule, which is what L4a decision 6b describes")
-    print("  (rho = |peak| / sqrt(E1*E2), sweep-ir-l4a.md:1195) and what this")
+    print("  (rho = |peak| / sqrt(E1*E2), sweep-ir-l4a.md:1181 on main) and what this")
     print("  repo does NOT ship -- relativePolarity() exists in no file. The")
     print("  correlator this repo DOES ship is PHAT-whitened findDelayPhat")
     print("  (DelayFinder.cpp:34), and on G3/G4 it reads the MIRROR: +1 at order")

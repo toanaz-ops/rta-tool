@@ -43,8 +43,9 @@ the ALIGN record named it as one of the two candidates before this probe ran.
 
 **And the rule matters as much as the fixture.** What reproduces L4a is
 decision 6b's **un-whitened** `ρ = |peak| / √(E₁E₂)` peak sign
-(`docs/dsp/2026-08-30-sweep-ir-l4a.md:1195`) — an estimator this repo does not
-ship; `relativePolarity()` exists in no file. The correlator it *does* ship,
+(`docs/dsp/2026-08-30-sweep-ir-l4a.md:1181` on `main` — see §1 on why line
+numbers into that file are quoted as on `main`) — an estimator this repo does
+not ship; `relativePolarity()` exists in no file. The correlator it *does* ship,
 `findDelayPhat`, is **PHAT-whitened** and on the identical pair reads the mirror
 image: right at order 4, wrong at order 8 (§4). Two correlators, one unchanged
 pair of loudspeakers, opposite polarity verdicts at the two orders this question
@@ -64,10 +65,19 @@ committed polarity probe measures the **absolute** first-arrival sign of a
 other.
 
 **Which rule L4a was applying, stated before anything is attributed to it.**
-L4a decision 6b names it at `docs/dsp/2026-08-30-sweep-ir-l4a.md:1195`: a
+L4a decision 6b names it at `docs/dsp/2026-08-30-sweep-ir-l4a.md:1181`: a
 **normalised, un-whitened** cross-correlation `ρ = |peak| / √(E₁E₂)`, bounded in
-[0, 1] by Cauchy–Schwarz, with the sign read at that peak. **That estimator is
-not built.** `relativePolarity()` does not exist anywhere in `core/` or `app/`
+[0, 1] by Cauchy–Schwarz, with the sign read at that peak.
+
+> **Line numbers into that file are quoted as on `main`, throughout this
+> record.** This PR adds a 24-line attribution note to `sweep-ir-l4a.md` inside
+> decision 6b, so every line below the insertion shifts: the paragraph cited as
+> `:1181` here reads at `:1205` on this branch, and will read at `:1205` on
+> `main` once this merges. Citations at `:1166-1172` and `:1169-1170` sit above
+> the insertion and are the same in both. The durable handle is the phrase —
+> grep `normalised cross-correlation ρ` and no number is needed.
+
+**That estimator is not built.** `relativePolarity()` does not exist anywhere in `core/` or `app/`
 (grepped); ALIGN §8 is the plan that would build it, and until its two-grid pass
 is done it is to return ρ and the sign and no verdict. The only correlator this
 repo ships is `findDelayPhat` — `DelayFinder.cpp:34`, `result.inverted =
@@ -193,7 +203,7 @@ crossover's polarity cannot be read off a magnitude sum at all).
 
 The L4a reading is the sign of the **un-whitened** cross-correlation peak
 between two impulse responses, both driven with the same sign — decision 6b's
-`ρ = |peak| / √(E₁E₂)` (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1195`). A negative
+`ρ = |peak| / √(E₁E₂)` (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1181` on `main`). A negative
 peak is the "wrong sign". Five geometries, orders 1/2/3/4/6/8, 1 s impulse
 responses at 48 kHz.
 
@@ -340,12 +350,15 @@ own text already says the right thing about it, at
 > the parenthetical below — that cross-correlation against a stored trace "is
 > sound at any bandwidth" — is **true only for the same system measured twice**.
 
-The precise attribution, in file:line terms:
+The precise attribution, in file:line terms. **Lines into `sweep-ir-l4a.md` are
+as on `main`** (§1): `:1166-1172` and `:1169-1170` sit above this PR's insertion
+and read the same on either, `:1181` sits below it and reads at `:1205` on this
+branch.
 
 | What | Where |
 |---|---|
 | The claim ("opposite sign at orders 2 and 4") | `docs/dsp/2026-08-30-sweep-ir-l4a.md:1169-1170` |
-| The rule that produces it | `docs/dsp/2026-08-30-sweep-ir-l4a.md:1195` — decision 6b's **un-whitened** `ρ = \|peak\| / √(E₁E₂)` and the sign at that peak. **Not shipped code**: `relativePolarity()` exists nowhere in `core/` or `app/` |
+| The rule that produces it | `docs/dsp/2026-08-30-sweep-ir-l4a.md:1181` **(on `main`)** — decision 6b's **un-whitened** `ρ = \|peak\| / √(E₁E₂)` and the sign at that peak. **Not shipped code**: `relativePolarity()` exists nowhere in `core/` or `app/` |
 | The rule that does NOT produce it | `core/src/dsp/DelayFinder.cpp:34` — `result.inverted = peak.height < 0.0`, off a **PHAT-whitened** cross-spectrum. On the same band-pass pair it reads the identity's sign at order 4 and contradicts it at order 8: the mirror of the L4a pattern (§4) |
 | The box model that reproduces it | `tools/probe_polarity_bandwidth.py:132-152` (`band_sos`, band-pass both sides) |
 | The identity it appears to contradict | `docs/dsp/2026-09-06-l7-alignment-wizard.md` §3 |
@@ -479,7 +492,7 @@ at every order and every frequency, analog and digital, Butterworth and
 Linkwitz-Riley — so §3's table ships unchanged and a row for a new *order* stays
 arithmetic.** The L4a fixture measured the wrong sign at order 4 because it
 applied decision 6b's **un-whitened** correlation-peak-sign rule
-(`ρ = |peak| / √(E₁E₂)`, `docs/dsp/2026-08-30-sweep-ir-l4a.md:1195` — an
+(`ρ = |peak| / √(E₁E₂)`, `docs/dsp/2026-08-30-sweep-ir-l4a.md:1181` on `main` — an
 estimator this repo does not ship) across two systems with different passbands:
 a band-pass sub against a band-pass main spreads the HP−LP offset by 62.9°
 across the overlap instead of holding it constant, which stretches the
