@@ -32,6 +32,9 @@ add_library(rta_core STATIC
     src/dsp/SpatialMtw.cpp
     src/dsp/SpectrumEngine.cpp
     src/dsp/TransferEstimator.cpp
+    # VirtualProcessor.cpp: lane L7-ALIGN task A -- the five G11 ops (record
+    # docs/dsp/2026-09-06-l7-alignment-wizard.md Sec.5).
+    src/dsp/VirtualProcessor.cpp
     src/dsp/Weighting.cpp
     src/dsp/Window.cpp
     src/eq/BiquadDesign.cpp
