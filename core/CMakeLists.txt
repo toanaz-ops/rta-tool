@@ -54,6 +54,7 @@ add_library(rta_core STATIC
     src/ir/DecayLundeby.cpp
     src/ir/IrSpectrum.cpp
     src/ir/Polarity.cpp
+    src/ir/RelativePolarity.cpp
     src/meter/Detector.cpp
     src/meter/Leq.cpp
 )

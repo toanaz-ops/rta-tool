@@ -64,13 +64,19 @@ add_executable(rta_core_tests
     test_ir_golden.cpp
     test_ir_decay.cpp
     test_ir_polarity.cpp
+    test_relative_polarity.cpp
+    test_relative_polarity_guard.cpp
     test_ir_spectrum.cpp
 )
 
 # Golden vectors are committed, so the C++ suite needs neither Python nor
 # NumPy. Regenerate them with tools/gen_golden.py and review the diff.
 target_compile_definitions(rta_core_tests PRIVATE
-    RTA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
+    RTA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+    # RTA_REPO_ROOT: L7-ALIGN task E6 scans a header from the test itself, so
+    # "relativePolarity ships no verdict" runs in CI on all three operating
+    # systems instead of living in a grep somebody has to remember to type.
+    RTA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 target_include_directories(rta_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(rta_core_tests PRIVATE rta::core Catch2::Catch2WithMain)
