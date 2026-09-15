@@ -1,4 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# POLICY FLOOR -- required, not decorative. This file runs under `cmake -P`
+# (script mode), which does NOT inherit the root CMakeLists.txt's
+# cmake_minimum_required. Without a floor here the script starts with every
+# policy unset, and CMake's behaviour then depends on the CMake build on the
+# machine: `if(x IN_LIST list)` (CMP0057, introduced in 3.3) is a hard
+# "Unknown arguments specified" error under OLD. That is exactly how CI's
+# ubuntu-latest job went red on 2026-09-06 while windows and macos passed --
+# same script, different CMake, different policy defaults. Keep this line.
+cmake_minimum_required(VERSION 3.22)
 # Fails if any translation unit pulls in a GUI or audio-device framework.
 # Keeping a layer free of them is what makes it testable offline. Shared
 # between rta_core (the default), rta_platform_types, and the JUCE-free half

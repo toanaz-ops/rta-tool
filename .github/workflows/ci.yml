@@ -20,8 +20,22 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRTA_BUILD_TESTS=ON -DRTA_BUILD_APP=OFF
 
+      # `--parallel` with NO number does not mean "one job per core" -- it
+      # means "the native tool's default", and for Makefiles that default is
+      # `make -j` with no argument, i.e. UNLIMITED. On ubuntu-latest that
+      # forks a compiler per ready translation unit, the runner runs out of
+      # memory, and the kernel starts killing them: every gmake line reads
+      # "Terminated" and the step exits 143 (SIGTERM) with no compiler error
+      # anywhere in the log. That is what happened on run 34972953923; it
+      # looks like a build failure and is a resource failure.
+      #
+      # 4 matches the vCPU count of all three standard runners, so the cap is
+      # a cap and not a slowdown. Windows and macOS were never affected (MSBuild
+      # and Ninja pick a bounded default), but pinning it everywhere keeps the
+      # three jobs comparable and keeps the next generator change from
+      # re-opening this.
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel 4
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure

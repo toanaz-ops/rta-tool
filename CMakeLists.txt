@@ -20,6 +20,32 @@ option(RTA_BUILD_TESTS "Build rta_core unit tests" ON)
 option(RTA_BUILD_APP   "Build the JUCE application shell" OFF)
 option(RTA_ENABLE_ASIO "Enable ASIO support (Windows only)" OFF)
 
+# app/src/measure/AtomicSharedPtr.h has two implementations and compiles the
+# one this standard library supports. The fallback is the branch ONLY Apple
+# libc++ takes, which makes it the branch nobody developing on Windows or
+# Linux can break and notice. Turning this on compiles it anywhere:
+#
+#   cmake -S . -B build-fallback -DRTA_BUILD_APP=OFF \
+#         -DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON
+#   cmake --build build-fallback --config Release --parallel 4
+#   ctest --test-dir build-fallback -C Release --output-on-failure
+#
+# Never turn it on for a shipping build: it opts into functions the standard
+# removes in C++26 and buys nothing where the specialisation exists.
+option(RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK
+       "Compile AtomicSharedPtr's libc++ fallback even where std::atomic<shared_ptr> exists" OFF)
+
+if(RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
+    # GLOBAL, not per target, and that is the whole point. The macro changes
+    # AtomicSharedPtr's member TYPE, so it changes the layout of every class
+    # that holds one (Analyser, AnalysisThread). Defined in some translation
+    # units and not others it is an ODR violation that links without a murmur
+    # and misbehaves at run time -- far worse than the portability bug it
+    # exists to test for. All targets or none.
+    add_compile_definitions(RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
+    message(STATUS "AtomicSharedPtr: forcing the std::atomic_* free-function fallback")
+endif()
+
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8)
 else()
