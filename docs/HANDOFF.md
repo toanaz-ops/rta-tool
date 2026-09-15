@@ -5,6 +5,345 @@
 
 ---
 
+# 2026-09-15 — **L7-EQ Task E/F/G XONG + precision fix — nhánh `l7/eq-app-session-verify`**
+
+**Đọc mục này trước tiên.** Việc-đầu-tiên mà mục "Wave 2 (2026-09-07)" giao cho
+phiên sau đã xong: EQ Task E (`EqSession`), Task F (`EqVerify`), Task G (guard),
+cộng khoản nợ CONCERN precision của EQ closeout. Ba commit + một commit docs,
+**chưa merge, chưa push** lúc viết mục này.
+
+## Baseline đo được (dán từ lệnh, đừng chép số cũ)
+
+Đo trên **cây chưa sửa** `23b7ea0` TRƯỚC khi gõ dòng code đầu tiên, rồi đo lại
+trên tip nhánh. Generator Visual Studio 18 2026, MSVC 14.51, JUCE qua
+`RTA_JUCE_PATH`. `build-eq-off` (OFF) và `build-eq-app` (ON):
+
+```
+TRƯỚC (23b7ea0):  ctest OFF -> 551/551, 0 failed     ctest ON -> 619/619, 0 failed
+SAU  (tip nhánh):  ctest OFF -> 564/564, 0 failed     ctest ON -> 632/632, 0 failed
+warning C trong cả bốn build log -> 0
+```
+
+**+13 Ở CẢ HAI CONFIG, không phải chỉ ON.** Đây là điều plan nói sai và phiên sau
+cần biết: `app/tests` được `add_subdirectory` **NGOÀI** guard `RTA_BUILD_APP`
+(root `CMakeLists.txt`, có chú thích lý do), nên `rtatool_analysis_tests` biên dịch
+trong CẢ HAI config. Task E/F là JUCE-free nên chúng nâng cả OFF lẫn ON. Plan
+Task E/F ghi "ON `base_on + N_E`" — đúng phần ON, thiếu phần OFF. ON baseline 619
+cũng **không** phải 597 của HANDOFF cũ (597 là mốc trước EQ core).
+
+## Ba điều load-bearing của mục "Wave 2" — chỗ nào trong code tôn trọng chúng
+
+1. **Sign convention.** `EqSession::workingResidualDb`
+   (`app/src/measure/EqSession.cpp:53-65`) trả **`m - t + Σ R_i`** THÔ: không
+   offset, không negate. Auto-offset `c` và phép negate là việc của
+   `EqAllocator` (`core/src/eq/EqAllocator.cpp:203` `negated()`, `:32` `autoOffset()` gọi ở `:213`/`:238`
+   ); làm thêm ở tầng app là làm hai lần và lật dấu. Doc comment ở
+   `EqSession.h:119-126` nói đúng câu đó cho người sửa sau. Test canh:
+   "Auto EQ leaves the ghost closer to target than the measurement" — dấu lật
+   thì `after < before` đỏ ngay.
+2. **mean-not-median + `EqInput::hHalfGrid`.** `EqSession` mang `hHalfGrid_` và
+   nạp vào `EqInput::hHalfGrid` (`EqSession.cpp:92`), **được phép rỗng** —
+   fallback đã ghi trong `EqGainSolve.h` (không có G24 gate, không phải "cứ cho
+   là Boostable"). Test session dùng span rỗng có chủ ý: G24 gate đã có test
+   riêng trong core, đưa vào đây chỉ làm fixture nặng mà không thêm bằng chứng.
+   Không đụng gì tới `excessPhase`, nên deviation mean-not-median vẫn nguyên.
+3. **Shelves CHƯA đặt.** `EqSession` không tự tạo shelf; mọi `FilterSpec` đến từ
+   `EqAllocator` (peaking-only pass này). `EqTextExport` ĐỌC/GHI được cả ba type
+   (`lowshelf`/`highshelf`/`peaking`) vì một file text nhập tay có thể chứa
+   chúng — nhưng **không có đường nào trong app tự sinh shelf**, nên clamp
+   `(Q,gainDb)` trước `designBiquad` (EQ-R5/D6, `c61b5dc` throw
+   `std::invalid_argument`) **vẫn CHƯA thực thi** và vẫn là việc của người thêm
+   shelf. `filterBandHz` cho shelf trả về nửa dải bên phía shelf (`0..fc` hoặc
+   `fc..inf`), KHÔNG dùng công thức bandwidth của peaking — Q của shelf là độ
+   dốc, không phải bề rộng.
+
+## Đã hạ cánh
+
+- `1a5df1a` Task E — `app/src/measure/EqTrustMask.h` (`kEqTrustFloor = 0.7`,
+  EQ-R2; coherence vắng mặt ⇒ **toàn bộ untrusted**, không phải pass),
+  `EqSession.{h,cpp}` (committed set + `applied` mark + exclusion mask + Auto EQ
+  + Suggest accept/decline/re-rank + ghost dB-add chính xác),
+  `app/src/export/EqTextExport.h` (header-only render/parse; whole Hz, Q 2dp,
+  dB 1dp — độ chính xác GHI chính là độ chính xác round-trip).
+- `976f0e3` Task F — `EqVerify.{h,cpp}`: `h1SigmaDb` (Bendat & Piersol H1, số
+  hiệu phương trình vẫn UNVERIFIED y như L6b §1 mang nó), `compareToPrediction`
+  (cờ chỉ bật khi vượt **CẢ** corridor **VÀ** `3σ`; bin untrusted không bao giờ
+  bị cờ), và state machine chạy `OutputEngine` THẬT theo đúng thứ tự §6.
+- `c8e1769` precision fix (dưới).
+
+## Precision fix: 64× do TAIL-ENERGY, không phải swing
+
+Đo lại bằng chính pure functions của `tools/gen_autoeq_algo.py` (không gọi CLI
+driver — `memory/a-gen-script-runs-the-moment-you-invoke-it.md`). F nhỏ nhất mà
+TỪNG tiêu chí RIÊNG hội tụ:
+
+| a | D | swing-only | tail-only | both |
+|---|---|---|---|---|
+| 1.25 | 37 | 1 | 4 | 4 |
+| 1.25 | 144 | 4 | 16 | 16 |
+| 1.25 | 511 | 8 | **64** | **64** |
+| 2.0 | 37 | 1 | 2 | 2 |
+| 2.0 | 144 | 1 | 4 | 4 |
+| 2.0 | 511 | 4 | 16 | 16 |
+| 4.0 | 37 | 1 | 1 | 1 |
+| 4.0 | 144 | 1 | 2 | 2 |
+| 4.0 | 511 | 2 | 8 | 8 |
+| **worst** | | **8** | **64** | **64** |
+
+Cột "both" trùng từng dòng với output của `gen_autoeq.py --check`, nên đây là
+đọc lại sweep đã ship chứ không phải mô hình thứ hai. **128× GIỮ NGUYÊN** —
+tail-energy CHÍNH LÀ aliasing, và aliasing phá kernel bất kể swing đã nhận ra
+hay chưa. Sửa ở ba nơi: docstring `gen_autoeq_algo.py`, amendment §4.3 trong
+`docs/dsp/2026-09-06-l7-auto-eq.md` (record vốn KHÔNG có đoạn nào về
+oversampling — nó viết ở trạm 2, trước khi Task A đo, nên đây là THÊM chứ không
+phải sửa), và comment hằng số `core/include/rta/dsp/ExcessPhase.h`.
+**`core/` chỉ đổi một comment** — không đổi giá trị, chữ ký hay hành vi:
+`git diff --stat main -- core/` ra đúng một file, 8+/1-, toàn comment.
+Golden `core/tests/golden/autoeq.txt` KHÔNG regenerate; `--check` sau đó báo
+"byte-identical to a fresh regeneration", SHA-256 `2D791B81…2FD3C4DA` trước và
+sau bằng nhau.
+
+## Guard đã làm ĐỎ rồi XANH (Task G, cả hai config)
+
+| guard | scanned | đỏ bằng gì |
+|---|---|---|
+| `core_has_no_framework_deps` | 142 (không đổi — E/F không thêm file core) | `#include <juce_core/juce_core.h>` vào `ExcessPhase.h` → FAILED, nêu đúng tên file (đỏ ở CẢ OFF và ON) |
+| `measure_has_no_framework_deps` | 48 → **54** | JUCE include vào `EqSession.h` (OFF) và `EqVerify.h` (ON) → FAILED, nêu đúng tên file |
+| `filter_design_has_no_polynomial_form` | 165 | thêm một dòng chứa `signal.lfilter` vào `gen_autoeq_algo.py` → FAILED ở cả hai config |
+
+Mỗi lần revert xong `git diff --stat <file>` ra RỖNG rồi mới chạy lại xanh.
+`coherence_gate_is_not_bypassed` (89), `platform_types` (8),
+`output_render_has_no_rt_hazards`, `audioio_scoped_no_denormals_is_first`,
+`audioio_callback_has_no_rt_hazards` đều xanh, không đụng tới.
+
+Wave 0 kernel: `git diff --stat main -- core/include/rta/dsp/MinimumPhase.h
+core/src/dsp/MinimumPhase.cpp core/include/rta/eq/BiquadDesign.h
+core/src/eq/BiquadDesign.cpp` → **RỖNG** (EQ-R5, tái dùng verbatim).
+
+Độ dài file mới (cap cứng 400): EqSession.h 143, EqSession.cpp 146,
+EqTrustMask.h 54, EqVerify.h 124, EqVerify.cpp 134, EqTextExport.h 84,
+test_eq_session.cpp 286, test_eq_verify.cpp 198.
+
+## Bẫy phiên này trả học phí
+
+- **Một build nền đọc cây ĐANG SỬA.** Baseline ON chạy nền trong khi phiên chính
+  sửa `app/tests/CMakeLists.txt`; generator Visual Studio có `ZERO_CHECK` nên
+  `cmake --build` TỰ chạy lại configure khi CMakeLists đổi timestamp — build
+  "baseline" nuốt luôn file test mới và chết ở link. Số nó cho ra là vô nghĩa.
+  Cách chữa đã dùng: commit hết, `git checkout --detach 23b7ea0`, build ON lấy
+  baseline thật (619), rồi `git checkout` về nhánh. Object của JUCE vẫn ấm nên
+  lần dựng thứ hai rẻ. **Quy tắc: đừng để baseline chạy nền song song với lần
+  sửa đầu tiên — đo xong rồi mới gõ.**
+- `PinkNoise` nhận `Pcg32`, không nhận sample rate — `EqVerify::Config` vì thế
+  mang `noiseSeed` + `excitationDbFsRms` (giống `DelayLocator` nhận source từ
+  caller) để một lượt verify tái lập được bit-for-bit.
+
+## Vòng verify độc lập (PR #4) — SOUND-WITH-FIXES, hai defect đã sửa
+
+Verifier (không có Edit/Write) dựng lại toàn bộ trên worktree riêng: bảy claim
+đều đứng, mọi số khớp, năm mutation của nó đều đỏ được. Nó tìm ra hai defect
+THẬT trong code mới, cả hai không fixture nào chạm tới. Đã sửa TDD trên cùng
+nhánh.
+
+**Defect 1 — `applied` tự mâu thuẫn, và session gợi ý lại đúng filter vừa apply.**
+`ghostDb()` cộng MỌI committed filter còn `workingResidualDb()` bỏ filter đã
+applied, hai hàm đọc chung `measuredDb_`. Sau `markApplied` chúng lệch đúng
+bằng `R_applied` (verifier đo: ghost−target 0.115 dB vs residual 3.573 dB) và
+`suggest()` trả về y hệt filter đó (fc=993.951, −7.11 dB) → −14.2 dB lên một
+bump 8 dB. Tệ hơn: `setMeasurement` xoá `committed_`, nên nhánh "đo lại sau khi
+apply" mà doc comment mô tả KHÔNG BAO GIỜ chạy được.
+
+*Semantics đã chốt (một luật, hai tổng):* **`measuredDb_` LUÔN là phép đo mới
+nhất, và `applied` khẳng định filter đó ĐÃ NẰM TRONG đường tín hiệu của phép đo
+ấy.** Vậy filter applied rời **CẢ HAI** tổng:
+
+```
+ghost_k    = m_k + Σ_{chưa applied} R_i(f_k)
+residual_k = ghost_k − t_k
+```
+
+Dòng thứ hai là một **identity** và giờ có test canh nó ở mọi trạng thái
+applied. `setMeasurement` GIỮ `committed_` (cùng mark) và các vùng declined;
+vùng declined lưu dạng **băng tần** (`declinedBands_`) chứ không phải cờ theo
+bin, nên sống sót qua lưới đổi độ dài. Bắt đầu lại = `clearFilters()` +
+`clearExclusions()`, nói rõ ra.
+
+**Defect 2 — verify mù không phân biệt được với verify hoàn hảo.** `trustedBins
+== 0` để hai trường RMS ở mặc định `0.0`, và `VerifyReport` không mang số bin
+tin cậy nào — đúng
+`memory/a-placeholder-for-an-absent-result-erases-its-state.md`. Thêm
+`trustedBins` + `std::optional` cho hai RMS + `renderVerifySummary()` in
+"no trusted bins".
+
+**Observation 3 đã sửa luôn:** `EqVerify::arm()` giờ KIỂM `setSource`'s bool và
+từ chối (`VerifyRefusal::EngineNotQuiescent`, state ở nguyên `Idle`, KHÔNG đụng
+routing). **`DelayLocator.cpp:32` có đúng lỗi bỏ sót đó và CHƯA sửa** — ngoài
+phạm vi PR này, ghi lại làm việc tiếp theo: một Locate arm lên engine đang bận
+sẽ solo + arm nguồn của người khác rồi correlate nhầm excitation.
+
+**Observation 4 (E1 gần như tautology) đã xử:** test mới
+"ghost minus target IS the working residual" kiểm identity giữa HAI hàm, không
+phải kiểm một hàm bằng chính công thức của nó.
+
+Mutation chứng minh test mới cắn (xoá .exe trước mỗi lần dựng):
+
+| mutation | đỏ ở |
+|---|---|
+| A — bỏ `if (filter.applied) continue;` trong `ghostDb` (defect 1 nguyên bản) | identity test, `0.00244626728573394 <= 0.00001` "first filter marked applied"; 3 test case / 768 assertion đỏ |
+| B — cho `setMeasurement` xoá `committed_` lại | "an applied filter is never re-suggested", `REQUIRE( session.committed().size() == 1 ) ... 0 == 1` |
+| C — gán `0.0` cho hai RMS khi không có bin tin cậy | `CHECK_FALSE( blindReport.residualRmsBeforeDb.has_value() ) ... !true` |
+| D — bỏ chữ "no trusted bins" khỏi summary | `CHECK( blindText.find("no trusted bins") != std::string::npos )` |
+
+**Bẫy phương pháp verifier tặng, đã ghi vào memory:** mutation nằm trong
+**header** KHÔNG được biên dịch lại dù đã xoá .exe — MSBuild báo `MSB8029`
+(build tree dưới `%TEMP%`) rồi chỉ relink, không `.cpp` nào đổi timestamp nên
+header không được đọc lại. Phải `touch` một `.cpp` cùng TU. Xem
+`memory/mutation-testing-needs-the-exe-deleted-first.md` mục mới.
+
+## Vòng verify độc lập THỨ HAI — hai finding nữa, đã sửa
+
+Verifier vòng 2 xác nhận cả ba fix vòng 1 (tự mutate đỏ được từng cái), OFF 568
+/ ON 636 khớp, và test flaky pass 5/5 nên "pre-existing timing race" đứng vững.
+Nó tìm thêm hai thứ, cả hai đều là **code chưa bị khoá**, không phải code sai.
+
+**Finding 1 — "declined region sống sót qua đổi lưới" KHÔNG có test nào.** Xoá
+hẳn hành vi đó đi thì toàn bộ app suite vẫn xanh (32543 assertion). Lý do: test
+duy nhất gọi `setMeasurement` hai lần thì không decline gì, test duy nhất
+decline thì không đo lại. Đã thêm test đóng khe: decline trên lưới 193 bin
+(binWidth 125 Hz), `setMeasurement` lưới 257 bin (93.75 Hz), khẳng định mask
+phủ **đúng** tập bin có `f = k·binWidth` nằm trong `[lowHz, highHz]` — dạng
+đóng, không đếm theo output. Cùng test xài luôn `clearExclusions()` và
+`clearFilters()`, hai hàm trước đó không test và không caller nào gọi.
+
+**Finding 2 — `EqTextExport` vứt bit `applied`.** Export một session có filter
+0 applied ra `peaking 994 1.15 -7.1` không cờ; nạp file đó lại vào chính con
+DSP đã sinh ra phép đo là **−14.2 dB trên bump 8 dB** — đúng số học của defect 1
+vòng 1, rò ra qua biên export. Đã thêm cột thứ năm `applied` (chỉ ghi cho hàng
+applied, **tuỳ chọn khi đọc**, hàng không cờ đọc thành not-applied nên file bốn
+cột cũ vẫn nhập được). Kiểu mới `rta::eqexport::ExportedFilter` — CỐ Ý tách
+khỏi `CommittedFilter` để export/ không include measure/ và ngược lại; caller
+copy hai dòng, đúng việc UI sẽ làm.
+
+**DEVIATION phải ghi:** plan Task E chốt format `type, fc, Q, gain`. Cột thứ
+năm là đi lệch plan, đã ghi amendment vào record §7
+(`docs/dsp/2026-09-06-l7-auto-eq.md`), cùng với đính chính ghost identity
+`ghost = m + Σ_{chưa applied} R` (record §7 viết "over every committed filter",
+sai từ vòng 1).
+
+**Bốn observation nhỏ đã xử:** (a) trạng thái mark-applied-trước-khi-đo-lại giờ
+mang chữ `TRANSIENT` trong TÊN test + một đoạn comment nói rõ ghost nhảy lại lên
+đúng bằng gain filter và trạng thái này kéo dài bằng bước 4/5 của thao tác viên;
+(b) `renderVerifySummary` guard trên `has_value()` chứ không trên `trustedBins`;
+(c) `arm()` khi đang chạy giờ trả `VerifyRefusal::AlreadyRunning` thay vì để lại
+refusal cũ; (d) `EqVerify.cpp` include `<cstdio>` cho `std::snprintf`.
+
+Mutation khoá hai finding: xoá `declinedBands_` trong `setMeasurement` →
+`CHECK( (excluded[k] != 0) == inBand ) ... false == true`; bỏ token `applied`
+khi ghi → `CHECK( parsed[i].applied == filters[i].applied ) ... false == true`.
+
+**Chia file lần hai:** `test_eq_session.cpp` chạm 429 dòng (quá cap 400) nên
+tách thành `test_eq_session.cpp` (semantics, 229) +
+`test_eq_session_lifecycle.cpp` (decline / đo lại / export, 157), fixture dùng
+chung ở `app/tests/EqSessionFixture.h` (92, mọi hàm `inline` vì hai TU include).
+
+## Vòng verify THỨ BA — ba defect nhỏ + một observation, đã sửa
+
+Verifier vòng 3 xác nhận cả bốn claim vòng 2 và cả hai tally (OFF 572 / ON
+640), tự chạy lại mutation E và F. Ba thứ mới, đều nhỏ nhưng đều là **thông tin
+bị mất âm thầm**:
+
+1. **BOM UTF-8 viết lại TYPE của hàng đầu tiên.** Notepad và PowerShell 5.1
+   (`Out-File` / `Set-Content`) mặc định ghi BOM; nó dính vào token đầu, và
+   fallback cũ của `typeFromName` biến `BOM+lowshelf` thành **Peaking** —
+   một filter KHÁC, nằm trên rig, không ai được báo. Sửa: strip BOM trước khi
+   parse, và `typeFromName` trả `std::optional` — **không còn fallback**. Từ
+   khoá lạ ⇒ hàng bị **từ chối kèm số dòng** (`FilterListParse{filters,
+   rejectedLines}`), vì hàng bị bỏ âm thầm cũng là state bị xoá. CRLF không
+   cần xử lý: `'\r'` là whitespace với `operator>>` (verifier đã dò 10 biến
+   thể line-ending, đều an toàn).
+2. **`renderVerifySummary` in câu SAI cho một trong hai trạng thái vắng.**
+   Guard `has_value()` thêm ở vòng 2 dùng CHUNG nhánh với `trustedBins == 0`,
+   nên một report có `trustedBins = 4` vẫn in "no trusted bins (4 bins
+   measured, all under the coherence floor)" — và test vòng 2 KHOÁ LUÔN câu
+   sai đó. Tách hai nhánh: `trustedBins == 0` giữ câu cũ; `trustedBins > 0`
+   mà thiếu RMS in "N of M bins trusted, residual not computed".
+3. **Assertion rỗng.** `CHECK(text.find("applied") != npos)` không bao giờ đỏ
+   được vì header luôn chứa từ đó. Đổi sang khẳng định trên ĐÚNG DÒNG:
+   `"\npeaking 994 1.15 -7.1 applied\n"`, và dòng không-applied phải KHÔNG có
+   token.
+4. **Observation — test grid-survival không khẳng định được tính bao gồm của
+   biên.** Nó so với chính `>=`/`<=` của implementation, và trên fixture đó
+   không bin nào rơi đúng biên (gần nhất lệch 2.23 Hz) nên `>=`→`>` vẫn xanh.
+   Đã thêm fixture **dựng, không dò**: lấy `h = 1/(2Q) = 3/4` ⇒ `1+h² = 25/16`
+   ⇒ `sqrt = 5/4` CHÍNH XÁC, nên `low = fc/2`, `high = 2·fc` đều đúng bit. Với
+   lưới 193 bin (binWidth đúng 125 Hz) và `fc = 1000`: low = 500 = bin 4,
+   high = 2000 = bin 16, cả hai biểu diễn chính xác ở float lẫn double, không
+   tolerance chỗ nào. Test tự kiểm (`REQUIRE(band.lowHz == 500.0)`) để nếu số
+   học thôi chính xác thì nó báo chứ không lặng lẽ test hụt biên.
+
+Mutation khoá bốn thứ trên: G (trả lại fallback Peaking) → `REQUIRE(
+parsed.filters.size() == 1 ) ... 3 == 1`; H (bỏ strip BOM) → `CHECK(
+withHeader.rejectedLines.empty() ) ... false`; I (gộp lại hai nhánh summary) →
+`CHECK( noResidualText.find("residual not computed") != npos )` đỏ; J (`>=`
+thành `>`) → `CHECK( excluded[kLowBin] != 0 ) ... 0 != 0` đúng hai bin biên.
+Chạy lại F sau khi sửa assertion rỗng: nay đỏ ở `CHECK( text.find(
+"\npeaking 994 1.15 -7.1 applied\n") != npos )`.
+
+**API đổi:** `parseFilterList` trả `FilterListParse` thay vì
+`std::vector<ExportedFilter>`. Bốn call site trong test đã đổi theo.
+
+## Vòng verify CUỐI — SOUND, một minor đóng nốt
+
+Verifier cuối dựng lại 575/643, mọi mutation đỏ đúng như khai. Còn một minor +
+hai việc ghi chép:
+
+1. **Dòng trắng có indent bị tính là hàng hỏng.** Parser chỉ xét `line.front()`
+   nên ba dấu cách, một tab, hay một comment người ta canh lề bằng tay đều rơi
+   vào `rejectedLines` (verifier đo: `rejected=[2]` cho ba dấu cách). Sửa: tìm
+   ký tự không-whitespace ĐẦU TIÊN rồi mới quyết định đó là dòng gì. **Báo động
+   giả không vô hại** — rejected line là một cảnh báo, và cảnh báo kêu nhầm là
+   cách cảnh báo thật sau đó bị bỏ qua.
+2. **Cột thứ năm: CHỌN "từ chối", không phải "ghi chú ngoại lệ".** Verifier cho
+   hai lựa chọn; chọn từ chối vì ngoại lệ ấy chính là cái hại mà cột này sinh ra
+   để chặn: `appllied` gõ sai ⇒ đọc thành not-applied ⇒ thao tác viên land lại
+   filter rig đã có ⇒ đúng −14.2 dB. Nay: flag CÓ MẶT mà không đọc được (kể cả
+   token thừa phía sau) ⇒ **từ chối hàng**. Flag VẮNG MẶT vẫn đọc là not-applied
+   — đó không phải đoán, đó là hình dạng bốn-cột cũ của chính format, và điền
+   theo hướng an toàn (filter hiện ra để người ta thấy, thay vì bị giấu đi như
+   đã xử lý). **Vắng mặt có nghĩa xác định; hiện diện mà không đọc được thì
+   không** — hai thứ khác nhau, không xử như nhau. Đã ghi vào record §7.3.
+3. **Memory `mutation-testing-...` thêm mục nửa-RESTORE.** Touch một `.cpp` để
+   mutation ĐƯỢC biên dịch vào; không có gì bắt nó biên dịch RA. Khôi phục
+   header xong, object build từ bản mutated vẫn nằm đó và MSBuild chỉ relink —
+   cây sạch, `git diff` rỗng, mà binary vẫn mang mutation. Đó là kiểu hỏng tệ
+   hơn vì nó đến ở CUỐI chu trình, lúc mọi thứ trông đã đúng. Luật: **rebuild
+   TOÀN BỘ sau lần revert cuối**, và **md5 file đã mutate với blob `HEAD`**
+   (`git status` không thấy được một revert sai mà byte-identical). Phiên này
+   làm đúng vậy: `EqSession.cpp` và `EqVerify.cpp` md5 trùng HEAD
+   (`681479c3…`, `e98f34c4…`), OFF dựng lại `--clean-first`.
+
+Mutation vòng này: K (chỉ xét `front()`) → `CHECK(parsed.rejectedLines.empty())
+... false`; L (cột năm đoán lại) → `REQUIRE(parsed.filters.size() == 2) ...
+4 == 2`.
+
+## Còn mở
+
+- **CHƯA MERGE, CHƯA PUSH** lúc viết. Nhánh `l7/eq-app-session-verify` từ
+  `23b7ea0`; PR mở lên `main`, KHÔNG tự merge.
+- **`DelayLocator::arm()` bỏ qua `setSource`'s bool** (`DelayLocator.cpp:32`) —
+  cùng lỗi với observation 3, chưa sửa, chưa có test cho đường non-quiescent.
+- **Lane lớn kế tiếp: Wave 3 (ALIGN)** — G11 virtual processor (nó tiêu thụ đúng
+  `std::vector<FilterSpec>` mà `EqSession` giữ), G17 wizard (HỎI topology),
+  G18 crossover, ρ fold. Câu hỏi order-4 (ALIGN §13.1) vẫn chờ chủ nhân.
+- **EQ chưa có:** shelf placement + domain clamp (trên), panel JUCE sống trong
+  `MainComponent` (EQ-R4 nói là specimen dev-preview — specimen `EqPreview.*`
+  CŨNG CHƯA dựng, phiên này chỉ làm phần ctest-provable), overload `FirDesign`
+  nhận per-bin `Σ R_i` (record §7 amend FIR §11), re-linearise lần hai.
+- Judgement chờ duyệt vẫn nguyên: `kEqTrustFloor = 0.7` là interim cho tới L5b,
+  `G_cap +6 dB`, `Q_max` 10/20, `N` cap 6, NotMinimumPhase→V2, −120 dB floor.
+
+---
+
 # 2026-09-06 — **L6b: HAI NOTE F3 ĐÃ ĐÓNG (chưa commit, working tree trên `claude_desk/tiepto-2d388b`)**
 
 **Đọc mục này trước tiên.** Hai việc-còn-mở của L6b (verifier F3 NOTE) đã đóng.
@@ -208,13 +547,19 @@ cần tối thiểu **64×**, ship **128×** (= 16× của FIR 8×). Nếu G24 m
 của FIR thì min-phase null test ALIAS trên phép đo thật → phân loại dip sai. Đúng là
 thứ pipeline sinh ra để bắt.
 
-**CONCERN precision (SỬA ở EQ closeout — CHƯA sửa):** 64× bị đẩy gần như HOÀN TOÀN
+**CONCERN precision — ĐÃ SỬA 2026-09-15** (đo lại, bảng chín fixture trong mục đầu
+file; `gen_autoeq.py --check` byte-identical sau khi sửa). Nguyên văn dưới đây giữ lại:
+
+**~~CONCERN precision (SỬA ở EQ closeout — CHƯA sửa)~~:** 64× bị đẩy gần như HOÀN TOÀN
 bởi metric phụ **tail-energy** (proxy nhiễm aliasing cepstral), KHÔNG bởi excess-phase
 **swing** mà `classifyDip` thực đọc (swing hội tụ ở 8×-16× mọi fixture). 128× vẫn đúng
 và bảo thủ hợp lý, nhưng docstring `tools/gen_autoeq_algo.py` + framing record "64× là
 F nhỏ nhất swing hội tụ" KHÔNG chính xác — phải sửa thành "tail-energy quyết định 64×".
 
-**EQ E/F CHƯA XÂY (app, ON) — việc đầu tiên của phiên sau:** Task E (`EqSession` +
+**EQ E/F ĐÃ XÂY 2026-09-15** (nhánh `l7/eq-app-session-verify`, xem mục đầu file).
+Ba điều dưới đây vẫn đúng và ĐÃ được tôn trọng trong code — giữ lại làm lịch sử.
+
+**~~EQ E/F CHƯA XÂY~~ (app, ON) — việc đầu tiên của phiên sau:** Task E (`EqSession` +
 trust mask `kEqTrustFloor=0.7` + text export) và Task F (`EqVerify` qua OutputEngine).
 Builder hết budget sau core. BA điều người xây E phải biết:
 1. **Sign convention (LOAD-BEARING):** ghost `m+ΣR` chỉ hội tụ khi solve fit

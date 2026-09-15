@@ -23,3 +23,56 @@ Fix: **delete the test exe before every rebuild during mutation testing**, e.g.
 then `cmake --build ...`. Or check the exe mtime/size actually changed before trusting
 the run. This is distinct from, but rhymes with, the header-only-change staleness noted
 elsewhere — see [[a-misconfigured-build-goes-99-percent-of-the-way]].
+
+## Deleting the exe is NOT enough when the mutation is in a header
+
+Found 2026-09-15 by the independent verifier of PR #4 (L7-EQ Tasks E/F). Mutating a
+**header-only** file — `EqTrustMask.h`'s floor comparison — and rebuilding with the exe
+already deleted still ran unmutated code: the build emitted
+
+```
+warning MSB8029: The Intermediate directory or Output directory cannot reside under
+the Temporary directory ...
+```
+
+and then only **relinked** the existing objects. No `.cpp` had changed its own
+timestamp, so MSBuild considered every translation unit up to date and never re-read
+the header. The mutation looked *not caught*, which is the same false verdict as a
+stale exe, arriving by a different road — and it is the more dangerous of the two,
+because the exe genuinely is fresh, so an mtime check on it passes.
+
+The verifier's own probe only went red once a `.cpp` in the same translation unit was
+also touched.
+
+So the procedure for a **header** mutation is: delete the exe, **and** `touch` (or edit)
+one `.cpp` that includes that header, **then** build. Better still, put the mutation in
+a `.cpp` when one exists on the same path — a mutation you can place in either file
+belongs in the file the build system actually tracks. And when a scratch worktree lives
+under `%TEMP%`, treat `MSB8029` in the log as a standing warning that incremental
+decisions in that tree are not trustworthy.
+
+## The RESTORE half is stale too, and that is the dangerous half
+
+Added 2026-09-15 by the final verifier of PR #4, and it completes the previous section.
+Touching a dependent `.cpp` is how the *mutation* gets compiled in. Nothing makes it get
+compiled back **out**: restoring the header returns the source to its original bytes but
+leaves the object files built from the mutated version on disk, and MSBuild — seeing no
+`.cpp` newer than its `.obj` — happily relinks them.
+
+The failure this produces is worse than a false "not caught", because it arrives at the
+end of the cycle, when the tree looks correct and everyone has stopped watching:
+
+- the working tree is clean and `git diff` is empty, so the mutation *looks* reverted;
+- the binary still contains it, so a green run afterwards is green for the wrong build,
+  and a red one sends you hunting a defect that is not in the source.
+
+Two habits close it, and they cost seconds:
+
+1. **Finish every mutation cycle with a full rebuild**, not a targeted one — after the
+   last revert, before the run you intend to believe.
+2. **Compare the mutated files against their `HEAD` blobs by hash** once you are done:
+   `git stash list` and `git status` cannot see a byte-identical revert that is wrong,
+   but `md5sum <file>` versus `git show HEAD:<path> | md5sum` proves the source really is
+   what you think, and a full rebuild then proves the binary matches the source.
+
+Write the mutation down, revert it, rebuild everything, hash-check, *then* claim.
