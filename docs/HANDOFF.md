@@ -222,6 +222,13 @@ false PASS. Xoá `.exe` TRƯỚC mỗi rebuild khi mutation-test. Xem
 G17 wizard (HỎI topology) + G18 crossover + relative-polarity ρ fold (dựng lại ngưỡng
 hai lưới độc lập, đừng ship số một-lưới). ALIGN record `docs/dsp/2026-09-06-l7-alignment-wizard.md`.
 
+**2026-09-15 — L7-ALIGN station 3 plan written: `docs/plans/2026-09-15-L7-align-impl-plan.md`**
+(nhánh `l7/align-impl-plan`, PR vào `main`). Mười task A–J, mười reconciliation
+ALIGN-R1..R10 cần orchestrator sửa record trước khi build (đáng chú ý: record §5 gọi
+`sectionAttenuationDb` — field đó KHÔNG tồn tại, chỉ có `BiquadCascade::attenuationDb`
+dấu ngược, `Biquad.h:75,80,87`). **Đúng MỘT task probe-dependent: D5** (bảng topology
+có dấu) chờ `docs/research/2026-09-15-l7-align-order4-probe.md`; A–C, D1–D4, E–J độc lập.
+
 ## Verifier đã xác nhận (đọc file thật)
 - OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output
   + `ScopedNoDenormals` là câu ĐẦU + guard `audioio_scoped_no_denormals_is_first`;
