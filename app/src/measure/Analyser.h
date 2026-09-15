@@ -3,6 +3,7 @@
 // See docs/plans/2026-08-27-audioio-rta-impl-plan.md §1.3, §3.4.
 #pragma once
 
+#include "measure/AtomicSharedPtr.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 
@@ -209,7 +210,17 @@ private:
     bool mtwEngaged_ = false;
 
     std::uint64_t sequence_ = 0;
-    std::atomic<SnapshotPtr> latest_;
+    /// AtomicSharedPtr rather than a bare std::atomic over the shared_ptr:
+    /// Apple's libc++ ships no C++20 specialisation for that and rejects it
+    /// at compile time. Same swap, same memory orders, and no lock of OURS
+    /// either way -- but do not read that as lock-free: on Apple libc++ the
+    /// fallback is lock-based inside the standard library, and on MSVC 14.51
+    /// the C++20 specialisation measures as not lock-free either. What makes
+    /// it safe is that neither side of this pointer is the audio callback
+    /// (writer: the analysis thread's publish(); reader: latest()).
+    /// See measure/AtomicSharedPtr.h, and the ctest guard
+    /// `no_std_atomic_over_shared_ptr` that keeps the substitution honest.
+    AtomicSharedPtr<const Snapshot> latest_;
 };
 
 }  // namespace rta::measure
