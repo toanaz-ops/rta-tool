@@ -106,7 +106,7 @@ Analyser::Analyser(const Config& config)
     // and is built unconditionally regardless of mtwEnabled (Analyser.h's own
     // comment on mtw_).
     , mtw_(toMtwConfig(config)) {}
-    // latest_ default-constructs to an empty atomic<shared_ptr>, i.e. latest()
+    // latest_ default-constructs to an empty AtomicSharedPtr, i.e. latest()
     // returns nullptr until the first publish().
 
 void Analyser::pushMeasurement(std::span<const float> samples) {

@@ -464,9 +464,22 @@ ngoài miền; Peaking KHÔNG dính (alpha peaking không có gain term).
 trên đường shelf (NaN không còn sinh ra) nhưng là bẫy cho MỌI nguồn NaN sau. Không
 sửa vì `Biquad.h` là file frozen; cần một task riêng nếu chủ nhân muốn.
 
-**Record touch-up còn nợ (closeout):** ALIGN record §5 nói `|H|` = `sectionAttenuationDb`
-nhưng field đó là attenuation (+=xuống); plan W0-R3 đã khoá đúng `−attenuationDb`,
-record cần sửa một dòng để khỏi lạc plan (bẫy #17).
+**~~Record touch-up còn nợ (closeout)~~ — ĐÃ TRẢ 2026-09-15.** ALIGN record §5 nói
+`|H|` = `sectionAttenuationDb` nhưng field đó là attenuation (+=xuống); plan W0-R3
+đã khoá đúng `−attenuationDb`. Đã sửa cả §5 lẫn §10 mục 3. Tolerance giữ nguyên
+`1e-12` như plan W0-R3/T3 — đo lại: khoá đó ĐẠT 1e-12 (384/384 assertion), 1e-13
+thì 3 cái đỏ. Test đang dựng lại assert `1e-9`
+(`core/tests/test_biquad_response.cpp:78`, từ `b2172b3`, không có lý do ghi lại);
+§5 ghi rõ chênh lệch đó, KHÔNG sửa test (core ngoài scope PR này).
+
+**Order-4 (ALIGN §13.1) — ĐÃ SETTLE 2026-09-15, chủ nhân không phải trả lời.**
+Probe độc lập: `docs/research/2026-09-15-l7-align-order4-probe.md`, script
+`tools/probe_align_order4.py`, khoá CI `core/tests/test_align_order4_identity.cpp`.
+Identity `N·90°` ĐÚNG chính xác tới máy (analog `0.00e+00°`, digital `1.16e-11°`);
+L4a đo sai dấu bậc 4 vì fixture là **hai box band-pass** chứ không phải cặp
+crossover matched-cutoff, và **không** convention nào chạm tới được bậc chẵn.
+**Wave 3 (ALIGN) hết chặn.** ctest 551 → 556 (build dir `build-probe`,
+`-DRTA_BUILD_APP=OFF`), đã làm đỏ một lần rồi xanh lại.
 
 ## Wave 1 ĐÃ XÂY VÀ VERIFY (2026-09-07) — FIR rồi OUT (tuần tự, tránh git-index race)
 
@@ -566,6 +579,33 @@ false PASS. Xoá `.exe` TRƯỚC mỗi rebuild khi mutation-test. Xem
 **Còn lại của L7:** EQ E/F (app), rồi **Wave 3 (ALIGN)** — G11 virtual processor +
 G17 wizard (HỎI topology) + G18 crossover + relative-polarity ρ fold (dựng lại ngưỡng
 hai lưới độc lập, đừng ship số một-lưới). ALIGN record `docs/dsp/2026-09-06-l7-alignment-wizard.md`.
+
+**2026-09-15 — L7-ALIGN station 3 plan written: `docs/plans/2026-09-15-L7-align-impl-plan.md`**
+(nhánh `l7/align-impl-plan`, PR vào `main`). Mười task A–J, mười reconciliation
+ALIGN-R1..R10 cần orchestrator sửa record trước khi build (đáng chú ý: record §5 gọi
+`sectionAttenuationDb` — field đó KHÔNG tồn tại, chỉ có `BiquadCascade::attenuationDb`
+dấu ngược, `Biquad.h:75,80,87`).
+
+**Cùng ngày, sau vòng verify đối kháng (SOUND-WITH-FIXES, 12 defect đã sửa hết):**
+thêm ALIGN-R11..R14 — R11 thu hẹp block Wave 3 của `HUMAN-QA-QUEUE.md:82` (cần chủ
+nhân/orchestrator phê), R12 record §10.4 `R=1−1e-12` KHÔNG thoả đồng thời với dung sai
+τ (`1−R ≃ (πΔf·dτ)²/6`; cần `dτ ≤ grid/154`, không phải `grid/20`), R13 câu `(−s)^N/D`
+của record §3 là ánh xạ đồng nhất ở mọi bậc CHẴN nên không giải thích được bậc 4,
+R14 hợp đồng đối số **A = phía HP, B = phía LP** (record không nói; đảo là lật dấu τ
+lẫn φ₀ trong im lặng).
+
+**Order-4 ĐÃ NGÃ NGŨ** theo PR #3 (`docs/research/2026-09-15-l7-align-order4-probe.md`,
+CHƯA merge): identity `N·90°` đúng tuyệt đối theo convention của repo, bảng §3 giữ
+nguyên; dấu sai của L4a là do quy tắc **dấu-đỉnh tương quan KHÔNG whitened** của
+L4a decision 6b (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1195` — ρ, estimator repo này
+CHƯA ship; `relativePolarity()` không tồn tại ở `core/` lẫn `app/`) áp qua hai hệ khác
+passband, KHÔNG phải do convention. **Correlator repo ĐANG ship (PHAT `findDelayPhat`,
+`DelayFinder.cpp:34`) KHÔNG tái tạo L4a — nó đọc gương lại: đúng ở bậc 4, sai ở bậc 8.**
+Hai correlator bất đồng trên cùng một cặp loa ở 2/6 bậc → luật: **đừng đọc dấu topology
+từ BẤT KỲ đỉnh tương quan nào, whitened hay không**. (PR #3 sửa quy kết ở head `cdd8a25`
+sau khi verifier của chính nó bác bản đầu; plan đã đồng bộ.) Ba chỗ tiêu thụ phán quyết,
+mỗi chỗ có fixture đỏ được: **D5, H9, I1b**; thêm **E9** dựng lại đúng hình học L4a làm
+documented failure của ρ. Không còn task nào "probe-dependent".
 
 ## Verifier đã xác nhận (đọc file thật)
 - OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output

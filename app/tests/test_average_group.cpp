@@ -280,7 +280,19 @@ std::size_t measureRoutedPublishBytes(int memberCount) {
 
 }  // namespace
 
-TEST_CASE("Publish churn is O(1) in N: bytes(8) - bytes(4) is bounded (record §6, T12)",
+// The NAME below must stay pure ASCII, and so must every other Catch2 test
+// name in this repo. ctest re-invokes the test binary with the test name as
+// a Catch2 filter argument, and that round trip is only byte-exact for ASCII:
+// on CI's windows-latest runner the U+00A7 SECTION SIGN this name used to
+// carry came back through the filter as a replacement character, no test case
+// matched, Catch2 printed "No tests ran" and exited non-zero, and ctest
+// reported test 285 as FAILED -- a red job for a test that had never run a
+// single assertion. Nothing about the assertion below was wrong.
+//
+// Guarded by core/tests/check_test_names_are_ascii.cmake. Write "record
+// section 6" in a NAME; the typography stays welcome in comments, where no
+// command line ever sees it.
+TEST_CASE("Publish churn is O(1) in N: bytes(8) - bytes(4) is bounded (record section 6, T12)",
           "[averagegroup]") {
     const auto bytes1 = measureGroupPublishBytes(1);
     const auto bytes4 = measureGroupPublishBytes(4);

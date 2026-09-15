@@ -23,6 +23,17 @@ designs the *asking* and the *previewing*, never the guessing.
 
 ## Decision → evidence table
 
+> **Correction, 2026-09-15. D1 and D6 have the Butterworth-2 sum backwards, and
+> D1's table is a lookup where it is one closed form.** At fc each BW2 output is
+> −3 dB and they are 180° apart, so the **un-inverted** sum is a **null** and the
+> **inverted** sum is the **+3.01 dB** bump — the opposite of what D6 says below.
+> Measured both ways at 48 kHz: `docs/research/2026-09-15-l7-align-order4-probe.md`
+> §3. The general form is `arg H_HP − arg H_LP = N·90°` at every frequency, of
+> which D1's three rows are instances;
+> `docs/dsp/2026-09-06-l7-alignment-wizard.md` §1 correction 1, §3 and the CI
+> lock `core/tests/test_align_order4_identity.cpp` are authoritative over the two
+> rows below. Do not build from D1/D6 as written.
+
 | # | Decision this record argues for | Evidence |
 |---|---|---|
 | D1 | Topology target table: LR any order 0°, BW2 180°, BW odd-order 90° | Confirmed independently by Rane Note 107/160 and secondary summaries (below); matches the G21 tier-3 ruling already in `docs/dsp/2026-08-30-sweep-ir-l4a.md` |

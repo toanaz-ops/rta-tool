@@ -54,6 +54,14 @@ ctest --test-dir build -C Release --output-on-failure
 Toolchain verified on this machine: MSVC 14.51 (VS Build Tools 2026),
 Windows SDK 10.0.26100, CMake 4.3.2, Ninja 1.13.2, Python 3.14.6.
 
+## Git: GitHub is the record
+
+`origin/main` is the truth; nothing lands on `main` except through a pull
+request whose three-OS CI matrix is green and whose PR body carries measured
+tallies. Local `--no-ff` merges into `main` are retired. "Merge" is still the
+owner's word in the current conversation; it now means `gh pr merge`.
+Full procedure: `docs/GIT-WORKFLOW.md`.
+
 ## Conventions
 
 - Every source file starts with `// SPDX-License-Identifier: AGPL-3.0-or-later`.
