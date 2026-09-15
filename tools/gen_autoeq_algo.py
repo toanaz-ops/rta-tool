@@ -19,6 +19,34 @@ real, even cepstrum c":
      of FirResult::truncationLossDb, where cepstral aliasing wraps energy
      into the causal window (MinimumPhase.cpp's fold splits exactly there).
 
+WHICH METRIC DRIVES THE ANSWER (precision fix, 2026-09-15 -- read this before
+quoting the factor anywhere). The two metrics do NOT converge together, and
+the shipped 64x minimum is set almost entirely by (2), the ALIASING PROXY --
+not by (1), the swing G24 actually gates on. Measured over the nine fixtures
+below (each column is the smallest swept F at which that criterion alone
+holds):
+
+    a     D  | swing-only  tail-only  both
+    1.25   37 |     1           4        4
+    1.25  144 |     4          16       16
+    1.25  511 |     8          64       64
+    2.0    37 |     1           2        2
+    2.0   144 |     1           4        4
+    2.0   511 |     4          16       16
+    4.0    37 |     1           1        1
+    4.0   144 |     1           2        2
+    4.0   511 |     2           8        8
+    worst case |    8          64       64
+
+So the accurate sentence is "64x is the smallest F at which the min-phase
+impulse's cepstral tail energy falls under the absolute floor"; the swing
+classifyDip reads has already converged by 8x on the worst fixture. 64x (and
+the 128x that ships with margin) is still the right constant -- tail energy
+is aliasing, and aliasing corrupts the kernel whether or not this particular
+swing metric has noticed yet -- but "the smallest F where the swing
+converges" is NOT what it measures, and a later reader who trims the factor
+on that belief would trim it eight-fold.
+
 Pure functions and constants only, no argparse, no file writes -- mirrors
 gen_fir_algo.py's own split from its CLI driver (gen_autoeq.py here); memory/
 a-gen-script-runs-the-moment-you-invoke-it.md is the warning about the OTHER
@@ -206,7 +234,11 @@ def measure_minimum_factor() -> dict:
     """Sweeps every (a, D) combination named above and returns the per-
     fixture tables plus the measured minimum (the WORST -- i.e. largest --
     of each fixture's own minimum, so every fixture is covered) and that
-    minimum with one step of margin (mirrors gen_fir_algo.factor_with_margin)."""
+    minimum with one step of margin (mirrors gen_fir_algo.factor_with_margin).
+
+    The returned minimum is a BOTH-criteria number and is set by the
+    tail-energy criterion, not the swing one -- see this module's docstring
+    for the per-fixture split (swing alone converges at 8x worst case)."""
     per_fixture = {}
     worst_idx = 0
     for a in COMB_A_VALUES:

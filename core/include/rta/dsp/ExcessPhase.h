@@ -27,7 +27,14 @@ namespace rta::dsp {
 /// under kMinPhaseFloorDb -- see gen_autoeq_algo.py's TAIL_CONVERGE_FLOOR_DB
 /// for why a reference-relative rule fails once double-precision FFT
 /// round-trip noise dominates). The measured minimum across nine (a, D)
-/// fixtures was 64x; this constant ships one step of margin above it (the
+/// fixtures was 64x -- and PRECISION MATTERS HERE (correction, 2026-09-15):
+/// that 64x is set by the TAIL-ENERGY criterion, the aliasing proxy, NOT by
+/// the swing classifyDip reads. Swing alone converges at 8x on the worst
+/// fixture; tail energy needs 64x. Do not re-derive this constant from the
+/// swing metric and conclude 8x is enough (per-fixture table:
+/// tools/gen_autoeq_algo.py's module docstring; reasoning:
+/// docs/dsp/2026-09-06-l7-auto-eq.md Sec.4.3's 2026-09-15 amendment).
+/// This constant ships one step of margin above the measured minimum (the
 /// same margin policy FIR's own factor takes), 128x -- SIXTEEN TIMES FIR's
 /// 8x, which is exactly the caveat this task existed to either prove or
 /// refute (docs/dsp/2026-09-06-l7-auto-eq.md's load-bearing hazard). Do not
