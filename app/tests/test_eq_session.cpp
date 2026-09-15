@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // L7-EQ task E (docs/plans/2026-09-07-L7-eq-impl-plan.md; decision record
-// docs/dsp/2026-09-06-l7-auto-eq.md sec.2, sec.4.1, sec.7). The app-side
-// session model: Auto EQ one-shot, Suggest accept/decline/re-rank, the exact
-// dB-add ghost, the plain coherence trust mask (EQ-R2) and the FilterSpec
-// text export. JUCE-free like OutputPolicy/DelayLocator, so the whole file is
-// provable with no device and no GUI.
+// docs/dsp/2026-09-06-l7-auto-eq.md sec.2, sec.7). The app-side session model
+// and nothing else: Auto EQ one-shot, Suggest accept/decline/re-rank, and the
+// one membership rule the ghost and the working residual share. The coherence
+// trust mask and the text format live in test_eq_trust_export.cpp. JUCE-free
+// like OutputPolicy/DelayLocator, so the whole file is provable with no device
+// and no GUI.
 
 #include "export/EqTextExport.h"
 #include "measure/EqSession.h"
-#include "measure/EqTrustMask.h"
 
 #include "rta/eq/BiquadDesign.h"
 
@@ -24,10 +24,8 @@
 using rta::eq::FilterSpec;
 using rta::eq::FilterType;
 using rta::eq::responseDb;
-using rta::measure::buildTrustMask;
 using rta::measure::EqSession;
 using rta::measure::EqSessionConfig;
-using rta::measure::kEqTrustFloor;
 
 namespace {
 
@@ -81,7 +79,7 @@ void load(EqSession& session, const Fixture& f) {
 }  // namespace
 
 // --- E1 ---------------------------------------------------------------------
-TEST_CASE("EqSession: the ghost is the exact dB sum of every committed filter") {
+TEST_CASE("EqSession: the ghost is the exact dB sum of the NOT-YET-APPLIED filters") {
     const Fixture f = makeFixture();
     EqSessionConfig config;
     config.maxFilters = 3;
@@ -97,12 +95,49 @@ TEST_CASE("EqSession: the ghost is the exact dB sum of every committed filter") 
     for (std::size_t k = 0; k < f.hz.size(); ++k) {
         double expected = static_cast<double>(f.measuredDb[k]);
         for (const auto& committed : session.committed()) {
+            if (committed.applied) continue;
             expected += responseDb(committed.spec, kFs, static_cast<double>(f.hz[k]));
         }
         // Exact dB add in double (record sec.7's ghost identity): the only
         // slack allowed is the order the same terms were summed in.
         CHECK(std::abs(ghost[k] - expected) <= 1e-9);
     }
+}
+
+TEST_CASE("EqSession: ghost minus target IS the working residual, applied or not") {
+    // The one identity that pins the meaning of measuredDb_ (EqSession.h's
+    // "one rule, both sums"). ghost and residual read the same measurement and
+    // the same committed list, so they can differ ONLY by the target:
+    //
+    //     ghost_k - t_k == residual_k     for every k, at every applied state.
+    //
+    // A ghost that sums a filter the residual skips breaks this by exactly
+    // that filter's response -- which is the shape of the defect this case
+    // exists to catch, not a restatement of either function's own arithmetic.
+    const Fixture f = makeFixture();
+    EqSessionConfig config;
+    config.maxFilters = 3;
+    EqSession session(config);
+    load(session, f);
+    session.runAutoEq();
+    REQUIRE(session.committed().size() >= 2);
+
+    auto checkIdentity = [&](const char* whenLabel) {
+        INFO(whenLabel);
+        const std::vector<double> ghost = session.ghostDb();
+        const std::vector<float> residual = session.workingResidualDb();
+        REQUIRE(ghost.size() == residual.size());
+        for (std::size_t k = 0; k < ghost.size(); ++k) {
+            const double lhs = ghost[k] - static_cast<double>(f.targetDb[k]);
+            CHECK(std::abs(lhs - static_cast<double>(residual[k])) <= 1e-5);
+        }
+    };
+
+    checkIdentity("nothing applied yet");
+    session.markApplied(0, true);
+    checkIdentity("first filter marked applied");
+    session.markApplied(1, true);
+    checkIdentity("two filters marked applied");
 }
 
 TEST_CASE("EqSession: Auto EQ leaves the ghost closer to target than the measurement") {
@@ -183,44 +218,82 @@ TEST_CASE("EqSession: accepting re-bases the residual; an applied mark drops its
     }
 
     // Marked applied: the correction now lives in the room, so counting it in
-    // the prediction as well would count it twice (record sec.2).
+    // the prediction as well would count it twice (record sec.2). BOTH sums
+    // drop the term -- the residual AND the ghost -- because both read the
+    // same measurement, and that measurement is the one the operator will
+    // re-take with the filter already in the signal path.
     session.markApplied(0, true);
     {
         const auto residual = session.workingResidualDb();
+        const auto ghost = session.ghostDb();
         for (std::size_t k = 0; k < f.hz.size(); ++k) {
-            const double expected = static_cast<double>(f.measuredDb[k])
-                                    - static_cast<double>(f.targetDb[k]);
-            CHECK(std::abs(static_cast<double>(residual[k]) - expected) <= 1e-5);
+            const double expectedResidual = static_cast<double>(f.measuredDb[k])
+                                            - static_cast<double>(f.targetDb[k]);
+            CHECK(std::abs(static_cast<double>(residual[k]) - expectedResidual) <= 1e-5);
+            // No un-applied filter is left, so the ghost is the measurement
+            // itself -- it predicts no further change, which is exactly what
+            // "everything I suggested is already in the rig" means.
+            CHECK(std::abs(ghost[k] - static_cast<double>(f.measuredDb[k])) <= 1e-9);
         }
     }
 }
 
-// --- E4 ---------------------------------------------------------------------
-TEST_CASE("EqTrustMask: a plain coherence floor, and absent coherence is untrusted") {
-    STATIC_REQUIRE(kEqTrustFloor == 0.7f);
+TEST_CASE("EqSession: an applied filter is never re-suggested at the same fc and gain") {
+    // The operator's real loop: measure, accept, dial the filter into the rig,
+    // mark it applied, RE-MEASURE. The second measurement already carries the
+    // correction, so the session must not propose it a second time -- landing
+    // it twice would put double the cut on the same bump.
+    const Fixture pre = makeFixture();
+    EqSession session;
+    load(session, pre);
 
-    const std::vector<float> coherence{ 0.0f, 0.5f, 0.69f, 0.7f, 0.95f, 1.0f };
-    const auto mask = buildTrustMask(coherence, coherence.size());
-    REQUIRE(mask.size() == coherence.size());
-    CHECK(mask[0] == 0);
-    CHECK(mask[1] == 0);
-    CHECK(mask[2] == 0);
-    CHECK(mask[3] != 0);  // the floor itself is trusted: gamma^2 >= theta
-    CHECK(mask[4] != 0);
-    CHECK(mask[5] != 0);
+    const auto first = session.suggest(1);
+    REQUIRE_FALSE(first.empty());
+    session.acceptCandidate(first.front());
+    REQUIRE(session.committed().size() == 1);
+    const FilterSpec applied = session.committed().front().spec;
+    session.markApplied(0, true);
 
-    // Below the coherence gate a TransferSnapshot carries no coherence vector
-    // at all (TransferEstimator.h): no vector is no evidence, which is a
-    // refusal, not a pass.
-    const auto absent = buildTrustMask({}, 6);
-    REQUIRE(absent.size() == 6);
-    for (std::uint8_t t : absent) CHECK(t == 0);
+    // The room now measures m + R_applied: that is what "applied" asserts.
+    Fixture post = pre;
+    for (std::size_t k = 0; k < post.hz.size(); ++k) {
+        post.measuredDb[k] = static_cast<float>(
+                static_cast<double>(pre.measuredDb[k])
+                + responseDb(applied, kFs, static_cast<double>(post.hz[k])));
+    }
+    load(session, post);
 
-    // A plain floor and nothing else -- no ISO-2969 tolerance table is
-    // involved (EQ-R2). Moving the floor moves exactly one boundary.
-    const auto strict = buildTrustMask(coherence, coherence.size(), 0.96f);
-    CHECK(strict[4] == 0);
-    CHECK(strict[5] != 0);
+    // A new measurement does NOT wipe the session: the committed list and its
+    // applied marks are what make the new measurement interpretable at all.
+    REQUIRE(session.committed().size() == 1);
+    CHECK(session.committed().front().applied);
+
+    // Closed form, both sums, at the new baseline: nothing un-applied is left,
+    // so the residual is the raw deviation of the NEW measurement and the
+    // ghost is that measurement itself.
+    {
+        const auto residual = session.workingResidualDb();
+        const auto ghost = session.ghostDb();
+        for (std::size_t k = 0; k < post.hz.size(); ++k) {
+            CHECK(std::abs(static_cast<double>(residual[k])
+                           - (static_cast<double>(post.measuredDb[k])
+                              - static_cast<double>(post.targetDb[k])))
+                  <= 1e-5);
+            CHECK(std::abs(ghost[k] - static_cast<double>(post.measuredDb[k])) <= 1e-9);
+        }
+    }
+
+    // The defect's signature was the SECOND ranking reproducing the first
+    // exactly, because the residual handed to the allocator was bit-identical
+    // to the one that produced it. The closed-form residual check above is
+    // the unconditional half of the guard; this is the operational half.
+    const auto next = session.suggest(3);
+    INFO("suggestions after the re-measure: " << next.size());
+    for (const auto& candidate : next) {
+        const bool sameFilter = std::abs(candidate.spec.fcHz - applied.fcHz) < 1.0
+                                && std::abs(candidate.spec.gainDb - applied.gainDb) < 0.1;
+        CHECK_FALSE(sameFilter);
+    }
 }
 
 TEST_CASE("EqSession: an untrusted band never carries a placement") {
@@ -239,35 +312,6 @@ TEST_CASE("EqSession: an untrusted band never carries a placement") {
 }
 
 // --- E5 ---------------------------------------------------------------------
-TEST_CASE("EqTextExport: the filter list round-trips through its own text form") {
-    const std::vector<FilterSpec> specs{
-        { FilterType::Peaking, 1000.0, 1.41, -3.5 },
-        { FilterType::LowShelf, 80.0, 0.71, 2.0 },
-        { FilterType::HighShelf, 12500.0, 0.5, -1.2 },
-    };
-
-    const std::string text = rta::eqexport::renderFilterList(specs, kFs);
-
-    // Project readout convention (CLAUDE.md "Reading out numbers"): frequency
-    // is a whole number of hertz, dB keeps one decimal, Q two.
-    CHECK(text.find(" 1000 ") != std::string::npos);
-    CHECK(text.find("1000.0") == std::string::npos);
-    CHECK(text.find("1.41") != std::string::npos);
-    CHECK(text.find("-3.5") != std::string::npos);
-
-    const auto parsed = rta::eqexport::parseFilterList(text);
-    REQUIRE(parsed.size() == specs.size());
-    for (std::size_t i = 0; i < specs.size(); ++i) {
-        CHECK(parsed[i].type == specs[i].type);
-        // The written precision IS the round-trip precision: a whole hertz,
-        // 0.01 of Q, 0.1 dB. Anything finer would be a readout the format
-        // does not carry.
-        CHECK(std::abs(parsed[i].fcHz - specs[i].fcHz) <= 0.5);
-        CHECK(std::abs(parsed[i].q - specs[i].q) <= 0.005);
-        CHECK(std::abs(parsed[i].gainDb - specs[i].gainDb) <= 0.05);
-    }
-}
-
 TEST_CASE("EqTextExport: a session's committed set is what gets exported") {
     const Fixture f = makeFixture();
     EqSessionConfig config;

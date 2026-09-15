@@ -80,12 +80,31 @@ VerifyReport compareToPrediction(std::span<const float> measuredAfterDb,
         ++trustedBins;
     }
 
+    report.trustedBins = trustedBins;
     if (trustedBins > 0) {
         const double n = static_cast<double>(trustedBins);
         report.residualRmsBeforeDb = std::sqrt(sumBefore / n);
         report.residualRmsAfterDb = std::sqrt(sumAfter / n);
     }
+    // No else. With no trusted bin there is no residual to report, and the
+    // fields stay nullopt rather than falling back to 0.0 -- see the header.
     return report;
+}
+
+std::string renderVerifySummary(const VerifyReport& report) {
+    char line[160];
+    if (report.trustedBins == 0) {
+        std::snprintf(line, sizeof line,
+                      "VERIFY inconclusive: no trusted bins (%zu bins measured, all under the "
+                      "coherence floor) -- no residual to report",
+                      report.bins.size());
+        return line;
+    }
+    std::snprintf(line, sizeof line,
+                  "VERIFY: %zu of %zu bins trusted, %zu flagged; residual %.1f dB -> %.1f dB",
+                  report.trustedBins, report.bins.size(), report.flaggedCount,
+                  *report.residualRmsBeforeDb, *report.residualRmsAfterDb);
+    return line;
 }
 
 EqVerify::EqVerify(rta::platform::OutputEngine& engine, Config config)
@@ -93,11 +112,18 @@ EqVerify::EqVerify(rta::platform::OutputEngine& engine, Config config)
 
 void EqVerify::arm() {
     if (state_ != VerifyState::Idle) return;
-    // Output-path record sec.6, in order. setSource first: it refuses unless
-    // the engine is quiescent, so doing it after armSource would leave the
-    // slot empty and the verify silent.
-    engine_.setSource(rta::platform::SourceVariant(
-            rta::gen::PinkNoise(rta::gen::Pcg32(config_.noiseSeed, 1), config_.excitationDbFsRms)));
+    refusal_ = VerifyRefusal::None;
+    // Output-path record sec.6, in order. setSource FIRST, and its bool is
+    // the refusal: it returns false unless the engine is quiescent, and
+    // ignoring that would leave somebody else's running excitation in the
+    // slot, then solo it and arm it -- a verify reported over the wrong
+    // signal at the wrong level, silently. Nothing after this line runs on a
+    // refusal, so the routing the other owner set is left exactly as it was.
+    if (!engine_.setSource(rta::platform::SourceVariant(rta::gen::PinkNoise(
+                rta::gen::Pcg32(config_.noiseSeed, 1), config_.excitationDbFsRms)))) {
+        refusal_ = VerifyRefusal::EngineNotQuiescent;
+        return;
+    }
     soloOutput(engine_, config_.outputChannel);
     engine_.armSource();
     state_ = VerifyState::Waiting;

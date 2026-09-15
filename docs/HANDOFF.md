@@ -138,10 +138,74 @@ test_eq_session.cpp 286, test_eq_verify.cpp 198.
   mang `noiseSeed` + `excitationDbFsRms` (giống `DelayLocator` nhận source từ
   caller) để một lượt verify tái lập được bit-for-bit.
 
+## Vòng verify độc lập (PR #4) — SOUND-WITH-FIXES, hai defect đã sửa
+
+Verifier (không có Edit/Write) dựng lại toàn bộ trên worktree riêng: bảy claim
+đều đứng, mọi số khớp, năm mutation của nó đều đỏ được. Nó tìm ra hai defect
+THẬT trong code mới, cả hai không fixture nào chạm tới. Đã sửa TDD trên cùng
+nhánh.
+
+**Defect 1 — `applied` tự mâu thuẫn, và session gợi ý lại đúng filter vừa apply.**
+`ghostDb()` cộng MỌI committed filter còn `workingResidualDb()` bỏ filter đã
+applied, hai hàm đọc chung `measuredDb_`. Sau `markApplied` chúng lệch đúng
+bằng `R_applied` (verifier đo: ghost−target 0.115 dB vs residual 3.573 dB) và
+`suggest()` trả về y hệt filter đó (fc=993.951, −7.11 dB) → −14.2 dB lên một
+bump 8 dB. Tệ hơn: `setMeasurement` xoá `committed_`, nên nhánh "đo lại sau khi
+apply" mà doc comment mô tả KHÔNG BAO GIỜ chạy được.
+
+*Semantics đã chốt (một luật, hai tổng):* **`measuredDb_` LUÔN là phép đo mới
+nhất, và `applied` khẳng định filter đó ĐÃ NẰM TRONG đường tín hiệu của phép đo
+ấy.** Vậy filter applied rời **CẢ HAI** tổng:
+
+```
+ghost_k    = m_k + Σ_{chưa applied} R_i(f_k)
+residual_k = ghost_k − t_k
+```
+
+Dòng thứ hai là một **identity** và giờ có test canh nó ở mọi trạng thái
+applied. `setMeasurement` GIỮ `committed_` (cùng mark) và các vùng declined;
+vùng declined lưu dạng **băng tần** (`declinedBands_`) chứ không phải cờ theo
+bin, nên sống sót qua lưới đổi độ dài. Bắt đầu lại = `clearFilters()` +
+`clearExclusions()`, nói rõ ra.
+
+**Defect 2 — verify mù không phân biệt được với verify hoàn hảo.** `trustedBins
+== 0` để hai trường RMS ở mặc định `0.0`, và `VerifyReport` không mang số bin
+tin cậy nào — đúng
+`memory/a-placeholder-for-an-absent-result-erases-its-state.md`. Thêm
+`trustedBins` + `std::optional` cho hai RMS + `renderVerifySummary()` in
+"no trusted bins".
+
+**Observation 3 đã sửa luôn:** `EqVerify::arm()` giờ KIỂM `setSource`'s bool và
+từ chối (`VerifyRefusal::EngineNotQuiescent`, state ở nguyên `Idle`, KHÔNG đụng
+routing). **`DelayLocator.cpp:32` có đúng lỗi bỏ sót đó và CHƯA sửa** — ngoài
+phạm vi PR này, ghi lại làm việc tiếp theo: một Locate arm lên engine đang bận
+sẽ solo + arm nguồn của người khác rồi correlate nhầm excitation.
+
+**Observation 4 (E1 gần như tautology) đã xử:** test mới
+"ghost minus target IS the working residual" kiểm identity giữa HAI hàm, không
+phải kiểm một hàm bằng chính công thức của nó.
+
+Mutation chứng minh test mới cắn (xoá .exe trước mỗi lần dựng):
+
+| mutation | đỏ ở |
+|---|---|
+| A — bỏ `if (filter.applied) continue;` trong `ghostDb` (defect 1 nguyên bản) | identity test, `0.00244626728573394 <= 0.00001` "first filter marked applied"; 3 test case / 768 assertion đỏ |
+| B — cho `setMeasurement` xoá `committed_` lại | "an applied filter is never re-suggested", `REQUIRE( session.committed().size() == 1 ) ... 0 == 1` |
+| C — gán `0.0` cho hai RMS khi không có bin tin cậy | `CHECK_FALSE( blindReport.residualRmsBeforeDb.has_value() ) ... !true` |
+| D — bỏ chữ "no trusted bins" khỏi summary | `CHECK( blindText.find("no trusted bins") != std::string::npos )` |
+
+**Bẫy phương pháp verifier tặng, đã ghi vào memory:** mutation nằm trong
+**header** KHÔNG được biên dịch lại dù đã xoá .exe — MSBuild báo `MSB8029`
+(build tree dưới `%TEMP%`) rồi chỉ relink, không `.cpp` nào đổi timestamp nên
+header không được đọc lại. Phải `touch` một `.cpp` cùng TU. Xem
+`memory/mutation-testing-needs-the-exe-deleted-first.md` mục mới.
+
 ## Còn mở
 
 - **CHƯA MERGE, CHƯA PUSH** lúc viết. Nhánh `l7/eq-app-session-verify` từ
   `23b7ea0`; PR mở lên `main`, KHÔNG tự merge.
+- **`DelayLocator::arm()` bỏ qua `setSource`'s bool** (`DelayLocator.cpp:32`) —
+  cùng lỗi với observation 3, chưa sửa, chưa có test cho đường non-quiescent.
 - **Lane lớn kế tiếp: Wave 3 (ALIGN)** — G11 virtual processor (nó tiêu thụ đúng
   `std::vector<FilterSpec>` mà `EqSession` giữ), G17 wizard (HỎI topology),
   G18 crossover, ρ fold. Câu hỏi order-4 (ALIGN §13.1) vẫn chờ chủ nhân.

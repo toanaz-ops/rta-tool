@@ -9,10 +9,13 @@
 
 #include "measure/EqVerify.h"
 
+#include "rta/gen/Oscillator.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 using rta::measure::compareToPrediction;
@@ -129,12 +132,78 @@ TEST_CASE("EqVerify: the excitation rides the output-path contract, no device") 
     CHECK(verify.state() == VerifyState::Done);
 }
 
+TEST_CASE("EqVerify: refuses to arm when the engine is not quiescent") {
+    // setSource returns false unless the engine is quiescent. Ignoring that
+    // bool would leave whatever source is already loaded in the slot -- a
+    // running Locate, say -- and then solo it and arm it, so VERIFY would
+    // report over the wrong excitation at the wrong level and never say so.
+    OutputEngine engine;
+    engine.prepare(kFs, 4);
+
+    // Somebody else owns the engine: a source is loaded and armed.
+    REQUIRE(engine.setSource(rta::platform::SourceVariant(
+            rta::gen::Oscillator(kFs, 1000.0, -6.0))));
+    engine.armSource();
+    REQUIRE_FALSE(engine.sourceIsQuiescent());
+
+    EqVerify::Config config;
+    config.outputChannel = 2;
+    config.sampleRate = kFs;
+    EqVerify verify(engine, config);
+    verify.arm();
+
+    CHECK(verify.state() == VerifyState::Idle);
+    CHECK(verify.lastRefusal() == rta::measure::VerifyRefusal::EngineNotQuiescent);
+    // And it did NOT touch the routing on its way out.
+    CHECK(engine.role(2) == OutputRole::None);
+}
+
 TEST_CASE("EqVerify: the report carries the residual before and after") {
     // before = 4 dB off a 0 dB target on every bin, after = 1.2 dB off.
     const Bins b = makeBins(0.2, 0.99f);
     const auto report = run(b, 1.0, 100.0);
-    CHECK(std::abs(report.residualRmsBeforeDb - 4.0) <= 1e-6);
-    CHECK(std::abs(report.residualRmsAfterDb - 1.2) <= 1e-5);
+    REQUIRE(report.trustedBins == b.trusted.size());
+    REQUIRE(report.residualRmsBeforeDb.has_value());
+    REQUIRE(report.residualRmsAfterDb.has_value());
+    CHECK(std::abs(*report.residualRmsBeforeDb - 4.0) <= 1e-6);
+    CHECK(std::abs(*report.residualRmsAfterDb - 1.2) <= 1e-5);
+}
+
+TEST_CASE("EqVerify: an all-untrusted capture is distinguishable from a perfect one") {
+    // The case VERIFY exists to survive: every bin under the coherence floor.
+    // There is no evidence, so there is no residual -- and "no residual" must
+    // not render as the same 0.0 dB a flawless pass renders as
+    // (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+    Bins blind = makeBins(0.2, 0.99f);
+    for (auto& t : blind.trusted) t = static_cast<std::uint8_t>(0);
+    const auto blindReport = run(blind, 0.1, 100.0);
+
+    // A genuinely perfect verify: every bin trusted, measurement ON the
+    // prediction and ON the target, so both residuals are exactly 0 dB.
+    Bins perfect = makeBins(0.0, 0.99f);
+    perfect.measuredBeforeDb.assign(perfect.trusted.size(), 0.0f);
+    perfect.predictedDb.assign(perfect.trusted.size(), 0.0);
+    perfect.measuredAfterDb.assign(perfect.trusted.size(), 0.0f);
+    const auto perfectReport = run(perfect, 0.1, 100.0);
+
+    // Both report zero flags -- that alone can never tell them apart.
+    REQUIRE(blindReport.flaggedCount == 0);
+    REQUIRE(perfectReport.flaggedCount == 0);
+
+    CHECK(blindReport.trustedBins == 0);
+    CHECK(perfectReport.trustedBins == perfect.trusted.size());
+    CHECK_FALSE(blindReport.residualRmsBeforeDb.has_value());
+    CHECK_FALSE(blindReport.residualRmsAfterDb.has_value());
+    REQUIRE(perfectReport.residualRmsBeforeDb.has_value());
+    CHECK(*perfectReport.residualRmsBeforeDb == 0.0);
+    CHECK(*perfectReport.residualRmsAfterDb == 0.0);
+
+    // And the text a human reads says which of the two it is looking at.
+    const std::string blindText = rta::measure::renderVerifySummary(blindReport);
+    const std::string perfectText = rta::measure::renderVerifySummary(perfectReport);
+    CHECK(blindText != perfectText);
+    CHECK(blindText.find("no trusted bins") != std::string::npos);
+    CHECK(perfectText.find("no trusted bins") == std::string::npos);
 }
 
 // --- F2 ---------------------------------------------------------------------

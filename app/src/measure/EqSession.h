@@ -43,9 +43,25 @@ struct EqSessionConfig {
 };
 
 /// A filter the session has landed, and whether the operator has dialled it
-/// into the REAL downstream DSP. An applied filter's correction now lives in
-/// the room, so it leaves the residual sum (record sec.2) -- counting it in
-/// the prediction as well would count it twice.
+/// into the REAL downstream DSP.
+///
+/// THE ONE SEMANTICS EVERYTHING ELSE FOLLOWS FROM (settled 2026-09-15 after
+/// an independent verify found ghostDb and workingResidualDb reading this
+/// flag two opposite ways): `measuredDb` is always the LATEST measurement,
+/// and `applied` asserts that this filter is ALREADY IN the signal path that
+/// measurement came through. So an applied filter leaves BOTH sums -- the
+/// residual (record sec.2's "or its correction would be counted twice, once
+/// in the room and once in the prediction") AND the ghost, for the identical
+/// reason: the room already shows it.
+///
+///     ghost_k    = m_k + sum over NOT-applied of R_i(f_k)
+///     residual_k = ghost_k - t_k
+///
+/// One membership rule, two sums, and the second line is an identity a test
+/// checks. Marking a filter applied is therefore a statement about the NEXT
+/// measurement; the operator's loop is measure -> accept -> dial it into the
+/// rig -> mark applied -> RE-MEASURE, and setMeasurement is built to keep the
+/// list across that last step (see below) so the mark still means something.
 struct CommittedFilter {
     rta::eq::FilterSpec spec{};
     bool applied = false;
@@ -71,8 +87,16 @@ public:
     /// matches it or is empty (below the gate -- every bin then untrusted,
     /// EqTrustMask.h). `hHalfGrid` is the snapshot's complex H if it is
     /// available on the SAME grid, and may be empty: EqInput's own documented
-    /// fallback then places boosts without the G24 gate. Resets the committed
-    /// set and the exclusion mask -- a new measurement is a new session.
+    /// fallback then places boosts without the G24 gate.
+    ///
+    /// KEEPS the committed list (with its applied marks) and the declined
+    /// regions. A re-measurement is a new view of the SAME session, and the
+    /// applied marks are what make it interpretable: wiping them would erase
+    /// the only record of which corrections the new measurement already
+    /// contains, and the session would propose them all over again. The
+    /// declined regions are carried as frequency BANDS, not bin flags, so
+    /// they survive a grid whose length or spacing changed. Starting over is
+    /// `clearFilters()` + `clearExclusions()`, said explicitly.
     void setMeasurement(std::span<const float> hz, std::span<const float> measuredDb,
                         std::span<const float> targetDb, std::span<const float> coherence,
                         std::span<const std::complex<double>> hHalfGrid, double sampleRate);
@@ -102,6 +126,10 @@ public:
 
     void markApplied(std::size_t index, bool applied);
     void clearFilters();
+    /// Forget every declined region. Separate from clearFilters() because the
+    /// two are different operator intents: "start the filter set again" is not
+    /// "I changed my mind about the regions I refused".
+    void clearExclusions();
 
     [[nodiscard]] std::span<const CommittedFilter> committed() const noexcept {
         return committed_;
@@ -111,14 +139,17 @@ public:
     [[nodiscard]] std::span<const float> hz() const noexcept { return hz_; }
     [[nodiscard]] const EqSessionConfig& config() const noexcept { return config_; }
 
-    /// ghost_k = m_k + sum_i responseDb(spec_i, fs, f_k) over EVERY committed
-    /// filter, applied or not -- the predicted post-EQ trace (record sec.7,
-    /// EQ-R3/R5: exact dB add through Wave 0's own responseDb, never a second
-    /// response path).
+    /// ghost_k = m_k + sum_i responseDb(spec_i, fs, f_k) over committed
+    /// filters NOT marked applied -- the predicted post-EQ trace (record
+    /// sec.7, EQ-R3/R5: exact dB add through Wave 0's own responseDb, never a
+    /// second response path). An applied filter is already in `measuredDb_`
+    /// (CommittedFilter's own doc comment), so adding its response here would
+    /// draw a room that had been corrected twice.
     [[nodiscard]] std::vector<double> ghostDb() const;
 
-    /// r_k = m_k - t_k + sum_i R_i(f_k) over committed filters NOT marked
-    /// applied (record sec.2). This is what the allocator is handed as
+    /// r_k = ghost_k - t_k, i.e. m_k - t_k + sum_i R_i(f_k) over committed
+    /// filters NOT marked applied (record sec.2). Same membership rule as
+    /// ghostDb, by construction. This is what the allocator is handed as
     /// EqInput::residualDb -- pre-offset: the auto-offset c is EqAllocator's
     /// own job (EqAllocator.h rule 1), and so is the negation the gain solve
     /// needs (EqAllocator.cpp's `negated()`), so this function must NOT
@@ -127,6 +158,7 @@ public:
 
 private:
     [[nodiscard]] rta::eq::EqInput makeInput(std::span<const float> residual) const;
+    void rebuildExclusionMask();
 
     EqSessionConfig config_;
     double sampleRate_ = 0.0;
@@ -136,7 +168,8 @@ private:
     std::vector<float> coherence_;
     std::vector<std::complex<double>> hHalfGrid_;
     std::vector<std::uint8_t> trusted_;
-    std::vector<std::uint8_t> excluded_;
+    std::vector<std::uint8_t> excluded_;   ///< derived from declinedBands_, per grid
+    std::vector<FilterBand> declinedBands_;///< the grid-independent source of truth
     std::vector<CommittedFilter> committed_;
 };
 

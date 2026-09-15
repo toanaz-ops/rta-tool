@@ -46,8 +46,23 @@ void EqSession::setMeasurement(std::span<const float> hz, std::span<const float>
     sampleRate_ = sampleRate;
 
     trusted_ = buildTrustMask(coherence_, hz_.size(), config_.trustFloor);
+    // committed_ and declinedBands_ SURVIVE: a re-measurement is a new view of
+    // the same session (see CommittedFilter's doc comment). The bin-indexed
+    // exclusion mask cannot survive a grid change, so it is rebuilt from the
+    // bands, which are grid-independent by construction.
+    rebuildExclusionMask();
+}
+
+void EqSession::rebuildExclusionMask() {
     excluded_.assign(hz_.size(), static_cast<std::uint8_t>(0));
-    committed_.clear();
+    for (const FilterBand& band : declinedBands_) {
+        for (std::size_t k = 0; k < hz_.size(); ++k) {
+            const double f = static_cast<double>(hz_[k]);
+            if (f >= band.lowHz && f <= band.highHz) {
+                excluded_[k] = static_cast<std::uint8_t>(1);
+            }
+        }
+    }
 }
 
 std::vector<float> EqSession::workingResidualDb() const {
@@ -68,6 +83,10 @@ std::vector<double> EqSession::ghostDb() const {
     for (std::size_t k = 0; k < hz_.size(); ++k) {
         double g = static_cast<double>(measuredDb_[k]);
         for (const auto& filter : committed_) {
+            // Same membership rule as workingResidualDb, and for the same
+            // reason: an applied filter is already in measuredDb_, so adding
+            // its response would predict a room corrected twice.
+            if (filter.applied) continue;
             g += rta::eq::responseDb(filter.spec, sampleRate_, static_cast<double>(hz_[k]));
         }
         ghost[k] = g;
@@ -127,13 +146,8 @@ void EqSession::acceptCandidate(const rta::eq::Candidate& candidate) {
 }
 
 void EqSession::declineCandidate(const rta::eq::Candidate& candidate) {
-    const FilterBand band = filterBandHz(candidate.spec);
-    for (std::size_t k = 0; k < hz_.size(); ++k) {
-        const double f = static_cast<double>(hz_[k]);
-        if (f >= band.lowHz && f <= band.highHz) {
-            excluded_[k] = static_cast<std::uint8_t>(1);
-        }
-    }
+    declinedBands_.push_back(filterBandHz(candidate.spec));
+    rebuildExclusionMask();
 }
 
 void EqSession::markApplied(std::size_t index, bool applied) {
@@ -142,5 +156,10 @@ void EqSession::markApplied(std::size_t index, bool applied) {
 }
 
 void EqSession::clearFilters() { committed_.clear(); }
+
+void EqSession::clearExclusions() {
+    declinedBands_.clear();
+    rebuildExclusionMask();
+}
 
 }  // namespace rta::measure

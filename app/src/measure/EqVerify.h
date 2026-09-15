@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace rta::measure {
@@ -55,11 +56,29 @@ struct VerifyBin {
 struct VerifyReport {
     std::vector<VerifyBin> bins;
     std::size_t flaggedCount = 0;
+
+    /// How many bins carried evidence at all. ZERO is a real, reachable
+    /// outcome -- a capture where every bin sits under the coherence floor is
+    /// precisely the case VERIFY exists to survive -- and it is the reason
+    /// the two RMS fields below are optional rather than defaulted.
+    std::size_t trustedBins = 0;
+
     /// RMS of (measured - target) over TRUSTED bins, before the filters were
     /// applied and after -- the one number that says whether the pass helped.
-    double residualRmsBeforeDb = 0.0;
-    double residualRmsAfterDb = 0.0;
+    ///
+    /// `nullopt` when `trustedBins == 0`. A defaulted 0.0 would render an
+    /// evidence-free verify bit-identical to a flawless one (0 flags, 0 dB
+    /// residual, twice), which is exactly the failure
+    /// memory/a-placeholder-for-an-absent-result-erases-its-state.md names:
+    /// a placeholder for an absent result erases the fact that it is absent.
+    std::optional<double> residualRmsBeforeDb;
+    std::optional<double> residualRmsAfterDb;
 };
+
+/// One line a human reads. Says "no trusted bins" when there were none, so
+/// the absent state survives the trip to the screen or the log as well as it
+/// survives inside the struct.
+[[nodiscard]] std::string renderVerifySummary(const VerifyReport& report);
 
 /// Pure comparison, no engine: `predictedDb` is the session ghost
 /// (EqSession::ghostDb), `measuredBeforeDb` the magnitude the filters were
@@ -73,6 +92,13 @@ compareToPrediction(std::span<const float> measuredAfterDb, std::span<const doub
                     double effectiveAverages, VerifyTolerance tolerance);
 
 enum class VerifyState { Idle, Waiting, Measuring, Settling, Done };
+
+/// One reason, on purpose, mirroring DelayLocator's named-refusal shape:
+/// `OutputEngine::setSource` returns false unless the engine is quiescent, so
+/// arming over somebody else's running excitation would leave THEIR source in
+/// the slot, solo it, and report a verify over the wrong signal at the wrong
+/// level without ever saying so.
+enum class VerifyRefusal { None, EngineNotQuiescent };
 
 /// The state machine around that comparison, driving a REAL OutputEngine --
 /// JUCE-free like DelayLocator, so it is provable with no audio hardware.
@@ -95,6 +121,10 @@ public:
     /// Idle -> Waiting: setSource(pink noise), STRICT solo on the configured
     /// output (a verify is a measurement action, so it takes the same owner
     /// ruling a sequence does -- L7-OUT record sec.13.2), armSource.
+    ///
+    /// REFUSES, changing nothing at all -- not the routing, not the slot --
+    /// when setSource says the engine is not quiescent; `lastRefusal()` then
+    /// reads EngineNotQuiescent and the state stays Idle.
     void arm();
 
     /// Waiting -> Measuring once the excitation has rendered past the 10 ms
@@ -112,12 +142,14 @@ public:
                         std::span<const std::uint8_t> trusted, double effectiveAverages);
 
     [[nodiscard]] VerifyState state() const noexcept { return state_; }
+    [[nodiscard]] VerifyRefusal lastRefusal() const noexcept { return refusal_; }
     [[nodiscard]] const std::optional<VerifyReport>& report() const noexcept { return report_; }
 
 private:
     rta::platform::OutputEngine& engine_;
     Config config_;
     VerifyState state_ = VerifyState::Idle;
+    VerifyRefusal refusal_ = VerifyRefusal::None;
     std::optional<VerifyReport> report_;
 };
 

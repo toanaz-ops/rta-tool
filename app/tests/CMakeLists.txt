@@ -60,6 +60,10 @@ add_executable(rtatool_analysis_tests
     # OutputPolicy/DelayLocator, so they live here rather than in
     # app/tests_juce.
     test_eq_session.cpp
+    # test_eq_trust_export.cpp: task E's other two subjects -- the coherence
+    # trust mask (record sec.4.1) and the FilterSpec text format (sec.7) --
+    # split out of test_eq_session.cpp when that file grew past one job.
+    test_eq_trust_export.cpp
     # test_eq_verify.cpp: lane L7-EQ task F (record sec.8) -- VERIFY over a
     # real rta::platform::OutputEngine with no device, same shape as
     # test_delay_locator.cpp.
