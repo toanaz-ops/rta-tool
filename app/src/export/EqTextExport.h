@@ -10,7 +10,9 @@
 
 #include "rta/eq/FilterSpec.h"
 
+#include <cstddef>
 #include <cstdio>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -45,14 +47,19 @@ struct ExportedFilter {
     return "peaking";
 }
 
-/// Unknown text reads back as Peaking: the export's own vocabulary is closed
-/// (FilterSpec has three members), so a foreign word is a typo in a
-/// hand-edited file, and the least surprising recovery is the type every
-/// allocator pass actually places.
-[[nodiscard]] inline rta::eq::FilterType typeFromName(std::string_view name) {
+/// `nullopt` for anything outside the closed vocabulary. There is deliberately
+/// NO fallback type: a word this format cannot represent must not import as
+/// some other filter. The fallback that used to live here read an 80 Hz
+/// `lowshelf +2 dB` as an 80 Hz PEAKING `+2 dB` whenever a byte-order mark
+/// was glued to the word -- which Notepad and PowerShell 5.1's `Out-File` /
+/// `Set-Content` add to every file they write, so on Windows it was the
+/// default case, not the typo case. A different filter, landed on the rig,
+/// that nobody was told about.
+[[nodiscard]] inline std::optional<rta::eq::FilterType> typeFromName(std::string_view name) {
+    if (name == "peaking") return rta::eq::FilterType::Peaking;
     if (name == "lowshelf") return rta::eq::FilterType::LowShelf;
     if (name == "highshelf") return rta::eq::FilterType::HighShelf;
-    return rta::eq::FilterType::Peaking;
+    return std::nullopt;
 }
 
 /// The word that marks a row as already in the rig. A whole word, not a `1`,
@@ -100,33 +107,66 @@ inline constexpr std::string_view kAppliedToken = "applied";
     return renderFilterList(filters, sampleRate);
 }
 
-/// The inverse. `#` comments and blank lines are skipped -- SessionCodec's
-/// own line convention, reused rather than reinvented. A malformed line is
-/// skipped too: a hand-edited file with one bad row still imports the rows
-/// that are good, which is what an operator in front of a rig needs.
+/// The rows that imported, and the rows that did not. A rejected row the
+/// caller cannot see is a row the operator silently loses
+/// (memory/a-placeholder-for-an-absent-result-erases-its-state.md), so the
+/// refusals are named rather than dropped.
+struct FilterListParse {
+    std::vector<ExportedFilter> filters;
+    /// 1-based line numbers, counting every line of the input including
+    /// comments and blanks, so the number matches what an editor shows.
+    std::vector<std::size_t> rejectedLines;
+};
+
+/// The UTF-8 byte-order mark, which Notepad and PowerShell 5.1 put at the
+/// start of every file they write.
+inline constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
+
+/// The inverse of renderFilterList. `#` comments and blank lines are skipped
+/// -- SessionCodec's own line convention, reused rather than reinvented. A row
+/// that does not parse, or whose type word is outside the vocabulary, is
+/// REJECTED and its line number reported: a hand-edited file with one bad row
+/// still imports the rows that are good, which is what an operator in front of
+/// a rig needs, but nothing is quietly reshaped into a different filter.
+///
+/// A leading UTF-8 BOM is stripped before anything else looks at the text.
+/// `'\r'` needs no handling: it is whitespace to `operator>>`, so CRLF files
+/// parse as they stand.
 ///
 /// A row with no fifth column reads as NOT applied, which is both the
 /// backward-compatible reading and the safe one: treating an unknown row as
 /// already-in-the-rig would silently drop a correction the operator asked for,
 /// whereas treating it as not-yet-applied surfaces as a filter they can see.
-[[nodiscard]] inline std::vector<ExportedFilter> parseFilterList(std::string_view text) {
-    std::vector<ExportedFilter> filters;
+[[nodiscard]] inline FilterListParse parseFilterList(std::string_view text) {
+    if (text.size() >= kUtf8Bom.size() && text.substr(0, kUtf8Bom.size()) == kUtf8Bom) {
+        text.remove_prefix(kUtf8Bom.size());
+    }
+
+    FilterListParse parse;
     std::istringstream stream{ std::string(text) };
     std::string line;
+    std::size_t lineNumber = 0;
     while (std::getline(stream, line)) {
-        if (line.empty() || line.front() == '#') continue;
+        ++lineNumber;
+        if (line.empty() || line.front() == '#' || line.front() == '\r') continue;
         std::istringstream fields{ line };
         std::string name;
         ExportedFilter filter;
         if (!(fields >> name >> filter.spec.fcHz >> filter.spec.q >> filter.spec.gainDb)) {
+            parse.rejectedLines.push_back(lineNumber);
             continue;
         }
-        filter.spec.type = typeFromName(name);
+        const auto type = typeFromName(name);
+        if (!type.has_value()) {
+            parse.rejectedLines.push_back(lineNumber);
+            continue;
+        }
+        filter.spec.type = *type;
         std::string flag;
         if (fields >> flag) filter.applied = (flag == kAppliedToken);
-        filters.push_back(filter);
+        parse.filters.push_back(filter);
     }
-    return filters;
+    return parse;
 }
 
 }  // namespace rta::eqexport

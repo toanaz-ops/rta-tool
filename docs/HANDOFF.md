@@ -246,6 +246,52 @@ tách thành `test_eq_session.cpp` (semantics, 229) +
 `test_eq_session_lifecycle.cpp` (decline / đo lại / export, 157), fixture dùng
 chung ở `app/tests/EqSessionFixture.h` (92, mọi hàm `inline` vì hai TU include).
 
+## Vòng verify THỨ BA — ba defect nhỏ + một observation, đã sửa
+
+Verifier vòng 3 xác nhận cả bốn claim vòng 2 và cả hai tally (OFF 572 / ON
+640), tự chạy lại mutation E và F. Ba thứ mới, đều nhỏ nhưng đều là **thông tin
+bị mất âm thầm**:
+
+1. **BOM UTF-8 viết lại TYPE của hàng đầu tiên.** Notepad và PowerShell 5.1
+   (`Out-File` / `Set-Content`) mặc định ghi BOM; nó dính vào token đầu, và
+   fallback cũ của `typeFromName` biến `BOM+lowshelf` thành **Peaking** —
+   một filter KHÁC, nằm trên rig, không ai được báo. Sửa: strip BOM trước khi
+   parse, và `typeFromName` trả `std::optional` — **không còn fallback**. Từ
+   khoá lạ ⇒ hàng bị **từ chối kèm số dòng** (`FilterListParse{filters,
+   rejectedLines}`), vì hàng bị bỏ âm thầm cũng là state bị xoá. CRLF không
+   cần xử lý: `'\r'` là whitespace với `operator>>` (verifier đã dò 10 biến
+   thể line-ending, đều an toàn).
+2. **`renderVerifySummary` in câu SAI cho một trong hai trạng thái vắng.**
+   Guard `has_value()` thêm ở vòng 2 dùng CHUNG nhánh với `trustedBins == 0`,
+   nên một report có `trustedBins = 4` vẫn in "no trusted bins (4 bins
+   measured, all under the coherence floor)" — và test vòng 2 KHOÁ LUÔN câu
+   sai đó. Tách hai nhánh: `trustedBins == 0` giữ câu cũ; `trustedBins > 0`
+   mà thiếu RMS in "N of M bins trusted, residual not computed".
+3. **Assertion rỗng.** `CHECK(text.find("applied") != npos)` không bao giờ đỏ
+   được vì header luôn chứa từ đó. Đổi sang khẳng định trên ĐÚNG DÒNG:
+   `"\npeaking 994 1.15 -7.1 applied\n"`, và dòng không-applied phải KHÔNG có
+   token.
+4. **Observation — test grid-survival không khẳng định được tính bao gồm của
+   biên.** Nó so với chính `>=`/`<=` của implementation, và trên fixture đó
+   không bin nào rơi đúng biên (gần nhất lệch 2.23 Hz) nên `>=`→`>` vẫn xanh.
+   Đã thêm fixture **dựng, không dò**: lấy `h = 1/(2Q) = 3/4` ⇒ `1+h² = 25/16`
+   ⇒ `sqrt = 5/4` CHÍNH XÁC, nên `low = fc/2`, `high = 2·fc` đều đúng bit. Với
+   lưới 193 bin (binWidth đúng 125 Hz) và `fc = 1000`: low = 500 = bin 4,
+   high = 2000 = bin 16, cả hai biểu diễn chính xác ở float lẫn double, không
+   tolerance chỗ nào. Test tự kiểm (`REQUIRE(band.lowHz == 500.0)`) để nếu số
+   học thôi chính xác thì nó báo chứ không lặng lẽ test hụt biên.
+
+Mutation khoá bốn thứ trên: G (trả lại fallback Peaking) → `REQUIRE(
+parsed.filters.size() == 1 ) ... 3 == 1`; H (bỏ strip BOM) → `CHECK(
+withHeader.rejectedLines.empty() ) ... false`; I (gộp lại hai nhánh summary) →
+`CHECK( noResidualText.find("residual not computed") != npos )` đỏ; J (`>=`
+thành `>`) → `CHECK( excluded[kLowBin] != 0 ) ... 0 != 0` đúng hai bin biên.
+Chạy lại F sau khi sửa assertion rỗng: nay đỏ ở `CHECK( text.find(
+"\npeaking 994 1.15 -7.1 applied\n") != npos )`.
+
+**API đổi:** `parseFilterList` trả `FilterListParse` thay vì
+`std::vector<ExportedFilter>`. Bốn call site trong test đã đổi theo.
+
 ## Còn mở
 
 - **CHƯA MERGE, CHƯA PUSH** lúc viết. Nhánh `l7/eq-app-session-verify` từ

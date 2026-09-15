@@ -178,16 +178,31 @@ TEST_CASE("EqVerify: arming twice names its own refusal instead of a stale one")
     CHECK(verify.lastRefusal() == rta::measure::VerifyRefusal::AlreadyRunning);
 }
 
-TEST_CASE("EqVerify: renderVerifySummary refuses a report whose RMS is absent") {
-    // trustedBins > 0 and nullopt RMS cannot come out of compareToPrediction,
-    // but nothing asserts that, and the summary must not dereference an empty
-    // optional just because one field said the other should be there.
-    rta::measure::VerifyReport handBuilt;
-    handBuilt.bins.resize(4);
-    handBuilt.trustedBins = 4;  // says there IS evidence; the RMS fields disagree
+TEST_CASE("EqVerify: renderVerifySummary tells the two absent cases apart") {
+    // Two different absences, and the line must not describe one as the other
+    // -- that is the round-1 failure shape (an absent result wearing another
+    // result's clothes) reappearing in the sentence a human reads.
 
-    const std::string text = rta::measure::renderVerifySummary(handBuilt);
-    CHECK(text.find("no trusted bins") != std::string::npos);
+    // (a) No evidence at all: every bin under the coherence floor.
+    rta::measure::VerifyReport blind;
+    blind.bins.resize(4);
+    blind.trustedBins = 0;
+    const std::string blindText = rta::measure::renderVerifySummary(blind);
+    CHECK(blindText.find("no trusted bins") != std::string::npos);
+
+    // (b) Evidence exists, but the residual is missing. Cannot come out of
+    // compareToPrediction today; nothing asserts that it cannot, and the
+    // summary must neither dereference an empty optional nor claim the bins
+    // were untrusted when four of them were.
+    rta::measure::VerifyReport noResidual;
+    noResidual.bins.resize(4);
+    noResidual.trustedBins = 4;
+    const std::string noResidualText = rta::measure::renderVerifySummary(noResidual);
+    CHECK(noResidualText.find("residual not computed") != std::string::npos);
+    CHECK(noResidualText.find("4") != std::string::npos);
+    CHECK(noResidualText.find("no trusted bins") == std::string::npos);
+
+    CHECK(blindText != noResidualText);
 }
 
 TEST_CASE("EqVerify: the report carries the residual before and after") {

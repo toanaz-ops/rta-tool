@@ -129,6 +129,56 @@ TEST_CASE("EqSession: a declined region survives a measurement on a different gr
     CHECK(session.committed().empty());
 }
 
+TEST_CASE("EqSession: a band edge landing exactly on a bin centre is excluded") {
+    // The grid-survival case above compares against the same `>=`/`<=` the
+    // implementation uses, and on its fixture no bin centre lands within
+    // 2.23 Hz of a band edge -- so flipping `>=` to `>` leaves it green. The
+    // INCLUSIVITY of the band, which is a stated contract and not an accident
+    // of the grid, needs a fixture where an edge sits ON a bin centre.
+    //
+    // Constructed, not searched for. filterBandHz gives
+    //     low  = fc * (sqrt(1 + h^2) - h),  high = fc * (sqrt(1 + h^2) + h),
+    //     h    = 1/(2Q).
+    // Take h = 3/4: then 1 + h^2 = 25/16 and sqrt is exactly 5/4, so
+    //     low = fc/2 and high = 2*fc, both exact in binary for any fc.
+    // On the 193-bin half-grid binWidth is exactly 125 Hz, so fc = 1000 puts
+    // low on bin 4 (500 Hz) and high on bin 16 (2000 Hz), both exactly
+    // representable as float and as double. No tolerance anywhere.
+    constexpr std::size_t kBins = 193;
+    constexpr double kBinWidth = 125.0;  // (48000/2) / 192
+
+    rta::eq::Candidate candidate;
+    candidate.spec = rta::eq::FilterSpec{ rta::eq::FilterType::Peaking, 1000.0, 2.0 / 3.0, -3.0 };
+
+    const auto band = rta::measure::filterBandHz(candidate.spec);
+    // Self-check: if this arithmetic ever stops being exact, this test says so
+    // rather than quietly testing a boundary it no longer sits on.
+    REQUIRE(band.lowHz == 500.0);
+    REQUIRE(band.highHz == 2000.0);
+
+    EqSession session;
+    load(session, makeLinearFixture(kBins));
+    session.declineCandidate(candidate);
+
+    const auto excluded = session.excluded();
+    REQUIRE(excluded.size() == kBins);
+
+    constexpr std::size_t kLowBin = 4;    // 4 * 125 == 500 == band.lowHz
+    constexpr std::size_t kHighBin = 16;  // 16 * 125 == 2000 == band.highHz
+    REQUIRE(static_cast<double>(kLowBin) * kBinWidth == band.lowHz);
+    REQUIRE(static_cast<double>(kHighBin) * kBinWidth == band.highHz);
+
+    // Both edges are IN the band. A `>=` weakened to `>` drops exactly these
+    // two bins and nothing else.
+    CHECK(excluded[kLowBin] != 0);
+    CHECK(excluded[kHighBin] != 0);
+    // Their outside neighbours are not.
+    CHECK(excluded[kLowBin - 1] == 0);
+    CHECK(excluded[kHighBin + 1] == 0);
+    // And everything between is, so the edges are not excluded by accident.
+    for (std::size_t k = kLowBin; k <= kHighBin; ++k) CHECK(excluded[k] != 0);
+}
+
 // --- E5 ---------------------------------------------------------------------
 TEST_CASE("EqTextExport: a session's committed set is what gets exported") {
     const Fixture f = makeFixture();
@@ -150,8 +200,9 @@ TEST_CASE("EqTextExport: a session's committed set is what gets exported") {
 
     const auto parsed =
             rta::eqexport::parseFilterList(rta::eqexport::renderFilterList(filters, kFs));
-    REQUIRE(parsed.size() == filters.size());
+    REQUIRE(parsed.filters.size() == filters.size());
+    CHECK(parsed.rejectedLines.empty());
     // The bit that says "this one is already in the rig" reaches the file.
-    CHECK(parsed[0].applied);
-    CHECK_FALSE(parsed[1].applied);
+    CHECK(parsed.filters[0].applied);
+    CHECK_FALSE(parsed.filters[1].applied);
 }

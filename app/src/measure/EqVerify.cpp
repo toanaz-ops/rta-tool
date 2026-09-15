@@ -94,16 +94,24 @@ VerifyReport compareToPrediction(std::span<const float> measuredAfterDb,
 
 std::string renderVerifySummary(const VerifyReport& report) {
     char line[160];
-    // Guard on the fields actually dereferenced below, not on trustedBins.
-    // compareToPrediction is the only producer and keeps the two in step, but
-    // nothing asserts that invariant, and a report assembled any other way
-    // must not turn a missing value into undefined behaviour here.
-    if (report.trustedBins == 0 || !report.residualRmsBeforeDb.has_value()
-        || !report.residualRmsAfterDb.has_value()) {
+    // TWO absences, and they are not the same sentence. Sharing one branch
+    // would print "no trusted bins" over a report with four of them -- an
+    // absent result wearing another absent result's clothes, the same failure
+    // the optional RMS fields exist to prevent one layer down.
+    if (report.trustedBins == 0) {
         std::snprintf(line, sizeof line,
                       "VERIFY inconclusive: no trusted bins (%zu bins measured, all under the "
                       "coherence floor) -- no residual to report",
                       report.bins.size());
+        return line;
+    }
+    // Evidence exists but the residual does not. compareToPrediction never
+    // produces this, and nothing asserts that it cannot, so the summary says
+    // what is true rather than dereferencing an empty optional.
+    if (!report.residualRmsBeforeDb.has_value() || !report.residualRmsAfterDb.has_value()) {
+        std::snprintf(line, sizeof line,
+                      "VERIFY inconclusive: %zu of %zu bins trusted, residual not computed",
+                      report.trustedBins, report.bins.size());
         return line;
     }
     std::snprintf(line, sizeof line,
