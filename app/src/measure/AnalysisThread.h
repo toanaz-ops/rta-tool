@@ -6,6 +6,7 @@
 
 #include "measure/AnalysisPublish.h"
 #include "measure/Analyser.h"
+#include "measure/AtomicSharedPtr.h"
 #include "measure/AverageGroup.h"
 #include "measure/RawCaptureBuffer.h"
 #include "measure/RoutingPlan.h"
@@ -195,7 +196,11 @@ private:
     std::array<std::atomic<std::uint64_t>, static_cast<std::size_t>(kMaxTransferFunctions)>
         routeHopCounts_{};
 
-    std::atomic<SnapshotPtr> latest_;
+    /// AtomicSharedPtr rather than a bare std::atomic over the shared_ptr --
+    /// see measure/AtomicSharedPtr.h for why the C++20 specialisation cannot
+    /// be named directly. The publish is still one pointer swap; no lock
+    /// moved onto this path.
+    AtomicSharedPtr<const Snapshot> latest_;
     std::uint32_t lastPublishMs_ = 0;
 
     /// Task F2 (record §6): the one live group this thread publishes.
@@ -220,7 +225,10 @@ private:
     std::atomic<int> requestedRouteIndex_{-1};
     std::atomic<std::size_t> requestedCaptureLength_{0};
     std::atomic<bool> locateArmRequested_{false};
-    std::atomic<std::shared_ptr<const LocateCapture>> locateCapture_;
+    /// Same substitution, same reason (measure/AtomicSharedPtr.h): this one
+    /// is written by the analysis thread when a Locate capture fills and read
+    /// by the message thread that polls `locateCapture()`.
+    AtomicSharedPtr<const LocateCapture> locateCapture_;
 
     std::atomic<int> pendingReferenceDelay_{0};
     std::atomic<bool> applyDelayRequested_{false};

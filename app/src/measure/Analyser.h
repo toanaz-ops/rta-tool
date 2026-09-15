@@ -3,6 +3,7 @@
 // See docs/plans/2026-08-27-audioio-rta-impl-plan.md §1.3, §3.4.
 #pragma once
 
+#include "measure/AtomicSharedPtr.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 
@@ -209,7 +210,12 @@ private:
     bool mtwEngaged_ = false;
 
     std::uint64_t sequence_ = 0;
-    std::atomic<SnapshotPtr> latest_;
+    /// AtomicSharedPtr rather than a bare std::atomic over the shared_ptr:
+    /// Apple's libc++ ships no C++20 specialisation for that and rejects it
+    /// at compile time. Same swap, same memory orders, no lock introduced.
+    /// See measure/AtomicSharedPtr.h, and the ctest guard
+    /// `no_std_atomic_over_shared_ptr` that keeps the substitution honest.
+    AtomicSharedPtr<const Snapshot> latest_;
 };
 
 }  // namespace rta::measure

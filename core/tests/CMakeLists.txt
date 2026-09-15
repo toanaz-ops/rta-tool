@@ -128,6 +128,19 @@ add_test(NAME coherence_gate_is_not_bypassed
 # Scans EVERY test directory, including the ones only compiled with
 # RTA_BUILD_APP=ON -- a name is wrong in the source whether or not this
 # configuration builds it, and a textual scan is cheap enough to run always.
+# --- atomic<shared_ptr> portability guard ----------------------------------
+# `std::atomic<std::shared_ptr<T>>` is valid C++20 that MSVC and libstdc++
+# compile happily and Apple's libc++ refuses outright -- so the mistake is
+# invisible on every machine in this project and red only on macos CI. Only
+# app/src/measure/AtomicSharedPtr.h may name it; everything else uses
+# rta::measure::AtomicSharedPtr. See core/tests/check_no_std_atomic_shared_ptr.cmake.
+add_test(NAME no_std_atomic_over_shared_ptr
+    COMMAND ${CMAKE_COMMAND}
+            "-DDIRS=${CMAKE_SOURCE_DIR}/core;${CMAKE_SOURCE_DIR}/app;${CMAKE_SOURCE_DIR}/platform;${CMAKE_SOURCE_DIR}/ui;${CMAKE_SOURCE_DIR}/tools"
+            -DALLOW=${CMAKE_SOURCE_DIR}/app/src/measure/AtomicSharedPtr.h
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_std_atomic_shared_ptr.cmake
+)
+
 add_test(NAME test_names_are_ascii
     COMMAND ${CMAKE_COMMAND}
             "-DDIRS=${CMAKE_SOURCE_DIR}/core/tests;${CMAKE_SOURCE_DIR}/app/tests;${CMAKE_SOURCE_DIR}/app/tests_juce;${CMAKE_SOURCE_DIR}/platform/tests;${CMAKE_SOURCE_DIR}/platform/tests_juce;${CMAKE_SOURCE_DIR}/ui/tests"
