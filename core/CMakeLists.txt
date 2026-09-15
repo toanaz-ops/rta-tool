@@ -13,6 +13,7 @@ add_library(rta_core STATIC
     src/dsp/BandWeights.cpp
     src/dsp/BiquadResponse.cpp
     src/dsp/ButterworthDesign.cpp
+    src/dsp/CrossoverFit.cpp
     src/dsp/DelayFinder.cpp
     src/dsp/DelayPolicy.cpp
     src/dsp/DualFftEngine.cpp
