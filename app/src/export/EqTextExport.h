@@ -10,6 +10,7 @@
 
 #include "rta/eq/FilterSpec.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <optional>
@@ -118,9 +119,22 @@ struct FilterListParse {
     std::vector<std::size_t> rejectedLines;
 };
 
-/// The UTF-8 byte-order mark, which Notepad and PowerShell 5.1 put at the
-/// start of every file they write.
-inline constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
+/// The UTF-8 byte-order mark (U+FEFF), which Notepad and PowerShell 5.1 put at
+/// the start of every file they write.
+///
+/// Spelled as bytes rather than as a hex string literal on purpose. The
+/// `no_std_atomic_over_shared_ptr` guard reads every source file under `core/
+/// app/ platform/ ui/ tools/` and passes the text through a CMake macro
+/// argument, which re-lexes it as CMake -- and a backslash-x escape is not
+/// valid CMake, so one anywhere in such a file (in CODE OR IN A COMMENT, since
+/// the re-lex happens before comments are stripped) aborts that guard with a
+/// CMake syntax error instead of a finding. Writing the three bytes out avoids
+/// the trip-wire and says plainly what they are. The guard's own fragility is
+/// a separate follow-up; this file simply does not stand on it -- which is
+/// also why this paragraph describes the escape in words.
+inline constexpr char kUtf8BomBytes[] = { static_cast<char>(0xEF), static_cast<char>(0xBB),
+                                          static_cast<char>(0xBF) };
+inline constexpr std::string_view kUtf8Bom{ kUtf8BomBytes, sizeof kUtf8BomBytes };
 
 /// The inverse of renderFilterList. Blank lines and `#` comments are skipped
 /// whatever they are indented by -- SessionCodec's own line convention, reused
@@ -160,9 +174,15 @@ inline constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
         // like a malformed row -- and a false rejection is not harmless: a
         // rejected line is an alarm, and an alarm that cries wolf is how the
         // next real refusal gets ignored.
-        const std::size_t firstGlyph = line.find_first_not_of(" \t\r\n\v\f");
-        if (firstGlyph == std::string::npos) continue;  // blank, however spelled
-        if (line[firstGlyph] == '#') continue;          // comment, however indented
+        const auto firstGlyph = std::find_if(line.begin(), line.end(), [](char c) {
+            // Every byte at or below the space is blank here -- space, tab, CR,
+            // LF, vertical tab, form feed, and any other control character a
+            // stray editor leaves behind. Broader than an explicit escape set,
+            // and it spells no escape sequence (see kUtf8Bom's note).
+            return static_cast<unsigned char>(c) > static_cast<unsigned char>(' ');
+        });
+        if (firstGlyph == line.end()) continue;  // blank, however spelled
+        if (*firstGlyph == '#') continue;        // comment, however indented
 
         std::istringstream fields{ line };
         std::string name;

@@ -137,7 +137,10 @@ TEST_CASE("EqTextExport: a Windows BOM does not rewrite the first row's filter t
     // never quietly become a Peaking: an 80 Hz lowshelf +2 dB importing as an
     // 80 Hz PEAKING +2 dB is a different filter, applied to the rig, that the
     // operator was never told about.
-    const std::string bom = "\xEF\xBB\xBF";
+    // The production constant, not a second spelling of the same three bytes:
+    // a hex escape here would trip the no_std_atomic_over_shared_ptr guard,
+    // which re-lexes every scanned file as CMake (see kUtf8Bom's own note).
+    const std::string bom{ rta::eqexport::kUtf8Bom };
 
     const auto withHeader = rta::eqexport::parseFilterList(
             bom + "# rta-eq filter list v1\nlowshelf 80 0.71 2.0 applied\n");
