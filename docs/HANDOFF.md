@@ -5,6 +5,155 @@
 
 ---
 
+# 2026-09-15 — **L7-EQ Task E/F/G XONG + precision fix — nhánh `l7/eq-app-session-verify`**
+
+**Đọc mục này trước tiên.** Việc-đầu-tiên mà mục "Wave 2 (2026-09-07)" giao cho
+phiên sau đã xong: EQ Task E (`EqSession`), Task F (`EqVerify`), Task G (guard),
+cộng khoản nợ CONCERN precision của EQ closeout. Ba commit + một commit docs,
+**chưa merge, chưa push** lúc viết mục này.
+
+## Baseline đo được (dán từ lệnh, đừng chép số cũ)
+
+Đo trên **cây chưa sửa** `23b7ea0` TRƯỚC khi gõ dòng code đầu tiên, rồi đo lại
+trên tip nhánh. Generator Visual Studio 18 2026, MSVC 14.51, JUCE qua
+`RTA_JUCE_PATH`. `build-eq-off` (OFF) và `build-eq-app` (ON):
+
+```
+TRƯỚC (23b7ea0):  ctest OFF -> 551/551, 0 failed     ctest ON -> 619/619, 0 failed
+SAU  (tip nhánh):  ctest OFF -> 564/564, 0 failed     ctest ON -> 632/632, 0 failed
+warning C trong cả bốn build log -> 0
+```
+
+**+13 Ở CẢ HAI CONFIG, không phải chỉ ON.** Đây là điều plan nói sai và phiên sau
+cần biết: `app/tests` được `add_subdirectory` **NGOÀI** guard `RTA_BUILD_APP`
+(root `CMakeLists.txt`, có chú thích lý do), nên `rtatool_analysis_tests` biên dịch
+trong CẢ HAI config. Task E/F là JUCE-free nên chúng nâng cả OFF lẫn ON. Plan
+Task E/F ghi "ON `base_on + N_E`" — đúng phần ON, thiếu phần OFF. ON baseline 619
+cũng **không** phải 597 của HANDOFF cũ (597 là mốc trước EQ core).
+
+## Ba điều load-bearing của mục "Wave 2" — chỗ nào trong code tôn trọng chúng
+
+1. **Sign convention.** `EqSession::workingResidualDb`
+   (`app/src/measure/EqSession.cpp:53-65`) trả **`m - t + Σ R_i`** THÔ: không
+   offset, không negate. Auto-offset `c` và phép negate là việc của
+   `EqAllocator` (`core/src/eq/EqAllocator.cpp:203` `negated()`, `:32` `autoOffset()` gọi ở `:213`/`:238`
+   ); làm thêm ở tầng app là làm hai lần và lật dấu. Doc comment ở
+   `EqSession.h:119-126` nói đúng câu đó cho người sửa sau. Test canh:
+   "Auto EQ leaves the ghost closer to target than the measurement" — dấu lật
+   thì `after < before` đỏ ngay.
+2. **mean-not-median + `EqInput::hHalfGrid`.** `EqSession` mang `hHalfGrid_` và
+   nạp vào `EqInput::hHalfGrid` (`EqSession.cpp:92`), **được phép rỗng** —
+   fallback đã ghi trong `EqGainSolve.h` (không có G24 gate, không phải "cứ cho
+   là Boostable"). Test session dùng span rỗng có chủ ý: G24 gate đã có test
+   riêng trong core, đưa vào đây chỉ làm fixture nặng mà không thêm bằng chứng.
+   Không đụng gì tới `excessPhase`, nên deviation mean-not-median vẫn nguyên.
+3. **Shelves CHƯA đặt.** `EqSession` không tự tạo shelf; mọi `FilterSpec` đến từ
+   `EqAllocator` (peaking-only pass này). `EqTextExport` ĐỌC/GHI được cả ba type
+   (`lowshelf`/`highshelf`/`peaking`) vì một file text nhập tay có thể chứa
+   chúng — nhưng **không có đường nào trong app tự sinh shelf**, nên clamp
+   `(Q,gainDb)` trước `designBiquad` (EQ-R5/D6, `c61b5dc` throw
+   `std::invalid_argument`) **vẫn CHƯA thực thi** và vẫn là việc của người thêm
+   shelf. `filterBandHz` cho shelf trả về nửa dải bên phía shelf (`0..fc` hoặc
+   `fc..inf`), KHÔNG dùng công thức bandwidth của peaking — Q của shelf là độ
+   dốc, không phải bề rộng.
+
+## Đã hạ cánh
+
+- `1a5df1a` Task E — `app/src/measure/EqTrustMask.h` (`kEqTrustFloor = 0.7`,
+  EQ-R2; coherence vắng mặt ⇒ **toàn bộ untrusted**, không phải pass),
+  `EqSession.{h,cpp}` (committed set + `applied` mark + exclusion mask + Auto EQ
+  + Suggest accept/decline/re-rank + ghost dB-add chính xác),
+  `app/src/export/EqTextExport.h` (header-only render/parse; whole Hz, Q 2dp,
+  dB 1dp — độ chính xác GHI chính là độ chính xác round-trip).
+- `976f0e3` Task F — `EqVerify.{h,cpp}`: `h1SigmaDb` (Bendat & Piersol H1, số
+  hiệu phương trình vẫn UNVERIFIED y như L6b §1 mang nó), `compareToPrediction`
+  (cờ chỉ bật khi vượt **CẢ** corridor **VÀ** `3σ`; bin untrusted không bao giờ
+  bị cờ), và state machine chạy `OutputEngine` THẬT theo đúng thứ tự §6.
+- `c8e1769` precision fix (dưới).
+
+## Precision fix: 64× do TAIL-ENERGY, không phải swing
+
+Đo lại bằng chính pure functions của `tools/gen_autoeq_algo.py` (không gọi CLI
+driver — `memory/a-gen-script-runs-the-moment-you-invoke-it.md`). F nhỏ nhất mà
+TỪNG tiêu chí RIÊNG hội tụ:
+
+| a | D | swing-only | tail-only | both |
+|---|---|---|---|---|
+| 1.25 | 37 | 1 | 4 | 4 |
+| 1.25 | 144 | 4 | 16 | 16 |
+| 1.25 | 511 | 8 | **64** | **64** |
+| 2.0 | 37 | 1 | 2 | 2 |
+| 2.0 | 144 | 1 | 4 | 4 |
+| 2.0 | 511 | 4 | 16 | 16 |
+| 4.0 | 37 | 1 | 1 | 1 |
+| 4.0 | 144 | 1 | 2 | 2 |
+| 4.0 | 511 | 2 | 8 | 8 |
+| **worst** | | **8** | **64** | **64** |
+
+Cột "both" trùng từng dòng với output của `gen_autoeq.py --check`, nên đây là
+đọc lại sweep đã ship chứ không phải mô hình thứ hai. **128× GIỮ NGUYÊN** —
+tail-energy CHÍNH LÀ aliasing, và aliasing phá kernel bất kể swing đã nhận ra
+hay chưa. Sửa ở ba nơi: docstring `gen_autoeq_algo.py`, amendment §4.3 trong
+`docs/dsp/2026-09-06-l7-auto-eq.md` (record vốn KHÔNG có đoạn nào về
+oversampling — nó viết ở trạm 2, trước khi Task A đo, nên đây là THÊM chứ không
+phải sửa), và comment hằng số `core/include/rta/dsp/ExcessPhase.h`.
+**`core/` chỉ đổi một comment** — không đổi giá trị, chữ ký hay hành vi:
+`git diff --stat main -- core/` ra đúng một file, 8+/1-, toàn comment.
+Golden `core/tests/golden/autoeq.txt` KHÔNG regenerate; `--check` sau đó báo
+"byte-identical to a fresh regeneration", SHA-256 `2D791B81…2FD3C4DA` trước và
+sau bằng nhau.
+
+## Guard đã làm ĐỎ rồi XANH (Task G, cả hai config)
+
+| guard | scanned | đỏ bằng gì |
+|---|---|---|
+| `core_has_no_framework_deps` | 142 (không đổi — E/F không thêm file core) | `#include <juce_core/juce_core.h>` vào `ExcessPhase.h` → FAILED, nêu đúng tên file (đỏ ở CẢ OFF và ON) |
+| `measure_has_no_framework_deps` | 48 → **54** | JUCE include vào `EqSession.h` (OFF) và `EqVerify.h` (ON) → FAILED, nêu đúng tên file |
+| `filter_design_has_no_polynomial_form` | 165 | thêm một dòng chứa `signal.lfilter` vào `gen_autoeq_algo.py` → FAILED ở cả hai config |
+
+Mỗi lần revert xong `git diff --stat <file>` ra RỖNG rồi mới chạy lại xanh.
+`coherence_gate_is_not_bypassed` (89), `platform_types` (8),
+`output_render_has_no_rt_hazards`, `audioio_scoped_no_denormals_is_first`,
+`audioio_callback_has_no_rt_hazards` đều xanh, không đụng tới.
+
+Wave 0 kernel: `git diff --stat main -- core/include/rta/dsp/MinimumPhase.h
+core/src/dsp/MinimumPhase.cpp core/include/rta/eq/BiquadDesign.h
+core/src/eq/BiquadDesign.cpp` → **RỖNG** (EQ-R5, tái dùng verbatim).
+
+Độ dài file mới (cap cứng 400): EqSession.h 143, EqSession.cpp 146,
+EqTrustMask.h 54, EqVerify.h 124, EqVerify.cpp 134, EqTextExport.h 84,
+test_eq_session.cpp 286, test_eq_verify.cpp 198.
+
+## Bẫy phiên này trả học phí
+
+- **Một build nền đọc cây ĐANG SỬA.** Baseline ON chạy nền trong khi phiên chính
+  sửa `app/tests/CMakeLists.txt`; generator Visual Studio có `ZERO_CHECK` nên
+  `cmake --build` TỰ chạy lại configure khi CMakeLists đổi timestamp — build
+  "baseline" nuốt luôn file test mới và chết ở link. Số nó cho ra là vô nghĩa.
+  Cách chữa đã dùng: commit hết, `git checkout --detach 23b7ea0`, build ON lấy
+  baseline thật (619), rồi `git checkout` về nhánh. Object của JUCE vẫn ấm nên
+  lần dựng thứ hai rẻ. **Quy tắc: đừng để baseline chạy nền song song với lần
+  sửa đầu tiên — đo xong rồi mới gõ.**
+- `PinkNoise` nhận `Pcg32`, không nhận sample rate — `EqVerify::Config` vì thế
+  mang `noiseSeed` + `excitationDbFsRms` (giống `DelayLocator` nhận source từ
+  caller) để một lượt verify tái lập được bit-for-bit.
+
+## Còn mở
+
+- **CHƯA MERGE, CHƯA PUSH** lúc viết. Nhánh `l7/eq-app-session-verify` từ
+  `23b7ea0`; PR mở lên `main`, KHÔNG tự merge.
+- **Lane lớn kế tiếp: Wave 3 (ALIGN)** — G11 virtual processor (nó tiêu thụ đúng
+  `std::vector<FilterSpec>` mà `EqSession` giữ), G17 wizard (HỎI topology),
+  G18 crossover, ρ fold. Câu hỏi order-4 (ALIGN §13.1) vẫn chờ chủ nhân.
+- **EQ chưa có:** shelf placement + domain clamp (trên), panel JUCE sống trong
+  `MainComponent` (EQ-R4 nói là specimen dev-preview — specimen `EqPreview.*`
+  CŨNG CHƯA dựng, phiên này chỉ làm phần ctest-provable), overload `FirDesign`
+  nhận per-bin `Σ R_i` (record §7 amend FIR §11), re-linearise lần hai.
+- Judgement chờ duyệt vẫn nguyên: `kEqTrustFloor = 0.7` là interim cho tới L5b,
+  `G_cap +6 dB`, `Q_max` 10/20, `N` cap 6, NotMinimumPhase→V2, −120 dB floor.
+
+---
+
 # 2026-09-06 — **L6b: HAI NOTE F3 ĐÃ ĐÓNG (chưa commit, working tree trên `claude_desk/tiepto-2d388b`)**
 
 **Đọc mục này trước tiên.** Hai việc-còn-mở của L6b (verifier F3 NOTE) đã đóng.
@@ -195,13 +344,19 @@ cần tối thiểu **64×**, ship **128×** (= 16× của FIR 8×). Nếu G24 m
 của FIR thì min-phase null test ALIAS trên phép đo thật → phân loại dip sai. Đúng là
 thứ pipeline sinh ra để bắt.
 
-**CONCERN precision (SỬA ở EQ closeout — CHƯA sửa):** 64× bị đẩy gần như HOÀN TOÀN
+**CONCERN precision — ĐÃ SỬA 2026-09-15** (đo lại, bảng chín fixture trong mục đầu
+file; `gen_autoeq.py --check` byte-identical sau khi sửa). Nguyên văn dưới đây giữ lại:
+
+**~~CONCERN precision (SỬA ở EQ closeout — CHƯA sửa)~~:** 64× bị đẩy gần như HOÀN TOÀN
 bởi metric phụ **tail-energy** (proxy nhiễm aliasing cepstral), KHÔNG bởi excess-phase
 **swing** mà `classifyDip` thực đọc (swing hội tụ ở 8×-16× mọi fixture). 128× vẫn đúng
 và bảo thủ hợp lý, nhưng docstring `tools/gen_autoeq_algo.py` + framing record "64× là
 F nhỏ nhất swing hội tụ" KHÔNG chính xác — phải sửa thành "tail-energy quyết định 64×".
 
-**EQ E/F CHƯA XÂY (app, ON) — việc đầu tiên của phiên sau:** Task E (`EqSession` +
+**EQ E/F ĐÃ XÂY 2026-09-15** (nhánh `l7/eq-app-session-verify`, xem mục đầu file).
+Ba điều dưới đây vẫn đúng và ĐÃ được tôn trọng trong code — giữ lại làm lịch sử.
+
+**~~EQ E/F CHƯA XÂY~~ (app, ON) — việc đầu tiên của phiên sau:** Task E (`EqSession` +
 trust mask `kEqTrustFloor=0.7` + text export) và Task F (`EqVerify` qua OutputEngine).
 Builder hết budget sau core. BA điều người xây E phải biết:
 1. **Sign convention (LOAD-BEARING):** ghost `m+ΣR` chỉ hội tụ khi solve fit
