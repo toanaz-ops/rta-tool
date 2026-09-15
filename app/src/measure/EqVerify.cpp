@@ -4,6 +4,7 @@
 #include "rta/gen/Noise.h"
 
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <stdexcept>
 
@@ -93,7 +94,12 @@ VerifyReport compareToPrediction(std::span<const float> measuredAfterDb,
 
 std::string renderVerifySummary(const VerifyReport& report) {
     char line[160];
-    if (report.trustedBins == 0) {
+    // Guard on the fields actually dereferenced below, not on trustedBins.
+    // compareToPrediction is the only producer and keeps the two in step, but
+    // nothing asserts that invariant, and a report assembled any other way
+    // must not turn a missing value into undefined behaviour here.
+    if (report.trustedBins == 0 || !report.residualRmsBeforeDb.has_value()
+        || !report.residualRmsAfterDb.has_value()) {
         std::snprintf(line, sizeof line,
                       "VERIFY inconclusive: no trusted bins (%zu bins measured, all under the "
                       "coherence floor) -- no residual to report",
@@ -111,7 +117,14 @@ EqVerify::EqVerify(rta::platform::OutputEngine& engine, Config config)
     : engine_(engine), config_(config) {}
 
 void EqVerify::arm() {
-    if (state_ != VerifyState::Idle) return;
+    // Both early returns below name their own reason. Returning before the
+    // refusal is set would leave lastRefusal() reading the PREVIOUS attempt's
+    // reason -- an absent result wearing an old result's clothes, which is the
+    // same failure shape as a 0.0 dB residual standing in for no residual.
+    if (state_ != VerifyState::Idle) {
+        refusal_ = VerifyRefusal::AlreadyRunning;
+        return;
+    }
     refusal_ = VerifyRefusal::None;
     // Output-path record sec.6, in order. setSource FIRST, and its bool is
     // the refusal: it returns false unless the engine is quiescent, and

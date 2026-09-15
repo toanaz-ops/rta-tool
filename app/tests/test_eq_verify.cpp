@@ -158,6 +158,38 @@ TEST_CASE("EqVerify: refuses to arm when the engine is not quiescent") {
     CHECK(engine.role(2) == OutputRole::None);
 }
 
+TEST_CASE("EqVerify: arming twice names its own refusal instead of a stale one") {
+    // The other early return. Leaving lastRefusal() reading whatever the
+    // PREVIOUS attempt set would make a second arm() report a reason it did
+    // not have -- an absent result wearing an old result's clothes.
+    OutputEngine engine;
+    engine.prepare(kFs, 4);
+
+    EqVerify::Config config;
+    config.sampleRate = kFs;
+    EqVerify verify(engine, config);
+
+    verify.arm();
+    REQUIRE(verify.state() == VerifyState::Waiting);
+    REQUIRE(verify.lastRefusal() == rta::measure::VerifyRefusal::None);
+
+    verify.arm();  // already running
+    CHECK(verify.state() == VerifyState::Waiting);
+    CHECK(verify.lastRefusal() == rta::measure::VerifyRefusal::AlreadyRunning);
+}
+
+TEST_CASE("EqVerify: renderVerifySummary refuses a report whose RMS is absent") {
+    // trustedBins > 0 and nullopt RMS cannot come out of compareToPrediction,
+    // but nothing asserts that, and the summary must not dereference an empty
+    // optional just because one field said the other should be there.
+    rta::measure::VerifyReport handBuilt;
+    handBuilt.bins.resize(4);
+    handBuilt.trustedBins = 4;  // says there IS evidence; the RMS fields disagree
+
+    const std::string text = rta::measure::renderVerifySummary(handBuilt);
+    CHECK(text.find("no trusted bins") != std::string::npos);
+}
+
 TEST_CASE("EqVerify: the report carries the residual before and after") {
     // before = 4 dB off a 0 dB target on every bin, after = 1.2 dB off.
     const Bins b = makeBins(0.2, 0.99f);

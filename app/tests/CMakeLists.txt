@@ -60,6 +60,10 @@ add_executable(rtatool_analysis_tests
     # OutputPolicy/DelayLocator, so they live here rather than in
     # app/tests_juce.
     test_eq_session.cpp
+    # test_eq_session_lifecycle.cpp: task E's decline / re-measure / export
+    # lifecycle, split from test_eq_session.cpp when the round-2 verify cases
+    # pushed it past the 400-line cap. Shared fixtures in EqSessionFixture.h.
+    test_eq_session_lifecycle.cpp
     # test_eq_trust_export.cpp: task E's other two subjects -- the coherence
     # trust mask (record sec.4.1) and the FilterSpec text format (sec.7) --
     # split out of test_eq_session.cpp when that file grew past one job.

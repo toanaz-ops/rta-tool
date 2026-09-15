@@ -27,7 +27,7 @@ using rta::measure::buildTrustMask;
 using rta::measure::kEqTrustFloor;
 
 namespace {
-constexpr double kFs = 48000.0;
+constexpr double kFs = 48000.0;  // local: this file builds no session fixture
 }  // namespace
 
 // --- E4 ---------------------------------------------------------------------
@@ -78,12 +78,49 @@ TEST_CASE("EqTextExport: the filter list round-trips through its own text form")
     const auto parsed = rta::eqexport::parseFilterList(text);
     REQUIRE(parsed.size() == specs.size());
     for (std::size_t i = 0; i < specs.size(); ++i) {
-        CHECK(parsed[i].type == specs[i].type);
+        CHECK(parsed[i].spec.type == specs[i].type);
         // The written precision IS the round-trip precision: a whole hertz,
         // 0.01 of Q, 0.1 dB. Anything finer would be a readout the format
         // does not carry.
-        CHECK(std::abs(parsed[i].fcHz - specs[i].fcHz) <= 0.5);
-        CHECK(std::abs(parsed[i].q - specs[i].q) <= 0.005);
-        CHECK(std::abs(parsed[i].gainDb - specs[i].gainDb) <= 0.05);
+        CHECK(std::abs(parsed[i].spec.fcHz - specs[i].fcHz) <= 0.5);
+        CHECK(std::abs(parsed[i].spec.q - specs[i].q) <= 0.005);
+        CHECK(std::abs(parsed[i].spec.gainDb - specs[i].gainDb) <= 0.05);
+        // The plain-FilterSpec overload means "nothing is in the rig yet".
+        CHECK_FALSE(parsed[i].applied);
     }
+}
+
+TEST_CASE("EqTextExport: an applied filter exports and re-imports as applied") {
+    // The `applied` bit is a load-bearing session fact: it says the filter is
+    // ALREADY in the signal path the measurement came through. A list that
+    // drops it is a list that, loaded back into the DSP that produced the
+    // measurement, applies that filter a SECOND time -- the arithmetic of the
+    // round-1 ghost/residual defect, leaking out through the export boundary.
+    const std::vector<rta::eqexport::ExportedFilter> filters{
+        { { FilterType::Peaking, 994.0, 1.15, -7.1 }, true },
+        { { FilterType::Peaking, 1480.0, 5.05, -1.1 }, false },
+        { { FilterType::LowShelf, 80.0, 0.71, 2.0 }, true },
+    };
+
+    const std::string text = rta::eqexport::renderFilterList(filters, kFs);
+    const auto parsed = rta::eqexport::parseFilterList(text);
+
+    REQUIRE(parsed.size() == filters.size());
+    for (std::size_t i = 0; i < filters.size(); ++i) {
+        CHECK(parsed[i].applied == filters[i].applied);
+        CHECK(parsed[i].spec.type == filters[i].spec.type);
+        CHECK(std::abs(parsed[i].spec.fcHz - filters[i].spec.fcHz) <= 0.5);
+        CHECK(std::abs(parsed[i].spec.gainDb - filters[i].spec.gainDb) <= 0.05);
+    }
+
+    // Visible to a human reading the file, not just to the parser.
+    CHECK(text.find("applied") != std::string::npos);
+
+    // A row with no flag column reads as not-applied, so a list written by
+    // hand, or by an older build, still imports.
+    const auto legacy = rta::eqexport::parseFilterList(
+            "# rta-eq filter list v1\npeaking 994 1.15 -7.1\n");
+    REQUIRE(legacy.size() == 1);
+    CHECK_FALSE(legacy.front().applied);
+    CHECK(std::abs(legacy.front().spec.fcHz - 994.0) <= 0.5);
 }

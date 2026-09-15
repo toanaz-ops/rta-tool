@@ -200,6 +200,52 @@ Mutation chứng minh test mới cắn (xoá .exe trước mỗi lần dựng):
 header không được đọc lại. Phải `touch` một `.cpp` cùng TU. Xem
 `memory/mutation-testing-needs-the-exe-deleted-first.md` mục mới.
 
+## Vòng verify độc lập THỨ HAI — hai finding nữa, đã sửa
+
+Verifier vòng 2 xác nhận cả ba fix vòng 1 (tự mutate đỏ được từng cái), OFF 568
+/ ON 636 khớp, và test flaky pass 5/5 nên "pre-existing timing race" đứng vững.
+Nó tìm thêm hai thứ, cả hai đều là **code chưa bị khoá**, không phải code sai.
+
+**Finding 1 — "declined region sống sót qua đổi lưới" KHÔNG có test nào.** Xoá
+hẳn hành vi đó đi thì toàn bộ app suite vẫn xanh (32543 assertion). Lý do: test
+duy nhất gọi `setMeasurement` hai lần thì không decline gì, test duy nhất
+decline thì không đo lại. Đã thêm test đóng khe: decline trên lưới 193 bin
+(binWidth 125 Hz), `setMeasurement` lưới 257 bin (93.75 Hz), khẳng định mask
+phủ **đúng** tập bin có `f = k·binWidth` nằm trong `[lowHz, highHz]` — dạng
+đóng, không đếm theo output. Cùng test xài luôn `clearExclusions()` và
+`clearFilters()`, hai hàm trước đó không test và không caller nào gọi.
+
+**Finding 2 — `EqTextExport` vứt bit `applied`.** Export một session có filter
+0 applied ra `peaking 994 1.15 -7.1` không cờ; nạp file đó lại vào chính con
+DSP đã sinh ra phép đo là **−14.2 dB trên bump 8 dB** — đúng số học của defect 1
+vòng 1, rò ra qua biên export. Đã thêm cột thứ năm `applied` (chỉ ghi cho hàng
+applied, **tuỳ chọn khi đọc**, hàng không cờ đọc thành not-applied nên file bốn
+cột cũ vẫn nhập được). Kiểu mới `rta::eqexport::ExportedFilter` — CỐ Ý tách
+khỏi `CommittedFilter` để export/ không include measure/ và ngược lại; caller
+copy hai dòng, đúng việc UI sẽ làm.
+
+**DEVIATION phải ghi:** plan Task E chốt format `type, fc, Q, gain`. Cột thứ
+năm là đi lệch plan, đã ghi amendment vào record §7
+(`docs/dsp/2026-09-06-l7-auto-eq.md`), cùng với đính chính ghost identity
+`ghost = m + Σ_{chưa applied} R` (record §7 viết "over every committed filter",
+sai từ vòng 1).
+
+**Bốn observation nhỏ đã xử:** (a) trạng thái mark-applied-trước-khi-đo-lại giờ
+mang chữ `TRANSIENT` trong TÊN test + một đoạn comment nói rõ ghost nhảy lại lên
+đúng bằng gain filter và trạng thái này kéo dài bằng bước 4/5 của thao tác viên;
+(b) `renderVerifySummary` guard trên `has_value()` chứ không trên `trustedBins`;
+(c) `arm()` khi đang chạy giờ trả `VerifyRefusal::AlreadyRunning` thay vì để lại
+refusal cũ; (d) `EqVerify.cpp` include `<cstdio>` cho `std::snprintf`.
+
+Mutation khoá hai finding: xoá `declinedBands_` trong `setMeasurement` →
+`CHECK( (excluded[k] != 0) == inBand ) ... false == true`; bỏ token `applied`
+khi ghi → `CHECK( parsed[i].applied == filters[i].applied ) ... false == true`.
+
+**Chia file lần hai:** `test_eq_session.cpp` chạm 429 dòng (quá cap 400) nên
+tách thành `test_eq_session.cpp` (semantics, 229) +
+`test_eq_session_lifecycle.cpp` (decline / đo lại / export, 157), fixture dùng
+chung ở `app/tests/EqSessionFixture.h` (92, mọi hàm `inline` vì hai TU include).
+
 ## Còn mở
 
 - **CHƯA MERGE, CHƯA PUSH** lúc viết. Nhánh `l7/eq-app-session-verify` từ

@@ -93,12 +93,16 @@ compareToPrediction(std::span<const float> measuredAfterDb, std::span<const doub
 
 enum class VerifyState { Idle, Waiting, Measuring, Settling, Done };
 
-/// One reason, on purpose, mirroring DelayLocator's named-refusal shape:
-/// `OutputEngine::setSource` returns false unless the engine is quiescent, so
-/// arming over somebody else's running excitation would leave THEIR source in
-/// the slot, solo it, and report a verify over the wrong signal at the wrong
-/// level without ever saying so.
-enum class VerifyRefusal { None, EngineNotQuiescent };
+/// Named refusals, mirroring DelayLocator's shape. Every early return out of
+/// `arm()` sets exactly one of these, so `lastRefusal()` always describes THIS
+/// call and never a stale one from the previous attempt.
+///
+/// EngineNotQuiescent: `OutputEngine::setSource` returned false. Arming over
+/// somebody else's running excitation would leave THEIR source in the slot,
+/// solo it, and report a verify over the wrong signal at the wrong level
+/// without ever saying so.
+/// AlreadyRunning: a verify is in flight; this call did nothing.
+enum class VerifyRefusal { None, EngineNotQuiescent, AlreadyRunning };
 
 /// The state machine around that comparison, driving a REAL OutputEngine --
 /// JUCE-free like DelayLocator, so it is provable with no audio hardware.

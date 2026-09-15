@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // L7-EQ task E (docs/plans/2026-09-07-L7-eq-impl-plan.md; decision record
-// docs/dsp/2026-09-06-l7-auto-eq.md sec.2, sec.7). The app-side session model
-// and nothing else: Auto EQ one-shot, Suggest accept/decline/re-rank, and the
-// one membership rule the ghost and the working residual share. The coherence
-// trust mask and the text format live in test_eq_trust_export.cpp. JUCE-free
-// like OutputPolicy/DelayLocator, so the whole file is provable with no device
-// and no GUI.
+// docs/dsp/2026-09-06-l7-auto-eq.md sec.2, sec.7). The app-side session
+// SEMANTICS and nothing else: the one membership rule the ghost and the
+// working residual share, and what it means to mark a filter applied. The
+// session lifecycle (decline, re-measure, export) is in
+// test_eq_session_lifecycle.cpp; the coherence mask and the text format are in
+// test_eq_trust_export.cpp. JUCE-free like OutputPolicy/DelayLocator, so the
+// whole file is provable with no device and no GUI.
 
-#include "export/EqTextExport.h"
+#include "EqSessionFixture.h"
+
 #include "measure/EqSession.h"
 
 #include "rta/eq/BiquadDesign.h"
@@ -16,67 +18,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
-#include <cstdint>
-#include <span>
-#include <string>
+#include <cstddef>
 #include <vector>
 
+using eqfixture::Fixture;
+using eqfixture::kFs;
+using eqfixture::load;
+using eqfixture::makeFixture;
 using rta::eq::FilterSpec;
-using rta::eq::FilterType;
 using rta::eq::responseDb;
 using rta::measure::EqSession;
 using rta::measure::EqSessionConfig;
-
-namespace {
-
-constexpr double kFs = 48000.0;
-
-/// A log-spaced measurement grid. Ascending, strictly positive, below
-/// Nyquist -- the only three things EqInput asks of `hz`.
-std::vector<float> logGrid(std::size_t bins, double lowHz, double highHz) {
-    std::vector<float> hz(bins);
-    const double step = std::log10(highHz / lowHz) / static_cast<double>(bins - 1);
-    for (std::size_t k = 0; k < bins; ++k) {
-        hz[k] = static_cast<float>(lowHz * std::pow(10.0, step * static_cast<double>(k)));
-    }
-    return hz;
-}
-
-/// One Gaussian-in-log bump: a smooth, single-extremum deviation, so greedy
-/// placement has exactly one obvious first move and the half-gain crossings
-/// the Q rule walks out to exist on both flanks.
-std::vector<float> bumpDb(std::span<const float> hz, double centreHz, double heightDb,
-                          double widthOctaves) {
-    std::vector<float> m(hz.size(), 0.0f);
-    for (std::size_t k = 0; k < hz.size(); ++k) {
-        const double octaves = std::log2(static_cast<double>(hz[k]) / centreHz);
-        const double z = octaves / widthOctaves;
-        m[k] = static_cast<float>(heightDb * std::exp(-0.5 * z * z));
-    }
-    return m;
-}
-
-struct Fixture {
-    std::vector<float> hz;
-    std::vector<float> measuredDb;
-    std::vector<float> targetDb;
-    std::vector<float> coherence;
-};
-
-Fixture makeFixture(float coherenceValue = 0.95f) {
-    Fixture f;
-    f.hz = logGrid(192, 20.0, 20000.0);
-    f.measuredDb = bumpDb(f.hz, 1000.0, 8.0, 0.5);
-    f.targetDb.assign(f.hz.size(), 0.0f);
-    f.coherence.assign(f.hz.size(), coherenceValue);
-    return f;
-}
-
-void load(EqSession& session, const Fixture& f) {
-    session.setMeasurement(f.hz, f.measuredDb, f.targetDb, f.coherence, {}, kFs);
-}
-
-}  // namespace
 
 // --- E1 ---------------------------------------------------------------------
 TEST_CASE("EqSession: the ghost is the exact dB sum of the NOT-YET-APPLIED filters") {
@@ -162,40 +114,9 @@ TEST_CASE("EqSession: Auto EQ leaves the ghost closer to target than the measure
     CHECK(after < before);
 }
 
-// --- E2 ---------------------------------------------------------------------
-TEST_CASE("EqSession: declining a chip excludes its region and the next rank omits it") {
-    const Fixture f = makeFixture();
-    EqSession session;
-    load(session, f);
-
-    const auto first = session.suggest(1);
-    REQUIRE_FALSE(first.empty());
-    const double declinedFc = first.front().spec.fcHz;
-
-    session.declineCandidate(first.front());
-
-    const auto excluded = session.excluded();
-    std::size_t excludedBins = 0;
-    for (std::uint8_t e : excluded) excludedBins += (e != 0) ? 1u : 0u;
-    CHECK(excludedBins > 0);
-
-    // Every bin inside the declined filter's own -3 dB band is excluded.
-    const auto band = rta::measure::filterBandHz(first.front().spec);
-    for (std::size_t k = 0; k < f.hz.size(); ++k) {
-        if (static_cast<double>(f.hz[k]) >= band.lowHz
-            && static_cast<double>(f.hz[k]) <= band.highHz) {
-            CHECK(excluded[k] != 0);
-        }
-    }
-
-    const auto second = session.suggest(1);
-    if (!second.empty()) {
-        CHECK(second.front().spec.fcHz != declinedFc);
-    }
-}
-
 // --- E3 ---------------------------------------------------------------------
-TEST_CASE("EqSession: accepting re-bases the residual; an applied mark drops its term") {
+TEST_CASE("EqSession: accepting re-bases the residual; an applied mark drops its term "
+          "(TRANSIENT: before the re-measurement lands)") {
     const Fixture f = makeFixture();
     EqSession session;
     load(session, f);
@@ -222,6 +143,16 @@ TEST_CASE("EqSession: accepting re-bases the residual; an applied mark drops its
     // drop the term -- the residual AND the ghost -- because both read the
     // same measurement, and that measurement is the one the operator will
     // re-take with the filter already in the signal path.
+    //
+    // THIS IS THE TRANSIENT STATE, not the resting one. The mark has been set
+    // and the re-measurement has NOT arrived, so both sums fall back to the
+    // stale, uncorrected measurement and the ghost jumps back up by the full
+    // filter gain. That is arithmetically right and operationally loud -- at a
+    // rig this state can last minutes, the length of step 4 of the operator's
+    // five-step loop. The resting state is the next test case, where the
+    // re-measurement lands. Do not read what follows as "the ghost after
+    // applying a filter"; read it as "the ghost while the tool is waiting to
+    // be told what the room now measures".
     session.markApplied(0, true);
     {
         const auto residual = session.workingResidualDb();
@@ -296,35 +227,3 @@ TEST_CASE("EqSession: an applied filter is never re-suggested at the same fc and
     }
 }
 
-TEST_CASE("EqSession: an untrusted band never carries a placement") {
-    Fixture f = makeFixture();
-    // Kill coherence over the bump itself: nothing is trusted where the error
-    // is, so there is nothing legal left to place on there.
-    for (std::size_t k = 0; k < f.hz.size(); ++k) {
-        if (f.hz[k] > 500.0f && f.hz[k] < 2000.0f) f.coherence[k] = 0.4f;
-    }
-    EqSession session;
-    load(session, f);
-
-    for (const auto& candidate : session.suggest(3)) {
-        CHECK((candidate.spec.fcHz <= 500.0 || candidate.spec.fcHz >= 2000.0));
-    }
-}
-
-// --- E5 ---------------------------------------------------------------------
-TEST_CASE("EqTextExport: a session's committed set is what gets exported") {
-    const Fixture f = makeFixture();
-    EqSessionConfig config;
-    config.maxFilters = 2;
-    EqSession session(config);
-    load(session, f);
-    session.runAutoEq();
-
-    std::vector<FilterSpec> specs;
-    for (const auto& committed : session.committed()) specs.push_back(committed.spec);
-    REQUIRE_FALSE(specs.empty());
-
-    const auto parsed =
-            rta::eqexport::parseFilterList(rta::eqexport::renderFilterList(specs, kFs));
-    REQUIRE(parsed.size() == specs.size());
-}
