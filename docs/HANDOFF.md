@@ -292,6 +292,40 @@ Chạy lại F sau khi sửa assertion rỗng: nay đỏ ở `CHECK( text.find(
 **API đổi:** `parseFilterList` trả `FilterListParse` thay vì
 `std::vector<ExportedFilter>`. Bốn call site trong test đã đổi theo.
 
+## Vòng verify CUỐI — SOUND, một minor đóng nốt
+
+Verifier cuối dựng lại 575/643, mọi mutation đỏ đúng như khai. Còn một minor +
+hai việc ghi chép:
+
+1. **Dòng trắng có indent bị tính là hàng hỏng.** Parser chỉ xét `line.front()`
+   nên ba dấu cách, một tab, hay một comment người ta canh lề bằng tay đều rơi
+   vào `rejectedLines` (verifier đo: `rejected=[2]` cho ba dấu cách). Sửa: tìm
+   ký tự không-whitespace ĐẦU TIÊN rồi mới quyết định đó là dòng gì. **Báo động
+   giả không vô hại** — rejected line là một cảnh báo, và cảnh báo kêu nhầm là
+   cách cảnh báo thật sau đó bị bỏ qua.
+2. **Cột thứ năm: CHỌN "từ chối", không phải "ghi chú ngoại lệ".** Verifier cho
+   hai lựa chọn; chọn từ chối vì ngoại lệ ấy chính là cái hại mà cột này sinh ra
+   để chặn: `appllied` gõ sai ⇒ đọc thành not-applied ⇒ thao tác viên land lại
+   filter rig đã có ⇒ đúng −14.2 dB. Nay: flag CÓ MẶT mà không đọc được (kể cả
+   token thừa phía sau) ⇒ **từ chối hàng**. Flag VẮNG MẶT vẫn đọc là not-applied
+   — đó không phải đoán, đó là hình dạng bốn-cột cũ của chính format, và điền
+   theo hướng an toàn (filter hiện ra để người ta thấy, thay vì bị giấu đi như
+   đã xử lý). **Vắng mặt có nghĩa xác định; hiện diện mà không đọc được thì
+   không** — hai thứ khác nhau, không xử như nhau. Đã ghi vào record §7.3.
+3. **Memory `mutation-testing-...` thêm mục nửa-RESTORE.** Touch một `.cpp` để
+   mutation ĐƯỢC biên dịch vào; không có gì bắt nó biên dịch RA. Khôi phục
+   header xong, object build từ bản mutated vẫn nằm đó và MSBuild chỉ relink —
+   cây sạch, `git diff` rỗng, mà binary vẫn mang mutation. Đó là kiểu hỏng tệ
+   hơn vì nó đến ở CUỐI chu trình, lúc mọi thứ trông đã đúng. Luật: **rebuild
+   TOÀN BỘ sau lần revert cuối**, và **md5 file đã mutate với blob `HEAD`**
+   (`git status` không thấy được một revert sai mà byte-identical). Phiên này
+   làm đúng vậy: `EqSession.cpp` và `EqVerify.cpp` md5 trùng HEAD
+   (`681479c3…`, `e98f34c4…`), OFF dựng lại `--clean-first`.
+
+Mutation vòng này: K (chỉ xét `front()`) → `CHECK(parsed.rejectedLines.empty())
+... false`; L (cột năm đoán lại) → `REQUIRE(parsed.filters.size() == 2) ...
+4 == 2`.
+
 ## Còn mở
 
 - **CHƯA MERGE, CHƯA PUSH** lúc viết. Nhánh `l7/eq-app-session-verify` từ

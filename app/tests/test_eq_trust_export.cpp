@@ -159,6 +159,54 @@ TEST_CASE("EqTextExport: a Windows BOM does not rewrite the first row's filter t
     CHECK(crlf.filters.front().applied);
 }
 
+TEST_CASE("EqTextExport: blank and indented lines are skipped, not rejected") {
+    // A rejected line is an alarm the operator has to act on, so raising one
+    // for a line that carries no filter at all is as bad as swallowing a real
+    // refusal: the next genuine rejection gets read as more of the same noise.
+    // Testing only line.front() made three spaces, a tab, or an indented
+    // comment look like a malformed row.
+    const auto parsed = rta::eqexport::parseFilterList(
+            "# rta-eq filter list v1\n"
+            "   \n"                      // spaces only
+            "\t\n"                       // tab only
+            "  # an indented comment\n"  // a comment a human lined up by hand
+            "\t# a tab-indented one\n"
+            "  peaking 1000 1.00 -3.0\n"  // an indented ROW is still a row
+            "\n");                        // genuinely empty
+
+    REQUIRE(parsed.filters.size() == 1);
+    CHECK(std::abs(parsed.filters.front().spec.fcHz - 1000.0) <= 0.5);
+    CHECK(parsed.rejectedLines.empty());
+}
+
+TEST_CASE("EqTextExport: an unrecognised fifth token is rejected, not read as not-applied") {
+    // The same rule as the type word, for the same reason. A row whose flag
+    // is misspelled -- `appllied` -- would otherwise import as NOT applied,
+    // and the operator would land a filter the rig already has: the -14.2 dB
+    // arithmetic this column exists to prevent, arriving through a typo
+    // instead of through a missing column.
+    //
+    // A row with NO fifth column is a different case and still imports as
+    // not-applied: that is backward compatibility with a four-column file,
+    // where the absence is the format's own older shape rather than evidence
+    // that someone meant something this build cannot read.
+    const auto parsed = rta::eqexport::parseFilterList(
+            "peaking 1000 1.00 -3.0 appllied\n"
+            "peaking 1200 1.00 -3.0 applied\n"
+            "peaking 1400 1.00 -3.0\n"
+            "peaking 1600 1.00 -3.0 applied extra\n");
+
+    REQUIRE(parsed.filters.size() == 2);
+    CHECK(parsed.filters[0].applied);
+    CHECK(std::abs(parsed.filters[0].spec.fcHz - 1200.0) <= 0.5);
+    CHECK_FALSE(parsed.filters[1].applied);
+    CHECK(std::abs(parsed.filters[1].spec.fcHz - 1400.0) <= 0.5);
+
+    REQUIRE(parsed.rejectedLines.size() == 2);
+    CHECK(parsed.rejectedLines[0] == 1);  // the typo
+    CHECK(parsed.rejectedLines[1] == 4);  // trailing token nobody can interpret
+}
+
 TEST_CASE("EqTextExport: an unknown type word is rejected, never silently a Peaking") {
     const auto parsed = rta::eqexport::parseFilterList(
             "# rta-eq filter list v1\n"

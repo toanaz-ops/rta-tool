@@ -50,3 +50,29 @@ a `.cpp` when one exists on the same path — a mutation you can place in either
 belongs in the file the build system actually tracks. And when a scratch worktree lives
 under `%TEMP%`, treat `MSB8029` in the log as a standing warning that incremental
 decisions in that tree are not trustworthy.
+
+## The RESTORE half is stale too, and that is the dangerous half
+
+Added 2026-09-15 by the final verifier of PR #4, and it completes the previous section.
+Touching a dependent `.cpp` is how the *mutation* gets compiled in. Nothing makes it get
+compiled back **out**: restoring the header returns the source to its original bytes but
+leaves the object files built from the mutated version on disk, and MSBuild — seeing no
+`.cpp` newer than its `.obj` — happily relinks them.
+
+The failure this produces is worse than a false "not caught", because it arrives at the
+end of the cycle, when the tree looks correct and everyone has stopped watching:
+
+- the working tree is clean and `git diff` is empty, so the mutation *looks* reverted;
+- the binary still contains it, so a green run afterwards is green for the wrong build,
+  and a red one sends you hunting a defect that is not in the source.
+
+Two habits close it, and they cost seconds:
+
+1. **Finish every mutation cycle with a full rebuild**, not a targeted one — after the
+   last revert, before the run you intend to believe.
+2. **Compare the mutated files against their `HEAD` blobs by hash** once you are done:
+   `git stash list` and `git status` cannot see a byte-identical revert that is wrong,
+   but `md5sum <file>` versus `git show HEAD:<path> | md5sum` proves the source really is
+   what you think, and a full rebuild then proves the binary matches the source.
+
+Write the mutation down, revert it, rebuild everything, hash-check, *then* claim.

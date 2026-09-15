@@ -122,21 +122,26 @@ struct FilterListParse {
 /// start of every file they write.
 inline constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
 
-/// The inverse of renderFilterList. `#` comments and blank lines are skipped
-/// -- SessionCodec's own line convention, reused rather than reinvented. A row
-/// that does not parse, or whose type word is outside the vocabulary, is
-/// REJECTED and its line number reported: a hand-edited file with one bad row
-/// still imports the rows that are good, which is what an operator in front of
-/// a rig needs, but nothing is quietly reshaped into a different filter.
+/// The inverse of renderFilterList. Blank lines and `#` comments are skipped
+/// whatever they are indented by -- SessionCodec's own line convention, reused
+/// rather than reinvented. Everything else REFUSES rather than guesses: a row
+/// that does not parse, whose type word is outside the vocabulary, or whose
+/// fifth column is present but unreadable, is REJECTED and its line number
+/// reported. A hand-edited file with one bad row still imports the rows that
+/// are good, which is what an operator in front of a rig needs, but nothing is
+/// quietly reshaped into a different filter or a different applied state.
 ///
 /// A leading UTF-8 BOM is stripped before anything else looks at the text.
-/// `'\r'` needs no handling: it is whitespace to `operator>>`, so CRLF files
-/// parse as they stand.
+/// `'\r'` needs no handling inside a row: it is whitespace to `operator>>`, so
+/// CRLF files parse as they stand.
 ///
-/// A row with no fifth column reads as NOT applied, which is both the
-/// backward-compatible reading and the safe one: treating an unknown row as
-/// already-in-the-rig would silently drop a correction the operator asked for,
-/// whereas treating it as not-yet-applied surfaces as a filter they can see.
+/// **The one place a MISSING value is filled in rather than refused** is the
+/// fifth column: a row with no flag at all reads as NOT applied. That is not a
+/// guess about what someone meant, it is the format's own older four-column
+/// shape, and the fill-in is the safe direction -- the filter surfaces as one
+/// the operator can see and decide about, rather than being hidden from them
+/// as already-handled. A flag that is present but unreadable gets no such
+/// benefit of the doubt (see the body).
 [[nodiscard]] inline FilterListParse parseFilterList(std::string_view text) {
     if (text.size() >= kUtf8Bom.size() && text.substr(0, kUtf8Bom.size()) == kUtf8Bom) {
         text.remove_prefix(kUtf8Bom.size());
@@ -148,7 +153,17 @@ inline constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
     std::size_t lineNumber = 0;
     while (std::getline(stream, line)) {
         ++lineNumber;
-        if (line.empty() || line.front() == '#' || line.front() == '\r') continue;
+
+        // Find the first thing that is not whitespace BEFORE deciding what
+        // kind of line this is. Testing only `line.front()` made three
+        // spaces, a tab, a CR, or a comment a human had lined up by hand look
+        // like a malformed row -- and a false rejection is not harmless: a
+        // rejected line is an alarm, and an alarm that cries wolf is how the
+        // next real refusal gets ignored.
+        const std::size_t firstGlyph = line.find_first_not_of(" \t\r\n\v\f");
+        if (firstGlyph == std::string::npos) continue;  // blank, however spelled
+        if (line[firstGlyph] == '#') continue;          // comment, however indented
+
         std::istringstream fields{ line };
         std::string name;
         ExportedFilter filter;
@@ -162,8 +177,26 @@ inline constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
             continue;
         }
         filter.spec.type = *type;
+
+        // The fifth column refuses on the same terms the type word does. A
+        // MISSING column still reads as not-applied -- that is a four-column
+        // file, the format's own older shape. A column that is PRESENT and
+        // unreadable is different: somebody meant something this build cannot
+        // interpret, and guessing "not applied" is the dangerous guess. A
+        // misspelled `appllied` would import a filter the rig already has,
+        // the operator would land it again, and the correction would arrive
+        // twice -- the -14.2 dB arithmetic this column exists to prevent.
+        // Anything after the flag is refused for the same reason: a token
+        // nobody can interpret is not a token to ignore.
         std::string flag;
-        if (fields >> flag) filter.applied = (flag == kAppliedToken);
+        if (fields >> flag) {
+            std::string trailing;
+            if (flag != kAppliedToken || (fields >> trailing)) {
+                parse.rejectedLines.push_back(lineNumber);
+                continue;
+            }
+            filter.applied = true;
+        }
         parse.filters.push_back(filter);
     }
     return parse;
