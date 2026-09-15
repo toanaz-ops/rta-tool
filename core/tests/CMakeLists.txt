@@ -116,3 +116,20 @@ add_test(NAME coherence_gate_is_not_bypassed
             -DCORE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_coherence_gate.cmake
 )
+
+# --- Test-name portability guard -------------------------------------------
+# Every Catch2 test name in the repo must be pure ASCII: ctest runs a
+# discovered test by handing its name back to the binary as a filter, and that
+# round trip only survives non-ASCII where the whole toolchain agrees on the
+# encoding. One U+00A7 in one name turned windows-latest red for a test that
+# never executed an assertion (CI run 34043346767). See
+# core/tests/check_test_names_are_ascii.cmake.
+#
+# Scans EVERY test directory, including the ones only compiled with
+# RTA_BUILD_APP=ON -- a name is wrong in the source whether or not this
+# configuration builds it, and a textual scan is cheap enough to run always.
+add_test(NAME test_names_are_ascii
+    COMMAND ${CMAKE_COMMAND}
+            "-DDIRS=${CMAKE_SOURCE_DIR}/core/tests;${CMAKE_SOURCE_DIR}/app/tests;${CMAKE_SOURCE_DIR}/app/tests_juce;${CMAKE_SOURCE_DIR}/platform/tests;${CMAKE_SOURCE_DIR}/platform/tests_juce;${CMAKE_SOURCE_DIR}/ui/tests"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_test_names_are_ascii.cmake
+)
