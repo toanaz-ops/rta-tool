@@ -5,6 +5,47 @@
 
 ---
 
+# 2026-09-16 — **Quy trình GitHub-oriented đã áp dụng; năm PR đã MERGE vào `origin/main` tại `a2de06e`**
+
+**Đọc mục này trước tiên.** Chủ nhân ra lệnh 2026-09-15: quản lý commit theo
+GitHub thay vì `main` local. `main` local (36 commit chưa push) đã push
+`4b05049→23b7ea0`; từ đó mọi thay đổi đi qua PR + verifier độc lập. Quy ước:
+`docs/GIT-WORKFLOW.md` (PR #1). Chủ nhân nói "merge" 2026-09-16; đã merge theo
+thứ tự dưới, `gh pr merge --merge`, `origin/main..main` = 0 (đo).
+
+| PR | nhánh | merge commit | nội dung | verify |
+|---|---|---|---|---|
+| #5 | `ci/portability-fixes` | `00d9571` | CI 3 OS xanh: `AtomicSharedPtr` (libc++ không có `atomic<shared_ptr>`), sàn CMP0057 cho script `-P`, tên test ASCII, `--parallel 4`, assertion Nyquist của weighting | 3 vòng verifier, CI 3/3 xanh tại `512029a` (run 35003607391) |
+| #1 | `docs/github-workflow` | `1b0d133` | `docs/GIT-WORKFLOW.md`, PR template, CLAUDE.md | docs |
+| #3 | `l7/align-order4-probe` | `0855e8f` | Chốt ALIGN §13.1: đồng nhất N·90° đúng; L4a sai dấu do luật peak-sign của ρ KHÔNG whitened (dự kiến, chưa ship), KHÔNG do PHAT `DelayFinder`, KHÔNG do convention; +5 test core 551→556 | 2 vòng; mutation LR 32/192 đỏ |
+| #2 | `l7/align-impl-plan` | `1852dff` | Plan trạm 3 L7-ALIGN, Task A–J, ALIGN-R1..R14 | 2 vòng, 12 lỗi đã sửa |
+| #4 | `l7/eq-app-session-verify` | `a2de06e` | EQ Task E/F/G + precision fix; sau merge với main: OFF **591/591**, ON **659/659** (builder đo, clean) | 4 vòng, verdict cuối SOUND |
+
+**CI GitHub Actions ĐANG BỊ CHẶN ở mức tài khoản** từ sau merge #5: mọi run chết
+sau 3 s với "recent account payments have failed or your spending limit needs
+to be increased" (Billing & plans). #1/#3/#2/#4 merge trên bằng chứng local hai
+cấu hình; cây merge `a2de06e` đang được verifier dựng lại độc lập (OFF/ON/fallback).
+Chủ nhân cần mở lại Actions trước khi PR kế tiếp có CI.
+
+**Bẫy merge #4 phơi ra (chưa sửa trên main):** guard `no_std_atomic_over_shared_ptr`
+(PR #5) đưa NỘI DUNG file nguồn qua tham số `macro()` CMake → re-lex; một hex
+escape (`ï`) trong code hay comment làm guard chết vì syntax error thay vì
+báo finding. #4 né bằng `static_cast<char>`; fix thật (`function()` +
+`PARENT_SCOPE`) đang làm ở nhánh `ci/guard-no-relex`.
+
+**Chủ nhân hoãn (2026-09-16):** duyệt thay đổi assertion `core/tests/test_weighting.cpp`
+trong #5 (`isinf` → `> 200 dB` tại Nyquist; mạnh hơn về cấu trúc, yếu hơn tại
+đúng một giá trị). Ghi ở `HUMAN-QA-QUEUE`. Đã merge nguyên trạng.
+
+**Repo setting:** `delete_branch_on_merge` = true (bật 2026-09-16). `allow_auto_merge`
+KHÔNG bật được — GitHub gắn nó với branch protection, thứ repo private gói free
+không có (HTTP 403). Gate merge là thủ tục theo `docs/GIT-WORKFLOW.md`.
+
+**Việc đang chạy khi ghi mục này:** Wave 3a ALIGN (Task A–F, nhánh
+`l7/align-wave3a-core`) theo plan PR #2; Task G–J là PR sau.
+
+---
+
 # 2026-09-15 — **L7-EQ Task E/F/G XONG + precision fix — nhánh `l7/eq-app-session-verify`**
 
 **Đọc mục này trước tiên.** Việc-đầu-tiên mà mục "Wave 2 (2026-09-07)" giao cho
