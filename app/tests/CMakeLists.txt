@@ -107,6 +107,51 @@ target_link_libraries(rtatool_analysis_tests PRIVATE
 # exactly that reason.
 catch_discover_tests(rtatool_analysis_tests)
 
+# --- Which AtomicSharedPtr branch did this toolchain take? -----------------
+# AtomicSharedPtr.h compiles one of two implementations and only one runs on a
+# given machine, so "the tests pass" is silent about WHICH one was exercised.
+# It has to be said somewhere a CI log actually shows.
+#
+# Not from inside a test: CI runs `ctest --output-on-failure`, which prints
+# nothing at all for a passing test, so a WARN or a std::cout in the binary
+# reaches no log unless something has already gone wrong. The Configure step
+# is the channel that is always printed, on every runner, in full.
+#
+# The header answers for itself rather than CMake re-deriving the rule -- the
+# probe #includes it and static_asserts on RTA_ATOMIC_SHARED_PTR_IS_STD. Both
+# directions are probed and cross-checked, so a probe that fails to build for
+# some unrelated reason reports "undetermined" instead of quietly claiming the
+# fallback.
+include(CheckCXXSourceCompiles)
+block()
+    set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+    set(CMAKE_REQUIRED_QUIET TRUE)
+    if(RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
+        set(CMAKE_REQUIRED_DEFINITIONS -DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
+    endif()
+    check_cxx_source_compiles("
+        #include \"measure/AtomicSharedPtr.h\"
+        static_assert(RTA_ATOMIC_SHARED_PTR_IS_STD == 1);
+        int main() { return 0; }"
+        RTA_ASP_PROBE_SAYS_STD)
+    check_cxx_source_compiles("
+        #include \"measure/AtomicSharedPtr.h\"
+        static_assert(RTA_ATOMIC_SHARED_PTR_IS_STD == 0);
+        int main() { return 0; }"
+        RTA_ASP_PROBE_SAYS_FALLBACK)
+
+    if(RTA_ASP_PROBE_SAYS_STD AND NOT RTA_ASP_PROBE_SAYS_FALLBACK)
+        message(STATUS "AtomicSharedPtr: C++20 std::atomic<shared_ptr> specialisation")
+    elseif(RTA_ASP_PROBE_SAYS_FALLBACK AND NOT RTA_ASP_PROBE_SAYS_STD)
+        message(STATUS "AtomicSharedPtr: std::atomic_* free-function fallback (no P0718 here)")
+    else()
+        message(WARNING
+            "AtomicSharedPtr: branch undetermined -- the probe compiled both ways or "
+            "neither (std=${RTA_ASP_PROBE_SAYS_STD} fallback=${RTA_ASP_PROBE_SAYS_FALLBACK}). "
+            "The wrapper still works; this line just cannot say which half of it runs.")
+    endif()
+endblock()
+
 # --- Architectural guard ---------------------------------------------------
 # The measurement view model (app/src/measure/{Levels,Snapshot,SnapshotSource,
 # Analyser,SyntheticSnapshot}) and the plot's pure math (PlotGeometry.h) must

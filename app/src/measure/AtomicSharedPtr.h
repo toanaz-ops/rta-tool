@@ -16,10 +16,17 @@
 /// RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK forces the second branch on a
 /// toolchain that has the specialisation. It exists because the fallback is
 /// the branch that only Apple libc++ compiles, which means it is the branch
-/// nobody on this project can break and notice: define the macro, build, and
-/// run the [atomicsharedptr] tests to exercise it on a machine that is not a
-/// Mac. Never define it in a shipping build -- it opts into functions the
-/// standard removes in C++26 for no gain.
+/// nobody on this project can break and notice. Configure with it and the
+/// whole tree takes that path:
+///
+///   cmake -S . -B build-fallback -DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON
+///
+/// The root CMakeLists.txt turns that option into a GLOBAL compile definition
+/// deliberately: the macro changes `value_`'s type and therefore the layout of
+/// every class holding an AtomicSharedPtr, so a build where only some
+/// translation units see it is an ODR violation that links silently. Never
+/// enable it in a shipping build -- it opts into functions the standard
+/// removes in C++26 for no gain.
 #if defined(RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
 #define RTA_ATOMIC_SHARED_PTR_IS_STD 0
 #elif defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
@@ -80,13 +87,21 @@ namespace rta::measure {
 /// warning is suppressed only around the three calls that need it, so a real
 /// deprecation elsewhere is still heard.
 ///
-/// LOCK-FREEDOM, HONESTLY. Neither path is lock-free on any toolchain this
-/// project builds on: MSVC's specialisation spins on the control block, and
-/// libc++'s free functions take a lock from a small address-keyed spinlock
-/// pool. The fallback is therefore not a downgrade -- it is what the platform
-/// was already giving us. It is also why the audio callback must keep its
-/// hands off this type: this is the ANALYSIS thread's publish primitive, and
-/// the callback's only job stays copying into the lock-free ring buffer.
+/// LOCK-FREEDOM, HONESTLY -- AND WHY IT IS STILL ACCEPTABLE. Do not read
+/// "atomic pointer swap" as "lock-free" here. On the C++20 path (MSVC,
+/// libstdc++) the specialisation is lock-free for the pointer swap itself;
+/// on Apple libc++ the fallback takes a lock out of the library's hashed
+/// lock table, keyed on the address of `value_`. That is a real lock, and
+/// saying otherwise would be the kind of claim this project does not make.
+///
+/// It is acceptable because of WHO CALLS IT, not because the lock is cheap.
+/// Every load and store on this type belongs to the analysis thread (writer)
+/// and the message thread (reader/writer). Nothing on the audio callback path
+/// reaches an AtomicSharedPtr: `platform/` holds no `shared_ptr` at all and
+/// cannot see `app/`, so the callback's only job stays what the real-time
+/// contract says it is -- copying into the lock-free ring buffer. If that ever
+/// changes, this type is the wrong primitive for the new caller, and no amount
+/// of tuning here makes it the right one.
 ///
 /// Deliberately neither copyable nor movable, exactly like `std::atomic`: a
 /// publish slot is a fixed location two threads agreed on, and moving one out

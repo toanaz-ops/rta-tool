@@ -59,20 +59,49 @@ endif()
 
 # The sentinel: the guard is worthless if it has stopped watching the one file
 # that is SUPPOSED to trip it. AtomicSharedPtr.h must be in the scanned set and
-# must still contain the pattern -- if it does not, either the allow-list path
+# must still DECLARE the member -- if it does not, either the allow-list path
 # drifted or the wrapper no longer uses the specialisation at all, and either
 # way the next reader needs to be told rather than reassured.
 if(NOT ALLOW IN_LIST SOURCES)
     message(FATAL_ERROR "atomic-shared_ptr guard did not see ${ALLOW} -- it is not watching")
 endif()
 
+# COMMENTS ARE NOT CODE, and until a review caught it this script could not
+# tell the difference. The sentinel below was satisfied by AtomicSharedPtr.h's
+# own doc comment, which spells the pattern out in prose -- so deleting the
+# real `std::atomic<Ptr> value_;` declaration left the guard passing, still
+# announcing that it was proving something. Strip `//` line comments from
+# every file before matching, and the prose stops voting.
+#
+# Stripping does not weaken the OFFENDER scan either: a commented-out atomic
+# compiles on no platform, so flagging one was a false positive. It also frees
+# the rest of the tree to DISCUSS the forbidden form in comments, which the
+# files being guarded have good reason to do.
+#
+# `//` inside a string literal (a URL, say) is stripped too. That costs
+# nothing here -- the patterns below cannot match a string literal's tail --
+# and `/* */` blocks are not handled at all, because this tree does not use
+# them. Both are limitations, not oversights.
+macro(rta_strip_line_comments OUT_VAR IN_TEXT)
+    string(REGEX REPLACE "//[^\n]*" "" ${OUT_VAR} "${IN_TEXT}")
+endmacro()
+
 set(PATTERN "(std::)?atomic[ \t]*<[^>]*(shared_ptr|Ptr)")
 
+# Tighter than PATTERN on purpose: the sentinel must be satisfied by the
+# DECLARATION and by nothing else, so it is anchored on `<Ptr>` followed by a
+# member name and a semicolon -- the exact shape of AtomicSharedPtr.h's
+# `std::atomic<Ptr> value_;`. Matching PATTERN here was what let prose stand
+# in for code.
+set(SENTINEL_PATTERN "std::atomic[ \t]*<[ \t]*Ptr[ \t]*>[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*;")
+
 file(READ "${ALLOW}" ALLOW_CONTENT)
-if(NOT ALLOW_CONTENT MATCHES "${PATTERN}")
+rta_strip_line_comments(ALLOW_CODE "${ALLOW_CONTENT}")
+if(NOT ALLOW_CODE MATCHES "${SENTINEL_PATTERN}")
     message(FATAL_ERROR
         "atomic-shared_ptr guard is not proving anything: ${ALLOW} no longer "
-        "contains the pattern it is the sole exception for")
+        "DECLARES the member it is the sole exception for (looked for "
+        "`std::atomic<Ptr> <name>;` in code, comments excluded)")
 endif()
 
 set(OFFENDERS "")
@@ -81,7 +110,8 @@ foreach(FILE ${SOURCES})
         continue()
     endif()
     file(READ "${FILE}" CONTENT)
-    if(CONTENT MATCHES "${PATTERN}")
+    rta_strip_line_comments(CODE "${CONTENT}")
+    if(CODE MATCHES "${PATTERN}")
         list(APPEND OFFENDERS "${FILE}")
     endif()
 endforeach()

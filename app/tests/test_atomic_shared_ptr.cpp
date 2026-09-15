@@ -149,13 +149,19 @@ TEST_CASE("A reader racing a writer never observes a torn or dead pointer",
 
 TEST_CASE("Which atomic-shared_ptr implementation this build took is on the record",
           "[atomicsharedptr]") {
-    // Always passes; it exists so the ctest log of every runner says which
-    // branch of AtomicSharedPtr.h the tests above actually exercised. Without
-    // it, "the tests pass" is silent about whether the fallback -- the branch
-    // that exists solely for Apple libc++ -- has ever been run at all.
-    INFO("AtomicSharedPtr uses "
+    // WARN, not INFO. An INFO is only flushed when a nearby assertion fails,
+    // so `INFO(...) + CHECK(true)` -- which is what this used to be -- prints
+    // to nobody, ever. A WARN is emitted on the way past, so anyone who runs
+    // this binary by hand sees the branch without passing `-s`.
+    //
+    // This is NOT how the CI log learns it. CI runs
+    // `ctest --output-on-failure`, which discards the output of a passing
+    // test entirely, so nothing printed here can reach a green build's log.
+    // That job belongs to the Configure step: app/tests/CMakeLists.txt probes
+    // the header and prints "AtomicSharedPtr: ..." as a STATUS line, which
+    // every runner's log shows in full. See that file's comment.
+    WARN("AtomicSharedPtr uses "
          << (AtomicSharedPtr<const Payload>::usesStdAtomicSpecialisation()
                  ? "the C++20 std::atomic specialisation"
                  : "the std::atomic_* free-function fallback"));
-    CHECK(true);
 }
