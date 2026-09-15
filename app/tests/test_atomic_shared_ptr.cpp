@@ -160,8 +160,22 @@ TEST_CASE("Which atomic-shared_ptr implementation this build took is on the reco
     // That job belongs to the Configure step: app/tests/CMakeLists.txt probes
     // the header and prints "AtomicSharedPtr: ..." as a STATUS line, which
     // every runner's log shows in full. See that file's comment.
+    const AtomicSharedPtr<const Payload> slot;
     WARN("AtomicSharedPtr uses "
          << (AtomicSharedPtr<const Payload>::usesStdAtomicSpecialisation()
                  ? "the C++20 std::atomic specialisation"
-                 : "the std::atomic_* free-function fallback"));
+                 : "the std::atomic_* free-function fallback")
+         << "; isLockFree() = " << (slot.isLockFree() ? "true" : "false"));
+
+    // Reported, NEVER asserted, and the distinction is the point. Whether the
+    // implementation is lock-free is a fact about the standard library, not
+    // about this code: a CHECK here would go red the day a vendor changed its
+    // mind, reporting news as a defect. What this design relies on is not
+    // lock-freedom at all -- it is that no load or store on this type is
+    // reachable from the audio callback. That property is structural
+    // (platform/ holds no shared_ptr and cannot see app/), and it is what the
+    // header's note asks a reader to check, rather than this line.
+    //
+    // For the record on the machine this was written on: MSVC 14.51 takes the
+    // C++20 specialisation and reports is_lock_free() == false.
 }

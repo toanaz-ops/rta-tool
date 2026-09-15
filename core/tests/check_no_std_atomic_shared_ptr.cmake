@@ -78,12 +78,27 @@ endif()
 # the rest of the tree to DISCUSS the forbidden form in comments, which the
 # files being guarded have good reason to do.
 #
+# Block comments are stripped too, but only the shape this tree actually
+# contains. An earlier revision of this comment said the tree "does not use"
+# `/* */`; that was wrong -- 16 files carry inline argument annotations like
+# `/*fcHz=*/` and `/*checkGeometry=*/`. None of them hides the pattern today,
+# so nothing was slipping through, but the comment was asserting something
+# untrue about the code it sits next to.
+#
+# The pattern below matches a `/* ... */` whose body contains no `*`, which is
+# every one of those 16 and any ordinary one-sentence block. A body that DOES
+# contain a `*` -- a decorated banner, a doxygen `/** ... */` -- survives, so
+# text inside one could still satisfy the sentinel. That is accepted rather
+# than chased: this guard exists to catch DRIFT, a contributor writing the
+# natural thing or deleting the declaration, and neither of those arrives
+# disguised inside a doxygen block. A regex that handled every C comment
+# correctly would be harder to read than the rule it enforces.
+#
 # `//` inside a string literal (a URL, say) is stripped too. That costs
-# nothing here -- the patterns below cannot match a string literal's tail --
-# and `/* */` blocks are not handled at all, because this tree does not use
-# them. Both are limitations, not oversights.
-macro(rta_strip_line_comments OUT_VAR IN_TEXT)
+# nothing here: the patterns below cannot match a string literal's tail.
+macro(rta_strip_comments OUT_VAR IN_TEXT)
     string(REGEX REPLACE "//[^\n]*" "" ${OUT_VAR} "${IN_TEXT}")
+    string(REGEX REPLACE "/\\*[^*]*\\*/" "" ${OUT_VAR} "${${OUT_VAR}}")
 endmacro()
 
 set(PATTERN "(std::)?atomic[ \t]*<[^>]*(shared_ptr|Ptr)")
@@ -96,7 +111,7 @@ set(PATTERN "(std::)?atomic[ \t]*<[^>]*(shared_ptr|Ptr)")
 set(SENTINEL_PATTERN "std::atomic[ \t]*<[ \t]*Ptr[ \t]*>[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*;")
 
 file(READ "${ALLOW}" ALLOW_CONTENT)
-rta_strip_line_comments(ALLOW_CODE "${ALLOW_CONTENT}")
+rta_strip_comments(ALLOW_CODE "${ALLOW_CONTENT}")
 if(NOT ALLOW_CODE MATCHES "${SENTINEL_PATTERN}")
     message(FATAL_ERROR
         "atomic-shared_ptr guard is not proving anything: ${ALLOW} no longer "
@@ -110,7 +125,7 @@ foreach(FILE ${SOURCES})
         continue()
     endif()
     file(READ "${FILE}" CONTENT)
-    rta_strip_line_comments(CODE "${CONTENT}")
+    rta_strip_comments(CODE "${CONTENT}")
     if(CODE MATCHES "${PATTERN}")
         list(APPEND OFFENDERS "${FILE}")
     endif()

@@ -88,11 +88,25 @@ namespace rta::measure {
 /// deprecation elsewhere is still heard.
 ///
 /// LOCK-FREEDOM, HONESTLY -- AND WHY IT IS STILL ACCEPTABLE. Do not read
-/// "atomic pointer swap" as "lock-free" here. On the C++20 path (MSVC,
-/// libstdc++) the specialisation is lock-free for the pointer swap itself;
-/// on Apple libc++ the fallback takes a lock out of the library's hashed
-/// lock table, keyed on the address of `value_`. That is a real lock, and
-/// saying otherwise would be the kind of claim this project does not make.
+/// "atomic pointer swap" as "lock-free". Per implementation, separating what
+/// was measured from what was only read:
+///
+///   - MSVC 14.51, C++20 path -- MEASURED on this project's own toolchain:
+///     `is_lock_free()` returns false and `is_always_lock_free` is false.
+///     The specialisation spins on a bit in the control block. NOT lock-free.
+///     (An earlier revision of this comment claimed the C++20 path was
+///     lock-free "for the pointer swap itself". That was wrong, and it was
+///     wrong on the one toolchain every developer here uses daily.)
+///   - Apple libc++, fallback path -- NOT measured here, read from the
+///     implementation: the `std::atomic_*` shared_ptr overloads take a lock
+///     out of a small address-keyed table. NOT lock-free.
+///   - libstdc++ -- not measured, not read. Assume nothing either way.
+///
+/// `isLockFree()` below answers for whatever THIS build actually got, and
+/// test_atomic_shared_ptr.cpp reports it. It is deliberately reported and
+/// never asserted: the answer belongs to the standard library, not to this
+/// code, so a test that went red when a vendor changed its mind would be
+/// reporting news, not a defect.
 ///
 /// It is acceptable because of WHO CALLS IT, not because the lock is cheap.
 /// Every load and store on this type belongs to the analysis thread (writer)
@@ -160,6 +174,21 @@ public:
     /// which path a given runner took is on the record rather than guessed at.
     [[nodiscard]] static constexpr bool usesStdAtomicSpecialisation() noexcept {
         return RTA_ATOMIC_SHARED_PTR_IS_STD != 0;
+    }
+
+    /// Whether this build's implementation is lock-free. Reported, never
+    /// asserted -- see the lock-freedom note above. As of MSVC 14.51 this is
+    /// false on BOTH paths, which is the point: the design's safety comes
+    /// from keeping the audio callback away from this type, not from an
+    /// assumption about the standard library's implementation.
+    [[nodiscard]] bool isLockFree() const noexcept {
+#if RTA_ATOMIC_SHARED_PTR_IS_STD
+        return value_.is_lock_free();
+#else
+        RTA_ASP_SILENCE_DEPRECATED_PUSH
+        return std::atomic_is_lock_free(&value_);
+        RTA_ASP_SILENCE_DEPRECATED_POP
+#endif
     }
 
 private:

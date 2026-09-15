@@ -123,12 +123,38 @@ catch_discover_tests(rtatool_analysis_tests)
 # some unrelated reason reports "undetermined" instead of quietly claiming the
 # fallback.
 include(CheckCXXSourceCompiles)
-block()
+
+# A function, NOT block(). block() is CMake 3.25 and the root project declares
+# a 3.22 floor, so it would have been a configure error on a 3.22..3.24 CMake
+# -- caught in review, not by any runner here, because every machine and every
+# GitHub image in play is newer. A function gets the same variable scoping on
+# 3.22, and the floor stays where the rest of the project put it.
+function(rta_report_atomic_shared_ptr_branch)
     set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/../src")
     set(CMAKE_REQUIRED_QUIET TRUE)
     if(RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
         set(CMAKE_REQUIRED_DEFINITIONS -DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK)
     endif()
+
+    # check_cxx_source_compiles memoises its answer in an INTERNAL cache
+    # variable and will not re-run while that variable exists -- and it does
+    # NOT invalidate it when CMAKE_REQUIRED_DEFINITIONS changes. So flipping
+    # RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK in an EXISTING build directory used
+    # to leave both probes at their first answers: the configure log printed
+    # "forcing the fallback" and "C++20 specialisation" in the same run while
+    # the binary being built was the fallback. A status line that can contradict
+    # itself is worse than no status line, since it is the one thing a reader
+    # has no way to double-check.
+    #
+    # Dropped from the cache before every probe, rather than keyed on the
+    # option's value. Keying on the option would fix the flip and nothing else:
+    # the answer also depends on the compiler and the standard library, so an
+    # Xcode or GCC upgrade under an existing build dir would go on reporting
+    # the old toolchain's answer. Two trivial try_compiles per configure is the
+    # right price for a line that is always about THIS configure.
+    unset(RTA_ASP_PROBE_SAYS_STD CACHE)
+    unset(RTA_ASP_PROBE_SAYS_FALLBACK CACHE)
+
     check_cxx_source_compiles("
         #include \"measure/AtomicSharedPtr.h\"
         static_assert(RTA_ATOMIC_SHARED_PTR_IS_STD == 1);
@@ -150,7 +176,8 @@ block()
             "neither (std=${RTA_ASP_PROBE_SAYS_STD} fallback=${RTA_ASP_PROBE_SAYS_FALLBACK}). "
             "The wrapper still works; this line just cannot say which half of it runs.")
     endif()
-endblock()
+endfunction()
+rta_report_atomic_shared_ptr_branch()
 
 # --- Architectural guard ---------------------------------------------------
 # The measurement view model (app/src/measure/{Levels,Snapshot,SnapshotSource,
