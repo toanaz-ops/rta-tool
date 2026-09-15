@@ -96,10 +96,40 @@ endif()
 #
 # `//` inside a string literal (a URL, say) is stripped too. That costs
 # nothing here: the patterns below cannot match a string literal's tail.
-macro(rta_strip_comments OUT_VAR IN_TEXT)
-    string(REGEX REPLACE "//[^\n]*" "" ${OUT_VAR} "${IN_TEXT}")
-    string(REGEX REPLACE "/\\*[^*]*\\*/" "" ${OUT_VAR} "${${OUT_VAR}}")
-endmacro()
+#
+# A FUNCTION, AND NEVER AGAIN A MACRO. This was a macro until 2026-09-16, and
+# it took the file's text as an argument. A CMake macro substitutes its
+# parameters TEXTUALLY into its body and the result is re-lexed as CMake, so
+# every scanned source was parsed twice: once as C++ by the compiler, once as
+# CMake code by this guard. Any backslash-x escape in any scanned file -- in a
+# string literal or, just as fatally, inside a comment -- then aborted the run
+# with `Invalid character escape '\x'` instead of reporting a finding. The
+# guard did not report a false positive; it stopped existing, and the
+# contributor was told their C++ was a CMake syntax error. PR #4 hit exactly
+# this on a UTF-8 BOM literal and rewrote it as three `static_cast<char>`
+# bytes to get a green run
+# (https://github.com/toanaz-ops/rta-tool/pull/4#issuecomment-5689190024) --
+# a source file bent to fit a guard's bug.
+#
+# A function takes its arguments by value into its own scope and its body is
+# parsed once, when the file is read, so nothing a scanned file contains is
+# ever lexed. The contents are passed BY VARIABLE NAME here (`IN_VAR`, then
+# `${${IN_VAR}}`) rather than by value, which keeps megabytes of source text
+# off the call line as well. `core/tests/guard_fixtures/hex_escape_comment.h`
+# is a scanned file carrying the escape in both shapes; it makes the trap fail
+# this test rather than return silently.
+#
+# The sibling guards (check_coherence_gate, check_no_framework_deps,
+# check_no_polynomial_form, check_no_conformance_claim,
+# check_test_names_are_ascii, platform/tests/check_*) were audited the same
+# day: all of them match with `if(CONTENT MATCHES ...)` on a variable NAME and
+# never route file text through a macro, so none shared the defect and none
+# was changed.
+function(rta_strip_comments OUT_VAR IN_VAR)
+    string(REGEX REPLACE "//[^\n]*" "" STRIPPED "${${IN_VAR}}")
+    string(REGEX REPLACE "/\\*[^*]*\\*/" "" STRIPPED "${STRIPPED}")
+    set(${OUT_VAR} "${STRIPPED}" PARENT_SCOPE)
+endfunction()
 
 set(PATTERN "(std::)?atomic[ \t]*<[^>]*(shared_ptr|Ptr)")
 
@@ -111,7 +141,7 @@ set(PATTERN "(std::)?atomic[ \t]*<[^>]*(shared_ptr|Ptr)")
 set(SENTINEL_PATTERN "std::atomic[ \t]*<[ \t]*Ptr[ \t]*>[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*;")
 
 file(READ "${ALLOW}" ALLOW_CONTENT)
-rta_strip_comments(ALLOW_CODE "${ALLOW_CONTENT}")
+rta_strip_comments(ALLOW_CODE ALLOW_CONTENT)
 if(NOT ALLOW_CODE MATCHES "${SENTINEL_PATTERN}")
     message(FATAL_ERROR
         "atomic-shared_ptr guard is not proving anything: ${ALLOW} no longer "
@@ -125,7 +155,7 @@ foreach(FILE ${SOURCES})
         continue()
     endif()
     file(READ "${FILE}" CONTENT)
-    rta_strip_comments(CODE "${CONTENT}")
+    rta_strip_comments(CODE CONTENT)
     if(CODE MATCHES "${PATTERN}")
         list(APPEND OFFENDERS "${FILE}")
     endif()
