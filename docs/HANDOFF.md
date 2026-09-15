@@ -125,9 +125,20 @@ ngoài miền; Peaking KHÔNG dính (alpha peaking không có gain term).
 trên đường shelf (NaN không còn sinh ra) nhưng là bẫy cho MỌI nguồn NaN sau. Không
 sửa vì `Biquad.h` là file frozen; cần một task riêng nếu chủ nhân muốn.
 
-**Record touch-up còn nợ (closeout):** ALIGN record §5 nói `|H|` = `sectionAttenuationDb`
-nhưng field đó là attenuation (+=xuống); plan W0-R3 đã khoá đúng `−attenuationDb`,
-record cần sửa một dòng để khỏi lạc plan (bẫy #17).
+**~~Record touch-up còn nợ (closeout)~~ — ĐÃ TRẢ 2026-09-15.** ALIGN record §5 nói
+`|H|` = `sectionAttenuationDb` nhưng field đó là attenuation (+=xuống); plan W0-R3
+đã khoá đúng `−attenuationDb`. Đã sửa cả §5 lẫn §10 mục 3, và sửa luôn tolerance
+`1e-12` → `1e-9` cho khớp bản DỰNG THẬT (`core/tests/test_biquad_response.cpp:56-80`)
+— con số cũ cũng sai, không chỉ cái dấu.
+
+**Order-4 (ALIGN §13.1) — ĐÃ SETTLE 2026-09-15, chủ nhân không phải trả lời.**
+Probe độc lập: `docs/research/2026-09-15-l7-align-order4-probe.md`, script
+`tools/probe_align_order4.py`, khoá CI `core/tests/test_align_order4_identity.cpp`.
+Identity `N·90°` ĐÚNG chính xác tới máy (analog `0.00e+00°`, digital `1.16e-11°`);
+L4a đo sai dấu bậc 4 vì fixture là **hai box band-pass** chứ không phải cặp
+crossover matched-cutoff, và **không** convention nào chạm tới được bậc chẵn.
+**Wave 3 (ALIGN) hết chặn.** ctest 551 → 556 (build dir `build-probe`,
+`-DRTA_BUILD_APP=OFF`), đã làm đỏ một lần rồi xanh lại.
 
 ## Wave 1 ĐÃ XÂY VÀ VERIFY (2026-09-07) — FIR rồi OUT (tuần tự, tránh git-index race)
 

@@ -77,9 +77,19 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
 - [x] **Solo mặc định khi phát output → CÓ setting, mặc định option 1, 2026-09-06.**
   Sequencer/auto-step: strict single-output solo. Manual toggle: additive. Operator
   đổi được. Trả lời chung cho OUT §13.2 và DELAY §14.2.
-- [ ] **Order-4 mâu thuẫn (ALIGN §13.1)** — identity `N·90°` dự đoán ĐÚNG dấu ở BW4,
-  L4a ĐO sai dấu ở bậc 2 VÀ 4. Cần trí nhớ chủ nhân về fixture L4a hoặc một ô grid
-  độc lập. KHÔNG chặn Wave 0/1/2; chặn Wave 3 (ALIGN) build. Đề xuất probe settle.
+- [x] **Order-4 mâu thuẫn (ALIGN §13.1) → settled by independent probe 2026-09-15.**
+  Chủ nhân KHÔNG phải trả lời gì. Ô grid độc lập đã chạy:
+  [`docs/research/2026-09-15-l7-align-order4-probe.md`](research/2026-09-15-l7-align-order4-probe.md),
+  script `tools/probe_align_order4.py`, khoá CI `core/tests/test_align_order4_identity.cpp`
+  (ctest 551 → 556, đã làm đỏ một lần rồi xanh lại).
+  Kết luận: identity `N·90°` ĐÚNG — chính xác tới máy, analog lẫn digital, BW và
+  LR, mọi bậc 1–8, mọi tần số. L4a đọc sai dấu ở bậc 4 vì fixture là **hai box
+  band-pass** đấu chéo nhau (sub band-pass dưới + main band-pass trên), không phải
+  cặp crossover matched-cutoff: offset hết hằng số (62.9° spread ở bậc 4), đỉnh
+  cross-correlation rời khỏi lag 0 sang một lobe ngược dấu, trong khi **giá trị
+  tại lag 0 vẫn dương đúng như identity**. Convention KHÔNG phải thủ phạm và
+  không thể là: conj hoá làm đổi dấu offset, mà −0° = 0° và −180° = 180°, nên
+  không flip nào chạm tới được bậc CHẴN. **Wave 3 (ALIGN) hết chặn.**
 - [ ] **Judgement L7 chờ duyệt (default đã chọn, không chặn)**: `G_cap +6dB`/`Q_max`
   (EQ §12.2), N cap (§12.3), NotMinimumPhase→V2 (§12.4), −120dB floor cho `|H|` đo
   (§12.5), plausibility window Locate (DELAY §14.1), tracker on-by-default (§14.3),

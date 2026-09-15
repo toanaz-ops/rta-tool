@@ -172,8 +172,25 @@ sign that side has). Order 4 wrong-sign is **not** reproduced by the identity
 under the `s^N/D` convention; a processor whose "HP" is `(−s)^N/D`, or a main
 that is itself band-passed, would reproduce it. This record does not know
 which the L4a fixture was, and does not need to: the wizard asks question (c)
-precisely because conventions differ. The station-3 grid must include the
-case and settle the attribution (§13).
+precisely because conventions differ.
+
+**SETTLED 2026-09-15 by an independent probe** —
+`docs/research/2026-09-15-l7-align-order4-probe.md`, script
+`tools/probe_align_order4.py`, CI lock `core/tests/test_align_order4_identity.cpp`.
+The identity is exact analog and digital at every order 1–8 (worst deviation
+`0.00e+00°` in the s-plane, `1.16e-11°` through second-order sections at
+48 kHz), and the paragraph above guessed the mechanism correctly: a **pair of
+band-pass boxes** — the sub band-passed below as well as the main band-passed
+above — reproduces the L4a report at all four orders it names (right at 1,
+wrong at 2, wrong at 4, right at 8), while no matched-cutoff pair does at any
+of them. The offset is no longer constant across the overlap (62.9° of spread
+at order 4 instead of 0°), which stretches the correlation envelope until an
+oppositely-signed neighbouring lobe outgrows lag 0 — the value *at lag 0* stays
+positive, exactly as the identity says. A phase-sign or `conj`-placement
+convention is ruled out as the cause: conjugation negates the offset, and
+−0° = 0° and −180° = 180°, so **no even-order reading is reachable by a
+convention flip**. §8 step 4 keeps the cross-system cells as expected refusals,
+but it no longer has an attribution to settle.
 
 ## 4. Decision: the band fit is a complex-domain delay search with a circular-mean intercept, weighted by the summation cross-term
 
@@ -258,7 +275,7 @@ in, `std::span<std::complex<double>> out`, no state:
 | delay τ (s, real, fractional) | `H'(f) = H(f)·e^{−j2πfτ}` | from `H ≡ 1`: `|H'| = 1`, `arg H' = −2πfτ` mod 2π at every bin — the `dual-fft.md` §7.1 identity |
 | polarity | `H' = −H` | `|H'| = |H|`, `arg H' = arg H + π` at every bin |
 | gain g (linear) | `H' = g·H` | `20log₁₀|H'| − 20log₁₀|H| = 20log₁₀ g`, phase unchanged |
-| biquad cascade | `H' = H · Π_i H_i(e^{jω})` | at ω=0: `(b₀+b₁+b₂)/(1+a₁+a₂)`; at ω=π: `(b₀−b₁+b₂)/(1−a₁+a₂)`; and `20log₁₀|H_i|` equals `sectionAttenuationDb` to 1e-12 (a consistency lock between two spellings of one formula, labelled as such) |
+| biquad cascade | `H' = H · Π_i H_i(e^{jω})` | at ω=0: `(b₀+b₁+b₂)/(1+a₁+a₂)`; at ω=π: `(b₀−b₁+b₂)/(1−a₁+a₂)`; and `20log₁₀|H_i|` equals **`−sectionAttenuationDb`** to 1e-9 (a consistency lock between two spellings of one formula, labelled as such — the field is an ATTENUATION, positive = down, so the sign is not optional; W0-R3 locked it and `core/tests/test_biquad_response.cpp:56-80` is where) |
 | sum | `H_Σ = H_A + H_B` | two unit sources at relative phase φ: `|H_Σ| = 2|cos(φ/2)|` — +6.02 dB at 0°, +3.01 dB at 90°, 0 dB at 120°, null at 180°; §3's BW2 (null / +3.01 dB), LR4 (`≡ 0 dB`), BW3 (`≡ 0 dB` both polarities) from the analytic prototypes evaluated in the test itself |
 
 Positive τ means this source arrives later — the sign `referenceDelaySamples`
@@ -456,7 +473,7 @@ Closed forms first; one consistency lock, labelled; no new golden vector.
    polarities; raw HP−LP offset equals `N·90°` mod 360 at every frequency for
    N = 1..8.
 3. **Each G11 op alone** against its table row, including the two biquad
-   endpoints and the `sectionAttenuationDb` lock at 1e-12.
+   endpoints and the `−sectionAttenuationDb` lock at 1e-9 (as built; §5).
 4. **Band fit, exact case.** `H_A ≡ 1`, `H_B = e^{j(φ₀ − 2πfτ₀)}` with
    `τ₀ = +3.7 ms`, `φ₀ = 180°`, unit coherence: `τ* = τ₀` within the parabolic
    refinement's own bound, `φ₀` within 1e-9 rad, `R = 1 − 1e-12`. Then with
@@ -524,11 +541,16 @@ Closed forms first; one consistency lock, labelled; no new golden vector.
 
 ## 13. Open questions for a human
 
-1. **The order-4 wrong-sign attribution.** §3's identity predicts right-sign
-   at order 4 under `s^N/D`; L4a measured wrong-sign. A fixture convention, a
-   band-passed main, or an error in the identity — the two-grid pass of §8
-   step 4 settles it, but if the owner remembers the L4a fixture, one
-   sentence saves a grid cell.
+1. ~~**The order-4 wrong-sign attribution.**~~ **CLOSED 2026-09-15 by an
+   independent probe — no owner input needed.**
+   `docs/research/2026-09-15-l7-align-order4-probe.md`. The identity holds
+   exactly; the L4a reading is a fixture artefact of applying a
+   cross-correlation **peak-sign** rule across two systems with different
+   passbands, and no sign convention in this engine can produce it at an even
+   order. Two consequences for the builder: keep §3's table, and never read a
+   topology sign off a correlation peak — §4's complex band fit with its
+   bounded `R` is the estimator, and `R` collapsing is how it reports "these
+   two are not a matched pair". See §3's SETTLED note.
 2. **A real sub/main pair.** Every check in §10 is synthetic. Whether `R`
    stays high enough on a real room capture for the intercept to be read,
    and whether ±1 octave is the right window on a real 24 dB/oct pair, need
