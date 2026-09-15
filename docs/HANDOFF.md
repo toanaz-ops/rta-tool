@@ -226,8 +226,21 @@ hai lưới độc lập, đừng ship số một-lưới). ALIGN record `docs/d
 (nhánh `l7/align-impl-plan`, PR vào `main`). Mười task A–J, mười reconciliation
 ALIGN-R1..R10 cần orchestrator sửa record trước khi build (đáng chú ý: record §5 gọi
 `sectionAttenuationDb` — field đó KHÔNG tồn tại, chỉ có `BiquadCascade::attenuationDb`
-dấu ngược, `Biquad.h:75,80,87`). **Đúng MỘT task probe-dependent: D5** (bảng topology
-có dấu) chờ `docs/research/2026-09-15-l7-align-order4-probe.md`; A–C, D1–D4, E–J độc lập.
+dấu ngược, `Biquad.h:75,80,87`).
+
+**Cùng ngày, sau vòng verify đối kháng (SOUND-WITH-FIXES, 12 defect đã sửa hết):**
+thêm ALIGN-R11..R14 — R11 thu hẹp block Wave 3 của `HUMAN-QA-QUEUE.md:82` (cần chủ
+nhân/orchestrator phê), R12 record §10.4 `R=1−1e-12` KHÔNG thoả đồng thời với dung sai
+τ (`1−R ≃ (πΔf·dτ)²/6`; cần `dτ ≤ grid/154`, không phải `grid/20`), R13 câu `(−s)^N/D`
+của record §3 là ánh xạ đồng nhất ở mọi bậc CHẴN nên không giải thích được bậc 4,
+R14 hợp đồng đối số **A = phía HP, B = phía LP** (record không nói; đảo là lật dấu τ
+lẫn φ₀ trong im lặng).
+
+**Order-4 ĐÃ NGÃ NGŨ** theo PR #3 (`docs/research/2026-09-15-l7-align-order4-probe.md`,
+CHƯA merge): identity `N·90°` đúng tuyệt đối theo convention của repo, bảng §3 giữ
+nguyên; dấu sai của L4a là do quy tắc dấu-đỉnh tương quan (`DelayFinder.cpp:34`) áp
+qua hai hệ khác passband, KHÔNG phải do convention. Ba chỗ tiêu thụ phán quyết, mỗi
+chỗ có fixture đỏ được: **D5, H9, I1b**. Không còn task nào "probe-dependent".
 
 ## Verifier đã xác nhận (đọc file thật)
 - OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output
