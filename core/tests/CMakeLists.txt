@@ -46,6 +46,7 @@ add_executable(rta_core_tests
     test_eq_allocator.cpp
     test_eq_allocator_placement.cpp
     test_butterworth.cpp
+    test_align_order4_identity.cpp
     test_filterbank.cpp
     test_weighting.cpp
     test_detector.cpp
