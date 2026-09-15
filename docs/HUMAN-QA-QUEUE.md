@@ -10,6 +10,20 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Chặn việc ngay bây giờ
 
+- [!] **GitHub Actions bị chặn ở mức tài khoản (2026-09-16).** Mọi run từ sau
+  merge PR #5 chết sau 3 s: "The job was not started because recent account
+  payments have failed or your spending limit needs to be increased" → Settings
+  → Billing & plans. Repo private gói free có 2000 phút/tháng; macOS tính ×10,
+  phiên 2026-09-15 chạy ~12 run ba OS. Cho tới khi mở lại, gate CI của
+  `docs/GIT-WORKFLOW.md` không kiểm được; PR merge trên bằng chứng local hai
+  cấu hình và ghi rõ trong PR body.
+- [ ] **Duyệt thay đổi assertion `core/tests/test_weighting.cpp` (PR #5, hoãn
+  2026-09-16).** Cũ: `isinf(|H(Nyquist)| dB)`. Mới: zero DC khẳng định trên hệ
+  số `b0 − b1 + b2 = 0` (đồng nhất chính xác, Sterbenz) + `> 200 dB` tại
+  Nyquist với biên lập luận từ `d²`. Verifier xác nhận lập luận đúng và mutation
+  `kDigital·2.0000001` đỏ; nhưng tại đúng một giá trị nó YẾU hơn `isinf`. Đã
+  merge nguyên trạng theo lệnh; chủ nhân xem lại khi rảnh.
+
 - [x] **Skill nhắn tin cho chủ nhân → DÙNG CHÍNH FILE NÀY, quyết theo uỷ quyền
   2026-08-30.** Kiểm lại: `~/.claude/skills/` không có `ask-seph`, `ask-luna`
   hay mục nào chứa `telegram`.
