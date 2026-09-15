@@ -8,7 +8,9 @@
 // sign at a 4th-order crossover, while lane L4a MEASURED the wrong sign at
 // orders 2 AND 4. The probe `tools/probe_align_order4.py` settled the
 // attribution -- the identity is right and the L4a fixture was a pair of
-// BAND-PASS boxes, not a matched-cutoff complementary pair -- and
+// BAND-PASS boxes correlated under an UN-WHITENED peak-sign rule, not a
+// matched-cutoff pair and not the shipped PHAT correlator (which fails at a
+// different order on the same pair) -- and
 // `docs/research/2026-09-15-l7-align-order4-probe.md` records it. This test is
 // the C++ half of that settlement, so the next session cannot reopen the
 // question from the code side. It is ALIGN Sec.10 item 2's first half, built
@@ -130,17 +132,29 @@ TEST_CASE("Butterworth HP leads LP by N*90 degrees at EVERY frequency",
 TEST_CASE("Linkwitz-Riley inherits the identity with the SAME N", "[align][butterworth]") {
     // LR-N is the Butterworth of order N/2 cascaded with itself (Linkwitz
     // 1976), so both sides square and the offset doubles: 2 * (N/2) * 90.
+    //
+    // The squared reading ALONE is a weak assertion and the half-order one
+    // beside it is not decoration. Squaring maps an offset x to 2x, and 2x mod
+    // 360 is unchanged when x flips sign at +-90 -- so a mutation that reverses
+    // the half-order Butterworth's sign (rotating the prototype poles) leaves
+    // every LR row below reading exactly the same number. Checking the
+    // UN-squared half-order offset first is what makes such a mutation red
+    // here rather than only in the test case above.
     for (const int n : {2, 4, 8}) {
         const auto poles = butterworthPoles(n / 2);
         const double expected = wrapDegrees(90.0 * n);
+        const double halfExpected = wrapDegrees(90.0 * (n / 2));
         for (int i = 0; i < 32; ++i) {
             const double w = std::pow(10.0, -2.0 + 4.0 * i / 31.0);
             const Complex s{0.0, w};
             const Complex lp = lowPass(poles, s);
             const Complex hp = highPass(poles, n / 2, s);
+            const double half =
+                std::arg(hp / lp) * 180.0 / std::numbers::pi;
             const double measured =
                 std::arg((hp * hp) / (lp * lp)) * 180.0 / std::numbers::pi;
             INFO("LR" << n << " at w = " << w);
+            CHECK(std::abs(wrapDegrees(half - halfExpected)) < 1e-9);
             CHECK(std::abs(wrapDegrees(measured - expected)) < 1e-9);
         }
     }

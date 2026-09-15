@@ -182,11 +182,20 @@ The identity is exact analog and digital at every order 1–8 (worst deviation
 48 kHz), and the paragraph above guessed the mechanism correctly: a **pair of
 band-pass boxes** — the sub band-passed below as well as the main band-passed
 above — reproduces the L4a report at all four orders it names (right at 1,
-wrong at 2, wrong at 4, right at 8), while no matched-cutoff pair does at any
-of them. The offset is no longer constant across the overlap (62.9° of spread
-at order 4 instead of 0°), which stretches the correlation envelope until an
-oppositely-signed neighbouring lobe outgrows lag 0 — the value *at lag 0* stays
-positive, exactly as the identity says. A phase-sign or `conj`-placement
+wrong at 2, wrong at 4, right at 8) **under decision 6b's un-whitened
+`ρ = |peak| / √(E₁E₂)` rule** (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1195`, an
+estimator this repo does not ship — `relativePolarity()` exists in no file),
+while no matched-cutoff pair does at any of them. The offset is no longer
+constant across the overlap (62.9° of spread at order 4 instead of 0°), which
+stretches the correlation envelope until an oppositely-signed neighbouring lobe
+outgrows lag 0 — the order-4 value *at lag 0* stays positive in every geometry,
+exactly as the identity says. **The correlator this repo does ship — PHAT
+`findDelayPhat`, `DelayFinder.cpp:34` — does NOT reproduce the L4a pattern**: on
+the identical pair it reads the mirror of it, right at order 4 and wrong at
+order 8, because whitening reweights the overlap band and moves the winning
+lobe. Two correlators disagreeing about polarity on one unchanged pair is why
+§13's ruling bans reading a topology sign off **any** correlation peak rather
+than preferring one of them. A phase-sign or `conj`-placement
 convention is ruled out as the cause: conjugation negates the offset, and
 −0° = 0° and −180° = 180°, so **no even-order reading is reachable by a
 convention flip**. §8 step 4 keeps the cross-system cells as expected refusals,
@@ -275,7 +284,7 @@ in, `std::span<std::complex<double>> out`, no state:
 | delay τ (s, real, fractional) | `H'(f) = H(f)·e^{−j2πfτ}` | from `H ≡ 1`: `|H'| = 1`, `arg H' = −2πfτ` mod 2π at every bin — the `dual-fft.md` §7.1 identity |
 | polarity | `H' = −H` | `|H'| = |H|`, `arg H' = arg H + π` at every bin |
 | gain g (linear) | `H' = g·H` | `20log₁₀|H'| − 20log₁₀|H| = 20log₁₀ g`, phase unchanged |
-| biquad cascade | `H' = H · Π_i H_i(e^{jω})` | at ω=0: `(b₀+b₁+b₂)/(1+a₁+a₂)`; at ω=π: `(b₀−b₁+b₂)/(1−a₁+a₂)`; and `20log₁₀|H_i|` equals **`−sectionAttenuationDb`** to 1e-9 (a consistency lock between two spellings of one formula, labelled as such — the field is an ATTENUATION, positive = down, so the sign is not optional; W0-R3 locked it and `core/tests/test_biquad_response.cpp:56-80` is where) |
+| biquad cascade | `H' = H · Π_i H_i(e^{jω})` | at ω=0: `(b₀+b₁+b₂)/(1+a₁+a₂)`; at ω=π: `(b₀−b₁+b₂)/(1−a₁+a₂)`; and `20log₁₀|H_i|` equals **`−sectionAttenuationDb`** to 1e-12 (a consistency lock between two spellings of one formula, labelled as such — the field is an ATTENUATION, positive = down, so the sign is not optional; W0-R3 locked it and `core/tests/test_biquad_response.cpp:56-80` is where) |
 | sum | `H_Σ = H_A + H_B` | two unit sources at relative phase φ: `|H_Σ| = 2|cos(φ/2)|` — +6.02 dB at 0°, +3.01 dB at 90°, 0 dB at 120°, null at 180°; §3's BW2 (null / +3.01 dB), LR4 (`≡ 0 dB`), BW3 (`≡ 0 dB` both polarities) from the analytic prototypes evaluated in the test itself |
 
 Positive τ means this source arrives later — the sign `referenceDelaySamples`
@@ -289,6 +298,17 @@ design, and re-deriving the numerator/denominator in the wizard would be a
 second spelling of the same formula. `core/include/rta/dsp/BiquadResponse.h`
 computes `H_i(e^{jω})` from `Biquad::Coeffs`, includes `<complex>`, and the
 consistency lock above keeps the two spellings from drifting.
+
+**The lock's number, as planned and as shipped (noted 2026-09-15, test not
+touched).** The plan's W0-R3 and its T3 row both say **1e-12**
+(`docs/plans/2026-09-06-L7-wave0-impl-plan.md:39`, `:88`), and 1e-12 is what the
+lock actually achieves: rebuilt at that tolerance it passes **384/384**
+assertions, and at 1e-13 three of the 384 fail. The **shipped** test asserts
+**1e-9** (`core/tests/test_biquad_response.cpp:78`, since `b2172b3`) with no
+recorded justification — three orders of magnitude of slack the measurement does
+not need. This record keeps the planned figure because that is what the lock
+proves; tightening the test back is a `core/` change and belongs to whoever
+owns that file next, not to a docs pass.
 
 **The conversion boundary, once, in `app/`.** A stored `Trace` is dB + wrapped
 radians; the live `TransferSnapshot` carries complex `h`. The app-side
@@ -473,7 +493,8 @@ Closed forms first; one consistency lock, labelled; no new golden vector.
    polarities; raw HP−LP offset equals `N·90°` mod 360 at every frequency for
    N = 1..8.
 3. **Each G11 op alone** against its table row, including the two biquad
-   endpoints and the `−sectionAttenuationDb` lock at 1e-9 (as built; §5).
+   endpoints and the `−sectionAttenuationDb` lock at 1e-12 (the sign is
+   W0-R3's; the shipped test's looser 1e-9 is noted in §5).
 4. **Band fit, exact case.** `H_A ≡ 1`, `H_B = e^{j(φ₀ − 2πfτ₀)}` with
    `τ₀ = +3.7 ms`, `φ₀ = 180°`, unit coherence: `τ* = τ₀` within the parabolic
    refinement's own bound, `φ₀` within 1e-9 rad, `R = 1 − 1e-12`. Then with
@@ -544,13 +565,15 @@ Closed forms first; one consistency lock, labelled; no new golden vector.
 1. ~~**The order-4 wrong-sign attribution.**~~ **CLOSED 2026-09-15 by an
    independent probe — no owner input needed.**
    `docs/research/2026-09-15-l7-align-order4-probe.md`. The identity holds
-   exactly; the L4a reading is a fixture artefact of applying a
-   cross-correlation **peak-sign** rule across two systems with different
+   exactly; the L4a reading is a fixture artefact of applying decision 6b's
+   **un-whitened** correlation-peak-sign rule across two systems with different
    passbands, and no sign convention in this engine can produce it at an even
-   order. Two consequences for the builder: keep §3's table, and never read a
-   topology sign off a correlation peak — §4's complex band fit with its
-   bounded `R` is the estimator, and `R` collapsing is how it reports "these
-   two are not a matched pair". See §3's SETTLED note.
+   order. The shipped PHAT correlator does not reproduce it either — it fails
+   at a *different* order on the same pair. Two consequences for the builder:
+   keep §3's table, and never read a topology sign off **any** correlation
+   peak, whitened or not — §4's complex band fit with its bounded `R` is the
+   estimator, and `R` collapsing is how it reports "these two are not a matched
+   pair". See §3's SETTLED note.
 2. **A real sub/main pair.** Every check in §10 is synthetic. Whether `R`
    stays high enough on a real room capture for the intercept to be read,
    and whether ±1 octave is the right window on a real 24 dB/oct pair, need

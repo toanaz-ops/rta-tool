@@ -325,6 +325,19 @@ def section_xcorr(args):
     print("  describes and they follow it. Any geometry that reads WRONG at BOTH")
     print("  order 2 and order 4 is a candidate for what the L4a fixture was.")
     print()
+    print("  READ THE 'PHAT sign' COLUMN -- it is not decoration. 'peak sign' is")
+    print("  the UN-WHITENED rule, which is what L4a decision 6b describes")
+    print("  (rho = |peak| / sqrt(E1*E2), sweep-ir-l4a.md:1195) and what this")
+    print("  repo does NOT ship -- relativePolarity() exists in no file. The")
+    print("  correlator this repo DOES ship is PHAT-whitened findDelayPhat")
+    print("  (DelayFinder.cpp:34), and on G3/G4 it reads the MIRROR: +1 at order")
+    print("  4 where the plain peak reads -1, and -1 at order 8 where the plain")
+    print("  peak reads +1. Whitening does not fix the rule, it relocates the")
+    print("  failure. Two correlators, one unchanged pair, opposite verdicts at")
+    print("  the two orders the question turns on -- which is why the ruling")
+    print("  bans reading a topology sign off ANY correlation peak rather than")
+    print("  preferring one of them.")
+    print()
 
 
 # --------------------------------------------------------------------------

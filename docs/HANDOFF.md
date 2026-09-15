@@ -127,9 +127,11 @@ sửa vì `Biquad.h` là file frozen; cần một task riêng nếu chủ nhân 
 
 **~~Record touch-up còn nợ (closeout)~~ — ĐÃ TRẢ 2026-09-15.** ALIGN record §5 nói
 `|H|` = `sectionAttenuationDb` nhưng field đó là attenuation (+=xuống); plan W0-R3
-đã khoá đúng `−attenuationDb`. Đã sửa cả §5 lẫn §10 mục 3, và sửa luôn tolerance
-`1e-12` → `1e-9` cho khớp bản DỰNG THẬT (`core/tests/test_biquad_response.cpp:56-80`)
-— con số cũ cũng sai, không chỉ cái dấu.
+đã khoá đúng `−attenuationDb`. Đã sửa cả §5 lẫn §10 mục 3. Tolerance giữ nguyên
+`1e-12` như plan W0-R3/T3 — đo lại: khoá đó ĐẠT 1e-12 (384/384 assertion), 1e-13
+thì 3 cái đỏ. Test đang dựng lại assert `1e-9`
+(`core/tests/test_biquad_response.cpp:78`, từ `b2172b3`, không có lý do ghi lại);
+§5 ghi rõ chênh lệch đó, KHÔNG sửa test (core ngoài scope PR này).
 
 **Order-4 (ALIGN §13.1) — ĐÃ SETTLE 2026-09-15, chủ nhân không phải trả lời.**
 Probe độc lập: `docs/research/2026-09-15-l7-align-order4-probe.md`, script

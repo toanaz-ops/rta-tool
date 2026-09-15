@@ -38,19 +38,34 @@ change in `|H|`. Rule it in or out by its reachable set first.
 
 ## Where the sign actually came from, for the record
 
-A fixture artefact. L4a applied a **cross-correlation peak-sign** rule across two
-systems with *different passbands* (a band-pass sub against a band-pass main,
-not a matched-cutoff complementary pair). The identity constrains the
-correlation **at lag 0** and nothing else; with the two passbands mismatched the
-offset stopped being constant (62.9° of spread across the overlap instead of 0°),
-the correlation envelope stretched, and an oppositely-signed neighbouring lobe
-outgrew lag 0 by 1.45×. The reported sign was that lobe's. **The value at lag 0
-stayed positive the whole time, exactly as the identity says.**
+A fixture artefact. L4a applied an **un-whitened cross-correlation peak-sign**
+rule across two systems with *different passbands* (a band-pass sub against a
+band-pass main, not a matched-cutoff complementary pair). The identity
+constrains the correlation **at lag 0** and nothing else; with the two passbands
+mismatched the offset stopped being constant (62.9° of spread across the overlap
+instead of 0°), the correlation envelope stretched, and an oppositely-signed
+neighbouring lobe outgrew lag 0 by 1.45×. The reported sign was that lobe's.
+**At order 4 — the order under dispute — the value at lag 0 stayed positive in
+all five geometries measured, exactly as the identity says.** (Scope that claim
+to order 4 and no wider: by order 8 the spread has grown to 86.3° and one
+geometry's lag-0 value has gone negative too.)
 
 Second lesson, smaller but with teeth: **a rule that reads an argmax is not
 reading the quantity your identity constrains.** `argmax |r(τ)|` and `r(0)` agree
 only while the envelope is peaked enough to keep the winner at the origin, and
 nothing in the rule tells you when it stopped being.
+
+Third, and it is the one that nearly got mis-filed: **name WHICH correlator.**
+The rule that reproduced L4a is the un-whitened ρ of its own decision 6b, which
+this repo has never built. The correlator it *ships* is PHAT-whitened
+(`findDelayPhat`), and on the identical pair PHAT reads the **mirror** — right
+at order 4, wrong at order 8 — because whitening reweights the overlap band and
+a different lobe wins. The first draft of the research record blamed the shipped
+code on the strength of "it is the nearest cross-correlation in `core/`", while
+its own data table already printed the PHAT column that refutes it. **A column
+you print and never read is a claim you have not checked.** Two correlators
+disagreeing about polarity on one unchanged pair is also the strongest form of
+the ruling: ban the class, do not pick the winner.
 
 Probe and data: `tools/probe_align_order4.py`,
 `docs/research/2026-09-15-l7-align-order4-probe.md`. CI lock:

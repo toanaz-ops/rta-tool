@@ -87,7 +87,13 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
   band-pass** đấu chéo nhau (sub band-pass dưới + main band-pass trên), không phải
   cặp crossover matched-cutoff: offset hết hằng số (62.9° spread ở bậc 4), đỉnh
   cross-correlation rời khỏi lag 0 sang một lobe ngược dấu, trong khi **giá trị
-  tại lag 0 vẫn dương đúng như identity**. Convention KHÔNG phải thủ phạm và
+  tại lag 0 (bậc 4) vẫn dương đúng như identity**. Luật tái hiện được là ρ
+  **un-whitened** của L4a quyết định 6b (`2026-08-30-sweep-ir-l4a.md:1195`) —
+  luật này CHƯA build trong core. Correlator ĐANG ship là PHAT
+  (`DelayFinder.cpp:34`) và nó **KHÔNG** tái hiện: trên đúng cặp đó nó đọc ngược
+  lại — đúng ở bậc 4, sai ở bậc 8. Hai correlator cãi nhau trên một cặp loa không
+  đổi → ruling cấm đọc dấu topology từ **bất kỳ** đỉnh correlation nào, whitened
+  hay không. Convention KHÔNG phải thủ phạm và
   không thể là: conj hoá làm đổi dấu offset, mà −0° = 0° và −180° = 180°, nên
   không flip nào chạm tới được bậc CHẴN. **Wave 3 (ALIGN) hết chặn.**
 - [ ] **Judgement L7 chờ duyệt (default đã chọn, không chặn)**: `G_cap +6dB`/`Q_max`
