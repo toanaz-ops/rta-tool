@@ -43,6 +43,8 @@ add_executable(rta_core_tests
     test_biquad_design.cpp
     test_virtual_processor.cpp
     test_crossover_fit.cpp
+    test_crossover_band_fit.cpp
+    test_crossover_band_candidates.cpp
     test_excess_phase.cpp
     test_dip_classifier.cpp
     test_eq_allocator.cpp

@@ -60,4 +60,89 @@ struct SpectralCrossover {
                                                   double binWidthHz, double minimumGatedCoherence,
                                                   std::optional<double> seedHz);
 
+/// One competing delay, with its own agreement. The fit cannot resolve a delay
+/// finer than the band's own width allows, so the competitors are RETURNED
+/// rather than hidden behind the winner.
+struct DelayCandidateTau {
+    double tauSeconds = 0.0;
+    double agreement = 0.0;
+};
+
+struct BandFit {
+    /// + => B (the LP side) arrives LATER than A (the HP side); delay the HP
+    /// side by this. Same sign as DelayEstimate::delaySamples.
+    double tauSeconds = 0.0;
+
+    /// phi_0 = arg(H_A) - arg(H_B) = arg(H_HP) - arg(H_LP) once tau* is
+    /// removed, wrapped to (-pi, pi]. Compared directly against record Sec.3's
+    /// expectedOffset for the topology the operator NAMED -- never against one
+    /// derived from the measurement.
+    double interceptRadians = 0.0;
+
+    /// R in [0, 1] by the triangle inequality. 1 when the band really is "one
+    /// delay plus one constant"; R collapsing is precisely how this reports
+    /// "these two are not a matched pair" (probe 2026-09-15 Sec.8).
+    double agreement = 0.0;
+
+    /// The weight-weighted mean frequency. A residual delay dtau leaves exactly
+    /// 2*pi*f_bar*dtau of phase in the intercept, which is what ties the two
+    /// residuals into one statement.
+    double meanFrequencyHz = 0.0;
+
+    /// Local maxima of |S(tau)| in the searched range, ranked by agreement,
+    /// the winner first.
+    std::vector<DelayCandidateTau> cycleCandidates;
+
+    CrossoverRefusal refusal = CrossoverRefusal::AllBinsAbsent;
+};
+
+struct BandFitOptions {
+    double centreHz = 0.0;
+
+    /// Record Sec.4's PROPOSED default. It must be measured across the Sec.3
+    /// table before it ships as one; a constant baked into core/ is refused by
+    /// the record, so it lives here as a caller-supplied option.
+    double octavesEachSide = 1.0;
+
+    double tauRangeSeconds = 0.020;  ///< bounded search, caller-supplied
+    double tauGridSeconds = 1.0e-6;  ///< grid step, refined parabolically
+
+    /// Zero means "evaluate at tau = 0 only" -- a caller who has already
+    /// removed the delay and wants the intercept alone.
+    int maxCycleCandidates = 3;
+    double minimumGatedCoherence = 0.0;
+
+    /// D_B - D_A from CaptureMeta::appliedDelaySamples. H_B is pre-rotated by
+    /// e^{+j2 pi f (D_B - D_A)/fs} BEFORE the fit (record Sec.1.4, Sec.4).
+    /// Core owns it (ALIGN-R2) so the "off by exactly 48/fs without it" case is
+    /// a core test, and so the correction is impossible to FORGET: it is a
+    /// required field of the options struct, not a step in a caller's recipe.
+    double appliedDelayDifferenceSamples = 0.0;
+    double sampleRate = 48000.0;
+};
+
+/// The complex-domain delay search. hA = the HIGH-PASS side, hB = the LOW-PASS
+/// side (the contract above).
+///
+///     R_k = H_A,k conj(H_B,k) / (|H_A,k| |H_B,k|)
+///     w_k = min(gamma^2_A,k, gamma^2_B,k) * |H_A,k| * |H_B,k|
+///     tau* = argmax_tau |sum_k w_k R_k e^{-j2 pi f_k tau}|
+///     phi_0 = arg(...) at tau*,   R = |...| / sum_k w_k
+///
+/// NO UNWRAP. A least-squares slope on unwrapped dphi is the textbook
+/// alternative and is refused three times over: it needs the unwrap this
+/// codebase has ruled out of the engine, a least-squares intercept of angles is
+/// not an angle (+179 and -179 average to 0), and it produces no bounded
+/// agreement figure.
+///
+/// The weight is the summation's own cross-term and carries no threshold:
+/// |H_A + H_B|^2 has 2|H_A||H_B| as the coefficient of cos(phi_A - phi_B), the
+/// only term relative phase can move. That is Smaart's "within about 10 dB"
+/// with the 10 dB removed.
+[[nodiscard]] BandFit crossoverBandFit(std::span<const std::complex<double>> hA,
+                                       std::span<const std::complex<double>> hB,
+                                       const std::optional<std::vector<float>>& coherenceA,
+                                       const std::optional<std::vector<float>>& coherenceB,
+                                       double binWidthHz, const BandFitOptions& options);
+
 }  // namespace rta::dsp
