@@ -198,8 +198,12 @@ private:
 
     /// AtomicSharedPtr rather than a bare std::atomic over the shared_ptr --
     /// see measure/AtomicSharedPtr.h for why the C++20 specialisation cannot
-    /// be named directly. The publish is still one pointer swap; no lock
-    /// moved onto this path.
+    /// be named directly. The publish is still one pointer swap, and it adds
+    /// no lock of OURS on MSVC/libstdc++; on Apple libc++ the fallback is
+    /// lock-based inside the standard library (measured: not lock-free on
+    /// either path -- see that header). Safe either way because no load or
+    /// store here is reachable from the audio callback: writer is this
+    /// thread, reader is the message thread.
     AtomicSharedPtr<const Snapshot> latest_;
     std::uint32_t lastPublishMs_ = 0;
 

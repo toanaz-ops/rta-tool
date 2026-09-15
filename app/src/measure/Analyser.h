@@ -212,7 +212,12 @@ private:
     std::uint64_t sequence_ = 0;
     /// AtomicSharedPtr rather than a bare std::atomic over the shared_ptr:
     /// Apple's libc++ ships no C++20 specialisation for that and rejects it
-    /// at compile time. Same swap, same memory orders, no lock introduced.
+    /// at compile time. Same swap, same memory orders, and no lock of OURS
+    /// either way -- but do not read that as lock-free: on Apple libc++ the
+    /// fallback is lock-based inside the standard library, and on MSVC 14.51
+    /// the C++20 specialisation measures as not lock-free either. What makes
+    /// it safe is that neither side of this pointer is the audio callback
+    /// (writer: the analysis thread's publish(); reader: latest()).
     /// See measure/AtomicSharedPtr.h, and the ctest guard
     /// `no_std_atomic_over_shared_ptr` that keeps the substitution honest.
     AtomicSharedPtr<const Snapshot> latest_;

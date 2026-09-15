@@ -84,8 +84,10 @@ namespace rta::measure {
 /// deprecated in C++20 precisely BECAUSE the atomic<> specialisation replaced
 /// them, removed in C++26). They are the same operations with the same
 /// memory-order semantics, and libc++ implements them today. The deprecation
-/// warning is suppressed only around the three calls that need it, so a real
-/// deprecation elsewhere is still heard.
+/// warning is suppressed around each deprecated call and nowhere else, so a
+/// real deprecation elsewhere is still heard. (Counted "three" until
+/// `isLockFree()` made it four; the sentence is count-free now so the next
+/// method added cannot make it wrong again.)
 ///
 /// LOCK-FREEDOM, HONESTLY -- AND WHY IT IS STILL ACCEPTABLE. Do not read
 /// "atomic pointer swap" as "lock-free". Per implementation, separating what
