@@ -238,9 +238,16 @@ lẫn φ₀ trong im lặng).
 
 **Order-4 ĐÃ NGÃ NGŨ** theo PR #3 (`docs/research/2026-09-15-l7-align-order4-probe.md`,
 CHƯA merge): identity `N·90°` đúng tuyệt đối theo convention của repo, bảng §3 giữ
-nguyên; dấu sai của L4a là do quy tắc dấu-đỉnh tương quan (`DelayFinder.cpp:34`) áp
-qua hai hệ khác passband, KHÔNG phải do convention. Ba chỗ tiêu thụ phán quyết, mỗi
-chỗ có fixture đỏ được: **D5, H9, I1b**. Không còn task nào "probe-dependent".
+nguyên; dấu sai của L4a là do quy tắc **dấu-đỉnh tương quan KHÔNG whitened** của
+L4a decision 6b (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1195` — ρ, estimator repo này
+CHƯA ship; `relativePolarity()` không tồn tại ở `core/` lẫn `app/`) áp qua hai hệ khác
+passband, KHÔNG phải do convention. **Correlator repo ĐANG ship (PHAT `findDelayPhat`,
+`DelayFinder.cpp:34`) KHÔNG tái tạo L4a — nó đọc gương lại: đúng ở bậc 4, sai ở bậc 8.**
+Hai correlator bất đồng trên cùng một cặp loa ở 2/6 bậc → luật: **đừng đọc dấu topology
+từ BẤT KỲ đỉnh tương quan nào, whitened hay không**. (PR #3 sửa quy kết ở head `cdd8a25`
+sau khi verifier của chính nó bác bản đầu; plan đã đồng bộ.) Ba chỗ tiêu thụ phán quyết,
+mỗi chỗ có fixture đỏ được: **D5, H9, I1b**; thêm **E9** dựng lại đúng hình học L4a làm
+documented failure của ρ. Không còn task nào "probe-dependent".
 
 ## Verifier đã xác nhận (đọc file thật)
 - OUT 5/5: RampedGain non-movable (static_assert biên dịch thật); callback xoá output
