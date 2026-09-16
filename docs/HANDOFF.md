@@ -18,21 +18,25 @@ sao, verifier bác được gì, và các mục còn chờ CHỦ NHÂN.
 hàng L7 → **BUILT 2026-09-16, merged**; lane kế theo chính "opening order" của
 plan là **L6a (SPL-pro)**.
 
-## Số đo — builder-measured, và một lượt dựng lại độc lập đang chạy
+## Số đo — **verifier-measured**, lượt dựng lại độc lập tại `6d9a53d` đã XONG
 
 ```
-6d9a53d (merge commit PR #9)
-  ctest --test-dir build      -C Release   (RTA_BUILD_APP=OFF) -> 649/649, 0 failed
-  ctest --test-dir build-on   -C Release   (RTA_BUILD_APP=ON)  -> 717/717, 0 failed
-  grep -c "warning C" trong cả hai build log                   -> 0
+6d9a53d (merge commit PR #9) -- worktree sạch, verifier dựng lại độc lập
+  RTA_BUILD_APP=OFF                                            -> 649/649, 0 failed
+  RTA_BUILD_APP=ON                                             -> 717/717, 0 failed
+  forced fallback (-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON)  -> 649/649, 0 failed
+  "warning C" trong các build log                              -> 0
+  guard xanh                                                   -> 11/11
+  rtatool_snapshot                                             -> 8 PNG (bytes ở mục 4)
 ```
 
-`git diff --stat 6d9a53d^2 6d9a53d` **RỖNG**, nên hai con số trên là của cây
-merge commit chứ không chỉ của tip nhánh. Nhưng chúng là số của **builder**,
-đo trên máy này, **không phải CI** — GitHub Actions vẫn bị chặn billing. **Một
-lượt dựng lại ĐỘC LẬP tại `6d9a53d` đang chạy song song với closeout này; số
-của nó KHÔNG có trong tài liệu này và đừng bịa vào.** Khi nó báo, con số đáng
-tin là con số của nó.
+Đây **không còn là số của builder** — lượt dựng lại độc lập đã chạy xong và
+xác nhận đúng hai con số builder báo, cộng cấu hình thứ ba (forced fallback).
+Vẫn **không phải CI**: GitHub Actions vẫn bị chặn billing, nên bằng chứng là
+ba cấu hình chạy cục bộ + một verifier độc lập, không hơn.
+
+`git diff --stat 6d9a53d^2 6d9a53d` **RỖNG**, nên các con số trên là của cây
+merge commit chứ không chỉ của tip nhánh.
 
 Một chỗ trung thực cần giữ: **OFF baseline 624 (tại `02bd02a`) chưa ai đo trực
 tiếp.** ON 692 thì verifier PR #9 đã đo trên cây sạch. 624 khép bằng số học:
@@ -41,6 +45,44 @@ tiếp.** ON 692 thì verifier PR #9 đã đo trên cây sạch. 624 khép bằn
 ---
 
 ## Rule 12 vế 2 — người có thể tự chạy cái gì, và trông đợi THẤY gì
+
+### 0. ĐỌC TRƯỚC: mở `rtatool.exe` lên thì thấy được gì của L7?
+
+Câu này dễ bị bỏ sót nhất trong một closeout, nên nó đứng đầu và **đo được**,
+không phải nhớ được.
+
+- **DELAY là solver DUY NHẤT của L7 mà operator chạm tới được trong app.**
+  `MainComponent` có nút **`LOCATE`** (hint: "pink noise, output ch 1,
+  one-shot"), một readout delay, và nút **`APPLY`** chỉ bật khi verdict là
+  `DelayVerdict::Accepted` (`app/src/MainComponentDelay.cpp`, task F2). Thứ tự
+  §8 của record được tôn trọng ngay trong wiring: `disarmSource()` chạy TRƯỚC
+  `suggestDelay`.
+- **`rta::view::CrossoverSurface` là một model KHÔNG có mặt.** Nó JUCE-free và
+  được chứng minh ở cấu hình OFF; pixel của nó đến từ **đúng một chỗ**:
+  `app/src/dev/preview/PhaseAlignPreview.{h,cpp}`, render offscreen bởi
+  `tools/snapshot.cpp` ra `shots/preview-phase.png`. **KHÔNG được nối vào
+  `MainComponent`** — đo: `grep -c CrossoverSurface` trên `MainComponent.cpp`,
+  `MainComponent.h`, `MainComponentDelay.cpp` ra **0, 0, 0**. Đó **không phải
+  thiếu sót**: đó là quyết định **ALIGN-R8** ("G18 ships as the existing
+  dev-preview specimen driven by a real model, not as `MainComponent` wiring"),
+  kết thúc bằng đúng câu "nobody should hunt for a `MainComponent` hook". Nên
+  trạng thái đúng của ALIGN là **BUILT (model + specimen)**, còn **nối vào
+  `MainComponent` là follow-up CHƯA BẮT ĐẦU**.
+- **`AlignmentWizard` còn ít hơn thế — nó KHÔNG có UI nào cả.** Toàn bộ tham
+  chiếu tới nó trong `app/src` là ba file của chính nó
+  (`measure/AlignmentWizard.h`, `AlignmentWizard.cpp`,
+  `AlignmentWizardSignals.cpp`); không view, không panel, **không cả một
+  dev-preview specimen**. Nó chỉ chạm tới được **từ `app/tests/`** — bốn file
+  test cộng `AlignmentWizardFixture.h`. Bốn câu hỏi nó HỎI, solo sequence và
+  chín refusal đều do ctest chứng minh và không có đường nào khác. **Không có
+  gì trong app đang chạy khởi động được một wizard.**
+- Các solver còn lại cũng vậy, đo được: `EqSession`, `EqVerify`,
+  `RawCaptureBuffer`, `CaptureSequencer` đều **0** tham chiếu trong
+  `MainComponent.{h,cpp}` và `MainComponentDelay.cpp`.
+
+Nói cách khác: bằng chứng của L7 là **ctest + snapshot offscreen**, không phải
+một cái pane mở lên nhìn. Đừng viết, và đừng để ai đọc thành, "operator thấy bề
+mặt crossover trong `rtatool.exe`".
 
 Mọi lệnh dưới đây viết cho **PowerShell 7** trong terminal của chủ nhân: một
 lệnh một block, không `&&`. Chạy từ gốc checkout. `[verified]` = đã chạy thật
@@ -131,6 +173,22 @@ ctest --test-dir build-on -C Release -N | Select-String -Pattern 'rho|eq|delay|a
 ctest --test-dir build-on -C Release --output-on-failure -R "has_no_framework_deps|coherence_gate_is_not_bypassed|filter_design_has_no_polynomial_form|rt_hazards|denormals"
 ```
 
+Lượt dựng lại độc lập đếm **11/11 guard xanh** — tám cái trên cộng
+`core_makes_no_class_1_claim`, `no_std_atomic_over_shared_ptr`,
+`test_names_are_ascii`.
+
+**MỘT LỖ trong guard, tìm thấy trong lúc viết closeout, không phải do closeout
+gây ra.** `core/tests/check_no_framework_deps.cmake:37-43` glob
+`${CORE_DIR}/include/*.h`, `*.hpp`, `${CORE_DIR}/src/*.h`, `*.cpp` và
+`${CORE_DIR}/tests/*.cpp` — **nhưng KHÔNG glob `${CORE_DIR}/tests/*.h`**. Bốn
+test header vì thế chưa bao giờ bị quét: `core/tests/CrossoverBandFixture.h`,
+`core/tests/DelayFilterFixtures.h`, `core/tests/support/Golden.h`,
+`core/tests/guard_fixtures/hex_escape_comment.h`. Một `#include <juce…>` trong
+bất kỳ file nào trong số đó vẫn biên dịch vào `rta_core_tests` và guard **vẫn
+in OK**. Hôm nay không file nào có — lỗ nằm ở phép quét, không nằm ở cây. Fix
+một dòng đang chạy ở nhánh **`ci/guard-scan-test-headers`**, KHÔNG thuộc PR
+closeout này. Ghi ở `docs/HUMAN-QA-QUEUE.md`.
+
 ### 4. Snapshot offscreen — cách DUY NHẤT để nhìn GUI
 
 **Đừng screen-capture app đang chạy** (CLAUDE.md "Seeing the GUI"): cửa sổ khác
@@ -144,9 +202,19 @@ cmake --build build-on --config Release --target rtatool_snapshot --parallel
 ```
 
 `[not run here]` Render tám PNG vào `shots/` (`shots/` đã gitignore). **Sẽ
-thấy:** exit 0 và tám file — `specimen.png`, `rta-view.png`, `transfer.png`,
-`workspace.png`, `main-live.png`, `preview-tf.png`, `preview-target.png`,
-`preview-phase.png`.
+thấy:** exit 0 và tám file. Kích thước byte dưới đây là của lượt dựng lại ĐỘC
+LẬP tại `6d9a53d` — nếu máy bạn ra số lệch đáng kể thì có gì đó đã đổi:
+
+| file | bytes | là cái gì |
+|---|---|---|
+| `preview-phase.png` | 45851 | **bằng chứng nhìn được của L7-ALIGN** — bề mặt G18 trên cặp BW4 synthetic |
+| `preview-target.png` | 46908 | dev-preview specimen, target/corridor |
+| `preview-tf.png` | 45311 | dev-preview specimen, transfer function |
+| `transfer.png` | 42213 | Bode composite trên fixture tất định — **chỗ dữ liệu ĐO nằm** |
+| `workspace.png` | 55099 | stack 1–3 pane dọc (L5c decision 6) |
+| `main-live.png` | 39853 | cửa sổ measurement thật, `MainComponent`, 1280×800 |
+| `specimen.png` | 42023 | swatch design system `az_ui` — **KHÔNG** phải `Snapshot`, không phải dữ liệu đo |
+| `rta-view.png` | 21384 | riêng plot RTA, diff được byte-for-byte |
 
 ```bash
 .\build-on\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots 1100 760
@@ -165,6 +233,12 @@ Mở ra sẽ thấy:
   triệt tiêu xuống khoảng **−11 dB** ngay trên 110 Hz, trong khi PREDICTED (xanh
   lá, liền) lên khoảng **+3 dB** tại crossover và đậu đúng mark 3.0 dB. Hai mark
   6.0 dB và 3.0 dB ghi ở mép phải.
+
+**Và đây là chỗ DUY NHẤT `CrossoverSurface` biến thành pixel.** Nó là một model
+headless; `PhaseAlignPreview.{h,cpp}` là consumer duy nhất, `rtatool_snapshot`
+là thứ render. Không có pane nào trong `rtatool.exe` mở ra cái này (ALIGN-R8 —
+xem mục 0 ở đầu phần này). Ai muốn nó vào app thì đó là một follow-up **chưa
+bắt đầu**, không phải một cái hook đi tìm là thấy.
 
 **`shots/specimen.png`** là swatch của design system `az_ui` — bảng màu, thang
 chữ, primitive. **Nó KHÔNG phải một `Snapshot` đo được**; bằng chứng đo nằm ở

@@ -131,6 +131,25 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
   | 64-output hardware check (OUT §13.1) | `kRequestedOutputChannels` đã nâng 2 → `rta::platform::kMaxChannels`, không over-read | Wave 1 OUT, `881862b..16ec825` |
   | strict solo khi phát (OUT §13.2 / DELAY §14.2) | **ĐÃ TRẢ LỜI** — xem mục "Solo mặc định" ở trên; sequencer/auto-step strict solo, manual toggle additive | `app/src/measure/OutputPolicy.h`, `AlignmentWizard` dùng nó làm default của sequence |
 
+## Tech-debt phát hiện lúc closeout L7 (2026-09-16)
+
+- [ ] **`check_no_framework_deps.cmake` KHÔNG quét `tests/*.h` — bốn test header
+  chưa bao giờ bị guard nhìn tới.** `core/tests/check_no_framework_deps.cmake:37-43`
+  glob `include/*.h`, `include/*.hpp`, `src/*.h`, `src/*.cpp` và `tests/*.cpp`,
+  **thiếu `tests/*.h`**. Bốn file ngoài tầm quét:
+  `core/tests/CrossoverBandFixture.h`, `core/tests/DelayFilterFixtures.h`,
+  `core/tests/support/Golden.h`, `core/tests/guard_fixtures/hex_escape_comment.h`.
+  Một `#include <juce…>` trong bất kỳ file nào trong số đó vẫn biên dịch vào
+  `rta_core_tests` trong khi guard in `OK` — tức guard đang nói một câu rộng hơn
+  điều nó kiểm. **Hôm nay không file nào vi phạm**; lỗ nằm ở phép quét, không
+  nằm ở cây, nên đây là tech-debt chứ không phải defect sống.
+
+  **Fix một dòng đang chạy ở nhánh `ci/guard-scan-test-headers`** — KHÔNG thuộc
+  PR closeout L7. Người duyệt nó nên đòi đúng một thứ: thêm glob rồi **làm nó
+  ĐỎ một lần** bằng cách nhét một JUCE include vào một trong bốn header đó, vì
+  một guard mở rộng mà chưa từng đỏ ở phạm vi mới thì chưa chứng minh được gì
+  (`memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md`).
+
 ## Từ lane L7-ALIGN (2026-09-16, record `docs/dsp/2026-09-06-l7-alignment-wizard.md`)
 
 *Lane đã BUILT và merge (PR #8 `02bd02a`, PR #9 `6d9a53d`); report

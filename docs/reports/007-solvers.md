@@ -51,13 +51,26 @@ to lift (`docs/HUMAN-QA-QUEUE.md`, first `[!]`).
 
 ## 2. The numbers
 
-**Every figure below is builder-measured on this machine**, pasted from
-`ctest` at the commit named, generator `Visual Studio 18 2026`, MSVC 14.51,
-JUCE 9.0.1 via `RTA_JUCE_PATH`. They are not CI numbers and there is no CI to
-make them one. **An independent rebuild of `6d9a53d` in a scratch worktree is
-running in parallel with this closeout; its tallies are not in this document
-and must not be invented into it.** When that rebuild reports, the figure to
-trust is its figure.
+**The figures at `6d9a53d` are verifier-measured**, by an independent rebuild
+in a scratch worktree run in parallel with this closeout — not the builder's
+own tallies, which they confirm. Generator `Visual Studio 18 2026`, MSVC 14.51,
+JUCE 9.0.1 via `RTA_JUCE_PATH`. There is no CI behind them: GitHub Actions is
+billing-blocked, so three local configurations plus a verifier is the whole of
+the evidence and this report does not pretend otherwise.
+
+```
+INDEPENDENT REBUILD AT 6d9a53d  (scratch worktree, verifier-measured)
+  RTA_BUILD_APP=OFF                                  -> 649/649, 0 failed
+  RTA_BUILD_APP=ON                                   -> 717/717, 0 failed
+  forced fallback (-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON) -> 649/649, 0 failed
+  "warning C" across the build logs                  -> 0
+  guards green                                       -> 11 of 11
+  rtatool_snapshot                                   -> 8 PNGs, named with their
+                                                        byte sizes below
+```
+
+The per-wave figures below are the **builder's**, pasted from `ctest` at each
+commit named, and are the record of how the lane got there:
 
 ```
 Wave 0 tip   (08723bd..c61b5dc)   OFF 470/470
@@ -73,11 +86,12 @@ ALIGN Wave 3b  branch tip         OFF 649/649 ON 717/717
 warning C in every build log      -> 0
 ```
 
-Two honesty notes the next session should not have to re-derive:
+Three honesty notes the next session should not have to re-derive:
 
 - **`6d9a53d`'s tree is byte-identical to the Wave 3b branch tip.**
   `git diff --stat 6d9a53d^2 6d9a53d` is empty, so **OFF 649 / ON 717** is a
-  claim about the merge commit and not only about the branch.
+  claim about the merge commit and not only about the branch — and the
+  independent rebuild read the same two numbers off the merge commit itself.
 - **OFF 624 is the one figure nobody measured directly.** The ON baseline 692
   *was* measured, by PR #9's verifier, on a clean tree at `02bd02a`; 624 closes
   arithmetically, since `717 − 692 = 25 = 649 − 624`. It is arithmetic, not a
@@ -106,7 +120,39 @@ after revert — the shapes are in PR #9's table and in `docs/HANDOFF.md`.
 
 `git diff --stat origin/main -- platform/` was empty for the whole of Wave 3,
 so the three RT-hazard guards are green by construction there rather than by
-mutation.
+mutation. The independent rebuild counts **11 guards green**, which is the
+eight above plus `core_makes_no_class_1_claim`, `no_std_atomic_over_shared_ptr`
+and `test_names_are_ascii`.
+
+**One hole in a guard, found while writing this report and not by it.**
+`core/tests/check_no_framework_deps.cmake:37-43` globs
+`${CORE_DIR}/include/*.h`, `*.hpp`, `${CORE_DIR}/src/*.h`, `*.cpp` and
+`${CORE_DIR}/tests/*.cpp` — **but not `${CORE_DIR}/tests/*.h`**. Four test
+headers are therefore never scanned: `core/tests/CrossoverBandFixture.h`,
+`core/tests/DelayFilterFixtures.h`, `core/tests/support/Golden.h` and
+`core/tests/guard_fixtures/hex_escape_comment.h`. A `#include <juce…>` in any
+of them would compile into `rta_core_tests` and the guard would still print OK.
+None of them contains one today; the hole is in the scan, not in the tree. A
+one-line fix is in flight on branch **`ci/guard-scan-test-headers`** and is not
+part of this closeout — see `docs/HUMAN-QA-QUEUE.md`.
+
+### The eight snapshot PNGs, at `6d9a53d`
+
+Rendered by the independent rebuild with
+`rtatool_snapshot.exe shots 1100 760`, byte sizes as written:
+
+| file | bytes | what it is |
+|---|---|---|
+| `preview-phase.png` | 45851 | **L7-ALIGN's visible evidence** — the G18 surface over a synthetic BW4 pair |
+| `preview-target.png` | 46908 | dev-preview specimen, target/corridor mockup |
+| `preview-tf.png` | 45311 | dev-preview specimen, transfer function |
+| `transfer.png` | 42213 | the Bode composite over a deterministic fixture — **this is where measured evidence lives** |
+| `workspace.png` | 55099 | the 1–3 pane vertical stack (L5c decision 6) |
+| `main-live.png` | 39853 | the real measurement window, `MainComponent`, 1280×800 |
+| `specimen.png` | 42023 | the `az_ui` design swatch — **not** a `Snapshot`, and not measured data |
+| `rta-view.png` | 21384 | the RTA plot alone, byte-for-byte diffable |
+
+`shots/` is gitignored; nothing under it is committed.
 
 ## 3. What was built, per sub-lane
 
@@ -173,6 +219,14 @@ with `c = 4`, from a 105-trial survey with zero wrong answers.
 claim is proven by a real counting allocator rather than asserted.
 `RawCaptureBuffer` and `DelayLocator` refuse `Mls` and drive strict solo
 through `OutputEngine`.
+
+**DELAY is the one L7 solver an operator can actually reach.** `MainComponent`
+owns a `LOCATE` button (its hint reads "pink noise, output ch 1, one-shot"), a
+delay readout that shows `delay: locating…` then the samples and milliseconds,
+and an `APPLY` button enabled **only** when the verdict is
+`DelayVerdict::Accepted` — `MainComponentDelay.cpp`, task F2. The record's §8
+ordering is respected in the wiring: `disarmSource()` happens **before**
+`suggestDelay`.
 
 The sub-sample gap at fractions 0.3/0.7 of about 0.19 samples is the known bias
 of three-point parabolic interpolation (≈ 4 µs at 48 kHz), measured
@@ -255,6 +309,35 @@ solo as the sequence default, nine named refusals, and a polarity-signal table
 that asks rather than picks. `CrossoverSurface` as the G18 model, JUCE-free and
 proven in the OFF configuration, with `PhaseAlignPreview` repointed from canned
 arrays onto it and checked by the offscreen snapshot.
+
+**What a user of `rtatool.exe` can actually see of ALIGN today: nothing.**
+(DELAY is the one solver with a real UI — see §7. ALIGN has none.) This is the
+sentence most easily left out of a closeout, so it is stated first and measured
+rather than remembered.
+
+- **`rta::view::CrossoverSurface` is a headless model.** It is JUCE-free and
+  proven in the OFF configuration, and its pixels come from exactly one place:
+  `app/src/dev/preview/PhaseAlignPreview.{h,cpp}`, rendered offscreen by
+  `tools/snapshot.cpp` into `shots/preview-phase.png`. **It is not wired into
+  `MainComponent`** — `grep -c CrossoverSurface app/src/MainComponent.cpp
+  app/src/MainComponent.h app/src/MainComponentDelay.cpp` is **0, 0, 0**.
+  That is not an oversight: it is decision **ALIGN-R8**, "G18 ships as the
+  existing dev-preview specimen driven by a real model, not as `MainComponent`
+  wiring", which ends with the instruction "nobody should hunt for a
+  `MainComponent` hook". So the lane state is **BUILT (model + specimen)**, and
+  **`MainComponent` wiring is a follow-up that has not started.**
+- **`AlignmentWizard` has less than that — it has no UI at all.** Its only
+  references anywhere in `app/src` are its own three files
+  (`measure/AlignmentWizard.h`, `AlignmentWizard.cpp`,
+  `AlignmentWizardSignals.cpp`); there is no view, no panel, and no
+  dev-preview specimen. It is reachable **only from `app/tests/`** — four test
+  files plus `AlignmentWizardFixture.h`. The four questions it asks, the solo
+  sequence and the nine refusals are all exercised by ctest and by nothing
+  else. Nothing in the running application can start a wizard today.
+
+Neither of these weakens the ctest evidence — a JUCE-free model proven in both
+configurations is exactly what the architecture asks for — but a reader must
+not come away thinking an operator can open a pane and see it.
 
 **G17 is a phase question, and the wizard asks it.** The correct crossover
 phase offset is topology-defined — BW-N high-pass leads low-pass by `N·90°` at
@@ -438,6 +521,19 @@ Wave by wave, the findings that changed shipped code or shipped claims:
   (EQ-R5/D6) is still **unenforced** and belongs to whoever adds shelves.
 - **`app/src/dev/preview/EqPreview.*`** — the specimen EQ-R4 describes — was
   not built. Only the ctest-provable half of Task E/F shipped.
+- **Exactly one solver is reachable from the running application, and it is
+  DELAY.** `MainComponent` owns a `LOCATE` button (hint: "pink noise, output
+  ch 1, one-shot"), a delay readout and an `APPLY` button that is enabled only
+  when the verdict is `DelayVerdict::Accepted` — `MainComponentDelay.cpp`,
+  task F2. Every other solver has **no `MainComponent` owner**, measured:
+  `EqSession`, `EqVerify`, `RawCaptureBuffer`, `CaptureSequencer`,
+  `AlignmentWizard` and `CrossoverSurface` all read **0** references across
+  `MainComponent.{h,cpp}` and `MainComponentDelay.cpp`. G18 reaches pixels only
+  through the dev-preview specimen and the offscreen snapshot (ALIGN-R8); the
+  wizard reaches nothing outside ctest; no `CaptureSequencer` has a UI owner
+  (the OUT note that G20 is a capability plus a binding pattern). **`MainComponent`
+  wiring for the rest of L7 is a follow-up that has not started**, and each of
+  these was a named decision in its record rather than a drift.
 - **ALIGN-R7 is a string proxy.** `ReferenceMismatch` compares
   `CaptureMeta::channelRoles` for string equality. Making it structural needs a
   `CaptureMeta` field and a session-schema bump, which this lane did not do.
@@ -498,12 +594,16 @@ None of these is an agent's to close.
 
 In `docs/HANDOFF.md`, the top section **"2026-09-16 — L7 (Solvers) CLOSED
 OUT"**: every runnable thing L7 produced, with the exact PowerShell 7 command,
-one command per block, and what should appear on screen. It covers both ctest
-configurations, the per-solver test listing (and why a `ctest -R` word filter
-misses the ρ cases), the eight guards with their scanned counts, the offscreen
-snapshot and what `shots/preview-phase.png` shows, the two ρ surveys and the
-order-4 probe, the FIR text and WAV export paths, and the EQ text format with
-its `applied` column.
+one command per block, and what should appear on screen. It opens with the
+section a closeout is most tempted to skip — **what of L7 is visible in
+`rtatool.exe` at all** (DELAY's `LOCATE`/`APPLY`, and nothing else) — then
+covers both ctest configurations, the per-solver test listing (and why a
+`ctest -R` word filter misses the ρ cases), the eleven guards with their
+scanned counts and the one hole in `check_no_framework_deps.cmake`, the
+offscreen snapshot with all eight PNGs by byte size and what
+`shots/preview-phase.png` shows, the two ρ surveys and the order-4 probe, the
+FIR text and WAV export paths, and the EQ text format with its `applied`
+column.
 
 That section also carries rule 12's third item: the handoff for the next lane,
 **L6a (SPL-pro)** — what to read first, what is blocked on the owner, and the
