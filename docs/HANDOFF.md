@@ -5,13 +5,148 @@
 
 ---
 
-# 2026-09-16 — **L7-ALIGN Wave 3a (tasks A–F) XONG — nhánh `l7/align-wave3a-core`, PR mở, CHƯA merge**
+# 2026-09-16 — **L7-ALIGN Wave 3b (tasks G–J) XONG — nhánh `l7/align-wave3b-app`, PR mở, CHƯA merge. ALIGN BUILT.**
 
-**Đọc mục này trước tiên nếu bạn làm tiếp Wave 3b (tasks G–J).** Nửa đầu của
-plan `docs/plans/2026-09-15-L7-align-impl-plan.md` đã xây và verify cục bộ trên
-worktree riêng, nhánh từ `a2de06e`. **Chưa merge. GitHub Actions đang bị chặn ở
-mức tài khoản (billing), nên bằng chứng là hai config chạy cục bộ, không phải
-CI xanh** — verifier phải đo lại, đừng tin bảng dưới.
+**Đọc mục này trước tiên.** Nửa sau của plan
+`docs/plans/2026-09-15-L7-align-impl-plan.md` đã xây và verify cục bộ trên
+worktree riêng, nhánh từ `02bd02a` (Wave 3a đã merge, PR #8). Với G–J xong,
+**toàn bộ lane L7-ALIGN đã BUILT** — G11 + G17 + G18 + ρ.
+
+**GitHub Actions vẫn bị chặn ở mức tài khoản (billing).** Bằng chứng dưới đây
+là hai config chạy cục bộ, không phải CI xanh. Verifier phải đo lại; đừng tin
+bảng này.
+
+## Baseline đo được (dán từ lệnh, đừng chép số cũ)
+
+Generator Visual Studio 18 2026, MSVC 14.51, JUCE qua `RTA_JUCE_PATH`.
+`build-align3b` (OFF) và `build-align3b-on` (ON):
+
+```
+TRƯỚC (02bd02a):  ctest OFF -> 624/624, 0 failed     ctest ON -> 692/692
+SAU  (tip nhánh):  ctest OFF -> 648/648, 0 failed     ctest ON -> 716/716, 0 failed
+warning C trong cả hai build log -> 0
+```
+
+**Một chỗ KHÔNG đo trực tiếp, nói thẳng ra:** OFF baseline 624 đo trên cây chưa
+sửa; ON baseline 692 thì KHÔNG — configure ON đầu phiên bị một edit đồng thời
+chen vào trước lần ctest đầu tiên. 692 ở đây là `716 − 24`, với 24 = số test
+Wave 3b thêm, tự nó đo được qua OFF (`648 − 624 = 24`, và 24 = 7 task G + 12
+task H + 5 task I). Con số trùng đúng 692 mà mục Wave 3a ghi. Verifier nên đo
+lại ON baseline trên cây sạch nếu muốn con số độc lập.
+
+## Bốn commit, mỗi task một commit
+
+| commit | task | nội dung |
+|---|---|---|
+| `3effb67` | G | `VirtualTrace` — điểm chuyển dB↔complex DUY NHẤT; 4/7 case là NEGATIVE (không thành `Trace` được, không tới `TraceLibrary` được, không có `CaptureMeta`, tổng không mang field tên `coherence`) |
+| `a340b8b` | H | `AlignmentWizard` — bốn câu HỎI, chuỗi solo L7-OUT, refusal có tên, bảng polarity-signal HỎI chứ không chọn |
+| `b30901f` | I | `CrossoverSurface` (G18) + `PhaseAlignPreview` trỏ vào model thật; snapshot ON đọc được |
+| (mục này) | J | docs + bằng chứng guard |
+
+## Ba điều load-bearing phiên sau KHÔNG suy diễn lại
+
+1. **Bốn câu hỏi được HỎI, và scan cấu trúc là thứ giữ điều đó.**
+   `test_alignment_wizard_signals.cpp` bám theo hàm bao quanh mỗi phép gán vào
+   `topology_` / `inversion_` / `highPassSide_` / `seedHz_` / `seedAnswered_` /
+   `cycleAnswer_` và bắt lỗi nếu hàm đó không bắt đầu bằng `answer`. Mutation
+   "để `compute()` đặt `inversion_` từ dấu của intercept" làm ĐỎ cả scan lẫn
+   case hành vi. **Scan phải phân biệt `x_ =` với `x_ ==`** — bản đầu báo 5
+   offender toàn là chỗ code đang ĐỌC đúng như phải đọc.
+2. **Không có objective nào trong `CrossoverSurface`, và cách CHỨNG MINH điều đó
+   đã đổi.** Word-grep của plan (I4) KHÔNG bắt được chính mutation mà plan chỉ
+   định (`bestDelayForLoudestSum()`): identifier không chứa từ nào trong danh
+   sách, còn dòng duy nhất chứa thì là COMMENT giải thích vì sao nước cờ đó bị
+   cấm. Thay bằng **whitelist**: liệt kê toàn bộ member function của class, tập
+   hợp phải khớp chính xác. Mọi objective đỏ, bất kể tên gì.
+3. **`summationTrust` vẫn không được đổi tên thành `coherence`.** Guard
+   `coherence_gate_is_not_bypassed` bắt PHÉP GÁN chứ không bắt khai báo, nên
+   mutation phải làm cả hai (đổi tên field VÀ `result.coherence = ...`) mới đỏ.
+   Đã làm, đã đỏ, đã revert.
+
+## Task J — guard nào xanh, và mỗi cái đã ĐỎ một lần ở đúng hình dạng làm nó đỏ
+
+| guard | xanh, scanned count | đỏ bằng gì |
+|---|---|---|
+| `core_has_no_framework_deps` | OK (157 files scanned) | `#include <juce_core/juce_core.h>` trên đầu `CrossoverFit.h` → "rta_core must not depend on a GUI/audio framework. Offending files: .../CrossoverFit.h" |
+| `measure_has_no_framework_deps` | OK (64 files scanned; `main` là **57**, +7 file Wave 3b) | JUCE include trên đầu `AlignmentWizard.h` → "app_measure must not depend on a GUI/audio framework. Offending files: .../AlignmentWizard.h" |
+| `coherence_gate_is_not_bypassed` | OK (96 files scanned) | đổi tên field THÀNH `coherence` **và** `result.coherence = std::vector<float>(n);` trong `VirtualProcessor.cpp` → "coherence assigned outside the gate: .../VirtualProcessor.cpp" |
+| `filter_design_has_no_polynomial_form` | OK (183 files scanned) | không đổi ở Wave 3b (script ρ của task F đã trong scope từ Wave 3a) |
+| `output_render_has_no_rt_hazards` | OK (scanned lines 126-210 of OutputEngine.cpp) | `git diff --stat origin/main -- platform/` RỖNG — lane này không thêm gì vào audio callback |
+| `audioio_callback_has_no_rt_hazards` (ON) | OK (scanned lines 119-146 of AudioIo.cpp) | như trên |
+| `audioio_scoped_no_denormals_is_first` (ON) | OK | như trên |
+| `rtatool_snapshot` link | `rtatool_snapshot.vcxproj -> ...\Release\rtatool_snapshot.exe` | PR #8 "take to the orchestrator" mục 6 đã trả: `target_sources` tại `app/CMakeLists.txt` giờ mang `src/view/CrossoverSurface.cpp`, `src/measure/CrossoverTopology.cpp` **và** `src/trace/VirtualTrace.cpp` |
+
+`git diff --stat origin/main --` cho `ui/`, `platform/`,
+`core/include/rta/dsp/Biquad.h`, `core/include/rta/dsp/BiquadResponse.h`,
+`core/include/rta/eq/` đều **RỖNG**. Không có file mới nào quá 400 dòng; dài
+nhất là `test_virtual_trace.cpp` 354 và `AlignmentWizard.cpp` 318.
+
+## Người có thể tự chạy cái gì, và trông đợi thấy gì
+
+Snapshot offscreen (đừng screen-capture app đang chạy — CLAUDE.md):
+
+```bash
+cmake --build build-align3b-on --config Release --target rtatool_snapshot --parallel
+```
+
+rồi chạy exe `build-align3b-on\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots 1100 760`
+và mở `shots/preview-phase.png`. **Sẽ thấy:** pane trên, đường relative phase
+`arg(H_A conj H_B)` PHẲNG ở 0° suốt cửa sổ fit 50–200 Hz (vệt amber) và nằm
+ĐÚNG trên đường target gạch đứt mà BW4 đặt ở 0 — "đúng target" hiện ra như một
+tính chất của trace chứ không phải một con số, đúng điều record §6 đòi. Chip
+bên phải đọc "TOPOLOGY -- ASKED, NEVER INFERRED / BW4 ASKED TARGET 0 deg".
+Pane dưới: HP side (amber) đi lên, LP side (trắng) đi xuống, cắt nhau ở 100 Hz;
+GHOST gạch đứt (xám, tổng TRƯỚC khi align, lệch 4 ms) khoét một hố triệt tiêu
+xuống ~−11 dB ngay trên 110 Hz, trong khi PREDICTED (xanh lá, liền) lên ~+3 dB
+tại crossover và đậu đúng mark 3.0 dB. Hai mark 6.0 dB và 3.0 dB ghi ở mép
+phải. `shots/` đã gitignore, không commit gì trong đó.
+
+Toàn bộ test: `ctest --test-dir build-align3b -C Release` (OFF, 648) và
+`ctest --test-dir build-align3b-on -C Release` (ON, 716).
+
+## Deviation phải mang lên orchestrator
+
+1. **Plan I4 sai về chính mutation của nó** — xem mục "Ba điều load-bearing" #2.
+   Plan cần sửa dòng acceptance đó, giống hệt cách D6 đã được sửa ở Wave 3a.
+2. **Tolerance H9 là 1e-6 chứ không phải 1e-9 của plan.** Phase của fixture đi
+   qua kho `float` của `Trace`; `float(pi/2)` cao hơn `pi/2` 4.37e-8, nên 1e-9
+   là tolerance mù float32 (`memory/float32-fft-precision.md`). Điều case đó
+   CHỨNG MINH — nửa vòng giữa BW1 (+π/2) và BW3 (−π/2) — không float nào làm mờ
+   được, và giá trị `expectedOffset` vẫn giữ 1e-15. H5 cùng lý do: 1e-5 cho τ,
+   nhưng phép transpose (thứ chịu lực) vẫn 1e-10.
+3. **H7 cell bất đồng là ĐO được, không phải giả định.** ρ và tích hai
+   `findPolarity` ĐỒNG Ý ở mọi cặp thông thường (đã probe 5 cấu hình). Chỗ
+   chúng tách nhau là limit 1 của `Polarity.h` — thùng two-way có tweeter đảo
+   pha — và phụ thuộc tần số cắt: 800 Hz và 1200 Hz đồng ý, **2000 Hz bất
+   đồng** (findPolarity âm, margin 1.00; ρ +0.7986), 3500 Hz đồng ý lại.
+   Fixture lấy đúng ô 2000 Hz.
+4. **`AlignmentWizard.cpp` 318 dòng** — dưới trần 400 nhưng trên mục tiêu 300.
+   Đã tách `AlignmentWizardSignals.cpp` (69) theo đúng seam record vẽ; phần còn
+   lại là chuỗi + fit và không có seam thứ hai đáng tách.
+5. **ALIGN-R7 vẫn là proxy chuỗi.** `ReferenceMismatch` so sánh
+   `CaptureMeta::channelRoles` string-equal. Muốn structural thì phải thêm
+   field vào `CaptureMeta` + bump schema session — ngoài phạm vi lane.
+
+## Việc còn để lại cho người (không phải cho agent)
+
+Năm mục "Open, needs a human" của plan vẫn nguyên, cộng mục 3 ở trên. Đáng chú
+ý nhất: **một cặp sub/main THẬT** (record §13.2) — mọi thứ ở đây là synthetic;
+và **nhánh "unknown" của câu hỏi (c)** (record §13.3) nay đã hiện lên bề mặt
+G18 dưới dạng hai đường candidate, chủ nhân nên nhìn trước khi nó đi tiếp.
+
+---
+
+# 2026-09-16 — **L7-ALIGN Wave 3a (tasks A–F) XONG — nhánh `l7/align-wave3a-core`, ĐÃ MERGE (PR #8, `02bd02a`)**
+
+> **Cập nhật 2026-09-16 bởi Wave 3b:** mục này ghi "PR mở, CHƯA merge" khi viết.
+> PR #8 đã merge vào `origin/main` tại **`02bd02a`**, và Wave 3b nhánh từ đó.
+> Mục "VIỆC ĐẦU TIÊN của Wave 3b" bên dưới **đã làm xong** — chi tiết ở mục
+> Wave 3b phía trên.
+
+**Nửa đầu** của plan `docs/plans/2026-09-15-L7-align-impl-plan.md` đã xây và
+verify cục bộ trên worktree riêng, nhánh từ `a2de06e`. **GitHub Actions đang bị
+chặn ở mức tài khoản (billing), nên bằng chứng là hai config chạy cục bộ, không
+phải CI xanh** — verifier phải đo lại, đừng tin bảng dưới.
 
 ## Baseline đo được (dán từ lệnh, đừng chép số cũ)
 
@@ -60,13 +195,15 @@ NGOÀI guard `RTA_BUILD_APP`.
    cảnh báo. Test E6 (`test_relative_polarity_guard.cpp`) giữ điều này bằng cấu
    trúc, có positive control trên `DelayPolicy.h`.
 
-## VIỆC ĐẦU TIÊN của Wave 3b (tasks G–J)
+## VIỆC ĐẦU TIÊN của Wave 3b (tasks G–J) — **ĐÃ LÀM XONG 2026-09-16**
 
-- **`app/CMakeLists.txt` dòng `target_sources(rtatool_snapshot PRIVATE ...)` tại
+- ~~**`app/CMakeLists.txt` dòng `target_sources(rtatool_snapshot PRIVATE ...)` tại
   `:169` PHẢI thêm `src/measure/CrossoverTopology.cpp` VÀ
-  `src/view/CrossoverSurface.cpp`.** Plan giao việc này cho task D; Wave 3a CỐ Ý
+  `src/view/CrossoverSurface.cpp`.**~~ **Đã thêm ở commit `b30901f`, cùng với
+  `src/trace/VirtualTrace.cpp` — file thứ ba mà mục này không lường tới, cần vì
+  specimen vẽ qua `VirtualTrace`.** Plan giao việc này cho task D; Wave 3a CỐ Ý
   không làm, vì ship một source không ai tham chiếu vào target không dùng nó thì
-  tệ hơn là ghi lại yêu cầu. Không có cả hai → I7 link lỗi undefined symbol
+  tệ hơn là ghi lại yêu cầu. Không có cả ba → I7 link lỗi undefined symbol
   (verifier defect 6).
 - Task G (`VirtualTrace`) cần A; task H cần B, C, D, E, G; task I cần D, G, H.
 - `RTA_REPO_ROOT` đã có sẵn ở CẢ HAI test target (`rta_core_tests`,
