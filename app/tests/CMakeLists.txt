@@ -108,6 +108,10 @@ add_executable(rtatool_analysis_tests
     # G18 surface model, JUCE-free so it is proven OFF on all three CI
     # operating systems. The specimen half is checked by rtatool_snapshot.
     test_crossover_surface.cpp
+    # test_crossover_surface_objective.cpp: rows I4/I5 -- "no objective exists"
+    # -- split out when three rounds of verification grew the declaration scan
+    # into its own subject.
+    test_crossover_surface_objective.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md) -- Analyser.cpp calls

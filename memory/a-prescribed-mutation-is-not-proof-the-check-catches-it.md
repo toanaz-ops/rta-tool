@@ -86,11 +86,39 @@ and the scan DID go red — but the printed enumeration showed `binwidthhz`, not
 `bestdelayforloudestsum`. It went red for the wrong reason, by accident. Take the
 parenthesis out of the body and the red disappears.
 
-So the final rule, after three turns: **write the scope INTO the artefact, not
-into the prose around it** — the shipped scan's comment now lists the two forms
-it reads and names what it does not cover (macros, another TU), so the next
-reader does not have to infer the boundary from a claim. And when a mutation goes
-red, read WHY: a red for the wrong reason is a green with extra steps.
+**A fourth turn, and this one was free.** The widened scan still read the file
+LINE BY LINE. So the same lambda, with a newline between the `=` and the `[](`,
+was green again:
+
+```cpp
+inline constexpr auto bestDelayForLoudestSum =
+    [](const CrossoverSurface&, double step) noexcept { return step * 2.0; };
+```
+
+Worse, that is how the scan's own comment and this file wrote the example. The
+illustration of the thing being caught was itself an instance of the thing
+getting through. **A line-based structural check loses to the Return key**, and
+no amount of widening the patterns fixes that; only deleting the concept of a
+line does. The shipped scan strips comments, joins the whole file into one
+string, collapses whitespace, cuts declaration units at `;` and `{`, and skips
+function bodies by brace depth. Five forms were then applied and all five went
+red with the name present in the enumeration: wrapped lambda, one-line lambda,
+`std::function`, free function, static member.
+
+So the rules, after four turns:
+
+1. **Write the scope INTO the artefact, not into the prose around it.** The
+   shipped scan names the two forms it reads and what it does not cover (macros,
+   a typedef'd function pointer, another translation unit), so the next reader
+   does not infer the boundary from a claim.
+2. **When a mutation goes red, read WHY.** A red for the wrong reason is a green
+   with extra steps — the round-2 verifier's lambda went red only because its
+   BODY held a call, and the printed enumeration said so.
+3. **A check whose unit of work is the line is a check about formatting.** If
+   the property is about the file, read the file.
+4. **Check the example in the comment against the check.** Four rounds, and the
+   counter-example that finally broke it was sitting in the documentation of the
+   thing it broke.
 
 ## The smaller trap that came with it
 

@@ -59,7 +59,8 @@ gh pr view 9 --repo toanaz-ops/rta-tool --json headRefOid --jq .headRefOid
 | `e5b1c84` | — | memory `a-prescribed-mutation-is-not-proof-the-check-catches-it.md` + index |
 | `703e777` | — | sửa bảng commit này (bản trước ghi placeholder "(mục này)") |
 | `c3b9579` | — | vòng sửa theo verifier #1 (D1–D6) |
-| (commit này) | — | vòng sửa theo verifier #2 (R1, R2, N1, N2) |
+| `f507f96` | — | vòng sửa theo verifier #2 (R1, R2, N1, N2) |
+| (commit này) | — | vòng sửa theo verifier #3 (V1, V2, V3) |
 
 Task J không đổi một dòng code nào: mọi mutation bên dưới đã revert, và cây đã
 được chứng minh trùng HEAD (`git status --porcelain` rỗng, `git diff HEAD` rỗng,
@@ -78,7 +79,7 @@ của chính nó**, đúng thứ mà memory mới của lane này nói về.
 |---|---|---|
 | D1 | "xoá exe" KHÔNG tái hiện được đỏ của G3. Verifier đo được **false PASS**: mutation nằm ở header, MSBuild biên dịch lại `VirtualTrace.cpp`, link lại exe, và `test_virtual_trace.cpp` — TU DUY NHẤT chứa ba `static_assert` — không hề được biên dịch lại | chạy lại mutation có ép TU đó (xoá `.obj` + `touch`), dán đỏ; thêm mục mới vào `memory/mutation-testing-needs-the-exe-deleted-first.md`: **một assertion compile-time chỉ chạy bởi lần biên dịch đọc nó**, nên phải ép đúng TU chứa nó, không phải "một `.cpp` nào đó" |
 | D2 | whitelist I4 chỉ quét giữa `class crossoversurface` và `};` cột 0, nên một **free function** `bestDelayForLoudestSum(const CrossoverSurface&)` khai báo sau class vẫn XANH — và word-grep của plan cũng trượt nó, tức hình dạng này **không cái gì bắt** | quét mở rộng ra CẢ header và các định nghĩa non-member cột 0 của `.cpp`; whitelist giờ liệt kê **mọi callable** hai file khai báo (21 cái). Tái hiện xanh với mutation cũ, rồi đỏ: `declared.size() == allowed.size()` → `22 == 21` |
-| D3 | 3/9 enumerator `WizardRefusal` không test, gồm `TraceNotUsable` là nhánh SỐNG | case mới `H4b` (file riêng `test_alignment_wizard_refusals.cpp`) chạm cả chín và assert `seen.size() == 9`; `refusalName` là `switch` KHÔNG có `default:`, nên enumerator thứ mười làm MSVC bắn C4062 ở /W4 và gate "0 warning C" chặn lại. Mutation (đổi `TraceNotUsable` thành `WrongStep`) → đỏ hai chỗ |
+| D3 | 3/9 enumerator `WizardRefusal` không test, gồm `TraceNotUsable` là nhánh SỐNG | case mới `H4b` (file riêng `test_alignment_wizard_refusals.cpp`) chạm cả chín. Mutation (đổi `TraceNotUsable` thành `WrongStep`) → đỏ hai chỗ. **Backstop cho enumerator thứ mười ở bản sửa này là SAI và đã thay** — xem R2 ở bảng dưới; đừng đọc dòng này như mô tả cái đang ship |
 | D4 | bốn kỳ vọng số không có suy dẫn | ρ: `> 0.9` → **`== 1` trong 1e-12**, vì b = −a BITWISE (đã assert tiền đề đó) nên Cauchy–Schwarz đạt dấu bằng. R của H5: `> 0.999` → chặn dẫn xuất `1 − R ≤ 1.01(πΔ·dτ)²(N²−1)/6 + 1e-12` với dτ ĐO được (1.77e-14 s) — đo thực 3.33e-16. R của H10: giữ 0.5 nhưng **viết ra vì sao** (bước ngẫu nhiên Rayleigh, R → 1/√N_eff; đo 0.16141 ⇒ N_eff ≈ 38 ⇒ P(R>0.5) ≈ 7e-5). Ô bất đồng H7: đổi tên case thành **REGRESSION LOCK** |
 | D5 | vượt budget per-file của plan mà không khai | khai đủ bốn chỗ ở mục "Deviation" dưới, và trong PR body |
 | D6 | HANDOFF ghi head sha sai | bỏ hẳn hash khỏi HANDOFF, thay bằng lệnh `gh pr view`; hai danh sách deviation (PR 8 mục vs HANDOFF 5 mục) nay khớp 1–1 ở tám |
@@ -97,6 +98,18 @@ CŨ** (220/222/226 thay vì 196/198/202, và `test_alignment_wizard.cpp` thay v�
 `test_alignment_wizard_refusals.cpp`): kết luận đúng nhưng output không sinh ra
 trên cây mà reply đặt tên. Vòng này chạy lại mọi mutation trên tip và dán số
 dòng thật.
+
+### Vòng verifier #3 — một lỗ thật, hai lỗi doc
+
+| # | bác cái gì | đã sửa thế nào |
+|---|---|---|
+| V1 | scan I4 vẫn theo DÒNG, nên **cùng cái lambda đó xuống dòng** giữa `=` và `[](` là xanh — và đó đúng là cách chính comment của scan lẫn memory viết ví dụ | scan không còn đọc dòng nào cả: `rta::test::codeText` bỏ comment, gộp cả file thành MỘT chuỗi, thu mọi khoảng trắng về một dấu cách; đơn vị khai báo cắt ở `;`/`{`, và thân hàm bị bỏ qua bằng đếm ngoặc. **Năm dạng đều đỏ** (lambda xuống dòng, lambda một dòng, `std::function`, free function, static member), mỗi lần `22 == 21` và tên CÓ trong danh sách in ra. Case dọn sang file riêng `test_crossover_surface_objective.cpp` |
+| V2 | số dòng ở deviation 5 đã cũ | sinh lại bằng `wc -l` tại head cuối, dán nguyên khối |
+| V3 | dòng D3 ở bảng vòng 1 vẫn kể backstop C4062 như thể đang ship, mâu thuẫn với R2 ngay dưới | dòng đó nay trỏ thẳng sang R2 |
+
+Bài học sau ba vòng, đã ghi vào memory: **viết PHẠM VI của một structural check
+vào chính artefact, đừng viết vào văn xuôi quanh nó** — và một scan theo dòng
+thua một phím Enter.
 
 Hai ghi chú nhỏ của verifier #1 cũng đã lấy: scan H1 trước đây tìm chuỗi
 `member_ + " ="` nên `inversion_= x;` (không dấu cách) lọt — nay dùng
@@ -206,12 +219,26 @@ N1). Lần này đánh số giống hệt để lần sau chỉ cần đếm.
    fixture không thể đỏ nếu nó là con số DUY NHẤT trong case
    (`memory/a-fixture-can-be-too-well-behaved-to-fail.md`). Nên case đo thêm
    residual của chính phép tính TRƯỚC khi ép về float và chặn ở 1e-9.
-5. **Vượt budget per-file của plan ở bốn chỗ** (trần cứng 400 của CLAUDE.md thì
-   KHÔNG chỗ nào vượt): `AlignmentWizard.h` 285 vs 180, `AlignmentWizard.cpp`
-   318 vs 300 (đã tách `AlignmentWizardSignals.cpp` 69 theo đúng seam record
-   vẽ), `test_virtual_trace.cpp` 330 vs 280, `test_crossover_surface.cpp` 349
-   vs 280. Test task H thì plan cho một file ≤ 340; ship thành **bốn** file
-   (256 + 185 + 241 + 358) vì một file duy nhất là 538 dòng.
+5. **Vượt budget per-file của plan ở ba chỗ** (trần cứng 400 của CLAUDE.md thì
+   KHÔNG chỗ nào vượt). Số dưới đây sinh từ `wc -l` **tại head cuối cùng của
+   nhánh** — bản trước ghi số của một vòng sửa cũ và round-3 verifier bắt được
+   (V2):
+
+   ```
+   300 app/src/measure/AlignmentWizard.h          (plan: 180)
+   318 app/src/measure/AlignmentWizard.cpp        (plan: 300; + AlignmentWizardSignals.cpp 69)
+   330 app/tests/test_virtual_trace.cpp           (plan: 280)
+   151 app/src/view/CrossoverSurface.h            (plan: 160)  OK
+   137 app/src/view/CrossoverSurface.cpp          (plan: 240)  OK
+   141 app/src/trace/VirtualTrace.h               (plan: 150)  OK
+   147 app/src/trace/VirtualTrace.cpp             (plan: 200)  OK
+   ```
+
+   Test của task H plan cho MỘT file ≤ 340; ship thành **bốn**
+   (256 + 203 + 241 + 358) vì một file duy nhất là 538 dòng. Test của task I
+   plan cho một file ≤ 280; ship thành **hai** (231 + 229) vì scan khai báo
+   qua ba vòng verify đã thành một chủ đề riêng. Fixture dùng chung:
+   `AlignmentWizardFixture.h` 178, `CodeLines.h` 134.
 6. **ALIGN-R7 vẫn là proxy chuỗi.** `ReferenceMismatch` so sánh
    `CaptureMeta::channelRoles` string-equal. Muốn structural thì phải thêm
    field vào `CaptureMeta` + bump schema session — ngoài phạm vi lane.
