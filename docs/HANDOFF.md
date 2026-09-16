@@ -34,14 +34,25 @@ Wave 3b thêm, tự nó đo được qua OFF (`648 − 624 = 24`, và 24 = 7 tas
 task H + 5 task I). Con số trùng đúng 692 mà mục Wave 3a ghi. Verifier nên đo
 lại ON baseline trên cây sạch nếu muốn con số độc lập.
 
-## Bốn commit, mỗi task một commit
+## Năm commit — ba task một commit, cộng docs và memory
+
+**PR #9** (`https://github.com/toanaz-ops/rta-tool/pull/9`), head `e5b1c84`,
+MERGEABLE, **CHƯA merge** — merge là lời của chủ nhân trong chính phiên đó
+(`docs/GIT-WORKFLOW.md` luật 4).
 
 | commit | task | nội dung |
 |---|---|---|
 | `3effb67` | G | `VirtualTrace` — điểm chuyển dB↔complex DUY NHẤT; 4/7 case là NEGATIVE (không thành `Trace` được, không tới `TraceLibrary` được, không có `CaptureMeta`, tổng không mang field tên `coherence`) |
 | `a340b8b` | H | `AlignmentWizard` — bốn câu HỎI, chuỗi solo L7-OUT, refusal có tên, bảng polarity-signal HỎI chứ không chọn |
 | `b30901f` | I | `CrossoverSurface` (G18) + `PhaseAlignPreview` trỏ vào model thật; snapshot ON đọc được |
-| (mục này) | J | docs + bằng chứng guard |
+| `60cc605` | J | mục HANDOFF này, hàng roadmap, và sửa tại chỗ dòng acceptance I4 của plan |
+| `e5b1c84` | — | memory `a-prescribed-mutation-is-not-proof-the-check-catches-it.md` + index |
+
+Task J không đổi một dòng code nào: mọi mutation bên dưới đã revert, và cây đã
+được chứng minh trùng HEAD (`git status --porcelain` rỗng, `git diff HEAD` rỗng,
+`git stash list` rỗng) TRƯỚC lần rebuild cuối — nên màu xanh ở trên đến từ code
+đã commit, không phải từ một bản sửa chưa commit
+(`memory/a-verifier-with-bash-can-git-checkout-your-uncommitted-fix.md`).
 
 ## Ba điều load-bearing phiên sau KHÔNG suy diễn lại
 
