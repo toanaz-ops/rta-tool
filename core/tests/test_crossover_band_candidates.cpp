@@ -66,6 +66,17 @@ TEST_CASE("crossoverBandFit returns the competing delay candidates instead of hi
     // The best candidate IS the fit -- the list is ranked, not a leftovers bin.
     CHECK_THAT(fit.cycleCandidates.front().tauSeconds, WithinAbs(fit.tauSeconds, 1e-12));
 
+    // The ceiling, on the winner AND on every competitor. R <= 1 by the
+    // triangle inequality over a weighted sum of unit phasors (see C1). This
+    // fixture's winner sits at R = 1 exactly, so the bound is tight here and a
+    // mis-scaled denominator has nowhere to hide.
+    CHECK(fit.agreement <= 1.0);
+    for (const auto& candidate : fit.cycleCandidates) {
+        INFO("candidate R = " << candidate.agreement);
+        CHECK(candidate.agreement <= 1.0);
+        CHECK(candidate.agreement >= 0.0);
+    }
+
     // Every other candidate sits near a Dirichlet local maximum,
     // (m + 1/2)/(N*delta) from the peak, m >= 1. Asserted to a fifth of a lobe:
     // the true sidelobe of |sin(Nx)/(N sin x)| sits at about 1.43/(N*delta),

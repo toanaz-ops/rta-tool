@@ -58,6 +58,23 @@ TEST_CASE("crossoverBandFit recovers a pure delay, with R's floor derived from t
                             << (1.0 - floorFromDtau));
     CHECK(fit.agreement >= floorFromDtau);
 
+    // THE UPPER BOUND, and it has to be asserted HERE, not only in C7.
+    //
+    // R = |sum_k w_k R_k e^{-j2 pi f_k tau}| / sum_k w_k with every |R_k| = 1
+    // and every w_k >= 0, so by the triangle inequality
+    //     |sum_k w_k R_k e^{-j...}| <= sum_k w_k |R_k| = sum_k w_k
+    // and therefore R <= 1, with equality exactly when every term is co-phased.
+    // Closed form, not a measurement.
+    //
+    // C7 asserts the same ceiling, but C7's random draws only ever reach
+    // R ~ 0.35, so a denominator scaled by anything down to 0.35 slips past it
+    // untouched. THIS fixture is the one where R sits AT the bound, so it is
+    // the only place the ceiling can actually bite. Verifier finding on PR #8:
+    // halving the denominator yields R = 2 and, before this line existed,
+    // nothing in the whole suite went red.
+    INFO("agreement = " << fit.agreement << ", ceiling 1.0");
+    CHECK(fit.agreement <= 1.0);
+
     // The weighted mean frequency of a flat 40..160 Hz window is 100 Hz, and a
     // residual delay dtau leaves EXACTLY 2*pi*f_bar*dtau of phase there. So the
     // intercept's tolerance is not a free constant either -- it is tau's bound

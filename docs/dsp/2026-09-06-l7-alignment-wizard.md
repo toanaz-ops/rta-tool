@@ -461,7 +461,18 @@ which is a Cauchy–Schwarz ratio between two magnitude responses that barely
 OVERLAP: `|L|` lives below 100 Hz while `|H|` spans 100 Hz to 24 kHz. The ratio
 is of order `√(fc/(fs/2)) = √(100/24000) = 0.065`. Computed from
 `cascadeResponse` in the fixture it predicts **0.0675611** against a measured
-**0.0675611** — six figures.
+**0.0675611**.
+
+That six-figure agreement is a property of THIS repo’s arithmetic, not a
+portable invariant, and should not be read as one. Both sides of the comparison
+run through `rta::dsp::BiquadCascade` in double precision over the same
+coefficients, so they agree to nearly the last bit. An INDEPENDENT
+implementation does not: a float32 Direct-Form-I cascade of the same filters
+gives **0.0675563**, agreeing to about four significant figures. What the
+closed form pins is the VALUE — order `√(fc/(fs/2))`, i.e. 0.0676 and not
+“high” — and the test’s tolerance is set at **1e-3** for exactly that reason,
+which is the right width for a claim about the physics rather than about one
+cascade’s rounding.
 
 **This strengthens the paragraph's conclusion rather than weakening it.** Where
 the text above gives one reason ρ may not arbitrate the wizard's question (the
