@@ -22,23 +22,33 @@ Generator Visual Studio 18 2026, MSVC 14.51, JUCE qua `RTA_JUCE_PATH`.
 `build-align3b` (OFF) và `build-align3b-on` (ON):
 
 ```
-TRƯỚC (02bd02a):  ctest OFF -> 624/624, 0 failed     ctest ON -> 692/692
-SAU  (tip nhánh):  ctest OFF -> 648/648, 0 failed     ctest ON -> 716/716, 0 failed
+TRƯỚC (02bd02a):  ctest OFF -> 624/624, 0 failed     ctest ON -> 692/692, 0 failed
+SAU  (tip nhánh):  ctest OFF -> 649/649, 0 failed     ctest ON -> 717/717, 0 failed
 warning C trong cả hai build log -> 0
 ```
 
-**Một chỗ KHÔNG đo trực tiếp, nói thẳng ra:** OFF baseline 624 đo trên cây chưa
-sửa; ON baseline 692 thì KHÔNG — configure ON đầu phiên bị một edit đồng thời
-chen vào trước lần ctest đầu tiên. 692 ở đây là `716 − 24`, với 24 = số test
-Wave 3b thêm, tự nó đo được qua OFF (`648 − 624 = 24`, và 24 = 7 task G + 12
-task H + 5 task I). Con số trùng đúng 692 mà mục Wave 3a ghi. Verifier nên đo
-lại ON baseline trên cây sạch nếu muốn con số độc lập.
+**ON baseline 692 nay đã ĐO ĐỘC LẬP.** Builder không đo được (configure ON đầu
+phiên bị một edit đồng thời chen vào trước lần ctest đầu tiên) và chỉ suy ra
+`716 − 24`. Verifier PR #9 dựng cây sạch tại `02bd02a` và chạy ON: **692/692**,
+đúng con số suy ra, và `measure_has_no_framework_deps` ở cây đó in
+`OK (57 files scanned)` nên **57 → 64** khớp cả hai đầu.
 
-## Năm commit — ba task một commit, cộng docs và memory
+Con số duy nhất chưa ai đo trực tiếp là **OFF baseline 624**. Nó khép lại bằng
+số học: ba task G/H/I thêm 24 test (`716 − 692 = 24`), và vòng sửa theo verifier
+thêm 1 (case H4b), nên `649 − 25 = 624` và `717 − 25 = 692`.
 
-**PR #9** (`https://github.com/toanaz-ops/rta-tool/pull/9`), head `e5b1c84`,
-MERGEABLE, **CHƯA merge** — merge là lời của chủ nhân trong chính phiên đó
-(`docs/GIT-WORKFLOW.md` luật 4).
+## Commit — ba task một commit, cộng docs, memory và một vòng sửa theo verifier
+
+**PR #9** (`https://github.com/toanaz-ops/rta-tool/pull/9`), **CHƯA merge** —
+merge là lời của chủ nhân trong chính phiên đó (`docs/GIT-WORKFLOW.md` luật 4).
+
+**Head sha KHÔNG ghi ở đây, có chủ ý.** Bản trước ghi `e5b1c84` và nó đã sai
+ngay khi commit kế tiếp hạ xuống — verifier PR #9 bắt đúng lỗi này (D6). Một
+hash viết trong chính commit nó đặt tên thì không thể đúng. Lấy bằng lệnh:
+
+```bash
+gh pr view 9 --repo toanaz-ops/rta-tool --json headRefOid --jq .headRefOid
+```
 
 | commit | task | nội dung |
 |---|---|---|
@@ -54,6 +64,28 @@ Task J không đổi một dòng code nào: mọi mutation bên dưới đã rev
 đã commit, không phải từ một bản sửa chưa commit
 (`memory/a-verifier-with-bash-can-git-checkout-your-uncommitted-fix.md`).
 
+## Vòng verifier (PR #9, verdict **SOUND-WITH-FIXES**) — sáu mục, đã sửa hết
+
+Verifier độc lập (không có `Edit`/`Write`) dựng lại cả hai config trong worktree
+riêng, đo lại mọi con số, và tự áp cả ba mutation. Sáu defect, không cái nào là
+lỗi hành vi của code đã ship — hai cái là **lời tuyên bố vươn xa hơn bằng chứng
+của chính nó**, đúng thứ mà memory mới của lane này nói về.
+
+| # | defect | đã sửa thế nào |
+|---|---|---|
+| D1 | "xoá exe" KHÔNG tái hiện được đỏ của G3. Verifier đo được **false PASS**: mutation nằm ở header, MSBuild biên dịch lại `VirtualTrace.cpp`, link lại exe, và `test_virtual_trace.cpp` — TU DUY NHẤT chứa ba `static_assert` — không hề được biên dịch lại | chạy lại mutation có ép TU đó (xoá `.obj` + `touch`), dán đỏ; thêm mục mới vào `memory/mutation-testing-needs-the-exe-deleted-first.md`: **một assertion compile-time chỉ chạy bởi lần biên dịch đọc nó**, nên phải ép đúng TU chứa nó, không phải "một `.cpp` nào đó" |
+| D2 | whitelist I4 chỉ quét giữa `class crossoversurface` và `};` cột 0, nên một **free function** `bestDelayForLoudestSum(const CrossoverSurface&)` khai báo sau class vẫn XANH — và word-grep của plan cũng trượt nó, tức hình dạng này **không cái gì bắt** | quét mở rộng ra CẢ header và các định nghĩa non-member cột 0 của `.cpp`; whitelist giờ liệt kê **mọi callable** hai file khai báo (21 cái). Tái hiện xanh với mutation cũ, rồi đỏ: `declared.size() == allowed.size()` → `22 == 21` |
+| D3 | 3/9 enumerator `WizardRefusal` không test, gồm `TraceNotUsable` là nhánh SỐNG | case mới `H4b` (file riêng `test_alignment_wizard_refusals.cpp`) chạm cả chín và assert `seen.size() == 9`; `refusalName` là `switch` KHÔNG có `default:`, nên enumerator thứ mười làm MSVC bắn C4062 ở /W4 và gate "0 warning C" chặn lại. Mutation (đổi `TraceNotUsable` thành `WrongStep`) → đỏ hai chỗ |
+| D4 | bốn kỳ vọng số không có suy dẫn | ρ: `> 0.9` → **`== 1` trong 1e-12**, vì b = −a BITWISE (đã assert tiền đề đó) nên Cauchy–Schwarz đạt dấu bằng. R của H5: `> 0.999` → chặn dẫn xuất `1 − R ≤ 1.01(πΔ·dτ)²(N²−1)/6 + 1e-12` với dτ ĐO được (1.77e-14 s) — đo thực 3.33e-16. R của H10: giữ 0.5 nhưng **viết ra vì sao** (bước ngẫu nhiên Rayleigh, R → 1/√N_eff; đo 0.16141 ⇒ N_eff ≈ 38 ⇒ P(R>0.5) ≈ 7e-5). Ô bất đồng H7: đổi tên case thành **REGRESSION LOCK** |
+| D5 | vượt budget per-file của plan mà không khai | khai đủ bốn chỗ ở mục "Deviation" dưới, và trong PR body |
+| D6 | HANDOFF ghi head sha sai | bỏ hẳn hash khỏi HANDOFF, thay bằng lệnh `gh pr view`; hai danh sách deviation (PR 8 mục vs HANDOFF 5 mục) nay khớp 1–1 ở tám |
+
+Hai ghi chú nhỏ của verifier cũng đã lấy: scan H1 trước đây tìm chuỗi
+`member_ + " ="` nên `inversion_= x;` (không dấu cách) lọt — nay dùng
+`rta::test::assignsTo`, chịu được mọi kiểu đặt dấu cách và vẫn phân biệt `==`
+(mutation không-dấu-cách đã chạy, đã đỏ); và `codeLines()` từng có hai bản
+giống hệt, nay là một, ở `app/tests/CodeLines.h`.
+
 ## Ba điều load-bearing phiên sau KHÔNG suy diễn lại
 
 1. **Bốn câu hỏi được HỎI, và scan cấu trúc là thứ giữ điều đó.**
@@ -64,11 +96,14 @@ Task J không đổi một dòng code nào: mọi mutation bên dưới đã rev
    case hành vi. **Scan phải phân biệt `x_ =` với `x_ ==`** — bản đầu báo 5
    offender toàn là chỗ code đang ĐỌC đúng như phải đọc.
 2. **Không có objective nào trong `CrossoverSurface`, và cách CHỨNG MINH điều đó
-   đã đổi.** Word-grep của plan (I4) KHÔNG bắt được chính mutation mà plan chỉ
-   định (`bestDelayForLoudestSum()`): identifier không chứa từ nào trong danh
-   sách, còn dòng duy nhất chứa thì là COMMENT giải thích vì sao nước cờ đó bị
-   cấm. Thay bằng **whitelist**: liệt kê toàn bộ member function của class, tập
-   hợp phải khớp chính xác. Mọi objective đỏ, bất kể tên gì.
+   đã đổi HAI LẦN.** Word-grep của plan (I4) KHÔNG bắt được chính mutation mà
+   plan chỉ định (`bestDelayForLoudestSum()`): identifier không chứa từ nào
+   trong danh sách, còn dòng duy nhất chứa thì là COMMENT giải thích vì sao nước
+   cờ đó bị cấm. Thay bằng **whitelist** — nhưng bản đầu chỉ quét thân class,
+   nên một **free function** cùng tên ở namespace scope vẫn lọt (verifier D2).
+   Bản ship quét **mọi callable** hai file `CrossoverSurface.{h,cpp}` khai báo,
+   member lẫn free. Câu đúng là "mọi callable mới trong hai file đó phải có
+   trong danh sách" — đừng viết lại thành câu rộng hơn.
 3. **`summationTrust` vẫn không được đổi tên thành `coherence`.** Guard
    `coherence_gate_is_not_bypassed` bắt PHÉP GÁN chứ không bắt khai báo, nên
    mutation phải làm cả hai (đổi tên field VÀ `result.coherence = ...`) mới đỏ.
@@ -131,12 +166,29 @@ Toàn bộ test: `ctest --test-dir build-align3b -C Release` (OFF, 648) và
    pha — và phụ thuộc tần số cắt: 800 Hz và 1200 Hz đồng ý, **2000 Hz bất
    đồng** (findPolarity âm, margin 1.00; ρ +0.7986), 3500 Hz đồng ý lại.
    Fixture lấy đúng ô 2000 Hz.
-4. **`AlignmentWizard.cpp` 318 dòng** — dưới trần 400 nhưng trên mục tiêu 300.
-   Đã tách `AlignmentWizardSignals.cpp` (69) theo đúng seam record vẽ; phần còn
-   lại là chuỗi + fit và không có seam thứ hai đáng tách.
-5. **ALIGN-R7 vẫn là proxy chuỗi.** `ReferenceMismatch` so sánh
+4. **G1 residual ở mức float bằng ĐÚNG 0** ở mọi bin, cả dB lẫn phase. Đó là
+   thật (vòng double rơi trong nửa ULP của float), nhưng một residual bằng 0 là
+   fixture không thể đỏ nếu nó là con số DUY NHẤT trong case
+   (`memory/a-fixture-can-be-too-well-behaved-to-fail.md`). Nên case đo thêm
+   residual của chính phép tính TRƯỚC khi ép về float và chặn ở 1e-9.
+5. **Vượt budget per-file của plan ở bốn chỗ** (trần cứng 400 của CLAUDE.md thì
+   KHÔNG chỗ nào vượt): `AlignmentWizard.h` 285 vs 180, `AlignmentWizard.cpp`
+   318 vs 300 (đã tách `AlignmentWizardSignals.cpp` 69 theo đúng seam record
+   vẽ), `test_virtual_trace.cpp` 330 vs 280, `test_crossover_surface.cpp` 349
+   vs 280. Test task H thì plan cho một file ≤ 340; ship thành **bốn** file
+   (256 + 185 + 241 + 358) vì một file duy nhất là 538 dòng.
+6. **ALIGN-R7 vẫn là proxy chuỗi.** `ReferenceMismatch` so sánh
    `CaptureMeta::channelRoles` string-equal. Muốn structural thì phải thêm
    field vào `CaptureMeta` + bump schema session — ngoài phạm vi lane.
+7. **Record §10.11 nói nhẹ về mutation của coherence gate** — chỉ đổi tên field
+   thì KHÔNG đỏ, vì guard bắt phép GÁN. Chính bullet task J của plan đã đoán
+   trước; ghi lại đây như record correction mà nó xin.
+8. **`SignalStanding::Authoritative` tồn tại mà không gì sinh ra nó.** Không có
+   nó thì "qua crossover không dấu time-domain nào là authoritative" là mệnh đề
+   không thể bác bỏ.
+
+**Tám mục trên khớp 1–1 với phần "Deviations" của PR #9.** Trước 2026-09-16
+HANDOFF mang năm và PR mang tám; verifier chỉ ra hai bản không khớp.
 
 ## Việc còn để lại cho người (không phải cho agent)
 

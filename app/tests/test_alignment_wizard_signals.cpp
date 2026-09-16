@@ -14,6 +14,7 @@
 #include "rta/ir/Deconvolver.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cstddef>
 #include <filesystem>
@@ -128,8 +129,23 @@ TEST_CASE("H7: the polarity-signal table is data, and a refusal is listed as a r
     SECTION("a full-range pair: both answer, both are listed, neither is authoritative") {
         OutputEngine engine;
         engine.prepare(kFs, rta::test::kChannels);
-        auto wizard = buildWizard(engine, measureThrough(60.0, 15000.0, 4, +1.0f),
-                                  measureThrough(60.0, 15000.0, 4, -1.0f));
+        const auto positive = measureThrough(60.0, 15000.0, 4, +1.0f);
+        const auto inverted = measureThrough(60.0, 15000.0, 4, -1.0f);
+
+        // The PREMISE of the rho identity below, checked rather than assumed.
+        // Driving the same sweep through the same cascade with drive -1 gives
+        // the exactly negated impulse response: every operation on the path is
+        // a multiply or an add, and IEEE-754 round-to-nearest is symmetric
+        // under negation, so `b[n] == -a[n]` BITWISE -- through the filter and
+        // through the deconvolution FFT alike.
+        REQUIRE(positive.samples.size() == inverted.samples.size());
+        std::size_t negatedBitwise = 0;
+        for (std::size_t i = 0; i < positive.samples.size(); ++i) {
+            if (inverted.samples[i] == -positive.samples[i]) ++negatedBitwise;
+        }
+        CHECK(negatedBitwise == positive.samples.size());
+
+        auto wizard = buildWizard(engine, positive, inverted);
 
         const auto* high = signalOf(*wizard, PolaritySignalKind::FindPolarityHighSide);
         const auto* low = signalOf(*wizard, PolaritySignalKind::FindPolarityLowSide);
@@ -140,7 +156,13 @@ TEST_CASE("H7: the polarity-signal table is data, and a refusal is listed as a r
         CHECK(high->sign == rta::ir::Sign::Positive);
         CHECK(low->sign == rta::ir::Sign::Negative);
         CHECK(rho->sign == rta::ir::Sign::Negative);
-        CHECK(rho->figure > 0.9);
+        // rho == 1 EXACTLY, not "> 0.9" (PR #9 verifier, defect D4). With
+        // b = -a, r(0) = -E_a and sqrt(E_a E_b) = E_a, so rho = |r(0)| /
+        // sqrt(E_a E_b) = 1 by the equality case of Cauchy-Schwarz -- record
+        // Sec.7's scale invariance at c = -1. An exact identity was available
+        // and a loose empirical bound was used instead; 1e-12 is the division's
+        // own rounding, nothing more.
+        CHECK_THAT(rho->figure, Catch::Matchers::WithinAbs(1.0, 1e-12));
         // Both agree that the pair is relatively inverted, so nothing is asked.
         CHECK(wizard->step() != WizardStep::AskingPolarity);
         for (const auto& signal : wizard->polaritySignals()) {
@@ -149,7 +171,16 @@ TEST_CASE("H7: the polarity-signal table is data, and a refusal is listed as a r
         CHECK(rho->reason == std::string(rta::measure::acrossCrossoverReason()));
     }
 
-    SECTION("two eligible signals that disagree put the wizard in AskingPolarity") {
+    // REGRESSION LOCK, labelled as one (CLAUDE.md verification standard; PR #9
+    // verifier, defect D4). The cell below was LOCATED BY SEARCH over this
+    // synthetic construction -- it is not a closed form, a standard, or a
+    // golden vector, and it will go red if findPolarity's or relativePolarity's
+    // internals move for reasons that have nothing to do with the wizard. What
+    // it locks is that the wizard ASKS when two eligible signals disagree;
+    // if the fixture stops disagreeing, re-locate a disagreeing cell rather
+    // than deleting the case.
+    SECTION("REGRESSION LOCK -- two eligible signals that disagree put the wizard in "
+            "AskingPolarity") {
         OutputEngine engine;
         engine.prepare(kFs, rta::test::kChannels);
         auto wizard = buildWizard(engine, measureThrough(60.0, 15000.0, 4, +1.0f),
@@ -280,14 +311,15 @@ TEST_CASE("H1/H6/H10 structurally: the asked answers have exactly four writers, 
                 ++functionsSeen;
             }
             for (const auto& member : guarded) {
-                // An ASSIGNMENT, not a comparison. `highPassSide_ == Source::Main`
-                // begins with `highPassSide_ =` and is a READ -- the scan has to
-                // tell the two apart or it reports five offenders that are the
-                // code doing exactly what it should.
-                const auto at = line.find(member + " =");
-                if (at == std::string::npos) continue;
-                const auto after = at + member.size() + 2;
-                if (after < line.size() && line[after] == '=') continue;
+                // An ASSIGNMENT, not a comparison, and not defeatable by
+                // spacing. `highPassSide_ == Source::Main` is a READ, and the
+                // scan has to tell the two apart or it reports five offenders
+                // that are the code doing exactly what it should; `inversion_=
+                // x;` with no space is a WRITE, and the first version of this
+                // scan walked past it (PR #9 verifier). Both live in
+                // rta::test::assignsTo now, with the reasoning at its
+                // definition.
+                if (!rta::test::assignsTo(line, member)) continue;
                 ++writesSeen;
                 // The ONE rule: an asked answer is written by an answer*()
                 // setter and by nothing else. A wizard that set the inversion

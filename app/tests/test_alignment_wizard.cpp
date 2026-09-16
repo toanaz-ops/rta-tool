@@ -14,6 +14,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
 using rta::measure::AlignmentWizard;

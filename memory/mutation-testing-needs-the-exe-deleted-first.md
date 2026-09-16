@@ -51,6 +51,56 @@ belongs in the file the build system actually tracks. And when a scratch worktre
 under `%TEMP%`, treat `MSB8029` in the log as a standing warning that incremental
 decisions in that tree are not trustworthy.
 
+## Touching *a* dependent `.cpp` is not enough either: it must be the TU that holds the assertion
+
+Found 2026-09-16 by the independent verifier of PR #9 (L7-ALIGN Wave 3b), and it
+sharpens the section above. The mutation — an implicit `operator Trace()` — went into
+**both** `app/src/trace/VirtualTrace.h` and `VirtualTrace.cpp`, so the previous rule
+("touch one `.cpp` that includes that header") was satisfied. With the exe deleted:
+
+```
+  VirtualTrace.cpp
+  rtatool_analysis_tests.vcxproj -> ...\Release\rtatool_analysis_tests.exe
+--- does G3 PASS against the MUTATED source? ---
+100% tests passed, 0 tests failed out of 1
+```
+
+`VirtualTrace.cpp` recompiled, the exe genuinely relinked, and the test went **green
+against mutated source**. The three `static_assert`s live in `test_virtual_trace.cpp`
+— a *different* translation unit — and that one was never recompiled.
+
+The rule that survives: **a compile-time assertion is only run by the compile that
+reads it.** `static_assert`, a detection-idiom trait, a `[[nodiscard]]` diagnostic, a
+concept — none of these is executed by the test binary at all, so "the exe is fresh"
+and "a `.cpp` was rebuilt" are both beside the point. What has to be forced is the
+translation unit that CONTAINS the assertion.
+
+Concretely, for a header mutation guarded by a compile-time assertion:
+
+```
+rm -f <build>/.../rtatool_analysis_tests.exe
+rm -f <build>/.../rtatool_analysis_tests.dir/Release/test_virtual_trace.obj
+touch app/tests/test_virtual_trace.cpp
+cmake --build ... --target rtatool_analysis_tests
+```
+
+which gives the red it should have given the first time:
+
+```
+test_virtual_trace.cpp(220,19): error C2338: static assertion failed:
+  'a VirtualTrace must not be convertible to a Trace'
+test_virtual_trace.cpp(226,19): error C2338: static assertion failed:
+  'library.add(virtualTrace, "", "") must be ill-formed'
+```
+
+`--clean-first` does the same job with no bookkeeping to get wrong, and for a
+single-target mutation probe it costs a minute. **Prefer it.** Note also that whether
+you see the false PASS at all depends on the build tree's incremental state: in the
+builder's own directory MSBuild's `.tlog` header-dependency scan did force the test TU
+and the red appeared, while in the verifier's fresh worktree it did not. A recipe whose
+correctness depends on which machine's `.tlog` files you inherited is not a recipe —
+which is the whole reason this one is written down in steps.
+
 ## The RESTORE half is stale too, and that is the dangerous half
 
 Added 2026-09-15 by the final verifier of PR #4, and it completes the previous section.

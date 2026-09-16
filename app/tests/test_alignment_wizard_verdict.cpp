@@ -79,7 +79,31 @@ TEST_CASE("H5: A is the high-pass side, the meta delay is passed once, and a tra
     // tolerance shaped for a double fixture would be a float32-blind bound
     // (memory/float32-fft-precision.md); the residual is printed above.
     CHECK_THAT(std::abs(tauA), WithinAbs(kDelaySeconds, 1.0e-5));
-    CHECK(wizardA.verdict()->agreement > 0.999);
+
+    // R in CLOSED FORM, not as a round number. Added 2026-09-16 after PR #9's
+    // verifier (defect D4): `agreement > 0.999` was a bound nothing derived.
+    //
+    // At the fitted tau every bin carries the SAME residual phase
+    // 2*pi*f_k*dtau, so over N bins spaced Delta the circular mean loses
+    //
+    //     1 - R = (pi*Delta*dtau)^2 * (N^2 - 1) / 6
+    //
+    // -- the plan's ALIGN-R12(a), derived there for exactly this fit. The
+    // window is +-1 octave around the 12 kHz crossing of risingDb()/fallingDb()
+    // at a 93.75 Hz bin, so bins 64..256 take part: N = 193. `dtau` is the
+    // fit's own residual, measured two lines up, not assumed.
+    //
+    // The 1e-12 floor is float32's: the fixture's phase is stored as a float,
+    // whose worst per-bin error near pi is 2^-23*pi = 3.7e-7 rad, and a
+    // circular mean of unit phasors each off by eps loses eps^2/2 -- under
+    // 7e-14 (memory/float32-fft-precision.md).
+    const double dTau = std::abs(std::abs(tauA) - kDelaySeconds);
+    constexpr double kBinsInWindow = 193.0;
+    const double derivedLoss = std::pow(kPi * rta::test::binWidthHz() * dTau, 2.0)
+                               * (kBinsInWindow * kBinsInWindow - 1.0) / 6.0;
+    INFO("dtau " << dTau << " s; 1 - R measured " << (1.0 - wizardA.verdict()->agreement)
+                 << " against the derived " << (1.01 * derivedLoss + 1e-12));
+    CHECK(1.0 - wizardA.verdict()->agreement <= 1.01 * derivedLoss + 1e-12);
 
     // The appliedDelaySamples reconciliation, passed ONCE and in the right
     // direction: D_B - D_A with A the high-pass side (ALIGN-R2). The wizard
@@ -191,6 +215,21 @@ TEST_CASE("H10: a low R says 'not a matched pair' and offers no topology change"
                                        rta::test::constantPhase(0.0)));
 
     REQUIRE(wizard.verdict().has_value());
+    // WHY R collapses, written down (PR #9 verifier, defect D4). With a uniform
+    // random phase per bin, R = |sum w_k e^{j theta_k}| / sum w_k is the length
+    // of a weighted random walk on the unit circle: Rayleigh-distributed,
+    // concentrating at 1/sqrt(N_eff) with N_eff = (sum w)^2 / sum w^2. So R
+    // tends to 0 as the band widens, and "R collapses on a pair that is not one
+    // delay plus one constant" is a property of the BAND, not of this seed.
+    //
+    // Measured here: 0.16141, which implies N_eff ~ 38 -- consistent with the
+    // fit's weight |H_A||H_B| concentrating near the crossover rather than
+    // spreading over all 193 window bins. Even at that small N_eff the Rayleigh
+    // tail gives P(R > 0.5) = exp(-N_eff * 0.25) = e^-9.6 ~ 7e-5, so the bar
+    // below is a bound this fixture clears by construction. It is deliberately
+    // the SAME 0.5 as the caller-supplied `matchedPairAgreement`, because what
+    // the case asserts is that the shipped verdict crosses the operator's own
+    // stated bar -- not that R takes some particular value.
     INFO("agreement " << wizard.verdict()->agreement);
     CHECK(wizard.verdict()->agreement < 0.5);
     CHECK_FALSE(wizard.verdict()->matchedPair);

@@ -88,16 +88,20 @@ add_executable(rtatool_analysis_tests
     # properties that are the reason the type exists. JUCE-free, so it lives
     # here beside test_trace.cpp.
     test_virtual_trace.cpp
-    # Lane L7-ALIGN task H (record Sec.2, Sec.7, Sec.9), three files because
-    # one was 538 lines -- well past the 400-line cap. Shared fixtures in
-    # AlignmentWizardFixture.h.
-    #   ...wizard.cpp          the L7-OUT solo sequence and the named refusals,
-    #                          over a REAL OutputEngine with no device
+    # Lane L7-ALIGN task H (record Sec.2, Sec.7, Sec.9), FOUR files: one was
+    # 538 lines, and the refusal-coverage case added after PR #9's verifier
+    # pushed a second past 400. Shared fixtures in AlignmentWizardFixture.h,
+    # the shared structural-scan reader in CodeLines.h.
+    #   ...wizard.cpp          the L7-OUT solo sequence, over a REAL
+    #                          OutputEngine with no device
+    #   ...wizard_refusals.cpp every way OUT of that sequence has a name, and
+    #                          every one of the nine is reached
     #   ...wizard_verdict.cpp  the fit: the A = high-pass-side contract, the
     #                          comparison against the ASKED topology, low R
     #   ...wizard_signals.cpp  the polarity table that asks instead of picking,
     #                          and the structural scans
     test_alignment_wizard.cpp
+    test_alignment_wizard_refusals.cpp
     test_alignment_wizard_verdict.cpp
     test_alignment_wizard_signals.cpp
     # test_crossover_surface.cpp: lane L7-ALIGN task I (record Sec.6) -- the

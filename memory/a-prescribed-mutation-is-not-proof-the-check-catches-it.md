@@ -36,11 +36,38 @@ that has quietly stopped guarding while its row stays ticked.
 
 And when the answer is "the word list cannot do this", the fix is usually to
 stop enumerating what is FORBIDDEN and start enumerating what is ALLOWED. The
-shipped I4 lists the class's member functions and requires the set to match
-exactly. It cannot be evaded by naming — `bestDelayForLoudestSum()` fails at
-`REQUIRE( declared.size() == allowed.size() )` — which is the property no word
-list ever had. A whitelist is only affordable where the surface is small and
-deliberate, which is exactly where the strongest claims are made.
+shipped I4 lists the callables and requires the set to match exactly, so
+`bestDelayForLoudestSum()` fails at
+`REQUIRE( declared.size() == allowed.size() )` whatever it is called — the
+property no word list ever had. A whitelist is only affordable where the
+surface is small and deliberate, which is exactly where the strongest claims
+are made.
+
+## The coda, and it is the same lesson again: a whitelist has a SCOPE
+
+The first version of that whitelist scanned only between `class CrossoverSurface`
+and the first column-0 `};`. PR #9's verifier declared the identical forbidden
+move as a **free function** in the same header, after the class:
+
+```cpp
+[[nodiscard]] double bestDelayForLoudestSum(const CrossoverSurface& surface) noexcept;
+```
+
+Green. Exported from the header, reachable by every includer, and missed by the
+original word-grep too — so that shape was caught by *nothing*, while the PR body
+and this file both said "it cannot be evaded by naming".
+
+So the rule has a second half. **State the scope of a structural check in the
+same breath as its claim, and make the claim no wider.** "Any objective declared
+as a member of `CrossoverSurface` goes red" was true; "any objective goes red"
+was not, and the gap between them is where the next one lives. The fix is the
+boring one: widen the scan to the whole header and to the `.cpp`'s non-member
+definitions, then re-run the mutation in its new form and watch `22 == 21`.
+
+Notice the shape of this coda. A check written to catch an overreaching claim
+overreached in exactly the same way, one level down, and was caught by exactly
+the same method — somebody applying a mutation the author had not thought of.
+That is not an argument against the method. It is the argument for it.
 
 ## The smaller trap that came with it
 

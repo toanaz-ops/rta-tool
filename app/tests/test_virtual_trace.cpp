@@ -9,6 +9,7 @@
 // `coherence`. Those four are the reasons this type exists at all -- the
 // arithmetic it runs is already locked in core by task A.
 
+#include "CodeLines.h"
 #include "trace/Trace.h"
 #include "trace/TraceLibrary.h"
 #include "trace/VirtualTrace.h"
@@ -115,31 +116,6 @@ struct HasMeta : std::false_type {};
 template <typename T>
 struct HasMeta<T, std::void_t<decltype(std::declval<const T&>().meta())>> : std::true_type {};
 
-/// Source lines of a file with comment-only lines removed -- the same
-/// declaration-shaped reading test_crossover_topology.cpp's D6 scan uses, and
-/// for the same reason: a sentence in a doc comment explaining WHY the sum has
-/// no coherence must not read as the sum having one.
-std::vector<std::string> codeLines(const std::filesystem::path& file) {
-    std::vector<std::string> lines;
-    std::ifstream stream(file);
-    REQUIRE(stream.good());
-    std::string line;
-    while (std::getline(stream, line)) {
-        const auto first = line.find_first_not_of(" \t");
-        if (first != std::string::npos) {
-            const std::string head = line.substr(first, 2);
-            if (head.rfind("//", 0) == 0 || head.rfind("/*", 0) == 0
-                || head.rfind("*", 0) == 0) {
-                continue;
-            }
-        }
-        std::transform(line.begin(), line.end(), line.begin(),
-                       [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-        lines.push_back(line);
-    }
-    return lines;
-}
-
 }  // namespace
 
 TEST_CASE("G1: an empty chain round-trips dB and phase through complex", "[virtual_trace]") {
@@ -235,7 +211,7 @@ TEST_CASE("G4: a VirtualTrace has no CaptureMeta", "[virtual_trace]") {
     // And the type carries none by any other spelling either.
     const std::filesystem::path header =
         std::filesystem::path{ RTA_REPO_ROOT } / "app" / "src" / "trace" / "VirtualTrace.h";
-    for (const auto& line : codeLines(header)) {
+    for (const auto& line : rta::test::codeLines(header)) {
         INFO(line);
         CHECK(line.find("capturemeta") == std::string::npos);
     }
@@ -290,7 +266,7 @@ TEST_CASE("G6: the sum's trust is not a coherence, in the type and in the header
     // remember to type.
     const std::filesystem::path header =
         std::filesystem::path{ RTA_REPO_ROOT } / "app" / "src" / "trace" / "VirtualTrace.h";
-    const auto lines = codeLines(header);
+    const auto lines = rta::test::codeLines(header);
 
     bool inside = false;
     bool sawBlock = false;

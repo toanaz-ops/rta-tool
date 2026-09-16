@@ -248,52 +248,89 @@ TEST_CASE("I4/I5: no objective exists, no field could say 'topology inferred', a
     // forbidden move is forbidden. A word list cannot separate naming an
     // objective from arguing against one.
     //
-    // So the shipped check is the other way round: the class's public and
-    // private member functions are ENUMERATED, and the set must match exactly.
-    // Any objective goes red no matter what it is called -- which is the
-    // property the word list never had.
+    // So the shipped check is the other way round: EVERY CALLABLE these two
+    // files declare is enumerated, and the set must match exactly. Any
+    // objective goes red no matter what it is called.
+    //
+    // WIDENED 2026-09-16 after PR #9's verifier (defect D2). The first version
+    // scanned only between `class CrossoverSurface` and the first column-0
+    // `};`, so a FREE function declared after the class --
+    //     [[nodiscard]] double bestDelayForLoudestSum(const CrossoverSurface&);
+    // -- passed green while being exported from the header and reachable by
+    // every includer. The claim "any objective goes red whatever it is called"
+    // reached further than its evidence, which is the exact failure
+    // memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md was
+    // written about. The scan now covers the whole header and the .cpp's
+    // non-member definitions.
     const std::vector<std::string> allowed{
-        "setsources",   "setaskedtopology", "setwindow",        "setpendingops",
-        "setmeasuredsum", "highsidedb",     "lowsidedb",        "predictedsumdb",
-        "ghostsumdb",   "measuredsumdb",    "relativephase",    "targetradians",
-        "targetambiguous", "alternativetargetradians",          "marks",
-        "gap",          "pointcount",       "binwidthhz",       "recomputeprediction",
-        "recomputegap",
+        // CrossoverSurface members
+        "setsources", "setaskedtopology", "setwindow", "setpendingops", "setmeasuredsum",
+        "highsidedb", "lowsidedb", "predictedsumdb", "ghostsumdb", "measuredsumdb",
+        "relativephase", "targetradians", "targetambiguous", "alternativetargetradians",
+        "marks", "gap", "pointcount", "binwidthhz", "recomputeprediction", "recomputegap",
+        // file-local helpers in CrossoverSurface.cpp's anonymous namespace
+        "designedsumdbfor",
     };
 
-    std::vector<std::string> declared;
-    bool insideClass = false;
-    for (const auto& line : codeLines(header)) {
-        if (line.find("class crossoversurface") != std::string::npos) {
-            insideClass = true;
-            continue;
+    // In the HEADER every line carrying `(` declares a callable: the structs
+    // hold only fields, and the inline member bodies are one-liners whose only
+    // parenthesis is their own parameter list. In the .cpp only COLUMN-0 lines
+    // do -- a definition's signature starts there and every call site inside a
+    // body is indented. A line whose `=` comes before the `(` is an
+    // initialiser, not a declaration: `const double kCoherentSumDb = 20.0 *
+    // std::log10(2.0);` sits at column 0 and would otherwise be read as
+    // declaring `log10`.
+    const auto declaredCallables = [](const std::vector<std::string>& lines, bool columnZeroOnly) {
+        std::vector<std::string> names;
+        for (const auto& line : lines) {
+            if (columnZeroOnly && (line.empty() || line.front() == ' ' || line.front() == '\t')) {
+                continue;
+            }
+            const auto open = line.find('(');
+            if (open == std::string::npos) continue;
+            const std::string beforeOpen = line.substr(0, open);
+            if (beforeOpen.find('=') != std::string::npos) continue;
+            std::size_t end = open;
+            while (end > 0
+                   && (std::isalnum(static_cast<unsigned char>(line[end - 1])) != 0
+                       || line[end - 1] == '_')) {
+                --end;
+            }
+            if (end == open) continue;  // "(" with no identifier before it
+            names.push_back(line.substr(end, open - end));
         }
-        if (!insideClass) continue;
-        if (line.rfind("};", 0) == 0) break;
-        const auto open = line.find('(');
-        if (open == std::string::npos) continue;
-        std::size_t end = open;
-        while (end > 0
-               && (std::isalnum(static_cast<unsigned char>(line[end - 1])) != 0
-                   || line[end - 1] == '_')) {
-            --end;
+        return names;
+    };
+
+    const std::filesystem::path source = root / "app" / "src" / "view" / "CrossoverSurface.cpp";
+    REQUIRE(std::filesystem::exists(source));
+    std::vector<std::string> declared = declaredCallables(codeLines(header), false);
+    for (const auto& name : declaredCallables(codeLines(source), true)) {
+        // A member DEFINITION in the .cpp repeats a name the header already
+        // declared; only a name that is new to the set is a new callable.
+        if (std::find(declared.begin(), declared.end(), name) == declared.end()) {
+            declared.push_back(name);
         }
-        if (end == open) continue;  // "(" with no identifier before it
-        declared.push_back(line.substr(end, open - end));
     }
 
+    std::string found;
+    for (const auto& name : declared) found += " " + name;
+    INFO("callables declared across CrossoverSurface.{h,cpp}:" << found);
     REQUIRE(declared.size() == allowed.size());
     for (const auto& name : declared) {
         INFO("CrossoverSurface declares " << name);
         CHECK(std::find(allowed.begin(), allowed.end(), name) != allowed.end());
     }
 
-    // I5: and no MEMBER could hold a topology this model worked out for itself.
+    // I5: and nothing in either file could hold a topology this model worked
+    // out for itself.
     const std::vector<std::string> forbidden{ "inferred", "detected", "guessed", "derivedtopo" };
-    for (const auto& line : codeLines(header)) {
-        for (const auto& word : forbidden) {
-            INFO("CrossoverSurface.h: " << line);
-            CHECK(line.find(word) == std::string::npos);
+    for (const auto& file : { header, source }) {
+        for (const auto& line : codeLines(file)) {
+            for (const auto& word : forbidden) {
+                INFO(file.filename().string() << ": " << line);
+                CHECK(line.find(word) == std::string::npos);
+            }
         }
     }
 

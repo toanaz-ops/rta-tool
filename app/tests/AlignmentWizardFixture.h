@@ -7,6 +7,7 @@
 // would be a second thing to keep correct.
 #pragma once
 
+#include "CodeLines.h"
 #include "measure/AlignmentWizard.h"
 #include "trace/Trace.h"
 
@@ -76,6 +77,23 @@ makeCapture(const std::string& id, const std::vector<float>& magnitudeDb,
     REQUIRE(trace.has_value());
     REQUIRE(trace->setPhase(phase));
     REQUIRE(trace->setCoherence(std::vector<float>(magnitudeDb.size(), 1.0f)));
+    return std::move(*trace);
+}
+
+/// A capture with a magnitude and NO phase -- what a single-channel capture
+/// really is (Trace.h's class comment: nothing ever has to invent one). It has
+/// no complex form, so the wizard's fit cannot run on it.
+[[nodiscard]] inline rta::trace::Trace makeCaptureWithoutPhase(const std::string& id,
+                                                               const std::vector<float>& magnitudeDb) {
+    rta::trace::CaptureMeta meta;
+    meta.id = id;
+    meta.sampleRate = kFs;
+    meta.fftSize = kFftSize;
+    meta.channelRoles = "ref:1 meas:2";
+
+    auto trace = rta::trace::Trace::make(meta, magnitudeDb);
+    REQUIRE(trace.has_value());
+    REQUIRE_FALSE(trace->has(rta::trace::Field::Phase));
     return std::move(*trace);
 }
 
@@ -155,30 +173,6 @@ inline void runSequence(rta::measure::AlignmentWizard& wizard,
     pump(engine, 2);
     wizard.poll();
     wizard.submitCapture(std::move(second));
-}
-
-/// Source lines with the comment-only ones removed -- the declaration-shaped
-/// reading test_crossover_topology.cpp's D6 scan established, after a plain
-/// word-grep was measured matching prose on the untouched tree.
-[[nodiscard]] inline std::vector<std::string> codeLines(const std::filesystem::path& file) {
-    std::vector<std::string> lines;
-    std::ifstream stream(file);
-    REQUIRE(stream.good());
-    std::string line;
-    while (std::getline(stream, line)) {
-        const auto first = line.find_first_not_of(" \t");
-        if (first != std::string::npos) {
-            const std::string head = line.substr(first, 2);
-            if (head.rfind("//", 0) == 0 || head.rfind("/*", 0) == 0
-                || head.rfind("*", 0) == 0) {
-                continue;
-            }
-        }
-        std::transform(line.begin(), line.end(), line.begin(),
-                       [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-        lines.push_back(line);
-    }
-    return lines;
 }
 
 }  // namespace rta::test
