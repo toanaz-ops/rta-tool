@@ -115,6 +115,53 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
   (§12.5), plausibility window Locate (DELAY §14.1), tracker on-by-default (§14.3),
   64-output hardware check (OUT §13.1).
 
+  **Cập nhật 2026-09-16 (closeout L7): lane đã BUILT, nên mỗi default giờ có
+  MỘT địa chỉ trong code. Chủ nhân đổi ý thì đổi ở đúng chỗ dưới đây, không phải
+  đi tìm.** Mục này vẫn `[ ]`: default đã chọn và đã ghi tên, chưa ai duyệt.
+
+  | default | giá trị đã ship | ở đâu |
+  |---|---|---|
+  | `G_cap` (EQ §12.2) | `gCapDb = 6.0` | `core/include/rta/eq/EqGainSolve.h:28`, tự nhận là "a labelled judgement" |
+  | `Q_max` (EQ §12.2) | `qMaxBoost = 10.0`, `qMaxCut = 20.0` | `EqGainSolve.h:29-30`; đây là **fallback** khi không có `roomT60Sec` — có T60 thì `qMaxBoost` buộc theo nó (`EqAllocator.h:39-40`) |
+  | N cap (EQ §12.3) | `maxFilters = 6` | `EqGainSolve.h:27` |
+  | NotMinimumPhase → V2 (EQ §12.4) | `DipVerdict::NotMinimumPhase` loại candidate khỏi PLACEMENT, không bao giờ "cứ boost thử" | `core/include/rta/eq/DipClassifier.h:17`, `EqAllocator.h:46` |
+  | −120 dB floor (EQ §12.5) | `kMinPhaseFloorDb = -120.0f`, cùng số với `TransferSnapshot::kMagnitudeFloorDb` | `core/include/rta/dsp/MinimumPhase.h:14` |
+  | plausibility window Locate (DELAY §14.1) | **toàn dải linear** mặc định (`minLag`/`maxLag` = ±`numeric_limits`), và comment nói rõ vì sao "0.5 của đỉnh" KHÔNG được mời làm knob | `core/include/rta/dsp/DelayPolicy.h:67-71` |
+  | tracker on-by-default (DELAY §14.3) | `rta::dsp::ResidualDelayTracker` đã ship ở `core/include/rta/dsp/ResidualTracker.h`, **nhưng chưa có toggle UI nào** — nên "on by default" hiện là một câu về thiết kế, chưa phải một hành vi chạy được | `ResidualTracker.{h,cpp}` |
+  | 64-output hardware check (OUT §13.1) | `kRequestedOutputChannels` đã nâng 2 → `rta::platform::kMaxChannels`, không over-read | Wave 1 OUT, `881862b..16ec825` |
+  | strict solo khi phát (OUT §13.2 / DELAY §14.2) | **ĐÃ TRẢ LỜI** — xem mục "Solo mặc định" ở trên; sequencer/auto-step strict solo, manual toggle additive | `app/src/measure/OutputPolicy.h`, `AlignmentWizard` dùng nó làm default của sequence |
+
+## Từ lane L7-ALIGN (2026-09-16, record `docs/dsp/2026-09-06-l7-alignment-wizard.md`)
+
+*Lane đã BUILT và merge (PR #8 `02bd02a`, PR #9 `6d9a53d`); report
+`docs/reports/007-solvers.md`. Ba mục dưới là thứ lane CỐ Ý không tự quyết.*
+
+- [ ] **Một cặp sub/main THẬT (record §13.2).** Mọi check ở §10 là synthetic.
+  Hai câu chỉ người cầm rack và micro trả lời được: trên một capture phòng
+  THẬT, `R` có còn đủ cao để đọc được intercept không; và ±1 octave có phải cửa
+  sổ đúng cho một cặp 24 dB/oct thật không. Cùng hạng với "EDT floor" và "MTW
+  fill" đang mở.
+- [ ] **Nhánh "unknown" của câu hỏi (c) (record §13.3).** Khi operator KHÔNG
+  biết processor có đảo hay không, bề mặt G18 nay hiện **hai** đường candidate
+  (`targetAmbiguous()` / `alternativeTargetRadians()`) và không có gì chọn giữa
+  chúng. Record đọc rằng "hiện cả hai" KHÔNG phải là suy ra topology — operator
+  vẫn là người chọn tin đường nào và wizard nói rõ thế. Nhưng đây là chỗ mép
+  của ruling "không bao giờ suy topology" gần nhất, nên **chủ nhân nên nhìn
+  `shots/preview-phase.png` trước khi nó đi tiếp** (lệnh dựng ở
+  `docs/HANDOFF.md` mục "L7 CLOSED OUT", phần 4).
+- [ ] **Xác nhận câu chữ của ruling ρ (record §13.4).** Fold-in ρ vào L7-ALIGN
+  được **relay bằng lời**, chưa ai ghi thành câu. Closeout viết câu này; chủ
+  nhân xác nhận nó nói đúng điều đã định: **ρ ship KHÔNG ngưỡng và KHÔNG
+  verdict.** Hai grid độc lập đã chạy và **không đồng ý** — grid A có 2 ô sai
+  dấu trên 43200 (sàn ρ > 0.0640) nhưng một ô ĐÚNG dấu nằm ở 0.0520, tức hai
+  phân bố CHỒNG nhau; grid B không có ô sai dấu nào trên 2000 nên không đặt
+  được sàn nào cả. Đúng thứ
+  `memory/a-threshold-read-off-a-grid-is-that-grids-floor.md` cảnh báo. Nên
+  `rta::ir::relativePolarity` trả một con số bounded, test E6
+  (`core/tests/test_relative_polarity_guard.cpp`) giữ sự VẮNG MẶT đó bằng cấu
+  trúc, và ρ chỉ là một **nhân chứng** hiện bên cạnh `findPolarity` kèm lý do —
+  không bao giờ là phán quyết, và không bao giờ là dấu topology.
+
 ## Chờ một câu của chủ nhân, không phải một quyết định khó
 
 - [x] **`[!]` Merge lane L4a vào `main` — ĐÃ MERGE 2026-08-30**, commit
