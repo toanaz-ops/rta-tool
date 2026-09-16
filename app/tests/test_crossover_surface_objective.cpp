@@ -173,6 +173,27 @@ TEST_CASE("I4/I5: no objective exists, no field could say 'topology inferred', a
         "designedsumdbfor",
     };
 
+    // CONTROLS FOR THE READER ITSELF, driven directly rather than only
+    // end-to-end (round-4, W1). A `//` inside a string literal is a URL, not a
+    // comment; a stripper without literal state ate the closing `";` with the
+    // rest of the line, merged the NEXT declaration into the initialiser unit,
+    // and `callableIn`'s form-1 `=` rule then silenced it -- an exported
+    // objective with the whole suite green. The premise that used to stand here
+    // ("neither file contains a string literal") was enforced by nothing, so it
+    // is replaced by the behaviour it was standing in for.
+    const auto probed = declaredCallables(rta::test::codeTextOf(
+        "inline constexpr const char* kRecordUrl = \"https://example.invalid/docs/dsp\";\n"
+        "\n"
+        "inline double bestDelayForLoudestSum(const CrossoverSurface&, double step) noexcept {\n"
+        "    return step * 2.0;\n"
+        "}\n"));
+    REQUIRE(probed.size() == 1u);
+    CHECK(probed.front() == "bestdelayforloudestsum");
+    // And a real comment is still a comment, so the fix did not simply stop
+    // stripping.
+    CHECK(declaredCallables(rta::test::codeTextOf("// double notAnObjective(int);\n")).empty());
+    CHECK(declaredCallables(rta::test::codeTextOf("/* double alsoNot(int); */\n")).empty());
+
     std::vector<std::string> declared = declaredCallables(codeText(header));
     for (const auto& name : declaredCallables(codeText(source))) {
         // A member DEFINITION in the .cpp repeats a name the header declared;

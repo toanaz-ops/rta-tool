@@ -120,6 +120,35 @@ So the rules, after four turns:
    counter-example that finally broke it was sitting in the documentation of the
    thing it broke.
 
+**A fifth turn, and the last one so far — a stated limitation that nothing
+enforced.** The joined-text reader stripped `//` to end of line with no
+string-literal state, and said so, in a comment that read as inert: *"neither
+file this is used on contains a string literal."* A `//` inside a string is
+overwhelmingly a URL:
+
+```cpp
+inline constexpr const char* kRecordUrl = "https://…/docs/dsp";
+
+inline double bestDelayForLoudestSum(const CrossoverSurface&, double);
+```
+
+The strip ate from that `//` through the closing `";`, so the NEXT declaration —
+at any distance, blank line or not — merged into the `kRecordUrl =` unit, where
+the initialiser rule silenced it. An exported objective, whole suite green.
+
+The premise was true on the day it was written and enforced by nothing. That is
+the fifth rule and it generalises past scans:
+
+5. **A premise no test enforces is not a limitation, it is a hole with a caption.**
+   Either make the code not need it — the reader now tracks `"` and `'` with
+   escapes, and empties literal contents so a `;` inside one cannot move a unit
+   boundary — or turn the premise into an assertion that fails the day it stops
+   being true. Writing it down is the one option that does nothing.
+
+The limitations that remain are named and are real boundaries rather than
+wishes: raw string literals and preprocessor conditionals. The difference is
+that nothing now depends on them being absent.
+
 ## The smaller trap that came with it
 
 A structural scan for "this member is assigned only in these functions"

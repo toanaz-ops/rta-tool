@@ -60,7 +60,8 @@ gh pr view 9 --repo toanaz-ops/rta-tool --json headRefOid --jq .headRefOid
 | `703e777` | — | sửa bảng commit này (bản trước ghi placeholder "(mục này)") |
 | `c3b9579` | — | vòng sửa theo verifier #1 (D1–D6) |
 | `f507f96` | — | vòng sửa theo verifier #2 (R1, R2, N1, N2) |
-| (commit này) | — | vòng sửa theo verifier #3 (V1, V2, V3) |
+| `46c1dd0` | — | vòng sửa theo verifier #3 (V1, V2, V3) |
+| (commit này) | — | vòng sửa theo verifier #4 (W1) |
 
 Task J không đổi một dòng code nào: mọi mutation bên dưới đã revert, và cây đã
 được chứng minh trùng HEAD (`git status --porcelain` rỗng, `git diff HEAD` rỗng,
@@ -107,9 +108,21 @@ dòng thật.
 | V2 | số dòng ở deviation 5 đã cũ | sinh lại bằng `wc -l` tại head cuối, dán nguyên khối |
 | V3 | dòng D3 ở bảng vòng 1 vẫn kể backstop C4062 như thể đang ship, mâu thuẫn với R2 ngay dưới | dòng đó nay trỏ thẳng sang R2 |
 
-Bài học sau ba vòng, đã ghi vào memory: **viết PHẠM VI của một structural check
-vào chính artefact, đừng viết vào văn xuôi quanh nó** — và một scan theo dòng
-thua một phím Enter.
+### Vòng verifier #4 — mọi khẳng định XÁC NHẬN, còn một lỗ: W1
+
+| # | lỗ gì | đã sửa thế nào |
+|---|---|---|
+| W1 | bộ bỏ comment của `codeText` không có trạng thái STRING LITERAL. Một `//` trong chuỗi hầu như luôn là URL: `kRecordUrl = "https://…/docs/dsp";`. Bộ strip ăn từ `//` tới hết dòng, **nuốt luôn `";` đóng chuỗi**, nên khai báo KẾ TIẾP (cách bao xa cũng được, kể cả qua một dòng trống) nhập vào cùng đơn vị với `kRecordUrl =`, và luật initialiser "`=` trước `(`" làm nó câm. Objective export ra header mà cả bộ test vẫn xanh 649/649 | stripper nay theo dõi `"`/`'` với escape `\`; chỉ coi `//` và `/* */` NGOÀI literal là comment, và **rỗng hoá nội dung literal** để một `;` hay `(` bên trong không dời được ranh giới đơn vị. Tiền đề cũ ("hai file này không có string literal") **không có gì thực thi** — nay thay bằng CONTROL chạy được: `codeTextOf` tách khỏi `codeText` để test lái thẳng bằng đoạn mã tổng hợp |
+
+**Tám dạng đều đỏ**, mỗi lần `22 == 21` và tên CÓ trong danh sách in ra: năm dạng
+của vòng 3 (lambda xuống dòng, lambda một dòng, `std::function`, free function,
+static member) cộng ba dạng W1 của vòng 4 (URL cùng dòng, URL dòng trước, URL
+cách một dòng trống). Verifier #4 cũng xác nhận dạng **macro** đã bị bắt sẵn.
+
+Bài học sau bốn vòng, đã ghi vào memory: **viết PHẠM VI của một structural check
+vào chính artefact, đừng viết vào văn xuôi quanh nó**; một scan theo dòng thua
+một phím Enter; và **một tiền đề không ai thực thi không phải là "limitation",
+nó là cái lỗ có chú thích**.
 
 Hai ghi chú nhỏ của verifier #1 cũng đã lấy: scan H1 trước đây tìm chuỗi
 `member_ + " ="` nên `inversion_= x;` (không dấu cách) lọt — nay dùng
@@ -236,9 +249,10 @@ N1). Lần này đánh số giống hệt để lần sau chỉ cần đếm.
 
    Test của task H plan cho MỘT file ≤ 340; ship thành **bốn**
    (256 + 203 + 241 + 358) vì một file duy nhất là 538 dòng. Test của task I
-   plan cho một file ≤ 280; ship thành **hai** (231 + 229) vì scan khai báo
-   qua ba vòng verify đã thành một chủ đề riêng. Fixture dùng chung:
-   `AlignmentWizardFixture.h` 178, `CodeLines.h` 134.
+   plan cho một file ≤ 280; ship thành **hai** — `test_crossover_surface.cpp`
+   **231** và `test_crossover_surface_objective.cpp` **250** — vì scan khai báo
+   qua bốn vòng verify đã thành một chủ đề riêng. Fixture dùng chung:
+   `AlignmentWizardFixture.h` 178, `CodeLines.h` **183**.
 6. **ALIGN-R7 vẫn là proxy chuỗi.** `ReferenceMismatch` so sánh
    `CaptureMeta::channelRoles` string-equal. Muốn structural thì phải thêm
    field vào `CaptureMeta` + bump schema session — ngoài phạm vi lane.

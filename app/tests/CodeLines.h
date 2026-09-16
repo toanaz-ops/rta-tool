@@ -52,40 +52,79 @@ namespace rta::test {
     return lines;
 }
 
-/// A whole file as ONE lowercased string: block and line comments removed, every
-/// run of whitespace collapsed to a single space.
+/// Source text as ONE lowercased string: comments removed, string and character
+/// literals EMPTIED, every run of whitespace collapsed to a single space.
 ///
 /// Added 2026-09-16 after PR #9's round-3 verifier. A LINE-based declaration scan
 /// is defeated by pressing Return: the same namespace-scope lambda split across
-/// two lines evaded a scan that caught it on one. Joining the file first means
+/// two lines evaded a scan that caught it on one. Joining the text first means
 /// the scanner never sees a line at all, so where the author put the newlines
 /// cannot matter.
 ///
-/// Limitation, stated rather than left to be discovered: `//` and `/* */` inside
-/// a string literal would be stripped as comments. Neither file this is used on
-/// contains a string literal, and a scan is a scan, not a preprocessor.
-[[nodiscard]] inline std::string codeText(const std::filesystem::path& file) {
-    std::ifstream stream(file);
-    REQUIRE(stream.good());
-    const std::string raw((std::istreambuf_iterator<char>(stream)),
-                          std::istreambuf_iterator<char>());
-
+/// ## Why the literal state is not a nicety (round-4, W1)
+///
+/// The first version had none, and carried the premise "neither file this is
+/// used on contains a string literal" as though that made it safe. It did not,
+/// and the cost was larger than the premise implied. A `//` inside a string is
+/// overwhelmingly a URL:
+///
+///     inline constexpr const char* kRecordUrl = "https://…/docs/dsp";
+///     inline double bestDelayForLoudestSum(const CrossoverSurface&, double);
+///
+/// A stripper with no literal state eats from that `//` to the end of the line
+/// -- taking the closing `";` with it -- so the NEXT declaration, at any
+/// distance, merges into the `kRecordUrl =` unit, where an initialiser rule
+/// looking for `=` before `(` silences it. An exported objective then sits in
+/// the header with the whole suite green. Nothing enforced the premise; the only
+/// thing standing between the tree and that was that nobody had added a URL yet,
+/// which is a fact about the tree and not a property of the scan.
+///
+/// A literal's CONTENTS are dropped rather than kept, so a `;` or a `(` inside
+/// one cannot shift the unit boundaries either. The delimiters stay, so
+/// `k = ""` still reads as the initialiser it is.
+///
+/// Remaining limitation, and this one is a real boundary rather than a wish: raw
+/// string literals (`R"(...)"`) are not handled. Neither is a preprocessor
+/// conditional -- both arms are read. A scan is a scan, not a preprocessor.
+[[nodiscard]] inline std::string codeTextOf(const std::string& raw) {
     std::string stripped;
     stripped.reserve(raw.size());
+    bool inString = false;
+    bool inChar = false;
+
     for (std::size_t i = 0; i < raw.size(); ++i) {
-        if (raw[i] == '/' && i + 1 < raw.size() && raw[i + 1] == '/') {
+        const char ch = raw[i];
+        if (inString || inChar) {
+            if (ch == '\\') {
+                ++i;  // an escaped character cannot close the literal
+                continue;
+            }
+            if ((inString && ch == '"') || (inChar && ch == '\'')) {
+                inString = false;
+                inChar = false;
+                stripped.push_back(ch);
+            }
+            continue;  // contents dropped
+        }
+        if (ch == '/' && i + 1 < raw.size() && raw[i + 1] == '/') {
             while (i < raw.size() && raw[i] != '\n') ++i;
             stripped.push_back(' ');
             continue;
         }
-        if (raw[i] == '/' && i + 1 < raw.size() && raw[i + 1] == '*') {
+        if (ch == '/' && i + 1 < raw.size() && raw[i + 1] == '*') {
             i += 2;
             while (i + 1 < raw.size() && !(raw[i] == '*' && raw[i + 1] == '/')) ++i;
             ++i;
             stripped.push_back(' ');
             continue;
         }
-        stripped.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(raw[i]))));
+        if (ch == '"' || ch == '\'') {
+            inString = ch == '"';
+            inChar = ch == '\'';
+            stripped.push_back(ch);
+            continue;
+        }
+        stripped.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
     }
 
     std::string collapsed;
@@ -101,6 +140,16 @@ namespace rta::test {
         collapsed.push_back(ch);
     }
     return collapsed;
+}
+
+/// `codeTextOf` over a whole file. Split so the literal handling above can be
+/// driven directly from a test with a synthetic snippet, rather than only
+/// end-to-end through a mutation of a real source file.
+[[nodiscard]] inline std::string codeText(const std::filesystem::path& file) {
+    std::ifstream stream(file);
+    REQUIRE(stream.good());
+    return codeTextOf(std::string((std::istreambuf_iterator<char>(stream)),
+                                  std::istreambuf_iterator<char>()));
 }
 
 /// True when `line` ASSIGNS to `member` -- `x_ = v`, `x_= v`, `x_ =v` alike --
