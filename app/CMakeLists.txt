@@ -219,6 +219,16 @@ target_sources(rtatool_snapshot PRIVATE
     src/measure/AnalyserPublish.cpp
     src/measure/SyntheticSnapshot.cpp
     src/measure/PhaseUnwrap.cpp
+    # CrossoverSurface.cpp + CrossoverTopology.cpp + VirtualTrace.cpp: lane
+    # L7-ALIGN task I. PhaseAlignPreview.cpp is no longer a canned-data mockup
+    # -- it draws a real rta::view::CrossoverSurface over a synthetic BW4 pair
+    # -- and this target names every source ONE BY ONE, with no glob. All three
+    # must be here or preview-phase.png fails to link with undefined symbols
+    # (plan task I "Files", verifier defect 6; carried into Wave 3b by PR #8's
+    # "take to the orchestrator" list, item 6).
+    src/view/CrossoverSurface.cpp
+    src/measure/CrossoverTopology.cpp
+    src/trace/VirtualTrace.cpp
     # main-live.png additionally renders the real MainComponent in synthetic
     # mode (T10/T11's own composition root, plan §0 item 4's "no hardware at
     # all, on CI, and offscreen" made literal) -- which needs the live-device

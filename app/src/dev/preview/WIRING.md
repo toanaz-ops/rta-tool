@@ -6,12 +6,25 @@ mislead a third reader.**
 The four preview sources are in the build:
 
 ```
-app/CMakeLists.txt:117-120
-    src/dev/preview/PreviewFurniture.cpp
-    src/dev/preview/TransferFunctionPreview.cpp
-    src/dev/preview/TargetMatchPreview.cpp
-    src/dev/preview/PhaseAlignPreview.cpp
+app/CMakeLists.txt:170-173        (was :117-120 when this note was written;
+    src/dev/preview/PreviewFurniture.cpp         the file has grown since, and
+    src/dev/preview/TransferFunctionPreview.cpp  a line number in a doc is a
+    src/dev/preview/TargetMatchPreview.cpp       claim with an expiry date --
+    src/dev/preview/PhaseAlignPreview.cpp        exactly this file's own point)
 ```
+
+**Updated 2026-09-16, L7-ALIGN task I.** `PhaseAlignPreview.cpp` is no longer a
+canned-data mockup: it builds a real `rta::view::CrossoverSurface`. That target
+names every source one by one — there is no glob — so three more entries had to
+go in beside it or `preview-phase.png` fails to LINK:
+
+```
+    src/view/CrossoverSurface.cpp
+    src/measure/CrossoverTopology.cpp
+    src/trace/VirtualTrace.cpp
+```
+
+Anyone repointing another specimen at a real model owes the same edit.
 
 and `rtatool_snapshot` renders them. Verified 2026-08-28: a run of
 
