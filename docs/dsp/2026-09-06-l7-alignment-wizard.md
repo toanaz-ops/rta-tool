@@ -267,6 +267,33 @@ the sub's capture to pick the cycle:** PHAT on a band-limited signal is the
 one weakness its own record names (`dual-fft.md` §4), and a narrowband
 correlation peaks every `1/f_c` — the same ambiguity, moved.
 
+**AMENDED 2026-09-16 by the Wave 3a build (branch `l7/align-wave3a-core`, tasks
+A–F; case C5b in `core/tests/test_crossover_band_candidates.cpp`). The competing
+delays this fit returns do NOT sit at `τ* ± n/f̄`, and the paragraph above should
+not be read as saying they do.** The fit maximises
+
+    |S(τ)| = | Σ_k w_k R_k e^{−j2πf_kτ} |
+
+Write `f_k = f̄ + δ_k`. The mean factors out as `e^{−j2πf̄τ}`, a rotation of
+modulus 1, which `|·|` discards — so **`|S(τ)|` depends on the SPREAD `δ_k` alone
+and `f̄` cannot appear in the answer.** What is left is the Fourier transform of
+the weight, so for a flat N-bin window the envelope is the Dirichlet kernel and
+its local maxima sit near `(m + ½)/(NΔ)` — 8.26 ms apart for 121 bins of 1 Hz,
+not the 10.0 ms `1/f̄` would give.
+
+The two explanations differ by only 21% on this record's own 40–160 Hz fixture,
+which no tolerance distinguishes, so C5b holds the WIDTH and moves the CENTRE:
+40–160 Hz and 240–360 Hz are both 121 bins of 1 Hz, and the first competitor
+measures **0.0118209 s in both** while `1/f̄` changes from 10.0 ms to 3.33 ms.
+
+The `1/f_c` ambiguity is real — for a **time-domain correlation of a narrowband
+signal**, which is a different estimator. The sentence above imported that
+intuition into a complex band fit over a contiguous band. What survives
+unchanged is the conclusion the paragraph was written for: the fit cannot
+resolve the cycle on its own, the integer comes from an IR arrival or from the
+operator, and `findDelayPhat` is not used to pick it. Only the SPACING was
+wrong. See `memory/an-ambiguity-spacing-comes-from-the-bands-width.md`.
+
 **The window width is a parameter, not a constant.** ±1 octave about the
 spectral crossover is the proposed default, chosen because the cross-term
 weight has already fallen by 20 dB or more there for any 4th-order pair. It
@@ -418,6 +445,40 @@ the *same* question: for a same-system comparison ρ's sign **replaces**
 absolute reading ρ tells the UI whether `inverted` is a witness worth showing
 beside `findPolarity`. When two eligible signals disagree the UI shows both
 with their reasons and asks; it never picks silently (research D7).
+
+**AMENDED 2026-09-16 by the Wave 3a build (case E8 in
+`core/tests/test_relative_polarity.cpp`): ρ across a BW2 crossover is LOW, not
+"high".** Measured on a correctly wired BW2 pair at fc = 100 Hz, 48 kHz:
+**ρ = 0.0676**, sign negative, lag 0.
+
+The closed form says why, and the test asserts it rather than the measurement.
+`arg(H) − arg(L)` is 180° at every frequency, so `Re(L·conj(H)) = −|L||H|` at
+every bin and, by Parseval,
+
+    ρ = Σ_k w_k |L_k||H_k| / √( Σ_k w_k |L_k|² · Σ_k w_k |H_k|² )
+
+which is a Cauchy–Schwarz ratio between two magnitude responses that barely
+OVERLAP: `|L|` lives below 100 Hz while `|H|` spans 100 Hz to 24 kHz. The ratio
+is of order `√(fc/(fs/2)) = √(100/24000) = 0.065`. Computed from
+`cascadeResponse` in the fixture it predicts **0.0675611** against a measured
+**0.0675611**.
+
+That six-figure agreement is a property of THIS repo’s arithmetic, not a
+portable invariant, and should not be read as one. Both sides of the comparison
+run through `rta::dsp::BiquadCascade` in double precision over the same
+coefficients, so they agree to nearly the last bit. An INDEPENDENT
+implementation does not: a float32 Direct-Form-I cascade of the same filters
+gives **0.0675563**, agreeing to about four significant figures. What the
+closed form pins is the VALUE — order `√(fc/(fs/2))`, i.e. 0.0676 and not
+“high” — and the test’s tolerance is set at **1e-3** for exactly that reason,
+which is the right width for a claim about the physics rather than about one
+cascade’s rounding.
+
+**This strengthens the paragraph's conclusion rather than weakening it.** Where
+the text above gives one reason ρ may not arbitrate the wizard's question (the
+sign is confidently wrong), there are two: across a crossover ρ is **both low
+AND wrong**. Nothing else in §7 changes — ρ still replaces `inverted` for a
+same-system comparison, and the §8 survey still ships no threshold.
 
 **One primitive, not two.** L7-DELAY's open question 6 asks whether its
 "first plausible peak" and L4a's arrival rule should share code. ρ's window

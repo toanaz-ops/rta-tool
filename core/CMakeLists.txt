@@ -13,6 +13,8 @@ add_library(rta_core STATIC
     src/dsp/BandWeights.cpp
     src/dsp/BiquadResponse.cpp
     src/dsp/ButterworthDesign.cpp
+    src/dsp/CrossoverBandFit.cpp
+    src/dsp/CrossoverFit.cpp
     src/dsp/DelayFinder.cpp
     src/dsp/DelayPolicy.cpp
     src/dsp/DualFftEngine.cpp
@@ -32,6 +34,9 @@ add_library(rta_core STATIC
     src/dsp/SpatialMtw.cpp
     src/dsp/SpectrumEngine.cpp
     src/dsp/TransferEstimator.cpp
+    # VirtualProcessor.cpp: lane L7-ALIGN task A -- the five G11 ops (record
+    # docs/dsp/2026-09-06-l7-alignment-wizard.md Sec.5).
+    src/dsp/VirtualProcessor.cpp
     src/dsp/Weighting.cpp
     src/dsp/Window.cpp
     src/eq/BiquadDesign.cpp
@@ -49,6 +54,7 @@ add_library(rta_core STATIC
     src/ir/DecayLundeby.cpp
     src/ir/IrSpectrum.cpp
     src/ir/Polarity.cpp
+    src/ir/RelativePolarity.cpp
     src/meter/Detector.cpp
     src/meter/Leq.cpp
 )

@@ -5,6 +5,106 @@
 
 ---
 
+# 2026-09-16 — **L7-ALIGN Wave 3a (tasks A–F) XONG — nhánh `l7/align-wave3a-core`, PR mở, CHƯA merge**
+
+**Đọc mục này trước tiên nếu bạn làm tiếp Wave 3b (tasks G–J).** Nửa đầu của
+plan `docs/plans/2026-09-15-L7-align-impl-plan.md` đã xây và verify cục bộ trên
+worktree riêng, nhánh từ `a2de06e`. **Chưa merge. GitHub Actions đang bị chặn ở
+mức tài khoản (billing), nên bằng chứng là hai config chạy cục bộ, không phải
+CI xanh** — verifier phải đo lại, đừng tin bảng dưới.
+
+## Baseline đo được (dán từ lệnh, đừng chép số cũ)
+
+Đo trên **cây chưa sửa** `a2de06e` TRƯỚC dòng code đầu tiên, rồi đo lại trên
+tip nhánh. Generator Visual Studio 18 2026, MSVC 14.51, JUCE qua `RTA_JUCE_PATH`.
+`build-align` (OFF) và `build-align-on` (ON):
+
+```
+TRƯỚC (a2de06e):  ctest OFF -> 591/591, 0 failed     ctest ON -> 659/659, 0 failed
+SAU  (tip nhánh):  ctest OFF -> 624/624, 0 failed             ctest ON -> 692/692, 0 failed
+warning C trong cả bốn build log -> 0
+```
+
+Chú ý: ON baseline **659**, không phải 632 của mục 2026-09-15 và không phải 597
+của HANDOFF cũ. Cả hai config đều tăng vì `app/tests` được `add_subdirectory`
+NGOÀI guard `RTA_BUILD_APP`.
+
+## Sáu commit, mỗi task một commit
+
+| commit | task | nội dung |
+|---|---|---|
+| `37d8e5b` | A | năm op G11 trong `rta::dsp` — `applyDelay/Polarity/Gain/Biquads`, `sumResponses` với `summationTrust` (KHÔNG tên `coherence`) |
+| `1e5bbc4` | B | `spectralCrossover` — giao điểm \|H_A\|=\|H_B\| có gate coherence, nội suy hai điểm, liệt kê MỌI giao điểm |
+| `f6b9e52` | C | `crossoverBandFit` — tìm τ trên miền phức, intercept là circular mean, R bounded, trọng số là cross-term |
+| `8d8e733` | D | `expectedOffset` trong `app/src/measure/` — bảng §3 dưới dạng MỘT closed form |
+| `5a05904` | E | `relativePolarity` trong `rta::ir` — ρ bounded, KHÔNG verdict |
+| `2659ee7` | F | hai script khảo sát ρ, **không chốt số nào** |
+| `e1419a4` | docs | hai memory + dòng roadmap |
+| `c520310` | test | tách `test_virtual_processor.cpp` (395/400) thành hai file |
+
+## Ba điều load-bearing phiên sau KHÔNG suy diễn lại
+
+1. **Bảng §3 giữ NGUYÊN, và không đọc dấu topology từ BẤT KỲ đỉnh tương quan
+   nào.** Ruling ở `docs/research/2026-09-15-l7-align-order4-probe.md` §8 (PR #3
+   đã merge). `expectedOffset` không dùng `family` trong số học: LR-N là BW-(N/2)
+   nối tiếp chính nó nên kế thừa identity với CÙNG N. Cái mà family đổi là
+   DESIGNED SUM, không phải offset.
+2. **`summationTrust` không được đổi tên thành `coherence`.** Tổng không phải
+   ước lượng mà cross-spectrum định nghĩa; đặt tên `coherence` sẽ thêm người ghi
+   thứ hai bên cạnh `makeSnapshot()` và guard `coherence_gate_is_not_bypassed`
+   phải miễn trừ thay vì đúng-do-cấu-trúc.
+3. **ρ ship KHÔNG ngưỡng.** Hai grid đã chạy và **không đồng ý**: grid A có 2 ô
+   sai dấu trên 43200 (sàn ρ > 0.0640, nhưng một ô ĐÚNG dấu nằm ở 0.0520 — hai
+   phân bố CHỒNG nhau), grid B không có ô sai dấu nào trên 2000 nên không đặt
+   được sàn. Đó chính là kết quả `memory/a-threshold-read-off-a-grid-is-that-grids-floor.md`
+   cảnh báo. Test E6 (`test_relative_polarity_guard.cpp`) giữ điều này bằng cấu
+   trúc, có positive control trên `DelayPolicy.h`.
+
+## VIỆC ĐẦU TIÊN của Wave 3b (tasks G–J)
+
+- **`app/CMakeLists.txt` dòng `target_sources(rtatool_snapshot PRIVATE ...)` tại
+  `:169` PHẢI thêm `src/measure/CrossoverTopology.cpp` VÀ
+  `src/view/CrossoverSurface.cpp`.** Plan giao việc này cho task D; Wave 3a CỐ Ý
+  không làm, vì ship một source không ai tham chiếu vào target không dùng nó thì
+  tệ hơn là ghi lại yêu cầu. Không có cả hai → I7 link lỗi undefined symbol
+  (verifier defect 6).
+- Task G (`VirtualTrace`) cần A; task H cần B, C, D, E, G; task I cần D, G, H.
+- `RTA_REPO_ROOT` đã có sẵn ở CẢ HAI test target (`rta_core_tests`,
+  `rtatool_analysis_tests`) — dùng lại cho các grep cấu trúc của H1/I3/I4 thay vì
+  viết grep trong tài liệu.
+
+## Ba deviation phải mang lên orchestrator (record cần sửa)
+
+1. **Record §4 sai về khoảng cách các ứng viên τ.** Không phải `τ* ± n/f̄`. `|S(τ)|`
+   là một magnitude nên f̄ triệt tiêu thành một phép quay toàn cục; khoảng cách do
+   BỀ RỘNG dải quyết định, `1/(N·Δ)`. Đo: cửa sổ 40–160 Hz và 240–360 Hz (cùng 121
+   bin 1 Hz, f̄ 100 vs 300) cho ứng viên đầu ở **0.0118209 s ở cả hai**, trong khi
+   `1/f̄` đổi gấp ba.
+2. **Record §7 sai khi nói ρ "cao" qua một crossover BW2.** ρ **thấp**: đo 0.0676,
+   và closed form Parseval dự đoán 0.0675611 — trùng sáu chữ số. Lý do: `|L|` và
+   `|H|` gần như không CHỒNG dải. Điều này LÀM MẠNH kết luận của record chứ không
+   yếu đi: qua crossover ρ vừa thấp vừa sai dấu.
+3. **ALIGN-R1 + tolerance kế thừa.** 1e-12 của record là thuộc tính của fixture
+   Butterworth-SOS nó đo trên. Xem memory mới
+   `a-tolerance-inherited-from-a-plan-is-that-plans-fixture.md`.
+
+Ngoài ra: plan B1 (hằng 0.7 / 12.4 không biểu diễn được trong `float`), plan C6
+(τ tự do trượt tới 2.96e-5 s), plan D6 (word-grep bắt cả prose sẵn có trên cây
+sạch) — chi tiết và số đo nằm trong commit message của từng task.
+
+## Cạm bẫy đã trả giá
+
+- **Xoá exe test của CẢ HAI target trước mỗi lần build mutation.** Revert
+  mutation của task D rồi chỉ build lại `rta_core_tests` → `rtatool_analysis_tests`
+  vẫn là bản mutate và ctest đỏ hai test ở task E.
+  (`memory/mutation-testing-needs-the-exe-deleted-first.md`)
+- `check_no_std_atomic_shared_ptr.cmake` re-lex file nó quét như chuỗi CMake, nên
+  `'\0'` trong test làm nó chết. **ĐÃ FIX trên `main` tại `f93d0dd`** (PR #7) —
+  nhánh này ĐÃ merge `origin/main` (`be52a62`) vào nên mang luôn bản vá.
+  Cách viết `substr` trong `test_crossover_topology.cpp` giữ nguyên: không
+  còn bắt buộc, nhưng cũng không hại và dễ đọc hơn một escape NUL.
+---
+
 # 2026-09-16 — **Quy trình GitHub-oriented đã áp dụng; năm PR đã MERGE vào `origin/main` tại `a2de06e`**
 
 **Đọc mục này trước tiên.** Chủ nhân ra lệnh 2026-09-15: quản lý commit theo
