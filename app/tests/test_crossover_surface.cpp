@@ -252,16 +252,11 @@ TEST_CASE("I4/I5: no objective exists, no field could say 'topology inferred', a
     // files declare is enumerated, and the set must match exactly. Any
     // objective goes red no matter what it is called.
     //
-    // WIDENED 2026-09-16 after PR #9's verifier (defect D2). The first version
-    // scanned only between `class CrossoverSurface` and the first column-0
-    // `};`, so a FREE function declared after the class --
-    //     [[nodiscard]] double bestDelayForLoudestSum(const CrossoverSurface&);
-    // -- passed green while being exported from the header and reachable by
-    // every includer. The claim "any objective goes red whatever it is called"
-    // reached further than its evidence, which is the exact failure
-    // memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md was
-    // written about. The scan now covers the whole header and the .cpp's
-    // non-member definitions.
+    // WIDENED TWICE, 2026-09-16, by PR #9's two verifiers: first it scanned only
+    // the class body (a free function after the class evaded it), then it
+    // skipped `=`-bearing lines (a lambda-object evaded it). Both are recorded
+    // in memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md. The
+    // scope below is the answer to both: state what the scan reads, in the scan.
     const std::vector<std::string> allowed{
         // CrossoverSurface members
         "setsources", "setaskedtopology", "setwindow", "setpendingops", "setmeasuredsum",
@@ -272,32 +267,86 @@ TEST_CASE("I4/I5: no objective exists, no field could say 'topology inferred', a
         "designedsumdbfor",
     };
 
-    // In the HEADER every line carrying `(` declares a callable: the structs
-    // hold only fields, and the inline member bodies are one-liners whose only
-    // parenthesis is their own parameter list. In the .cpp only COLUMN-0 lines
-    // do -- a definition's signature starts there and every call site inside a
-    // body is indented. A line whose `=` comes before the `(` is an
-    // initialiser, not a declaration: `const double kCoherentSumDb = 20.0 *
-    // std::log10(2.0);` sits at column 0 and would otherwise be read as
-    // declaring `log10`.
+    // THE SCAN'S SCOPE, stated once and no wider (round-2 verifier). It reads
+    // two forms in these two files:
+    //
+    //   1. `... name(` -- a member, free, static or inline function, where the
+    //      identifier immediately precedes the parameter list. In the HEADER
+    //      every line carrying `(` is one of these: the structs hold only
+    //      fields, and the inline member bodies are one-liners whose only
+    //      parenthesis is their own parameter list. In the .cpp only COLUMN-0
+    //      lines are -- a definition's signature starts there, every call site
+    //      inside a body is indented. A line whose `=` comes before the `(` is
+    //      an initialiser, not a declaration: `const double kCoherentSumDb =
+    //      20.0 * std::log10(2.0);` sits at column 0 and would otherwise read
+    //      as declaring `log10`.
+    //
+    //   2. `... name = [` / `= +[` / any `std::function<...> name =` -- a
+    //      callable bound to an OBJECT. Added 2026-09-16: rule 1's initialiser
+    //      skip is exactly the shape of
+    //          inline constexpr auto bestDelayForLoudestSum =
+    //              [](const CrossoverSurface&, double step) noexcept { ... };
+    //      and the round-2 verifier put that in the header and watched all 649
+    //      OFF tests stay green. Second widening, same lesson: a structural
+    //      check has a scope and the sentence must not outrun it.
+    //
+    // OUT OF SCOPE, by design and stated so rather than left implied: a macro,
+    // a callable introduced through a typedef'd function pointer, and anything
+    // in a translation unit other than these two files. The lane's other
+    // guards -- I5's word scan, the wizard's own H1/H10 scans -- do not cover
+    // those either. What this case claims is exactly: no NEW callable can be
+    // declared in CrossoverSurface.{h,cpp} in one of the two forms above
+    // without being added to the list, and an objective has to be one of them
+    // to be reachable from an includer.
     const auto declaredCallables = [](const std::vector<std::string>& lines, bool columnZeroOnly) {
-        std::vector<std::string> names;
-        for (const auto& line : lines) {
-            if (columnZeroOnly && (line.empty() || line.front() == ' ' || line.front() == '\t')) {
-                continue;
-            }
-            const auto open = line.find('(');
-            if (open == std::string::npos) continue;
-            const std::string beforeOpen = line.substr(0, open);
-            if (beforeOpen.find('=') != std::string::npos) continue;
-            std::size_t end = open;
+        const auto identifierBefore = [&lines](const std::string& line, std::size_t at) {
+            (void) lines;
+            std::size_t end = at;
+            while (end > 0 && (line[end - 1] == ' ' || line[end - 1] == '\t')) --end;
+            const std::size_t last = end;
             while (end > 0
                    && (std::isalnum(static_cast<unsigned char>(line[end - 1])) != 0
                        || line[end - 1] == '_')) {
                 --end;
             }
-            if (end == open) continue;  // "(" with no identifier before it
-            names.push_back(line.substr(end, open - end));
+            return line.substr(end, last - end);
+        };
+
+        std::vector<std::string> names;
+        for (const auto& line : lines) {
+            if (columnZeroOnly && (line.empty() || line.front() == ' ' || line.front() == '\t')) {
+                continue;
+            }
+
+            // Form 2 first: it is the one whose `=` would otherwise silence it.
+            bool boundToObject = false;
+            for (std::size_t i = 0; i + 1 < line.size(); ++i) {
+                if (line[i] != '=') continue;
+                if (i + 1 < line.size() && line[i + 1] == '=') continue;   // a comparison
+                if (i > 0 && (line[i - 1] == '!' || line[i - 1] == '<' || line[i - 1] == '>'
+                              || line[i - 1] == '=')) {
+                    continue;
+                }
+                std::size_t j = i + 1;
+                while (j < line.size() && (line[j] == ' ' || line[j] == '\t')) ++j;
+                if (j < line.size() && line[j] == '+') ++j;  // `= +[]{...}`
+                const bool assignsLambda = j < line.size() && line[j] == '[';
+                if (!assignsLambda && line.find("std::function") == std::string::npos) continue;
+                const std::string name = identifierBefore(line, i);
+                if (name.empty()) continue;
+                names.push_back(name);
+                boundToObject = true;
+                break;
+            }
+            if (boundToObject) continue;
+
+            const auto open = line.find('(');
+            if (open == std::string::npos) continue;
+            const std::string beforeOpen = line.substr(0, open);
+            if (beforeOpen.find('=') != std::string::npos) continue;
+            const std::string name = identifierBefore(line, open);
+            if (name.empty()) continue;
+            names.push_back(name);
         }
         return names;
     };

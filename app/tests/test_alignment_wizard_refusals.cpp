@@ -45,13 +45,28 @@ TEST_CASE("H4b: EVERY named refusal is reachable, and each one is reached here",
     // test. "Named refusals, each named, none silent" was demonstrated for six
     // of nine, and TraceNotUsable is a LIVE branch (a capture with no phase).
     //
-    // `refusalName` has no `default:` label on purpose. A tenth enumerator then
-    // makes MSVC emit C4062 at /W4, and this lane's acceptance gate is zero
-    // `warning C` -- so a refusal added without a test cannot reach main
-    // quietly. That is the structural half; the set check below is the
-    // behavioural half.
+    // WHAT STOPS A TENTH REFUSAL LANDING UNTESTED -- corrected 2026-09-16 after
+    // the round-2 verifier REFUTED the first answer. That answer was "this
+    // switch has no `default:`, so a tenth enumerator makes MSVC emit C4062 at
+    // /W4 and the zero-warning gate catches it". Measured on MSVC 14.51: C4062
+    // is OFF by default and `/W4` does not turn it on (`-W4` silent, `-W4
+    // -w14062` warns), so a tenth enumerator built clean and this case passed.
+    // A guard that is documented and absent is worse than none.
+    //
+    // What replaces it needs no warning flag and behaves identically on all
+    // three CI operating systems: `WizardRefusal::Count` is a sentinel, and a
+    // new enumerator goes ABOVE it. That moves `kWizardRefusalCount`, and the
+    // check at the end of this case -- `seen.size() == kWizardRefusalCount` --
+    // then goes red until the new refusal is actually driven and named here.
+    //
+    // The switch still has no `default:`, which is worth keeping for a second
+    // reason: GCC and Clang's -Wall DOES include -Wswitch, so on the two CI
+    // runners that are not Windows an unhandled enumerator is a build warning
+    // as well. It is the backstop on two platforms out of three, and the
+    // sentinel is the one that works on all three.
     const auto refusalName = [](WizardRefusal refusal) -> std::string {
         switch (refusal) {
+            case WizardRefusal::Count: return "Count (not a refusal)";
             case WizardRefusal::None: return "None";
             case WizardRefusal::MissingAnswer: return "MissingAnswer";
             case WizardRefusal::EngineNotQuiescent: return "EngineNotQuiescent";
@@ -177,9 +192,12 @@ TEST_CASE("H4b: EVERY named refusal is reachable, and each one is reached here",
 
         std::string sawList;
         for (const auto& name : seen) sawList += " " + name;
-        INFO("refusals observed:" << sawList);
+        INFO("refusals observed:" << sawList << " (against kWizardRefusalCount = "
+                                  << rta::measure::kWizardRefusalCount << ")");
         CHECK(seen.count("UNNAMED") == 0u);
-        CHECK(seen.size() == 9u);
+        // The sentinel is a count, never an answer: nothing may report it.
+        CHECK(seen.count("Count (not a refusal)") == 0u);
+        CHECK(seen.size() == rta::measure::kWizardRefusalCount);
     }
 }
 

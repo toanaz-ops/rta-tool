@@ -69,7 +69,22 @@ enum class WizardRefusal {
     FftSizeMismatch,
     ReferenceMismatch,    ///< ALIGN-R7: `channelRoles` string-compared, see below
     TraceNotUsable,       ///< a capture with no phase has no complex form to fit
+
+    /// NOT A REFUSAL. The count, and the reason a new refusal cannot arrive
+    /// untested: put a new enumerator ABOVE this line and `Count` moves, which
+    /// makes test_alignment_wizard_refusals.cpp's `seen.size() ==
+    /// kWizardRefusalCount` go red until the new one is driven and named.
+    ///
+    /// This replaces a compiler backstop that was claimed and does not exist:
+    /// C4062 (an unhandled enumerator in a `switch` with no `default:`) is OFF
+    /// by default on MSVC and `/W4` does not turn it on -- measured on 14.51 by
+    /// PR #9's round-2 verifier, `-W4` silent, `-W4 -w14062` warning. A count
+    /// the test compares needs no warning flag and behaves the same on all
+    /// three CI operating systems.
+    Count,
 };
+
+inline constexpr std::size_t kWizardRefusalCount = static_cast<std::size_t>(WizardRefusal::Count);
 
 /// What a polarity signal is allowed to be.
 ///

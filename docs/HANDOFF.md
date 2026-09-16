@@ -57,6 +57,9 @@ gh pr view 9 --repo toanaz-ops/rta-tool --json headRefOid --jq .headRefOid
 | `b30901f` | I | `CrossoverSurface` (G18) + `PhaseAlignPreview` trỏ vào model thật; snapshot ON đọc được |
 | `60cc605` | J | mục HANDOFF này, hàng roadmap, và sửa tại chỗ dòng acceptance I4 của plan |
 | `e5b1c84` | — | memory `a-prescribed-mutation-is-not-proof-the-check-catches-it.md` + index |
+| `703e777` | — | sửa bảng commit này (bản trước ghi placeholder "(mục này)") |
+| `c3b9579` | — | vòng sửa theo verifier #1 (D1–D6) |
+| (commit này) | — | vòng sửa theo verifier #2 (R1, R2, N1, N2) |
 
 Task J không đổi một dòng code nào: mọi mutation bên dưới đã revert, và cây đã
 được chứng minh trùng HEAD (`git status --porcelain` rỗng, `git diff HEAD` rỗng,
@@ -80,7 +83,22 @@ của chính nó**, đúng thứ mà memory mới của lane này nói về.
 | D5 | vượt budget per-file của plan mà không khai | khai đủ bốn chỗ ở mục "Deviation" dưới, và trong PR body |
 | D6 | HANDOFF ghi head sha sai | bỏ hẳn hash khỏi HANDOFF, thay bằng lệnh `gh pr view`; hai danh sách deviation (PR 8 mục vs HANDOFF 5 mục) nay khớp 1–1 ở tám |
 
-Hai ghi chú nhỏ của verifier cũng đã lấy: scan H1 trước đây tìm chuỗi
+### Vòng verifier #2 — hai khẳng định bị BÁC, ba lỗi doc
+
+| # | bác cái gì | đã sửa thế nào |
+|---|---|---|
+| R1 | whitelist I4 (bản đã mở rộng) vẫn **không bắt** một callable gán vào OBJECT: `inline constexpr auto bestDelayForLoudestSum = [](const CrossoverSurface&, double) noexcept {...};` ở namespace scope trong header — vì luật "bỏ qua dòng có `=` trước `(`" chính là hình dạng đó. Toàn bộ 649 test OFF vẫn xanh | scan đọc thêm dạng 2 (`= [`, `= +[`, `std::function<...> name =`); đỏ đúng lý do: `22 == 21` với `bestdelayforloudestsum` CÓ trong danh sách in ra (lần verifier thử trước, nó đỏ vì THÂN lambda chứa lời gọi — đỏ nhầm lý do). **Phạm vi scan nay viết thẳng trong test**, gồm cả cái nó KHÔNG phủ (macro, TU khác) |
+| R2 | backstop C4062 **KHÔNG TỒN TẠI**: MSVC 14.51 tắt C4062 mặc định, `/W4` không bật (`-W4` im, `-W4 -w14062` mới kêu). Verifier thêm enumerator thứ mười: build sạch, H4b vẫn xanh | bỏ hẳn câu đó; thay bằng sentinel `WizardRefusal::Count` + `kWizardRefusalCount`, H4b so `seen.size()` với nó. Đỏ: `9 == 10`. Không phụ thuộc cờ cảnh báo. Switch vẫn không `default:` vì `-Wswitch` của GCC/Clang CÓ kêu — backstop trên 2/3 OS, sentinel trên cả 3 |
+| N1 | hai danh sách deviation lệch 11 vs 8 | đánh số 0–10 ở cả hai bản |
+| N2 | mục "người chạy được gì" còn 648/716 trong khi đầu mục ghi 649/717 | sửa, và ghi rõ vì sao |
+
+Verifier #2 cũng đúng khi nói **bằng chứng dán trong reply vòng 1 là số dòng
+CŨ** (220/222/226 thay vì 196/198/202, và `test_alignment_wizard.cpp` thay vì
+`test_alignment_wizard_refusals.cpp`): kết luận đúng nhưng output không sinh ra
+trên cây mà reply đặt tên. Vòng này chạy lại mọi mutation trên tip và dán số
+dòng thật.
+
+Hai ghi chú nhỏ của verifier #1 cũng đã lấy: scan H1 trước đây tìm chuỗi
 `member_ + " ="` nên `inversion_= x;` (không dấu cách) lọt — nay dùng
 `rta::test::assignsTo`, chịu được mọi kiểu đặt dấu cách và vẫn phân biệt `==`
 (mutation không-dấu-cách đã chạy, đã đỏ); và `codeLines()` từng có hai bản
@@ -101,9 +119,11 @@ giống hệt, nay là một, ở `app/tests/CodeLines.h`.
    trong danh sách, còn dòng duy nhất chứa thì là COMMENT giải thích vì sao nước
    cờ đó bị cấm. Thay bằng **whitelist** — nhưng bản đầu chỉ quét thân class,
    nên một **free function** cùng tên ở namespace scope vẫn lọt (verifier D2).
-   Bản ship quét **mọi callable** hai file `CrossoverSurface.{h,cpp}` khai báo,
-   member lẫn free. Câu đúng là "mọi callable mới trong hai file đó phải có
-   trong danh sách" — đừng viết lại thành câu rộng hơn.
+   Bản thứ hai vẫn lọt dạng **lambda gán vào object** (round-2 R1). Bản ship đọc
+   HAI dạng — `... name(` và `... name = [` / `std::function<...> name =` —
+   trong hai file `CrossoverSurface.{h,cpp}`, và **phạm vi đó viết thẳng trong
+   test**, kể cả cái nó không phủ. Câu đúng là câu hẹp đó; ba lần liên tiếp câu
+   rộng hơn đều sai.
 3. **`summationTrust` vẫn không được đổi tên thành `coherence`.** Guard
    `coherence_gate_is_not_bypassed` bắt PHÉP GÁN chứ không bắt khai báo, nên
    mutation phải làm cả hai (đổi tên field VÀ `result.coherence = ...`) mới đỏ.
@@ -147,11 +167,26 @@ xuống ~−11 dB ngay trên 110 Hz, trong khi PREDICTED (xanh lá, liền) lên
 tại crossover và đậu đúng mark 3.0 dB. Hai mark 6.0 dB và 3.0 dB ghi ở mép
 phải. `shots/` đã gitignore, không commit gì trong đó.
 
-Toàn bộ test: `ctest --test-dir build-align3b -C Release` (OFF, 648) và
-`ctest --test-dir build-align3b-on -C Release` (ON, 716).
+Toàn bộ test: `ctest --test-dir build-align3b -C Release` (OFF, **649**) và
+`ctest --test-dir build-align3b-on -C Release` (ON, **717**) — cùng con số với
+mục baseline ở đầu mục này. (Hai dòng này từng kẹt ở 648/716 sau vòng verifier
+thứ nhất; round-2 verifier bắt được, N2. Luật 12 của CLAUDE.md, vế hai: grep
+những câu mà thay đổi vừa làm sai.)
 
 ## Deviation phải mang lên orchestrator
 
+**Mười một mục, ĐÁNH SỐ 0–10 khớp 1–1 với phần "Deviations" của PR #9.** Vòng
+verifier #1 thấy hai bản lệch (PR 8 / HANDOFF 5); reconcile khi đó chỉ đi một
+chiều rồi PR mọc thêm ba mục, nên round-2 lại thấy lệch (PR 11 / HANDOFF 8,
+N1). Lần này đánh số giống hệt để lần sau chỉ cần đếm.
+
+0. **Hai tuyên bố vươn xa hơn bằng chứng, nay đã khép.** (a) whitelist I4 từng
+   chỉ quét thân class → free function lọt; sau khi mở rộng vẫn còn lọt dạng
+   **lambda gán vào object** (`inline constexpr auto f = [](...){...}`, round-2
+   R1) vì luật "bỏ qua dòng có `=` trước `(`" đúng là hình dạng đó. Nay scan đọc
+   HAI dạng và phạm vi được viết thẳng vào test. (b) "xoá exe trước mỗi lần
+   build mutation" không đủ cho mutation trong header mà guard là assertion
+   compile-time.
 1. **Plan I4 sai về chính mutation của nó** — xem mục "Ba điều load-bearing" #2.
    Plan cần sửa dòng acceptance đó, giống hệt cách D6 đã được sửa ở Wave 3a.
 2. **Tolerance H9 là 1e-6 chứ không phải 1e-9 của plan.** Phase của fixture đi
@@ -187,8 +222,17 @@ Toàn bộ test: `ctest --test-dir build-align3b -C Release` (OFF, 648) và
    nó thì "qua crossover không dấu time-domain nào là authoritative" là mệnh đề
    không thể bác bỏ.
 
-**Tám mục trên khớp 1–1 với phần "Deviations" của PR #9.** Trước 2026-09-16
-HANDOFF mang năm và PR mang tám; verifier chỉ ra hai bản không khớp.
+9. **3/9 enumerator `WizardRefusal` không có test** (verifier #1 D3), gồm nhánh
+   SỐNG `TraceNotUsable`. Case H4b chạm cả chín. Backstop cho enumerator thứ
+   mười **đã phải làm lại**: khẳng định "switch không `default:` → MSVC bắn
+   C4062 ở /W4" là **SAI** (round-2 R2 đo: C4062 tắt mặc định, `/W4` không bật;
+   thêm enumerator thứ mười vẫn build sạch và H4b vẫn xanh). Nay là sentinel
+   `WizardRefusal::Count` + `kWizardRefusalCount` mà H4b so với `seen.size()` —
+   không phụ thuộc cờ cảnh báo, giống nhau trên cả ba OS.
+10. **Bốn kỳ vọng số không có suy dẫn** (verifier #1 D4) — chi tiết ở bảng vòng
+    verifier phía trên.
+
+*(Mục 0, 9, 10 đến từ hai vòng verifier; 1–8 là danh sách gốc.)*
 
 ## Việc còn để lại cho người (không phải cho agent)
 

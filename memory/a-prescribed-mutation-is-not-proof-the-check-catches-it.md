@@ -69,6 +69,29 @@ overreached in exactly the same way, one level down, and was caught by exactly
 the same method — somebody applying a mutation the author had not thought of.
 That is not an argument against the method. It is the argument for it.
 
+**And it happened a third time, one level down again.** The widened scan skipped
+any line whose `=` precedes its `(` — a deliberate rule, so that
+`const double k = 20.0 * std::log10(2.0);` is not read as declaring `log10`. A
+namespace-scope callable bound to an *object* is exactly that shape:
+
+```cpp
+inline constexpr auto bestDelayForLoudestSum =
+    [](const CrossoverSurface&, double step) noexcept { return step * 2.0; };
+```
+
+Exported from the header, callable by every includer, and the whole 649-test OFF
+suite stayed green. The round-2 verifier also recorded the near-miss that makes
+the point sharpest: their first attempt gave the lambda a body containing a call,
+and the scan DID go red — but the printed enumeration showed `binwidthhz`, not
+`bestdelayforloudestsum`. It went red for the wrong reason, by accident. Take the
+parenthesis out of the body and the red disappears.
+
+So the final rule, after three turns: **write the scope INTO the artefact, not
+into the prose around it** — the shipped scan's comment now lists the two forms
+it reads and names what it does not cover (macros, another TU), so the next
+reader does not have to infer the boundary from a claim. And when a mutation goes
+red, read WHY: a red for the wrong reason is a green with extra steps.
+
 ## The smaller trap that came with it
 
 A structural scan for "this member is assigned only in these functions"
