@@ -5,6 +5,32 @@
 
 ---
 
+# 2026-09-16 — Remote API trạm 1+2 đã viết (DOCS-ONLY, không đụng code)
+
+Lane **L-API** (remote read-only API) — trạm 1 nghiên cứu và trạm 2 record đã
+xong, nhánh `remote-api/stations-1-2` từ `6d9a53d`, PR docs-only, **CHƯA
+merge**. **Trạm 3 (impl plan) là việc kế tiếp.**
+
+- Nghiên cứu: [`docs/research/2026-09-16-remote-api-station1-research.md`](research/2026-09-16-remote-api-station1-research.md)
+- Record: [`docs/dsp/2026-09-16-remote-api.md`](dsp/2026-09-16-remote-api.md)
+- Câu hỏi chủ nhân: `docs/HUMAN-QA-QUEUE.md`, mục "Từ lane Remote API (2026-09-16)" — 5 câu, **không câu nào chặn trạm 3 viết plan**.
+
+Ba điều phiên sau đừng suy lại: transport là **HTTP/1.1 + JSON over TCP** (OSC
+không tải nổi một curve 2049 điểm trong một datagram 1472 byte, và blob/bundle
+không cứu được); thư viện là **cpp-httplib (MIT)**, **Mongoose bị loại vì
+GPL-2.0-only** không tương thích AGPLv3 và mua licence thương mại cũng không
+gỡ được; và `Host`-header allowlist là phòng thủ chính chứ không phải bind
+localhost — DNS rebinding làm origin khớp thật nên CORS không dính dáng.
+
+Hai thứ **không ship được ở v1** và record nói thẳng: solver suggestions
+(`EqSession`/`AlignmentWizard` chưa có instance nào trong composition root) và
+SPL/Leq (`Snapshot` chỉ mang dBFS; `rta::meter::Leq` chưa có caller trong
+`app/`). Điều thứ hai chặn **L6a G7**, không chặn lane này.
+
+**Mục dưới đây vẫn là mục đọc trước tiên cho trạng thái build.**
+
+---
+
 # 2026-09-16 — **L7-ALIGN Wave 3b (tasks G–J) XONG — nhánh `l7/align-wave3b-app`, PR mở, CHƯA merge. ALIGN BUILT.**
 
 **Đọc mục này trước tiên.** Nửa sau của plan
