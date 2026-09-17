@@ -66,6 +66,14 @@ against upstream.
 | path | version | licence | used by |
 |---|---|---|---|
 | `external/nlohmann/` | v3.12.0 | MIT | **tests only** — `app/tests/test_api_schema.cpp` is the sole translation unit that includes it, and `no_json_parser_in_shipped_code` enforces that shipped code never does |
+| `external/cpp-httplib/` | v0.56.0 | MIT | the remote API's HTTP server — `app/src/api/ApiServer.cpp` is the sole translation unit that includes it, and `no_server_library_outside_api` enforces that. TLS and every optional compression backend are left undefined |
+
+**Mongoose was the near miss worth recording.** Its licence offers GPL-2.0 with
+no "or any later version", which is incompatible with AGPLv3, and its
+commercial arm conflicts with the AGPL source release this project is committed
+to — neither arm works. cpp-httplib's MIT terms are why the choice was
+available at all, so this dependency is not one to "simplify" later without
+re-reading `external/cpp-httplib/PROVENANCE.md`.
 
 MIT is a lax permissive non-copyleft licence the FSF calls compatible with the
 GNU GPL; it flows into this AGPL-3.0-or-later work imposing only notice
