@@ -91,18 +91,26 @@ enum class BlockFlag : std::uint32_t {
 inline constexpr std::uint32_t kExcludingFlags = flagMask(BlockFlag::CalibrationInvalid);
 
 /// Accumulates one block: the sum of squares on the weighted stream, the two
-/// detector maxima, the sampled peak on the peak stream, and the overload run
-/// carried ACROSS calls and across block boundaries.
+/// detector maxima, and the sampled peak on the peak stream.
 ///
-/// The run carry is the whole point of this class owning the detector rather
-/// than the caller calling `rta::dsp::hasOverload` per hop:
-/// `OverloadDetector.h:22-27` states in its own words that a run does not
-/// carry across separate calls, so a hop boundary splits a run in two. A block
-/// boundary is a bigger version of the same boundary.
+/// The detectors are NOT reset at a block boundary: they are a continuous time
+/// weighting over the whole session, and rearming them per block would make
+/// every block rise from silence. Only the energy, the per-block maxima, the
+/// dropped-sample count and the flags rearm.
+///
+/// THE OVERLOAD RUN IS NOT HERE, and that is deliberate. Overload is a fact
+/// about the RAW converter stream, and every sample this class sees has
+/// already been through a weighting filter that changed its value -- a run
+/// measured on a weighted stream is a run in a signal the hardware never
+/// delivered. Measured: the C-weighted copy of three samples at
+/// `rta::dsp::kFullScaleThreshold` does not reach that threshold at all. The
+/// latch therefore lives one layer up, in `rta::measure::SplMeter`, where the
+/// raw hop is still in hand (SPL-R4), and this class takes the resulting flag
+/// through `setFlag`.
 ///
 /// No allocation after construction. Pure numbers in, numbers out: no clock,
-/// no file, no policy -- an UnderRange or CalibrationInvalid criterion is a
-/// caller's decision, supplied through `setFlag`.
+/// no file, no policy -- an Overload, UnderRange or CalibrationInvalid
+/// criterion is a caller's decision, supplied through `setFlag`.
 class BlockAccumulator {
 public:
     /// How many completed blocks may wait for `poll()` before `push` stops
@@ -140,8 +148,8 @@ public:
     void noteDroppedSamples(std::uint32_t count) noexcept;
 
     /// Sets a policy flag on the block currently being accumulated. The
-    /// criterion behind `UnderRange` or `CalibrationInvalid` is the caller's;
-    /// core holds no threshold for either.
+    /// criterion behind `Overload`, `UnderRange` or `CalibrationInvalid` is
+    /// the caller's; core holds no threshold for any of them.
     void setFlag(BlockFlag f) noexcept;
 
     /// The oldest completed block, removing it, or nullopt.
@@ -165,8 +173,6 @@ private:
     double maxPeakSquare_ = 0.0;
     std::uint32_t droppedSamples_ = 0;
     std::uint32_t flags_ = 0;
-
-    int overloadRun_ = 0;  ///< carried across push() calls AND block boundaries
 
     Detector fast_;
     Detector slow_;

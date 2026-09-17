@@ -2,8 +2,6 @@
 // Part of RTA Tool -- rta_core. No JUCE, no Qt, no audio-device API.
 #include "rta/meter/Block.h"
 
-#include "rta/dsp/OverloadDetector.h"
-
 #include <algorithm>
 #include <cmath>
 
@@ -37,7 +35,6 @@ void BlockAccumulator::reset() noexcept {
     maxPeakSquare_ = 0.0;
     droppedSamples_ = 0;
     flags_ = 0;
-    overloadRun_ = 0;
     fast_.reset();
     slow_.reset();
     readyHead_ = 0;
@@ -102,18 +99,6 @@ std::size_t BlockAccumulator::push(std::span<const float> weighted,
             const float p = peakStream[consumed + i];
             const double pd = static_cast<double>(p);
             maxPeakSquare_ = std::max(maxPeakSquare_, pd * pd);
-
-            // The overload run, carried across this call and across the block
-            // boundary below (SPL-R4). `rta::dsp::kFullScaleThreshold` and its
-            // three-consecutive-sample criterion are Smaart LE v9.1 p.78's own
-            // published numbers -- this file reuses them, it does not invent a
-            // second threshold.
-            if (std::fabs(p) >= static_cast<double>(rta::dsp::kFullScaleThreshold)) {
-                ++overloadRun_;
-                if (overloadRun_ >= 3) flags_ |= flagMask(BlockFlag::Overload);
-            } else {
-                overloadRun_ = 0;
-            }
         }
 
         pending_ += static_cast<std::uint32_t>(take);
