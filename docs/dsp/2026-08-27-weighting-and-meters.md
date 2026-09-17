@@ -42,6 +42,23 @@ Table 2 tolerance list is paywalled; only 20/1k/10k/16k Hz points are
 corroborated. Buy or source the table before writing any test that says
 "Class 1".
 
+> **Amendment 2026-09-16 (lane L6a station 1): the table number above is wrong.**
+> In IEC 61672-1:2013, **Table 2 is "Acceptance limits for deviations of
+> directional response from the design goal"**. The frequency-weighting
+> tolerances — design goal *and* acceptance limits together — are in **Table 3,
+> "Frequency weightings and acceptance limits"**, which is also the table this
+> record's paragraphs above correctly cite for the design values. So there is
+> one table to source, not two, and it is Table 3.
+> Verified from the IEC official preview of Ed 2.0 2013-09 (cover, complete
+> Contents with every clause and table title, and clause 3.1–3.31 in full), read
+> 2026-09-16; provenance and URL in
+> `docs/research/2026-09-16-l6a-spl-pro-station1-research.md` §A1.8.
+> **Nothing about the open item's substance changes** — the numbers are still
+> paywalled, only four points are corroborated, and no Class claim may be made.
+> `core/tests/check_no_conformance_claim.cmake:18,61` carries the same wrong
+> table number in its comment and in its failure message; that is code and is
+> left for the lane that next touches it (L6a record §13 Q10).
+
 ## Detectors: one-pole on the mean square; closed-form tests
 
 Fast τ=125 ms, Slow τ=1 s, exponential mean square (IEC 61672-1 clause 5).

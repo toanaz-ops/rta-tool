@@ -231,6 +231,108 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
 
 ---
 
+## Từ lane L6a (2026-09-16, record `docs/dsp/2026-09-16-spl-pro-l6a.md`)
+
+*Mười câu. Q1, Q2 và Q8 định phạm vi trạm 3; bảy câu còn lại không chặn việc.*
+
+- [ ] **`[!]` Q1 — seam 3.0103 dB: readout SPL theo convention nào?**
+  `app/src/measure/Levels.h` định nghĩa dB sao cho một **sine full-scale đọc
+  đúng `0.0 dBFS`** (cộng `kFullScaleSineOffsetDb = 3.0102999566398120`), và
+  comment của chính nó gọi đó là "the ONE definition of dB the rest of the app
+  reads through". `core/include/rta/meter/Leq.h` định nghĩa Leq theo IEC —
+  `10*log10(mean(p^2))`, mean-square referenced — nên cùng sine đó đọc
+  **`−3.0103`**. Cả hai đều đúng, chúng trả lời hai câu hỏi khác nhau (một RMS
+  level và một peak-equivalent reference).
+
+  Nhưng đặt broadband Leq cạnh RTA bands mà không quy đổi thì một tone 1 kHz
+  đọc **lệch 3.0103 dB giữa hai readout**, và người vận hành đọc ra đó là lỗi
+  thiết bị. Sau khi calibrate thì không sao — offset nuốt hằng số — chỗ đau
+  đúng là **dBFS chưa calibrate**, tức là cái operator nhìn thấy trước khi họ
+  calibrate.
+
+  **Đề xuất: quy đổi đúng một lần tại meter seam, ghi nhãn cả hai, và KHÔNG
+  động vào bands.** Chuyển bands sang mean-square sẽ đổi **mọi con số dBFS đang
+  có trên màn hình và trong mọi trace đã lưu** — đó là một quyết định phá vỡ
+  dữ liệu cũ, không phải một lựa chọn thẩm mỹ. Cần chủ nhân xác nhận.
+
+- [ ] **`[!]` Q2 — dựng calibration flow ngay trong L6a? (mở rộng scope)**
+  Hàng L6a của master plan không liệt kê nó. Nhưng hiện tại repo có
+  `Trace::calibrationOffsetDb` mà **không có gì set nó một cách trung thực**:
+  không có routine nào đo calibrator rồi tính offset. Không có flow thì log
+  SPL là log dBFS, và report không thể mang cặp đọc đầu/cuối mà **ISO 1996-2
+  cl. 5.2 đòi** (calibrator class 1 IEC 60942, kiểm ở đầu và cuối mỗi phép đo,
+  lệch hai lần liên tiếp **≤ 0,5 dB**, vượt thì **huỷ toàn bộ kết quả kể từ lần
+  kiểm đạt trước đó**). Đây là số published duy nhất tìm được cho drift, và nó
+  đến từ một clause normative.
+
+  Đáng nói thêm, vì nó là điểm khác biệt chứ không phải parity: **Smaart SPL và
+  10EaZy đều KHÔNG in cặp calibration trước/sau vào report** (danh sách field
+  của Smaart là đầy đủ và không có mục calibration nào). Cirrus AuditStore thì
+  có lưu. **Đề xuất: dựng.** Cần chủ nhân duyệt vì nó là scope addition.
+
+- [ ] **Q3 — ship bao nhiêu Ln, và có cho người dùng đặt phần trăm không?**
+  Larson Davis 831/LxT phơi **sáu** slot với phần trăm settable
+  (`NUM_LNS = 6`, `m_fLnPercents[]`); report của Smaart in **L10/L50/L90**;
+  NoiseCapture chỉ implement đúng ba cái đó. **Đề xuất: sáu slot, default
+  L1/L5/L10/L50/L90/L95.**
+
+- [ ] **Q4 — NIOSH ship theo convention nào? (chính NIOSH mâu thuẫn với chính
+  nó)** Bảng duration của NIOSH (8 h/85 … 15 min/100) **chỉ đúng** với
+  `q = 3/log10(2) = 9.9657843`; còn công thức của chính NIOSH,
+  `TWA = 10.0·log(D/100) + 85`, nghịch đảo ra `q = 10` chẵn. Hai cái không thể
+  cùng đúng: ở đúng endpoint bảng của họ (15 phút / 100 dBA), `q = 10` đọc
+  **98.8212 %** thay vì 100 %. Lệch **1.18 %**. Không nguồn nào đọc ở trạm 1
+  nêu chuyện này; nó rơi ra khi tính từng dòng bảng (record §7).
+
+  **Đề xuất: ship giá trị tái tạo được BẢNG** (`q = 9.9657843`), vì bảng là thứ
+  một inspector cầm đọc, đồng thời in TWA theo đúng công thức NIOSH và ghi rõ
+  hai convention lệch nhau tới 1.18 %. (OSHA thì tự nhất quán — ba dòng lệch
+  của nó, 92/97/102 dB, là **làm tròn trong chính regulation**: thời gian thật
+  ở 92 dBA là `8·2^(−0.4) = 6.0629 h`, in thành 6.)
+
+- [ ] **Q5 — alarm window là sliding hay consecutive-fixed?** Cả hai đều suy ra
+  được từ block của §3. Sliding **nghiêm ngặt hơn** (max của nó ≥ max của
+  fixed). Thực tế thị trường dùng một quantity dài rồi so, chứ không so
+  instantaneous: VLAREM đăng ký `LAeq,60min` và **deem** là đạt nếu
+  `LAeq,15min ≤ 102 dB(A)`; Pop Code cl. 4.12 theo dõi `LAeq` 1 phút để cảnh
+  báo sớm cho limit 15 phút. **Đề xuất: sliding, hiện cả regulated window lẫn
+  proxy window.**
+
+- [ ] **Q6 — log có cần tamper-evident không?** 10EaZy ghi **checksum** xuống
+  cuối file log và ship riêng một app **Log File Validator**; Cirrus giữ một
+  bản secure song song. Record §9 mục 9 đề xuất **hash** in trong report.
+  **Chữ ký số thì cần một khoá, và một khoá cần một câu chuyện về nơi nó
+  sống** — ngoài scope cho tới khi chủ nhân hỏi tới.
+
+- [ ] **Q7 — retention và rotation.** VLAREM đòi dữ liệu đã đăng ký giữ **ít
+  nhất một tháng**; tóm tắt cấp bang của Thuỵ Sĩ nói **sáu tháng** (nguồn liên
+  bang 502, nên UNVERIFIED). Default log span là bao nhiêu (§4), segment size
+  bao nhiêu, và app có bao giờ tự xoá không?
+
+- [ ] **`[!]` Q8 — web viewer có ship trong L6a không?** Nó là thứ cuối cùng
+  trong build order (§9), phụ thuộc PR #11 land, và phụ thuộc một phép thử
+  **chưa ai chạy**: một trang phục vụ *từ* `127.0.0.1` fetch `127.0.0.1` có
+  được miễn prompt **Local Network Access** của Chrome không. Suy ra được từ mô
+  hình same-address-space của LNA nhưng **không tìm thấy phát biểu nguyên văn**
+  (ledger UNVERIFIED của chính PR #11, mục 7). Một buổi chiều thử với Chrome
+  142+ là xong. Đây là thứ **sạch nhất để cắt** nếu lane quá to.
+
+- [ ] **Q9 — có mua ISO 1996-2:2017 không?** Clause **13 "Information to be
+  recorded and reported"** đúng là clause báo cáo cho một logging meter, và
+  **thân bài bị tường phí**; hai clause còn lại lane này sẽ xây theo là
+  **10.2.2 (L_N,T)** và **10.3 (incomplete or corrupted data)**. Khác ISO 2969
+  và IEC 60268-16: nó **KHÔNG chặn** lane — danh sách nội dung report ở §9 dựng
+  từ market practice và đã ghi rõ là *không* claim conformant với clause 13 —
+  nhưng mua thì biến một danh sách lắp ghép thành một danh sách có citation.
+  Đừng xếp nó cạnh hai mục "mua tiêu chuẩn" ở trên như thể cùng mức khẩn.
+
+- [ ] **Q10 — ai sửa số bảng sai trong guard?** Record weighting đã được đính
+  chính trong chính PR này (Table 2 → **Table 3**). Nhưng
+  `core/tests/check_no_conformance_claim.cmake:18,61` còn mang số sai ở comment
+  và ở message lỗi — **đó là code**, nên PR docs-only này không đụng. Ai nhặt?
+
+---
+
 ## Từ phiên EP06 (2026-08-30)
 
 - [ ] **`[!]` ISO 3382-1 — mua, hay dựng từ nguồn mở? CHỦ NHÂN HOÃN CÓ CHỦ Ý.**

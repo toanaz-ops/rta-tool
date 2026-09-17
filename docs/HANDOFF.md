@@ -5,6 +5,48 @@
 
 ---
 
+# 2026-09-16 — **L6a (SPL-pro) trạm 1+2 XONG — nhánh `l6a/stations-1-2`, docs-only, PR mở, CHƯA merge. Trạm 3 (impl plan) là việc kế tiếp.**
+
+Hai tài liệu mới, không có một dòng code nào:
+`docs/research/2026-09-16-l6a-spl-pro-station1-research.md` (Part 0 bảy đính
+chính, Part A các tiêu chuẩn kèm số clause + URL + ngày đọc, Part B mã nguồn
+chín dự án đọc tại SHA ghim, Part C các seam của repo, Part D web viewer,
+Part E bảng decision → evidence) và `docs/dsp/2026-09-16-spl-pro-l6a.md`
+(§0–§14: mười một quyết định, §12 "không quyết gì", §13 mười câu hỏi cho chủ
+nhân, §14 ledger VERIFIED/UNVERIFIED).
+
+**Ba điều một phiên sau phải biết trước khi đọc code:**
+
+1. **Dependency "Meters track" chỉ thoả ở `core/`.** `grep -rn
+   "rta::meter\|rta/meter"` toàn repo trả **16 dòng, tất cả dưới `core/`**;
+   `WeightingType` xuất hiện đúng ba file, cũng `core/`. `measure::Snapshot`
+   không mang broadband level, không weighting, không detector. Nên **wave đầu
+   của L6a là dựng SPL publish path**, không phải logging. Đây đúng là tình
+   huống L5c gặp ("`app/` chưa từng gọi dual-FFT engine của L2") lặp lại. Trạm 1
+   của lane L-API tìm ra **cùng một chỗ hổng, độc lập** (record remote-api §12.1)
+   — hai pass song song không trao đổi mà trùng kết luận.
+2. **Web viewer (G7) là CLIENT của L-API**, không mở listener thứ hai:
+   `docs/dsp/2026-09-16-remote-api.md` §12 (PR #11, `828c223`, chưa merge) chốt
+   việc đó. Transport là cpp-httplib (MIT) theo record kia — bản nháp đầu của
+   §9 lập luận từ `juce::StreamingSocket`, đã bị thay thế. Viewer là thứ **cuối
+   cùng** L6a xây, không phải thứ đầu tiên.
+3. **`docs/dsp/2026-08-27-weighting-and-meters.md` ghi sai số bảng** và đã được
+   đính chính tại chỗ trong commit này: tolerance của weighting nằm ở
+   **Table 3**, không phải Table 2 (Table 2 là directional response).
+   `core/tests/check_no_conformance_claim.cmake:18,61` còn mang số sai trong
+   comment và trong thông báo lỗi — đó là code, để lane sau chạm vào (§13 Q10).
+
+**Không có tally nào ở đây và đó là đúng:** PR này docs-only, không đụng
+`core/`, `app/`, `platform/`, `ui/` hay CMake, nên không build lại và không có
+con số test nào để dán. GitHub Actions vẫn bị chặn ở mức tài khoản (billing).
+
+**Ba câu hỏi chặn phạm vi của trạm 3**, đầy đủ mười câu ở
+`docs/HUMAN-QA-QUEUE.md` mục "Từ lane L6a (2026-09-16)": seam 3.0103 dB giữa
+`Levels.h` và `meter::Leq` (Q1), có dựng calibration flow trong L6a không (Q2),
+và web viewer có ship trong lane này không (Q8).
+
+---
+
 # 2026-09-16 — **L7-ALIGN Wave 3b (tasks G–J) XONG — nhánh `l7/align-wave3b-app`, PR mở, CHƯA merge. ALIGN BUILT.**
 
 **Đọc mục này trước tiên.** Nửa sau của plan
