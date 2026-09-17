@@ -72,7 +72,7 @@ Seven premises were wrong. Three would have reached code.
 **And one thing that changed while this pass was running.** The remote-API lane
 this research treated as unwritten was written the same day:
 `docs/dsp/2026-09-16-remote-api.md` (PR #11, branch `remote-api/stations-1-2`,
-head `828c223`, open, not merged). Its §12 rules directly on G7's web half and
+head `5b62218`, open, not merged). Its §12 rules directly on G7's web half and
 its station-1 pass reached the same conclusion about the meters from the other
 side. §D3 records what that means for this lane.
 
@@ -589,7 +589,21 @@ regulation**; an instrument offering only one cannot serve it.
 
 Self-consistency: `D = 100·(C/8)·2^((L−90)/5) = 100·(C/8)·10^((L−90)/16,6096)`,
 inverted at C = 8 h, is exactly `TWA = 16,61·log10(D/100) + 90`. The 16,61 in
-Appendix A and the 5 dB rate in Table G-16 are the same statement.
+Appendix A and the 5 dB exchange rate are the same statement.
+
+**Two things to get right when citing this, because a decision record got both
+wrong on the first pass.** First, **the dose is computed against Table G-16a,
+not Table G-16.** Appendix A I(1)(i) says `D = 100 C/T` with "T … as given in
+Table G-16a *or by the formula shown as a footnote to that table*". Table G-16
+in the regulation's body is the nine-row permissible-exposure table that
+paragraph (a) points at; **Table G-16a in the mandatory appendix is the
+reference-duration table the dose arithmetic actually uses**, and it runs in
+1 dB steps from 80 dBA. Second, **Table G-16a is itself rounded**, exactly as
+NIOSH's Table 1-1 is: the exact `8/2^((L−90)/5)` at 81 dBA is **27.857618 h**
+and the table prints **27.9**. So there is no asymmetry between the two
+regulators here — both print an exact footnote formula and a table rounded off
+it, and any acceptance test that demands `D = 100 %` on a printed table row
+will fail on both.
 
 ### A4.2 NIOSH REL — publication 98-126
 
@@ -597,28 +611,77 @@ Citation VERIFIED: NIOSH [1998], *Criteria for a Recommended Standard:
 Occupational Noise Exposure, Revised Criteria 1998*, DHHS (NIOSH) Publication
 No. 98-126, June 1998, DOI **10.26616/NIOSHPUB98126**.
 
-**The URL in the brief is dead.** `cdc.gov/niosh/docs/98-126` returns an empty
-body and `…/pdfs/98-126.pdf` 404s. The working primary record is
-`https://stacks.cdc.gov/view/cdc/6376` with full text at
-`https://stacks.cdc.gov/view/cdc/6376/cdc_6376_DS1.pdf` — **which is a scanned
-image with no text layer**, so the criteria document's own formulas cannot be
-machine-read. A complete public-domain HTML mirror exists at
-`https://www.nonoise.org/hearing/criteria/criteria.htm` (marked MIRROR below).
+**Correction 2026-09-17: an earlier revision of this section declined to read
+the primary, and its reason was wrong.** It recorded that
+`cdc.gov/niosh/docs/98-126/pdfs/98-126.pdf` 404s (true) and that the surviving
+copy at `https://stacks.cdc.gov/view/cdc/6376/cdc_6376_DS1.pdf` "is a scanned
+image with no text layer, so the criteria document's own formulas cannot be
+machine-read" (true of *that* copy) — and then argued from the CDC 2016
+bulletin and a third-party HTML mirror instead. **A born-digital copy with a
+real text layer is archived**, and the decision record's §7 was wrong in two
+places as a direct result. Read and transcribed 2026-09-17 from:
 
-- **REL — VERIFIED** (stacks.cdc.gov abstract, cross-confirmed at
-  `https://www.cdc.gov/niosh/bulletin/2016/noise.html`): *"The REL is 85
-  decibels, A-weighted, as an 8-hr time-weighted average."*
-- **3 dB exchange rate — VERIFIED** (same bulletin): *"a 3-dB time-intensity
-  tradeoff commonly referred to as the exchange rate or equal-energy rule"*.
-- **Duration table — VERIFIED** (same bulletin): 8 h/85 · 4 h/88 · 2 h/91 ·
-  60 min/94 · 30 min/97 · 15 min/100 dB(A).
-- **Dose — MIRROR:** `D = [C1/T1 + … + Cn/Tn] × 100`.
-- **TWA from dose — MIRROR, §1.1.3: `TWA = 10.0 × Log(D/100) + 85`.** Constant
-  **10.0**, offset **85** — the direct consequence of `q = 10` and
-  `L_c = 85`, and independent confirmation of §A3.4.
-- **Reference duration `T = 8/2^((L−85)/3)` h — UNVERIFIED as printed text**
-  (served as a GIF on the mirror and a scan on CDC). It reproduces all six
-  VERIFIED table pairs exactly.
+`https://web.archive.org/web/2020/https://www.cdc.gov/niosh/docs/98-126/pdfs/98-126.pdf`
+— 126 pages, PDF 1.4, `/Author NIOSH`, `/Creator Adobe InDesign CC 2014
+(Windows)`, `/Producer Adobe PDF Library 11.0`. Text extraction returns
+characters, not OCR guesses. **Printed page *N* = PDF page *N* + 18.**
+
+All of the following are **VERIFIED from that text layer**, with printed page
+numbers:
+
+- **§1.1 REL, p.1:** *"The REL is 85 decibels, A-weighted, as an 8-hr
+  time-weighted average (85 dBA as an 8-hr TWA). Exposures at and above this
+  level are considered hazardous."*
+- **§1.1.1, p.1** — the exposure formula, printed as a displayed fraction with
+  the exponent set as a superscript on the 2: **`T (min) = 480 / 2^((L−85)/3)`**,
+  followed by *"where 3 = the exchange rate."*
+- **§1.1.2, p.1:** *"the REL for an 8-hr work shift is a TWA of 85 dBA using a
+  3-decibel (dB) exchange rate."*
+- **§1.1.3, p.2** — the dose formula `D = [C₁/T₁ + C₂/T₂ + Cₙ/Tₙ] × 100` and
+  the conversion **`TWA = 10.0 × Log(D/100) + 85`** (capital `Log`, `×`).
+- **Table 1-1, p.2** — "Combinations of noise exposure levels and durations that
+  no worker exposure shall equal or exceed". **51 rows**, Hours / Minutes /
+  Seconds columns with an en dash for an unused unit, 1 dB steps from 80 dBA
+  (`25 hr 24 min`) through 129 dBA (`1 sec`) to a final `130–140 → <1` sec.
+  85 → `8 hr`, 95 → `47 min 37 sec`, 100 → `15 min`, 120 → `9 sec`.
+  **It has no footnote and the document nowhere says the values are rounded.**
+- **Table 1-2, p.3** — "Daily noise dose as an 8-hr TWA", **121 rows** from
+  `20 % → 78.0 dBA` to **`32,500,000 % → 140.1 dBA`**, with the printed footnote
+  **`*TWA = 10 × Log(D/100) + 85`**.
+- **§1.1.4 Ceiling Limit, p.4**, complete and verbatim — this **resolves** the
+  conflict an earlier revision left open: *"Exposure to continuous, varying,
+  intermittent, or impulsive noise shall not exceed 140 dBA."* One sentence, no
+  footnote. It is **A-weighted and it covers impulsive noise**. §3.2 (p.19)
+  explains the wording: *"Because NIOSH is recommending a 3-dB exchange rate
+  with an 85-dBA REL, a ceiling limit for continuous-type noise is
+  unnecessary."*
+- **§1.3.3, p.4:** *"all continuous, varying, intermittent, and impulsive sound
+  levels from 80 to 140 dBA shall be integrated into the noise measurements."*
+  This is the source of the 80 dB(A) threshold, and it is why Table 1-1 starts
+  at 80 rather than at the 85 dBA REL.
+
+**Three errata, found by recomputing every row against the document's own
+formulas** (printed values VERIFIED by rendering the cells; the "correct"
+values are derived here):
+
+| table | row | printed | from the document's formula |
+|---|---|---|---|
+| 1-1 | 99 dB(A) | 18 min **59** sec | 18 min **53.93** sec |
+| 1-2 | 50,000 % | **102.0** dBA | **111.99** — a transposition; 45,000 → 111.5 and 60,000 → 112.8 bracket it, so 102.0 breaks monotonicity |
+| 1-2 | 26,000,000 % | **139.0** dBA | **139.15**, where every other row lands within 0.05 |
+
+**Rounding convention — derived, never stated by the document:** Table 1-1 is
+round-to-nearest in its smallest printed unit, except 124 dB(A) (exact 3.516 s,
+printed 3) and 127 dB(A) (exact 1.758 s, printed 1), which are truncated. So it
+is not even internally consistent, which is why the decision record's fixture
+bounds each row by its own printed resolution instead of asserting equality.
+
+**What the CDC 2016 bulletin actually is** (`https://www.cdc.gov/niosh/bulletin/2016/noise.html`,
+read 2026-09-16): a **six-row summary** — 8 h/85, 4 h/88, 2 h/91, 60 min/94,
+30 min/97, 15 min/100 — of rows that happen to sit on the 3 dB grid. It is a
+correct secondary source for the REL and the exchange rate and a **misleading
+one for the table**, because its endpoint at 100 dBA is 40 dB short of the
+document's.
 - **Threshold — VERIFIED** at
   `https://www.cdc.gov/niosh/noise/prevent/understand.html`, "NIOSH Recommended
   Dosimeter Settings": *Exchange Rate 3-dB; Frequency Weighting A; Response
@@ -660,9 +723,9 @@ defining L_EX,8h via ISO 1999:1990 §3.6, a pure energy average. **Cite Article 
 
 | framework | peak/ceiling rule | weighting |
 |---|---|---|
-| OSHA | "should not exceed 140 dB peak sound pressure level" (Table G-16 note) | **unweighted** |
+| OSHA | *"Exposure to **impulsive or impact noise** should not exceed 140 dB peak sound pressure level"* (Table G-16 note) | **no weighting is stated**, and the limit is scoped to impulsive/impact noise only. "States none" is not "states Z" |
 | EU 2003/10/EC | p_peak in its own column at each of three tiers; either quantity trips that tier | **C** |
-| NIOSH | §1.1.4 "Ceiling Limit": "shall not exceed 140 dBA", applying to **all** noise types | **A**, and it is a *level* ceiling, not a peak |
+| NIOSH | §1.1.4 "Ceiling Limit", p.4, verbatim and complete: *"Exposure to continuous, varying, intermittent, or impulsive noise shall not exceed 140 dBA."* | **A**, and it is a *level* ceiling, not a peak |
 | IEC 61252 Ed 2 | C-weighted peak **mandatory** (cl. 4.18) while dose stays optional and parametric | **C** |
 
 **There are three different 140s.** OSHA 140 dB peak *unweighted*; EU 140 dB(C)
@@ -670,10 +733,11 @@ defining L_EX,8h via ISO 1999:1990 §3.6, a pure energy average. **Cite Article 
 things. A single "140 dB peak" readout cannot serve all three, and conflating
 them is the most likely correctness bug in a dose feature.
 
-*(Disagreement, unresolved: §1.1.4 reads "140 dBA" verbatim on the mirror, while
-a machine summary of Chapter 3 of the same document rendered it "140 dB peak SPL
-for impulsive noise". The primary CDC PDF is image-only. The "140 dBA" reading
-is better-evidenced.)*
+*(This was carried as unresolved in the first revision — "140 dBA" on a mirror
+against "140 dB peak SPL for impulsive noise" in a machine summary of Chapter 3.
+**Reading the born-digital primary on 2026-09-17 settles it**: p.4 reads
+"140 dBA", the section is one sentence long, and there is no footnote. The
+summary was wrong.)*
 
 ## A5. IEC 60942 calibrators, and what the repo would need
 
@@ -1604,7 +1668,7 @@ alarms     [ {metricId, limitDb, window, state, sinceBlock, headroomDb} ]
 
 ## D3. What PR #11 settles, and the one thing it hands back
 
-`docs/dsp/2026-09-16-remote-api.md` §12, read at `828c223`, is titled "The SPL
+`docs/dsp/2026-09-16-remote-api.md` §12, read at `5b62218`, is titled "The SPL
 web viewer (lane L6a, G7) rides THIS surface" and states the rule "so that a
 parallel lane cannot quietly open a second listener": G7 is **a client of that
 API, served from that server, on that port, behind that `Host` check, rate limit
@@ -1658,12 +1722,12 @@ not for the API, and it is UNVERIFIED in this lane's ledger too.
 | 6 | Ln labels carry **weighting, detector, N and interval** (§5) | ISO 1996-1 cl. 3.1.3's own `L_AF95,1h`; the mandatory NOTE under 3.1; §B3.3's four incompatible index conventions | A bare "L90": not a well-defined number, and two instruments printing it are not measuring the same thing |
 | 7 | Alarm compares a **windowed Leq**; ship **no invented hysteresis or debounce**; publish **`L_allow`** (§6) | §B3.6 — no project implements hysteresis and no source publishes a debounce or an amber margin; Smaart's `Duration` is post-fire flash time; 10EaZy's amber is an undocumented prediction algorithm; `memory/a-threshold-read-off-a-grid-is-that-grids-floor.md` | A traffic light with our own margins: a number this project originated, that nobody can check, defending against a flicker that integration already removes |
 | 8 | The +2..3 dB figures are a **shorter-integration proxy**, not an amber margin (§6) | Pop Code cl. 4.12 "typically some 2-3 dB(A) above the 15 minute value"; VLAREM `LAeq,15min ≤ 102` deems `LAeq,60min ≤ 100` satisfied | Reusing them as a warning colour: the exact category error the memory file names |
-| 9 | Dose is **one formula with `q` per preset**, a base-10 denominator (§7) | IEC 61252 Ed 2 Formulas (7)/(8); ANSI S1.25 cl. 4.5/4.7/7.2.2; NIOSH `TWA = 10.0·log(D/100) + 85`; OSHA App A `TWA = 16.61·log10(D/100) + 90`; and the row-by-row evaluation in record §7 showing **NIOSH's own table and its own formula need different `q`, 1.18 % apart** | A boolean "3 dB / 5 dB": hides that IEC's own two formulas differ by 0.34 % in the denominator (**+2.40 % of dose at ΔL = 30 dB**), and cannot express the NIOSH inconsistency at all |
+| 9 | Dose is **one formula with `q` per preset**, a base-10 denominator (§7) | IEC 61252 Ed 2 Formulas (7)/(8); ANSI S1.25 cl. 4.5/4.7/7.2.2; NIOSH 98-126 §1.1.1 p.1 and §1.1.3 p.2; OSHA App A I(1)(i)/I(2) against **Table G-16a**; and the row-by-row evaluation in record §7 showing **98-126's Table 1-1 and Table 1-2 need different `q`, up to 4.2549 % apart at 140 dB(A)** | A boolean "3 dB / 5 dB": hides that IEC's own two formulas differ by 0.34 % in the denominator (**+2.40 % of dose at ΔL = 30 dB**), and cannot express the NIOSH inconsistency at all |
 | 10 | **Two dose accumulators at once**, threshold a per-preset field (§7) | Larson Davis `NUM_SLM_DOSES = 2` with per-dose threshold/exchange/criterion; Smaart's `Exposure O` + `Exposure N` columns; §B3.7's four-way threshold disagreement | One dose setting: cannot produce the OSHA-and-NIOSH-side-by-side log the market expects, and forces a wrong threshold on one of them |
-| 11 | Peak is **C-weighted and separate from dose**; the three 140s are named (§7) | IEC 61252 Ed 2 cl. 4.18 makes C-peak mandatory; ISO 1996-1 cl. 3.1.4 Note 3 (C-only accuracy); OSHA unweighted 140, EU 140 dB(C), NIOSH 140 dBA ceiling | One "140 dB peak" readout: silently wrong in two of three jurisdictions |
+| 11 | Peak is **C-weighted and separate from dose**; the three 140s are named (§7a) | IEC 61252 Ed 2 cl. 4.18 makes C-peak mandatory; ISO 1996-1 cl. 3.1.4 Note 3 (C-only accuracy); OSHA's 140 is a peak limit **with no weighting stated, scoped to impulsive/impact noise**, EU's is 140 dB(C) peak for all noise, NIOSH's is a 140 dBA **level** ceiling for all noise | One "140 dB peak" readout: silently wrong in at least two of three jurisdictions, and wrong about which *events* it constrains in the third |
 | 12 | **Calibration is a flow**, with a post-check and a drift against **0.5 dB** (§8) | ISO 1996-2 cl. 5.2, body read in full; 10EaZy's ±1.5 dB factory refusal and dated calibration record; Cirrus AuditStore stores the last calibration with the measurement; **Smaart and 10EaZy put no calibration pair in the report** | A typed offset: cannot perform a drift check, cannot refuse a bad calibration, and leaves the report unable to say the measurement was trustworthy |
 | 13 | **One HTML document, two transports**; PDF is the browser's print (§9) | JUCE 9.0.1 has no PDF writer (§C5); both live-sound viewers serve the page from the app; the report and the viewer draw the same quantities | Bundling a PDF library: a new dependency, an AGPL licence review, and a second renderer that will drift from the on-screen one |
-| 14 | The viewer is a **client of the remote API**, and the SPL publish path is this lane's first wave (§9) | Owner ruling 2026-09-06; **`docs/dsp/2026-09-16-remote-api.md` §12 at `828c223` rules it explicitly**, with Smaart's same-port-26000 precedent and SysTune's bundled NGINX as the counter-example; §12.1 of that record independently found `Snapshot` dBFS-only and `Leq` with no `app/` caller; 10EaZy's port-80-no-auth-port-forward is the anti-pattern | A second HTTP surface: two servers, two bind rules, two attack surfaces, and a ruling quietly reversed. (An earlier draft of §9 reasoned from `juce::StreamingSocket`; superseded — that record took cpp-httplib) |
+| 14 | The viewer is a **client of the remote API**, and the SPL publish path is this lane's first wave (§9) | Owner ruling 2026-09-06; **`docs/dsp/2026-09-16-remote-api.md` §12 at `5b62218` rules it explicitly**, with Smaart's same-port-26000 precedent and SysTune's bundled NGINX as the counter-example; §12.1 of that record independently found `Snapshot` dBFS-only and `Leq` with no `app/` caller; 10EaZy's port-80-no-auth-port-forward is the anti-pattern | A second HTTP surface: two servers, two bind rules, two attack surfaces, and a ruling quietly reversed. (An earlier draft of §9 reasoned from `juce::StreamingSocket`; superseded — that record took cpp-httplib) |
 | 15 | Log is **append-only wide rows** with a `#key=value` header; settings cannot change mid-log (§10) | Cirrus, REW and Smaart independently converged on one header block plus wide rows; Smaart's temp-file finalisation leaves an unreadable file if interrupted; ISO 1996-2 cl. 5.2's discard rule is about an instrument that changed underneath the measurement | A per-row weighting column: makes the file a record of an instrument reconfigured mid-measurement, which is the thing the discard rule exists to prevent |
 | 16 | The `core_makes_no_class_1_claim` glob must reach the **report templates** (§11) | §C6: the guard stops at `core/`, and the report is the one artefact a regulator reads | Leaving it: the honesty rule stops being enforced exactly where a false Class claim would do the most damage |
 

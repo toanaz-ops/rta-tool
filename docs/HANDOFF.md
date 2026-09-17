@@ -26,7 +26,7 @@ nhân, §14 ledger VERIFIED/UNVERIFIED).
    của lane L-API tìm ra **cùng một chỗ hổng, độc lập** (record remote-api §12.1)
    — hai pass song song không trao đổi mà trùng kết luận.
 2. **Web viewer (G7) là CLIENT của L-API**, không mở listener thứ hai:
-   `docs/dsp/2026-09-16-remote-api.md` §12 (PR #11, `828c223`, chưa merge) chốt
+   `docs/dsp/2026-09-16-remote-api.md` §12 (PR #11, `5b62218`, chưa merge) chốt
    việc đó. Transport là cpp-httplib (MIT) theo record kia — bản nháp đầu của
    §9 lập luận từ `juce::StreamingSocket`, đã bị thay thế. Viewer là thứ **cuối
    cùng** L6a xây, không phải thứ đầu tiên.

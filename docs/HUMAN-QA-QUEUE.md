@@ -342,19 +342,50 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   NoiseCapture chỉ implement đúng ba cái đó. **Đề xuất: sáu slot, default
   L1/L5/L10/L50/L90/L95.**
 
-- [ ] **Q4 — NIOSH ship theo convention nào? (chính NIOSH mâu thuẫn với chính
-  nó)** Bảng duration của NIOSH (8 h/85 … 15 min/100) **chỉ đúng** với
-  `q = 3/log10(2) = 9.9657843`; còn công thức của chính NIOSH,
-  `TWA = 10.0·log(D/100) + 85`, nghịch đảo ra `q = 10` chẵn. Hai cái không thể
-  cùng đúng: ở đúng endpoint bảng của họ (15 phút / 100 dBA), `q = 10` đọc
-  **98.8212 %** thay vì 100 %. Lệch **1.18 %**. Không nguồn nào đọc ở trạm 1
-  nêu chuyện này; nó rơi ra khi tính từng dòng bảng (record §7).
+- [ ] **Q4 — NIOSH ship theo convention nào? (98-126 mâu thuẫn với chính nó,
+  giữa hai bảng trong CÙNG một chương)** **Bảng 1-1** (trang 2) và công thức in
+  ngay trên nó ở §1.1.1 (trang 1) — `T (min) = 480 / 2^((L−85)/3)`, kèm đúng
+  chữ *"where 3 = the exchange rate"* — cần `q = 3/log10(2) = 9.9657843`. Còn
+  **Bảng 1-2** (trang 3) và footnote in dưới nó, `*TWA = 10 × Log(D/100) + 85`,
+  cần `q = 10` chẵn. Dòng cuối Bảng 1-2 là bằng chứng không cần diễn giải:
+  **32,500,000 % → 140.1 dBA**, và `10·log10(325000) + 85 = 140.1188`.
 
-  **Đề xuất: ship giá trị tái tạo được BẢNG** (`q = 9.9657843`), vì bảng là thứ
-  một inspector cầm đọc, đồng thời in TWA theo đúng công thức NIOSH và ghi rõ
-  hai convention lệch nhau tới 1.18 %. (OSHA thì tự nhất quán — ba dòng lệch
-  của nó, 92/97/102 dB, là **làm tròn trong chính regulation**: thời gian thật
-  ở 92 dBA là `8·2^(−0.4) = 6.0629 h`, in thành 6.)
+  Lệch bao nhiêu là một closed form, không phải một con số:
+  `D(q=10)/D(q=3/log10 2) = 10^(−0.00034333·ΔL)`, tức `q = 10` đọc **thấp**
+  1.1788 % ở 100 dBA, 2.3437 % ở 115, 3.4949 % ở 130, và **4.2549 % ở
+  140 dBA** — đúng đỉnh dải đo 80–140 dBA mà chính §1.3.3 của NIOSH quy định.
+
+  > **Sửa bản trước, ghi lại để khỏi ai tin lại con số cũ.** Bản đầu của record
+  > viết "bảng chọi công thức, lệch tới 1.18 %". Cả hai vế đều sai, cùng một
+  > gốc: nó lấy **bảng tóm tắt sáu dòng của CDC bulletin 2016** (8 h/85 …
+  > 15 min/100) và tưởng đó là bảng của NIOSH. 1.18 % chính là giá trị ở
+  > 100 dBA — endpoint của bảng tóm tắt, thấp hơn endpoint thật 40 dB. Bảng
+  > thật là **Table 1-1, 51 dòng, bước 1 dB, 80 dBA → `130–140 <1 sec`**. Lý do
+  > trạm 1 không đọc bản gốc ("chỉ có bản scan ảnh") cũng đã bị bác: bản
+  > born-digital có text layer nằm ở
+  > `web.archive.org/web/2020/https://www.cdc.gov/niosh/docs/98-126/pdfs/98-126.pdf`,
+  > đã đọc và trích 2026-09-17.
+
+  **Đề xuất: ship giá trị tái tạo được Bảng 1-1** (`q = 9.9657843`), vì đó là
+  bảng một inspector cầm đọc *và* nó khớp với công thức in cùng trang; đồng
+  thời in TWA theo đúng công thức NIOSH và ghi rõ hai bảng hàm ý hai hằng số
+  exchange khác nhau.
+
+  **Hỏi luôn một câu đi kèm, vì quyết cùng lúc thì rẻ:** 98-126 có **ba lỗi số
+  học** (record §7) — Bảng 1-1 dòng 99 dBA in `18 min 59 sec` (công thức cho
+  18 min 53.93 sec); Bảng 1-2 dòng `50,000 % → 102.0` (đúng ra 111.99, lỗi đảo
+  chữ số, hai dòng kề là 111.5 và 112.8) và `26,000,000 % → 139.0` (139.15).
+  App tái tạo **bảng đã in kể cả lỗi**, hay tái tạo **công thức**? Hai sản phẩm
+  khác nhau. (Đề xuất: theo công thức; test chặn từng dòng bảng bằng cận
+  `100·r/T_exact` suy ra từ độ phân giải in — cận đó đúng ở cả 50 dòng **trừ
+  đúng dòng 99 dBA**, nên nó vừa dung sai làm tròn vừa **bắt được lỗi in**.)
+
+  **OSHA KHÔNG đối xứng như bản trước viết.** Bản trước bảo OSHA "tự nhất
+  quán, chỉ làm tròn" còn NIOSH "sai về bản chất" — không phải. Dose của OSHA
+  tính theo **Table G-16a** (Appendix A I(1)(i), bắt buộc), không phải
+  Table G-16; và G-16a **cũng làm tròn**: ở 81 dBA giá trị đúng là
+  **27.857618 h**, bảng in **27.9**. Cả hai cơ quan đều in một công thức đúng
+  và một bảng làm tròn theo nó.
 
 - [ ] **Q5 — alarm window là sliding hay consecutive-fixed?** Cả hai đều suy ra
   được từ block của §3. Sliding **nghiêm ngặt hơn** (max của nó ≥ max của
