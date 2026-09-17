@@ -120,3 +120,55 @@ TEST_CASE("formatContributors reads as a bare integer pair", "[readouts]") {
     CHECK(formatContributors(0, 4) == "0 of 4");
     CHECK(formatContributors(4, 4) == "4 of 4");
 }
+
+// --- Lane L-API Task G: the desktop half of record sec.12 constraint 2
+// (docs/dsp/2026-09-16-remote-api.md). ---
+//
+// The wire carries FULL float32 precision and the VIEWER rounds. That is a
+// decision, not an accident: rounding at the serialiser would be a lossy
+// transform nobody asked for, applied to numbers a client may want to
+// re-analyse, and it would put a display decision in the transport layer --
+// the same mistake as putting measurement vocabulary in az_ui.
+//
+// This case is what makes the deviation PROVABLE rather than merely
+// intended. It takes the API golden's OWN emitted float32 literals -- the
+// bytes a client actually receives -- and runs them through the three
+// formatters that already exist in app/src/view/Readouts.h. No fourth
+// formatter ships for this lane: `main` already carries a commit about a
+// neighbouring lane naming two formatters that do not exist.
+//
+// The parameters are `double` and the float32 -> double widening is exact,
+// so these strings are the rounding of the SAME value the wire carried.
+//
+// What this does NOT prove, stated rather than implied: that L6a's
+// JavaScript viewer rounds the same way. A C++ test cannot reach it. L6a
+// either ships the same thresholds against these same golden values plus its
+// own test, or records sec.12 constraint 2 as untested for the viewer and
+// labels it so. This lane proves the desktop half and hands over a named seam.
+
+TEST_CASE("the desktop half of the API's rounding constraint: the wire's own float32 "
+          "literals through the three formatters that already exist",
+          "[readouts][api]") {
+    // Hz -> formatHz: a whole number of hertz. app/tests/golden/
+    // api-v1-snapshot.json carries bands[0].centreHz as 25.118864 and
+    // mtw.frequencyHz[64] as 46.875; neither is rounded on the wire.
+    CHECK(formatHz(25.118864) == "25 Hz");
+    CHECK(formatHz(46.875) == "47 Hz");
+    CHECK(formatHz(1000.4) == "1000 Hz");
+
+    // dB -> formatTrim, one decimal. transfer.magnitudeDb[5] and
+    // bands[0].levelDb, straight out of the golden.
+    CHECK(formatTrim(5.3782816) == "5.4 dB");
+    CHECK(formatTrim(-31.934029) == "-31.9 dB");
+
+    // 0..1 -> formatAgreement, two decimals. transfer.coherence[3] and
+    // average.phaseAgreement[4]. phaseAgreement is R (L6b sec.2) and is NOT
+    // a coherence estimate -- it shares this formatter because it shares the
+    // 0..1-with-two-decimals RULE, not because it is the same quantity.
+    CHECK(formatAgreement(0.3783073) == "0.38");
+    CHECK(formatAgreement(0.5466747) == "0.55");
+
+    // NOT paired with formatTrim here on purpose: effectiveAverages is a
+    // COUNT, not a level. formatTrim(8.5859375) does return "8.6 dB", and a
+    // count formatted as dB is a wrong test whatever it returns.
+}

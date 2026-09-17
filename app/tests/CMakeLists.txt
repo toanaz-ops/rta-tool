@@ -122,6 +122,7 @@ add_executable(rtatool_analysis_tests
     test_api_limits.cpp
     test_api_serialise.cpp
     test_api_serialise_spatial.cpp
+    test_api_schema.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md) -- Analyser.cpp calls
@@ -189,7 +190,12 @@ add_executable(rtatool_analysis_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiSerialiseSpatial.cpp
 )
 target_include_directories(rtatool_analysis_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    # external/: lane L-API Task F (record sec.15 R16). The vendored JSON
+    # parser is TEST-ONLY, and no_json_parser_in_shipped_code enforces that
+    # with no permitted file at all under app/src. It lives at the repo root
+    # rather than under app/, outside every guard's DIRS (sec.15 R3).
+    ${CMAKE_SOURCE_DIR}/external)
 # RTA_REPO_ROOT: L7-ALIGN task D6 scans core/ from the test itself, so the
 # "core stays topology-free" rule runs in CI on all three operating systems
 # instead of living in a grep somebody has to remember to type.
