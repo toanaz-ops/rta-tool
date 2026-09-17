@@ -13,14 +13,50 @@
 #include "measure/Analyser.h"
 #include "measure/AverageGroup.h"
 #include "measure/RoutingPlan.h"
+#include "measure/SplConfig.h"
+
+#include "rta/meter/Block.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
 namespace rta::measure {
+
+// --- Lane L6a Wave 0, task W0-C: the SPL half of a publish ---------------
+
+/// Everything the publish path needs to build a `SplBlockView`, and nothing
+/// more: no meter, no ring, no thread.
+///
+/// `config == nullptr` means NOTHING IS LOGGING, and that is the only way to
+/// say it -- a default-constructed config with an empty metric list would
+/// publish an SPL block carrying no readings, which reads as "the meter is
+/// running and measured nothing".
+struct SplPublishInput {
+    const SplConfig* config = nullptr;
+    double sampleRate = 0.0;
+    /// The most recently COMPLETED block. Absent before the first one closes,
+    /// which is also absence of the whole view: a block is what a reading is,
+    /// and part of one is not a smaller reading.
+    std::optional<rta::meter::Block> latestBlock;
+    /// The blocks every metric's window is recomputed over, oldest first.
+    /// Each metric reads the LAST `windowBlocks` of it; a window longer than
+    /// the buffer reports `leqBufferFill < 1` rather than a shorter answer
+    /// pretending to be a full one.
+    std::span<const rta::meter::Block> window;
+};
+
+/// Builds the published SPL view, or `std::nullopt` when nothing is logging.
+///
+/// Every metric's value is `rta::meter::combineBlocks` over that metric's own
+/// window -- a RECOMPUTE over current membership, never a running
+/// subtraction, because a block can be retired by a later calibration check
+/// (record §3). Pure: no clock, no I/O, no allocation beyond the two vectors
+/// it returns.
+[[nodiscard]] std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input);
 
 /// Keeps `group`'s membership in step with `plan.routes`. Record §6: "two
 /// systems measured against two references are two groups, not one
@@ -110,6 +146,7 @@ namespace rta::measure {
                                                  AverageGroup& group,
                                                  std::vector<int>& lastTfIndices,
                                                  const RoutingPlan& plan,
-                                                 std::uint64_t droppedSamples);
+                                                 std::uint64_t droppedSamples,
+                                                 const SplPublishInput* spl = nullptr);
 
 }  // namespace rta::measure

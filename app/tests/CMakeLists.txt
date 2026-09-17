@@ -124,6 +124,9 @@ add_executable(rtatool_analysis_tests
     # block boundary), JUCE-free so it is proven OFF on all three CI
     # operating systems. SplConfig.h is header-only, no .cpp.
     test_spl_meter.cpp
+    # test_spl_publish.cpp: task W0-C -- SPL reaches the published Snapshot
+    # (one optional block, no wall clock, absence when nothing is logging).
+    test_spl_publish.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplMeter.cpp
     # --- end L6a Wave 0 ---------------------------------------------------
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
