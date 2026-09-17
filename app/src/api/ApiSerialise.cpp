@@ -176,9 +176,18 @@ std::string serialiseSnapshot(const measure::Snapshot& snapshot, const Request& 
         out += ',' + key("transfer") + '{' +
                detail::transferFields(snapshot, *snapshot.transfer, request) + '}';
     }
-    // The spatial blocks -- mtw, average, positions -- join here in Task E,
-    // with their own .cpp. Until then /snapshot is the union of what exists,
-    // which is the same rule, applied to a smaller set of blocks.
+    if (snapshot.mtw.has_value()) {
+        out += ',' + key("mtw") + '{' + detail::mtwFields(*snapshot.mtw, request) + '}';
+    }
+    if (snapshot.average.has_value()) {
+        out += ',' + key("average") + '{' + detail::averageFields(*snapshot.average, request) + '}';
+    }
+    // An empty group is an absent key too: `positions` is empty exactly when
+    // no group is configured, and an empty array on the wire would claim a
+    // group exists with nobody in it.
+    if (!snapshot.positions.empty()) {
+        out += ',' + key("positions") + detail::positionsArray(snapshot);
+    }
     out += '}';
     return out;
 }
