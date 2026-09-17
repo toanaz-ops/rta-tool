@@ -5,6 +5,75 @@
 
 ---
 
+# 2026-09-17 — **L-API station 4, WAVE 1 (tasks A–G) XONG — nhánh `remote-api/wave1-serialise`, PR mở, CHƯA merge. Wave 2 (tasks H–K: vendor cpp-httplib, `ApiServer`, wiring, guard server-library) là việc kế tiếp.**
+
+Bảy task, bảy commit, TDD từng cái (red dán trước green). **Toàn bộ OFF** —
+không có JUCE ở đâu trong wave này, nên cả bảy chạy trên ba OS của CI.
+
+| | |
+|---|---|
+| baseline OFF tại `a02fb29` | **649/649**, 0 `warning C`, guard quét **67** file |
+| OFF tại `73148a9` | **698/698** (+49), 0 `warning C`, guard quét **75** file |
+| baseline ON tại `a02fb29` | **717/717**, 0 `warning C` |
+| ON tại `73148a9` | **766/766** (+49), 0 `warning C` |
+| forced-fallback OFF | **698/698**, 0 `warning C` |
+| `git diff main --stat -- platform/ core/src core/include ui/` | **rỗng** |
+
+Commit: `ecbb83a` A (ApiJson) · `3f4f370` B (ApiPolicy/ApiSettings) ·
+`c1bd509` C (RateLimiter + ETag/304) · `97fb86b` D (serialiser cố định +
+golden) · `6c2901b` E (serialiser spatial + union) · `73148a9` F+G
+(nlohmann/json test-only + guard + readouts).
+
+**Bốn điều một phiên sau phải biết:**
+
+1. **F3 trong plan SAI và đã sửa — cần orchestrator xác nhận.** Plan bảo
+   assert `static_cast<float>(v)` round-trip về chính nó trên mọi numeric
+   leaf. **Assertion đó không thể đúng với code đúng** và đỏ ở 6/8 endpoint:
+   shortest-round-trip decimal của `25.118864f` là `"25.118864"`, đọc lại
+   thành double là 25.118864 chẵn, còn `(double)(float)25.118864` là
+   25.118864059448242 — lệch 6e-8 **do cấu tạo**, vì Task A phát ra decimal
+   ngắn nhất chứ không phải giá trị double chính xác của float. Plan còn sai
+   lần hai: `effectiveAverages` và `frequencyHz` là double thật trên
+   `Snapshot`, không phải float32. F3 ship ra assert cái ĐÚNG: finite khắp
+   nơi, và — với các key mà nguồn thật sự là `float` (liệt kê tên tường minh)
+   — narrow về float32, phát lại decimal ngắn nhất, phải trùng byte với token
+   trên dây. Chứng minh có răng bằng mutation: widen float32 → double trước
+   khi in (đúng lỗi của OSM, `server.cpp:386-390`) làm **F3 đỏ một mình**.
+2. **Guard `no_json_parser_in_shipped_code` ĐÃ DỰNG ở wave này**, sớm hơn
+   plan (plan xếp nó vào Task K). Lý do: README và `PROVENANCE.md` đều
+   **tuyên bố** guard đó enforce test-only-ness, và một tuyên bố trong doc mà
+   không có gì đứng sau là đúng thứ dự án này từ chối. Green: 320 file quét,
+   1 witness. **Bốn red đã dán**: offender ở `app/src`, ở `core/`, ở
+   `platform/`, và witness bị gỡ include. Red thứ tư kiêm luôn bằng chứng
+   witness chạy trên source đã strip comment — một dòng `//` không được tính.
+   **Guard `no_server_library_outside_api` thì CHƯA dựng** — nó cần
+   `ApiServer.cpp` tồn tại làm `ALLOW`, tức là wave 2.
+3. **`stringValue`, không phải `quoted`.** Tên `quoted` trong `ApiJson.h` va
+   với `std::quoted`: ADL tìm thấy nó khi đối số là `std::string` và thắng
+   overload resolution. Đo được, không đoán — build đầu đỏ với C2678 trên
+   `std::_Quote_out`. Đừng đổi lại.
+4. **Golden regenerate bằng một Catch2 case gắn tag `[.]`**, tên
+   `"regenerate the API golden"`. Catch2 giấu nó khỏi `--list-tests` nên
+   `catch_discover_tests` không đăng ký, ctest không thấy, và không filter
+   wildcard nào chạm tới. Muốn ghi đè phải gõ đúng tên trên command line —
+   đúng hình dạng `memory/a-gen-script-runs-the-moment-you-invoke-it.md` đòi.
+   Nó ghi ở chế độ `std::ios::binary` để golden giữ LF trên Windows (D8
+   assert điều đó).
+
+**Cho wave 2, theo thứ tự plan: H (vendor cpp-httplib) → I (`ApiServer`) →
+J (composition root, ON) → K (guard server-library + chín red).** Ba bẫy đã
+biết, đều từ vòng verify PR #14 và chưa bị chạm tới ở wave này: dùng
+`bind_to_any_port` chứ không `bind_to_port` (cái sau trả `bool` và `Server`
+không có `port()`); `ApiServer.h` **phải** là pimpl với destructor out-of-line,
+nếu không một bản dựng ĐÚNG sẽ làm guard K đỏ; và WebSocket upgrade **là một
+`GET`** nên method allowlist không chặn — thứ chặn là không handler nào đăng ký.
+
+**GitHub Actions vẫn bị chặn ở mức tài khoản (billing)**, nên mọi con số ở
+trên là đo tại chỗ trên máy này (MSVC 14.51, Visual Studio 18 2026, Release),
+không phải từ CI. Verifier phải đo lại.
+
+---
+
 **2026-09-17 — L-API station 3 plan written: `docs/plans/2026-09-17-remote-api-impl-plan.md`; station 4 next.** Mười task (A–J), **chín** chạy hết trong `RTA_BUILD_APP=OFF` không cần JUCE (vòng verify PR #14 chỉ ra server dùng `std::thread` + `bind_to_port`/`listen_after_bind` là thuần std, nên `Host` check được chứng minh trên CI ba OS chứ không chỉ trên máy này); chỉ Task I (wiring composition root) là ON. Mười tám reconciliation (`API-R1..R17` + `R16a`) đã được ghi thành **§15 amendment** trong `docs/dsp/2026-09-16-remote-api.md`. Hai vòng verify đối kháng trên PR #14: vòng 2 cho **station 4 GO (task A–H)** và bắt thêm năm lỗi cơ học — `bind_to_port` trả `bool` và `Server` không có `port()` (phải dùng `bind_to_any_port`); `httplib::Server` để by-value sẽ kéo include vào `ApiServer.h` và làm guard mới **ĐỎ trên một bản dựng đúng**, nên phải pimpl; guard JSON thiếu red ngoài `app/src`; và WebSocket upgrade **là một `GET`** nên method allowlist không chặn — thứ chặn là không có handler nào đăng ký. Năm câu §14 đều đã chốt default có tên — port đổi **4737 → 4736** vì 4737 là IANA `ipdr-sp`. Docs-only, chưa build gì.
 
 ---
