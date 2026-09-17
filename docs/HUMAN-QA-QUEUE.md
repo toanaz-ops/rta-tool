@@ -85,13 +85,22 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
 `docs/dsp/2026-09-16-remote-api.md`. **Không câu nào dưới đây chặn trạm 3 viết
 impl plan** — chúng quyết bề mặt v1, không quyết kiến trúc.*
 
-- [ ] **Số port mặc định — chọn cố định hay ephemeral?** Đề xuất **4737**
-  (sát REW 4735, chưa thấy tool nào chiếm; hàng xóm: Smaart 26000, OSM 49007,
-  GALAXY 25003/25004, Q-SYS 1702/1710, X32 10023). Không có standard nào áp
-  được. Câu hỏi thật không phải "số nào" mà là: **port cố định** thì client dò
+- [ ] **Số port mặc định — chọn cố định hay ephemeral?** **Con số đã chốt:
+  4736.** Câu hỏi còn lại chỉ là *hình dạng*: **port cố định** thì client dò
   được nhưng có thể đụng port máy khác, còn **ephemeral port ghi ra một file
   cho client đọc** thì không bao giờ đụng nhưng phải có chỗ hẹn. Một câu là
-  chốt được. Nguồn: record §8, §14 q.1.
+  chốt được. Nguồn: record §8, §14 q.1, và **§15 R14**.
+
+  **Đính chính bản trước của mục này** (nếu chủ nhân đã đọc nó): bản cũ đề xuất
+  **4737** với lý do "chưa thấy tool nào chiếm". Câu đó đúng với các tool **âm
+  thanh** đã khảo sát, và **phép kiểm duy nhất bắt được lỗi này thì chưa ai
+  chạy**: IANA Service Name and Transport Protocol Port Number Registry có
+  `ipdr-sp,4737,tcp` và `ipdr-sp,4737,udp` (IPDR/SP, đăng ký 2005-08). **4734,
+  4735** (chính là của REW) **và 4736 thì KHÔNG có trong registry.** User Ports
+  không độc quyền nên 4737 vẫn chạy được — nhưng một default có tên mà dựa trên
+  một phép kiểm chưa ai chạy đúng là thứ phương pháp của dự án này sinh ra để
+  chặn. Trạm 3 đổi default sang **4736**; câu hỏi cố-định-hay-ephemeral thì y
+  nguyên, chỉ tiền đề được sửa.
 
 - [ ] **`api.allowLanBind` có ship ở v1 dạng setting TẮT sẵn, hay KHÔNG tồn
   tại?** `docs/UPGRADE-BACKLOG.md` hoãn cái *tính năng* LAN bind, nhưng không
@@ -104,8 +113,12 @@ impl plan** — chúng quyết bề mặt v1, không quyết kiến trúc.*
   cần: `TraceLibrary` do `MainComponent` sở hữu, mutable, xoá cả copy lẫn move,
   có `revision()` nhưng **không có atomic publish** — đọc thẳng từ API thread
   là race với mọi `rename`/`setVisible`/`soloOnly`. Đo live thì không cần gì cả
-  vì `Snapshot` đã publish sẵn. Nếu chủ nhân chốt "chưa", **v1 còn sáu endpoint
-  và không phải xây publish path nào**. Nguồn: record §5, §6, §14 q.3.
+  vì `Snapshot` đã publish sẵn. Nếu chủ nhân chốt "chưa", **v1 còn TÁM endpoint
+  và không phải xây publish path nào** — `/status`, `/snapshot`, `/transfer`,
+  `/mtw`, `/bands`, `/spectrum`, `/average`, `/positions`. (Bản trước của mục
+  này viết "sáu"; **sáu là độ dài danh sách `available` trong `/status`**, mà
+  danh sách đó không kể `/status` và `/snapshot`. Xem §15 **R12**.) Nguồn:
+  record §5, §6, §14 q.3.
 
 - [ ] **Token: ship setting rỗng, hay sinh token ngay lần bật đầu tiên?** Token
   sinh sẵn để operator copy ra khỏi panel preferences thì an toàn hơn hẳn, và

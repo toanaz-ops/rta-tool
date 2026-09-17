@@ -3,6 +3,18 @@
 *2026-09-16. Station-2 decision record. Station-1 research:
 `docs/research/2026-09-16-remote-api-station1-research.md`. Repo at `6d9a53d`.*
 
+> **AMENDED 2026-09-17 — read [§15](#15-amendment-2026-09-17--the-seventeen-reconciliations-station-3-filed) before acting on any section below.**
+> Station 3 (`docs/plans/2026-09-17-remote-api-impl-plan.md`) and the adversarial
+> verify of it on PR #14 filed **seventeen** corrections against this record.
+> The wrong sentences are left in place on purpose — a record whose errors are
+> erased teaches the next session nothing — and each one now carries an inline
+> pointer. The five that most change what a builder does: **§2**'s `split.py`
+> (R2), **§8**'s port `4737` (R14), **§10**'s two files and its ON-only server
+> (R1, R15), **§11** item 11's "rise by two" (R6), and **§14 q.3**'s "six
+> endpoints" (R12). A sixth is new work this record did not contemplate at all:
+> nothing in the CI configuration asserted that the emitted document is
+> well-formed JSON (R16).
+
 ## 0. What this lane is for, and the owner's standing ruling
 
 `docs/dsp/2026-09-06-multichannel-l6b.md` §10 deferred the remote API out of
@@ -76,6 +88,8 @@ is already available, AGPLv3/commercial like every JUCE 9 module, so adding it
 later costs no new licence question. §13 records it as not decided here.
 
 ## 2. Decision: the library is cpp-httplib, MIT, with TLS left undefined
+
+*Amended by §15 **R2** (the amalgamated header, not `split.py`), **R3** (it lives at `external/`), **R7** (`/W4` and a vendored header) and **R16** (a second vendored header, nlohmann/json, test-only).*
 
 **Decision.** Vendor **cpp-httplib** (yhirose/cpp-httplib, **MIT**), run
 through its own `split.py` so the header cost is paid in exactly one
@@ -182,6 +196,8 @@ argument with a 30 ms default and a 0-100 ms range.
 
 ## 4. Decision: one API thread, reading the same published pointer the UI reads
 
+*Amended by §15 **R15**: the thread is a `std::thread`, not a `juce::Thread`, so the server compiles and is tested in the `RTA_BUILD_APP=OFF` configuration CI runs. The ownership and ordering contract in this section is unchanged.*
+
 **Decision.** The server owns **one** thread, created and joined by the
 composition root. It calls `SnapshotSource::latest()`, takes a
 `shared_ptr<const Snapshot>` copy, and serialises **from that copy**. It never
@@ -275,6 +291,8 @@ pretending:**
   constraint belongs to L6a (§12).
 
 ## 6. The v1 surface — GET only, versioned in the path
+
+*Amended by §15 **R4** (`absence` is a per-bin array), **R10** (`/transfer` serves `transfer`, not `soloTransfer`), **R11** (`axis.pointCount` is measured, not derived), **R12** (eight endpoints, not six) and **R13** (`/snapshot`'s body schema, which this section never gave).*
 
 **Decision.** Every endpoint is `GET` (with `HEAD` and `OPTIONS` answered).
 Every other method returns **405**. The version is a **path segment**, not a
@@ -468,6 +486,8 @@ guesses.
 
 ## 8. Decision: the settings, with their defaults named
 
+*Amended by §15 **R14**: `api.port` is **4736**, not 4737 — 4737 is IANA-registered as `ipdr-sp`. And **R5**: no preferences store exists in `app/`, so none of these persists in v1. `api.allowLanBind` **does** ship, as a setting that is present and refuses (§14 q.2's default, taken in the plan), contrary to this table's "absent in v1".*
+
 | Setting | Default | Range / values | Why |
 |---|---|---|---|
 | `api.enabled` | **`false`** | bool | The API does not exist until the operator turns it on. Smaart and REW both ship theirs off by default; a network listener nobody asked for is not a feature |
@@ -489,6 +509,8 @@ request, and the stock base of `max(8, hardware_concurrency()-1)` sizes for a
 load this API does not have.
 
 ## 9. Decision: the security posture, and what it is actually defending against
+
+*Amended by §15 **R17**: control 3's **406 and 415 are dropped** as machinery with no buyer for a GET-only API with one representation; **413 is kept and tested**, and refusing an oversized body before routing is what makes 415 unreachable.*
 
 **Decision, in order of value:**
 
@@ -577,6 +599,8 @@ them as such.
 
 ## 10. Boundary: what each layer owns
 
+*Amended by §15 **R1** (three files in `app/src/api/`, not two — the validator, the limiter and the `Host` check must be testable in OFF) and **R15** (`ApiServer` is **not** `RTA_BUILD_APP=ON` only; only the composition-root wiring is).*
+
 - **`core/`** — nothing. Untouched. The `core_has_no_framework_deps` guard
   already blocks `asio` by name, which as a side effect keeps every
   Asio-based server library (Beast, Crow, Drogon) out of `core/` and
@@ -614,6 +638,8 @@ Both new files stay under the 400-line hard cap; if `ApiServer.cpp` grows past
 it, the seam is validation-versus-routing, not "split the handlers in half".
 
 ## 11. How CI proves this with no sound card, no network and no JUCE
+
+*Amended by §15 **R3**/**R8** (item 10: where the library lives, and the doxygen false positive; the guard also needs a fifth red planted under `core/`, or nothing proves it watches the four non-`app` directories), **R6** (item 11: "rise by two" is arithmetic, not a constant), **R9**/**R15** (item 12 moves into the OFF half and runs on three OSes) and **R16** (nothing here asserted the document is well-formed JSON).*
 
 Every claim below is testable in the **`RTA_BUILD_APP=OFF`** configuration
 except where marked ON. Nothing here needs a socket bound, because the
@@ -859,6 +885,8 @@ this costs if the decision is made casually.
 
 ## 14. Open questions for a human
 
+*Amended by §15 **R14** (q.1: 4737 is taken by IANA; the default is now 4736, and the fixed-versus-ephemeral half of the question is still open) and **R12** (q.3: without `/traces` and `/session` v1 is **eight** endpoints, not six). The plan takes a named default for all five; none blocks a builder.*
+
 1. **The port number.** Proposed **4737**, which is adjacent to REW's 4735 and
    currently unclaimed by any surveyed tool (Smaart 26000, OSM 49007, GALAXY
    25003/25004, Q-SYS 1702/1710, X32 10023). The real question is fixed versus
@@ -886,6 +914,241 @@ this costs if the decision is made casually.
    redistributing the SDK, so nothing from it could ever be quoted into this
    repo's docs; it could only inform. It is a days-long round trip, so the
    answer is worth having before station 3, not after.
+
+## 15. Amendment, 2026-09-17 — the seventeen reconciliations station 3 filed
+
+*Added after `docs/plans/2026-09-17-remote-api-impl-plan.md` was written against
+the landed code, and after the adversarial verify of that plan on PR #14. Every
+item below **supersedes** the section it names. Nothing above this line was
+deleted: a record whose wrong sentences are erased teaches the next session
+nothing about how they came to be wrong. Read the original, then read this.*
+
+**How to read it.** `API-R1`..`R13` came from station 3 reading the files the
+record cites. `R14`..`R17` came from the verifier round on the plan. Each names
+the section it overrides and what changes; the plan's own reconciliation section
+carries the longer argument.
+
+### R1 — §10 names two files in `app/src/api/`; there must be three
+
+§10 puts the `Host` allowlist, the method allowlist, the parameter validation
+and the rate limit inside `ApiServer.cpp`. §11 items 6-9 require all four to be
+**pure functions tested in `RTA_BUILD_APP=OFF`**. Both cannot hold at once.
+
+**Amended:** a third file, `app/src/api/ApiPolicy.{h,cpp}`, framework-free and
+free of any server library, holds them; `ApiServer.cpp` keeps the socket, the
+thread and the routing and calls into it. This is §10's own sentence — "if
+`ApiServer.cpp` grows past [400] the seam is validation-versus-routing" —
+applied before the fact rather than after.
+
+### R2 — §2's `split.py` is superseded by the amalgamated header
+
+`split.py` exists to amortise the header across **several** translation units.
+§11 item 10's guard permits **exactly one** includer, so there is no second TU
+to amortise over and the cost is paid once either way. Against that, split
+output is *generated*: a reviewer cannot hash it against an upstream release,
+while a verbatim `httplib.h` can — verified at v0.56.0, 22875 lines, sha256
+`1f99e51881c4c9d0649b27c611442c2f4d9bcfec5a22a14d5fcd1f8106f730b4`.
+
+**Amended:** vendor the amalgamated header verbatim. If a second includer is
+ever needed, `split.py` is the answer and the guard's `ALLOW` becomes a list.
+
+### R3 — the vendored library lives at `external/`, and the guard decides that
+
+§11 item 10 scans `core;platform;ui;tools;app`. `file(GLOB_RECURSE "${DIR}/*.h")`
+picks up a vendored `httplib.h` placed **anywhere under `app/`**, matches the
+pattern, finds it is not the `ALLOW` file, and turns the guard red on the very
+library it exists to permit.
+
+**Amended:** `external/cpp-httplib/` at the repository root, outside all five
+`DIRS` entries. (`external/` is new; this repo vendored nothing before.)
+
+### R4 — `absence` is a per-bin array, not a scalar
+
+§6 and §11 item 4 read `absence` as one string. `AverageBlock::absence` is
+`std::vector<rta::dsp::SpatialAbsence>` (`app/src/measure/Snapshot.h:131`), one
+entry per bin, and `contributors` is likewise a vector (`:125`).
+
+**Amended:** `absence` travels as a JSON **array of strings**, and §11 item 4's
+assertion is `"noWeight"` present at a named index. The decision it encodes — a
+name, never an integer, because OSM's integer flattening is a measured failure
+mode — is unchanged.
+
+### R5 — §8's settings have nowhere to persist, and v1 does not build one
+
+`grep` for `PropertiesFile` / `ApplicationProperties` / `getUserSettings` over
+`app/src` returns nothing. `SessionCodec` persists sessions at
+`kSchemaVersion = 3` and knows nothing about an API.
+
+**Amended:** `ApiSettings` is a plain framework-free struct carrying §8's
+defaults, constructed by the composition root. **Persistence is out of v1** and
+joins §13's list. No default in §8 is weakened; every test runs against them.
+
+### R6 — §11 item 11's "N must rise by two" is arithmetic, not a constant
+
+The `-DGLOBS=` list ends with `${CMAKE_CURRENT_SOURCE_DIR}/*.h;*.hpp`
+(`app/tests/CMakeLists.txt:282`), so **every new header in `app/tests/` also
+raises N**.
+
+**Amended:** the acceptance is "N rises by exactly the number of files this task
+added, read from the guard's own `OK (N files scanned)` line". The plan adds far
+more than two.
+
+### R7 — `/W4` is global, and a vendored header will not be clean under it
+
+Root `CMakeLists.txt:50` applies `/W4 /permissive- /utf-8` to every target, and
+every lane's gate is 0 `warning C`.
+
+**Amended:** the one `#include` of `httplib.h` is wrapped in
+`#pragma warning(push, 0)` / `#pragma warning(pop)`; fallback is a `SYSTEM`
+include directory plus `/external:W0 /external:anglebrackets`. Which one was
+needed is **measured and reported**, not assumed.
+
+### R8 — `rta_strip_comments` does not strip a doxygen block, so the new guard can false-positive
+
+`check_no_std_atomic_shared_ptr.cmake:129-130` removes `//` lines and `/* ... */`
+bodies **containing no `*`**. A `/** ... */` block survives, so a file outside
+`ApiServer.cpp` that mentions the library inside one trips the guard.
+
+**Amended:** every mention of the library outside `ApiServer.cpp` is a `//` line
+comment, and the guard's red-then-green includes that exact case, so the rule is
+a test rather than folklore.
+
+### R9 — §11 item 12 had no target to live in (and see R15, which moves it)
+
+`app/tests_juce/CMakeLists.txt` builds `rtatool_view_tests`, which links `az_ui`
+and the JUCE GUI modules; that file's own header comment argues against folding
+unrelated tests into a target with the wrong dependency direction.
+
+**Amended, then superseded by R15:** the loopback test does not go there at all.
+It moves into `rtatool_analysis_tests`, in the `RTA_BUILD_APP=OFF` half of
+`app/`, because R15 removes the server's only JUCE dependency.
+
+### R10 — §6 does not say whether `/transfer` serves `transfer` or `soloTransfer`
+
+Both are `std::optional<TransferBlock>` (`Snapshot.h:221`, `:257`).
+
+**Amended:** `/transfer` serves `Snapshot::transfer`. `soloTransfer` is not on
+the wire in v1 and never appears in `available`. Three further `Snapshot` fields
+§6 never mentions — `peakBandLevelDb`, `peakBandCentreHz`, `referenceBands` —
+are likewise **decided out**, and are named here so a later reader knows they
+were decided rather than forgotten.
+
+### R11 — `axis.pointCount` is measured, never derived
+
+`TransferBlock` carries no point count. §6's example shows `pointCount: 2049`
+beside `fftSize: 4096`, and the two agree only when the engine filled the whole
+half-spectrum.
+
+**Amended:** `pointCount = transfer->magnitudeDb.size()`. `fftSize` is echoed
+from `Snapshot::fftSize` as a separate fact.
+
+### R12 — §14 q.3's "six endpoints" is the length of `available`, not the endpoint count
+
+§6 lists ten paths. Removing `/traces` and `/session` leaves **eight**:
+`/status`, `/snapshot`, `/transfer`, `/mtw`, `/bands`, `/spectrum`, `/average`,
+`/positions`. Six is the length of `/status`'s `available` capability list,
+which does not include `/status` or `/snapshot` themselves.
+
+**Amended:** v1 is **eight** endpoints; `available` keeps its six capability
+names.
+
+### R13 — `GET /api/v1/snapshot` is listed in §6 with no body schema
+
+**Amended:** `/snapshot` is the **union** of `/status` and every block that is
+present, keyed by block name, with an absent block's key **absent** — the same
+absence rule `coherence` gets, for the same reason. It is one round trip for a
+client that wants all of it, and it is the endpoint the golden file pins in
+full.
+
+---
+
+*The four below came from the adversarial verify of the plan (PR #14).*
+
+### R14 — §8's port `4737` is IANA-registered; the default becomes `4736`
+
+§14 q.1 proposed 4737 as "currently unclaimed by any surveyed tool", which was
+true of the surveyed **audio** tools and was never checked against the registry.
+The IANA Service Name and Transport Protocol Port Number Registry has
+`ipdr-sp,4737,tcp` and `ipdr-sp,4737,udp` (IPDR/SP, registered 2005-08). 4734,
+4735 (REW's own) and 4736 are absent from it.
+
+**Amended:** the default port is **4736**. User Ports are not exclusive so 4737
+would have worked, but a named default resting on a check nobody ran is the
+thing this record's method exists to prevent. §14 q.1's real question — fixed
+versus ephemeral-plus-a-rendezvous-file — is **still open** and is still one
+sentence.
+
+### R15 — §10's "`RTA_BUILD_APP=ON` only" for `ApiServer` is overturned; the server is JUCE-free and runs on CI
+
+§4 says the server owns one thread created and joined by the composition root;
+§10 marks `ApiServer.{h,cpp}` ON-only. The only thing that forced ON was the
+choice of `juce::Thread`. cpp-httplib is pure standard C++ — `bind_to_port(host,
+port)` and `listen_after_bind()` (`httplib.h` v0.56.0 `:2267`, `:2269`) —
+and `app/tests` is registered **outside** the `RTA_BUILD_APP` guard (root
+`CMakeLists.txt:72`). There is **one** CI job and it is `RTA_BUILD_APP=OFF`
+(`.github/workflows/ci.yml:9`, `:21`, three OSes at `:15`), so an ON-only server
+is a server proven on **zero** machines except a developer's Windows box, by
+hand — including the end-to-end `Host` check, which §9 calls the highest-value
+control in the whole API, and shutdown/port-reuse, the two behaviours that
+differ most across Windows, Linux and macOS sockets.
+
+**Amended:** `ApiServer` owns a **`std::thread`**, contains no JUCE, compiles
+into the `RTA_BUILD_APP=OFF` half of `app/`, and its loopback tests run on all
+three CI operating systems. §4's contract is unchanged — the composition root
+still constructs it and still joins its thread, and the ownership and ordering
+argument is untouched. **Only the composition-root wiring stays ON.**
+
+Two costs, stated rather than absorbed. (a) CI now compiles the vendored header
+on ubuntu, macos and windows; §2's compile measurement was MSVC-only, so the
+figures do not transfer and the builder reports the real ones. (b) A loopback
+test built on `httplib::Client` would be a **second includer** and would turn
+§11 item 10's guard red, so the test drives a **raw socket** instead — forty
+lines that send three fixed request lines and read a status line. That is not
+"hand-rolling HTTP": §2 rejected hand-rolling a *server*, with its parsing,
+keep-alive, timeouts and security surface. A fixed-string test client has none
+of those, and it keeps the guard's headline claim — *exactly one* file includes
+a server library — literally true.
+
+### R16 — §11's acceptance needs a JSON parser, and the record vendors none
+
+§11 items 1-5 are satisfied by substring matches and a byte-compare against a
+file the same serialiser produced. **Nothing in the `RTA_BUILD_APP=OFF`
+configuration — the only one CI runs — asserts that the emitted document is
+well-formed JSON.** A stable-but-malformed document passes every one of them.
+
+Two ways out were argued. A hand-written validating parser in the test needs no
+new dependency — and fails on the principle this project already applies to
+golden vectors: **a validator must not share an author with the thing it
+validates.** Golden vectors come from NumPy/SciPy rather than from a second
+in-house implementation for exactly that reason, and a parser written by the
+person who wrote the serialiser reproduces their misunderstanding of JSON on
+both sides, where it cancels out and reads as proof.
+
+**Amended:** vendor **nlohmann/json** (MIT, single header) at
+`external/nlohmann/json.hpp` with its `LICENSE` and a provenance note, **used
+only under `app/tests/`** and never by shipped code. A new guard
+(`no_json_parser_in_shipped_code`) scans `core;platform;ui;tools;app/src` with
+**no permitted file at all**, and additionally fails if **no** file under
+`app/tests/` includes it — a parser nothing tests with has stopped meaning
+anything. MIT flows into an AGPLv3 work imposing only notice retention, the same
+chain §2 established for cpp-httplib. The compile cost is confined to one test
+TU, the same discipline §2 applies to the server header.
+
+### R17 — §9 control 3's `406` and `415` are dropped; `413` is kept and tested
+
+Both are content-negotiation answers about a **request body**, and v1 is
+GET-only with a single representation. 406 would be machinery with no buyer: a
+client that cannot accept `application/json` has nothing to do with this API.
+415 is unreachable once any request carrying a body is refused before its
+content type is read.
+
+**Amended:** `413` **is** built and tested — the payload limit is set small
+(8 KiB) and any request with a body over it is refused before routing, which is
+what makes 415 unreachable. **406 and 415 are dropped**, and §13 gains "content
+negotiation" as something this record no longer decides. Naming the drop is the
+point: a control listed in a record and absent from the code is a control
+everyone assumes someone else built.
+
 
 ## Sources
 
