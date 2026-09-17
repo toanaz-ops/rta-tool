@@ -74,6 +74,103 @@ không phải từ CI. Verifier phải đo lại.
 
 ---
 
+# 2026-09-17 — **L6a station 3 plan written: `docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md`; station 4 next.**
+
+Nhánh `l6a/station-3-plan` từ `main` (`af8a9d0`, nơi PR #12 đã merge), **docs-only,
+không một dòng code**, nên không có tally nào ở đây và đó là đúng. GitHub Actions
+vẫn bị chặn ở mức tài khoản (billing).
+
+- **Năm wave**: Wave 0 SPL publish path (block + sample-count clock → `Snapshot::spl`,
+  seam 3.0103 dB đóng bằng closed form), Wave 1 core pure math (histogram Ln 2000+2,
+  dose hai accumulator, headroom, alarm latch), Wave 2 app (ring theo declared span,
+  alarms, log `#key=value`, pane), Wave 3 calibration flow, Wave 4a report / 4b viewer.
+- **Ba scope default đã lấy thay cho ba câu `[!]`** — Q1 (quy đổi một lần tại meter
+  seam, không động vào bands), Q2 (**dựng** calibration flow → Wave 3), Q8 (viewer
+  **ship, cuối cùng, có gate** → Wave 4b). Chi phí nếu chủ nhân lật nằm trong bảng
+  đầu plan; Wave 3 và Wave 4b bị cắt là **xoá nguyên tác vụ**, không viết lại cái khác.
+- **Mười hai reconciliation `SPL-R1..R12`** trong plan, orchestrator sửa record trước.
+  Nặng nhất: **SPL-R1** — `rta::dsp::RingBuffer` chỉ có MỘT `readIndex_`, nên yêu cầu
+  "SPL meter ngồi trên drain riêng của measurement channel" (§C4) **không dựng được
+  như viết**; feed đi theo scratch buffer, và đường routed bị reference gate — block
+  mang cờ `Gap` để log **nói ra** là nó đứng, thay vì nói dối.
+- **Một việc chỉ chủ nhân làm được**: phép thử Chrome Local Network Access (Wave 4b
+  Gate 2) — thủ tục và bốn thứ cần báo lại nằm trong plan.
+- **Task G2** nhặn nốt §13 Q10: `core/tests/check_no_conformance_claim.cmake:18,61`
+  còn ghi "Table 2" — đúng là **Table 3**. Đó là code, thuộc trạm 4, không đụng ở PR này.
+
+**Bản 2 (2026-09-18) — đã vá **mười bốn** lỗi từ vòng verify đối kháng trên PR #15**
+(`bf74e52`). Verdict: **SOUND-WITH-FIXES, station 4 GO, wave đầu là W0-A**; SPL-R1
+bị thử bác bỏ và **đứng vững**. Bảy lỗi nặng — cái nào cũng **đỏ ngay lần
+chạy đầu** hoặc **ship một con số sai mà không ai biết**:
+
+1. **W0-A A4** — fixture "hai nửa ở `L` và `L+10`" phải là `10log10(5.5) = 7.4036`,
+   không phải `10log10(5.05) = 7.0329` (đó là case **±10 dB**, lệch 0.371 dB).
+   Đây đúng là cái bẫy `core/tests/test_leq.cpp:41-47` đã ghi sẵn. Thêm A4b.
+2. **Dung sai 1e-12 nằm DƯỚI sàn làm tròn** của một tổng 48 000 mẫu (đo được
+   2.636e-12 / 2.874e-12). Lấy **1e-9** kèm lý do của `test_leq.cpp:69-74`.
+3. **`histogramBaseDb = -20.0`** làm **mọi Ln của mọi phiên chưa calibrate** vĩnh
+   viễn là `BelowSpan` — vì Q1 default để SPL chưa calibrate ở dBFS. Base giờ
+   **dẫn xuất** từ `referenceOffsetDb`; thêm fixture W1-A7/A8.
+   (`memory/a-default-must-be-run-through-the-gate-it-feeds.md` đúng y nguyên.)
+4. **`Gap` không tái dựng được từ log**, và `t_iso` sai vĩnh viễn sau cú drop đầu
+   tiên. Thêm `droppedSamples` **vào đúng 4 byte padding** — `sizeof(Block)` vẫn
+   **40**, bảng ring §4 không đổi — và thêm cột đó vào CSV.
+5. **Counting allocator là global `operator new`**, không copy được hai lần vào một
+   binary → task mới **W0-B0** tách `app/tests/AllocationProbe.{h,cpp}`.
+6. **Điểm tap sai**: `locateBuffer_.feedHop` (`:269`) nằm **DƯỚI** chốt
+   `kMaxTransferFunctions` (`:256`), nên route ≥ 8 sẽ **im lặng, không cả `Gap`**.
+   Tap chuyển lên giữa `:254` và `:256`; thêm test D1b cho route 8.
+   (`memory/a-cap-checked-on-the-drain-path-is-unchecked-on-the-publish-path.md`.)
+7. **Cờ nào loại block khỏi `combineBlocks`** chưa ai nói → **chỉ
+   `CalibrationInvalid`** (có clause ISO 1996-2 cl. 5.2), `Overload` **KHÔNG** (loại
+   nó là xoá khoảnh khắc to nhất của show khỏi số liệu pháp lý). Năm fixture
+   A9–A13, và một câu cho chủ nhân (Open item 7).
+
+Bảy lỗi còn lại sửa tại chỗ. Đáng ghi: **SPL-R7 bị bác lý do** — con số `4.7e-8`
+không tồn tại, `9.9657843` là làm tròn **lên** chứ không phải cắt, và **không một
+acceptance số học nào trong lane phân biệt được hai hằng số** — luật sống nhưng
+chỉ dựa vào D1f (bitwise). Guard count sửa: `core_makes_no_class_1_claim` **+13**
+(8 file meter + 5 file test phải thêm tên — SPL-R9 mở lỗ hổng ở `core/tests` đúng
+lúc nó vươn sang `app/`), `core_has_no_framework_deps` **+13**, W0-C **+0**,
+W2-D **+1**. Port viewer **4736**, không phải 4737 (API-R14). Và **static-asset
+mount KHÔNG nằm trong L-API v1** — Gate 1 của Wave 4b là **hai** việc, không phải
+một. **Chưa bắt đầu bất kỳ việc gì của Wave 4b.**
+
+**Bản 3 (2026-09-18) — vòng verify thứ hai: bảy fix nặng đều ĐƯỢC XÁC NHẬN BẰNG
+ĐO** (`sizeof(Block) == 40` **biên thật**, đọc từng dòng chỗ tap, tính lại A4/A4b,
+và lý lẽ loại-trừ cờ được **phán là đúng**). **Station 4 GO, wave đầu vẫn là
+W0-A.** Thêm bốn mục nhỏ, tất cả đã vá, **mọi con số đều đo trên máy này chứ
+không suy luận**:
+
+- **N1** — hàng guard delta ghi "sum to 19" trong khi chính danh sách của nó cộng
+  ra **18**, và một trong số đó **tự động** (glob) nên số phải thêm tay là **17**.
+  Giờ in đủ ba con số kèm quy ước của từng con, và gọi tên trường hợp Wave 4b
+  (**18 tay / 19 tổng**). Đây đúng là hình dạng của defect 7 tái xuất **bên trong
+  bản vá cho defect 7**.
+- **N2** — D1b/D1c đã bị nới ra 1e-12 dựa trên một **phủ định không đo**. Đo lại:
+  `pow(10, log10(2)) == 2.0` **bitwise** trên cả g++ 16.1.0 (MinGW-W64 ucrt) lẫn
+  MSVC ucrt, và `D == 100.0` bitwise với `Q ∈ {3,4,5,6}` cả hai chiều.
+  **Trả lại "exactly"**, kèm NOTE: nếu một toolchain CI bác bỏ thì đó là **một
+  phát hiện phải báo** (tên libm, tên OS, trong PR body), **không phải cớ để nới
+  dung sai**.
+- **N3** (**có sẵn từ bản đầu, vòng 1 bỏ sót**) — W0-B B2 trích công thức
+  `1 − e^{−t/τ}` rồi in `−1.75 dB`, mà `−1.7372` là `10·log10(e^{−0.4})` — **số hạng
+  suy giảm, tức phần bù của chính công thức đứng cạnh nó**. Đúng phải là
+  `10·log10(1 − e^{−0.4}) = −4.8190745912`, lệch **3.0819 dB**; và dung sai 0.5 dB
+  "dẫn xuất từ" con số sai ấy sẽ làm **một bản choài đúng đỏ khoảng 4.3 dB**.
+  B2 viết lại quanh công thức đúng, dung sai **dẫn từ `float`** (đo: ULP float32 ở
+  100 dB là `7.62939453e-06` → lấy `1e-4 dB`), và τ **đọc từ
+  `Detector::riseTimeConstant`** chứ không gõ tay — vì 125 ms vẫn là **UNVERIFIED**
+  trong ledger §14. Thêm **B2b** chốt cả hai số hạng theo tên.
+- **N4** — một câu trong SPL-R8: offset được cộng vào **cả giá trị lẫn base**, nên
+  nó **triệt tiêu** — thứ thực sự vào `add()` là `levelDb` chưa offset, và bin 1600
+  của A8 vẫn đúng.
+
+**Vẫn chưa bắt đầu bất kỳ việc gì của Wave 4b.** Docs-only, không tally, Actions
+vẫn bị chặn billing.
+
+---
+
 **2026-09-17 — L-API station 3 plan written: `docs/plans/2026-09-17-remote-api-impl-plan.md`; station 4 next.** Mười task (A–J), **chín** chạy hết trong `RTA_BUILD_APP=OFF` không cần JUCE (vòng verify PR #14 chỉ ra server dùng `std::thread` + `bind_to_port`/`listen_after_bind` là thuần std, nên `Host` check được chứng minh trên CI ba OS chứ không chỉ trên máy này); chỉ Task I (wiring composition root) là ON. Mười tám reconciliation (`API-R1..R17` + `R16a`) đã được ghi thành **§15 amendment** trong `docs/dsp/2026-09-16-remote-api.md`. Hai vòng verify đối kháng trên PR #14: vòng 2 cho **station 4 GO (task A–H)** và bắt thêm năm lỗi cơ học — `bind_to_port` trả `bool` và `Server` không có `port()` (phải dùng `bind_to_any_port`); `httplib::Server` để by-value sẽ kéo include vào `ApiServer.h` và làm guard mới **ĐỎ trên một bản dựng đúng**, nên phải pimpl; guard JSON thiếu red ngoài `app/src`; và WebSocket upgrade **là một `GET`** nên method allowlist không chặn — thứ chặn là không có handler nào đăng ký. Năm câu §14 đều đã chốt default có tên — port đổi **4737 → 4736** vì 4737 là IANA `ipdr-sp`. Docs-only, chưa build gì.
 
 ---
