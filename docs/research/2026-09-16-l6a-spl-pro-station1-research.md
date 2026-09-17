@@ -71,8 +71,9 @@ Seven premises were wrong. Three would have reached code.
 
 **And one thing that changed while this pass was running.** The remote-API lane
 this research treated as unwritten was written the same day:
-`docs/dsp/2026-09-16-remote-api.md` (PR #11, branch `remote-api/stations-1-2`,
-head `5b62218`, open, not merged). Its §12 rules directly on G7's web half and
+`docs/dsp/2026-09-16-remote-api.md` — read at head `5b62218` and **merged to
+`main` as PR #11 at `a39a02e` on 2026-09-17**. Its §12 rules directly on G7's
+web half and
 its station-1 pass reached the same conclusion about the meters from the other
 side. §D3 records what that means for this lane.
 
@@ -1668,7 +1669,8 @@ alarms     [ {metricId, limitDb, window, state, sinceBlock, headroomDb} ]
 
 ## D3. What PR #11 settles, and the one thing it hands back
 
-`docs/dsp/2026-09-16-remote-api.md` §12, read at `5b62218`, is titled "The SPL
+`docs/dsp/2026-09-16-remote-api.md` §12 — read at `5b62218`, merged at
+`a39a02e` — is titled "The SPL
 web viewer (lane L6a, G7) rides THIS surface" and states the rule "so that a
 parallel lane cannot quietly open a second listener": G7 is **a client of that
 API, served from that server, on that port, behind that `Host` check, rate limit
