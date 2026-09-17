@@ -8,6 +8,10 @@
 
 #include <az_ui/az_ui.h>
 
+// ApiServer.h is a pimpl and pulls in no server library, which is the reason
+// this composition root can name it at all (lane L-API Task I, D2).
+#include "api/ApiServer.h"
+#include "api/ApiSettings.h"
 #include "measure/AnalysisThread.h"
 #include "measure/Analyser.h"
 #include "measure/SyntheticInput.h"
@@ -128,6 +132,17 @@ private:
     rta::platform::AudioIo audioIo_;
     rta::measure::AnalysisThread analysisThread_;
     std::unique_ptr<rta::measure::SyntheticInput> syntheticInput_;
+    /// Lane L-API Task J, and trap T-1's third case. `apiServer_` holds
+    /// `analysisThread_` as a `SnapshotSource&`, so it is declared AFTER it
+    /// and is therefore destroyed BEFORE it -- the server stops and joins
+    /// while the source it reads is still alive. Reversing the two is a
+    /// shutdown crash nobody sees in development.
+    ///
+    /// A `unique_ptr` rather than a by-value member for one reason: the API
+    /// is off by default (record sec.8), and a null pointer is the honest
+    /// spelling of "the operator did not ask for this". `ApiServer` itself
+    /// also starts nothing when disabled, so both halves say it.
+    std::unique_ptr<rta::api::ApiServer> apiServer_;
     // -------------------------------------------------------------------
 
     juce::TextButton modeSwitch_{"SYNTHETIC"};
