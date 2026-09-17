@@ -435,8 +435,10 @@ landed as dated amendments; a sixth is still owed.
 
 A seventh, smaller one: **record §10.11 understates the coherence-gate
 mutation.** Renaming `summationTrust` to `coherence` alone would **not** go red,
-because `check_coherence_gate.cmake:44-47` matches *assignments*, not
-declarations; the mutation has to do both. Confirmed by making it red.
+because the four `CONTENT MATCHES` patterns at `check_coherence_gate.cmake:54-57`
+match *assignments*, not declarations; the mutation has to do both. Confirmed by
+making it red. (`:44-47` is the sentinel-presence check — it asserts the guard is
+watching `TransferEstimator.cpp` at all, and matches nothing about coherence.)
 
 ### Two plan rows amended in place
 

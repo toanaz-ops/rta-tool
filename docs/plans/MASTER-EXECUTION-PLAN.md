@@ -260,8 +260,11 @@ first; the rules below still describe the physical contention it does not.*
    solvers also need to play a signal) and the **remote API**. ~~Then **L7**,
    which needed L2 + L4 + L5 — two of those three are in.~~ — **L7 BUILT and
    MERGED 2026-09-16**, `docs/reports/007-solvers.md`; it absorbed the
-   generator output path as its own prerequisite sub-lane (L7-OUT), so of the
-   two pieces L6b scoped out only the **remote API** still has no lane.
+   generator output path as its own prerequisite sub-lane (L7-OUT). The other
+   piece, the **remote API**, has had a lane since 2026-09-16: its stations 1+2
+   are on **PR #11** (`remote-api/stations-1-2`, head `828c223`, OPEN) — opened
+   69 seconds after this closeout's head commit was authored, which is why an
+   earlier revision of this line said it had none.
 6. **Now: L6a (SPL-pro)** — SPL logging / history / alarms / PDF / web viewer
    (G7) and dose IEC 61252 (G8). It waited on the Meters track and the Meters
    track landed (Weighting, Detector, Leq — see "Ground truth" above), so the

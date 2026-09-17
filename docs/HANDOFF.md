@@ -132,25 +132,41 @@ ctest --test-dir build-on -C Release --output-on-failure
 
 ### 2. Liệt kê test của từng solver
 
-`[not run here]` **Sẽ thấy:** danh sách tên case — `crossoverBandFit …`,
-`spectralCrossover …`, `an integer delay is found exactly`,
-`EqTextExport: …`, `AlignmentWizard …`, `VirtualTrace …` — rồi dòng
-`Total Tests: N`.
+**Đọc kỹ chỗ này trước khi gõ:** `-R` là regex trên **tên case Catch2**, mà tên
+case ở repo này là một CÂU tiếng Anh chứ không phải tên file — và nó **phân biệt
+hoa thường**. Nên mỗi pattern dưới đây đã được đếm bằng grep trên chính chuỗi
+`TEST_CASE("…")` của cây `9698447`; con số kèm theo là số case pattern đó chạm
+tới, không phải ước lượng.
+
+`[not run here]` Một lệnh gom đủ mọi họ solver của L7 `[verified: 104 matches]`:
 
 ```bash
-ctest --test-dir build-on -C Release -N -R "eq|delay|align|crossover|virtual|polarity|fir"
+ctest --test-dir build-on -C Release -N -R "^[GHI][0-9]|Eq|crossoverBandFit|spectralCrossover|rho|delay|polarity"
 ```
 
-**Đọc kỹ chỗ này:** `-R` là regex trên **tên case Catch2**, mà tên case ở repo
-này là một CÂU tiếng Anh, không phải tên file — và nó **phân biệt hoa thường**.
-Nên bộ lọc trên bỏ sót những case không chứa đúng các từ đó, ví dụ cả nhóm ρ
-(tên bắt đầu bằng `rho …`) và `EqTextExport` (chữ `Eq` hoa). Muốn thấy nhóm ρ:
+**Sẽ thấy:** tên case — là câu, không phải tên file — rồi dòng `Total Tests: N`.
+Đổi `-R` sang đúng một pattern trong bảng để xem riêng một họ:
 
-`[not run here]`
+| pattern | chạm | tên CÓ THẬT trong danh sách |
+|---|---|---|
+| `^H[0-9]` | **14** | `H1: feeding captures in never moves an asked answer`, `H4b: EVERY named refusal is reachable, and each one is reached here` — 13 case của wizard, cộng `H1 over H2 is exactly the coherence` của transfer estimator |
+| `^G[0-9]` | **15** | `G3: a VirtualTrace cannot become a Trace and cannot reach the library`, `G4: a VirtualTrace has no CaptureMeta`, `G11 delay carries the NEGATIVE exponent -- the sign a flipped convention loses` |
+| `^I[0-9]` | **5** | `I1b: the target line carries a SIGN, so a flipped odd-order row goes red` |
+| `Eq` | **27** | `EqSession: …` (9), `EqVerify: …` (9), `EqTextExport: …` (7), `EqTrustMask: a plain coherence floor, and absent coherence is untrusted`, `rankCandidates/autoEq refuse malformed input and degrade honestly otherwise` |
+| `crossoverBandFit` | **8** | `crossoverBandFit returns the competing delay candidates instead of hiding them` |
+| `spectralCrossover` | **5** | `spectralCrossover on an analytic BW4 pair lands within half a bin of fc` |
+| `rho` | **8** | `rho is scale-invariant and the SIGN survives the scaling` |
+| `delay` | **29** | `an integer delay is found exactly`, `a compensated delay leaves the phase flat` |
+| `polarity` | **3** | `G11 polarity is the sign bit -- magnitude bitwise unchanged, phase turned by pi` |
 
-```bash
-ctest --test-dir build-on -C Release -N -R "rho|relativePolarity|Eq|Fir|Align"
-```
+Ba cái bẫy mà bộ lọc cũ ở đây (`"eq|delay|align|crossover|virtual|polarity|fir"`)
+mắc phải, ghi ra để đừng ai viết lại: `align` **không chạm case nào** — wizard
+tên là `H1:`…`H10:`, vì `app/tests/CMakeLists.txt:186` gọi
+`catch_discover_tests(rtatool_analysis_tests)` không có `TEST_PREFIX`;
+`crossover` bỏ sót cả 5 case `spectralCrossover` (chữ `C` hoa); `virtual` bỏ sót
+`G3`/`G4` vì tên viết `VirtualTrace`; và trong 7 case `EqTextExport` thì bộ lọc
+cũ chạm đúng **1**, mà chạm tình cờ — `fir` nằm trong chữ `first` của
+`EqTextExport: a Windows BOM does not rewrite the first row's filter type`.
 
 Muốn chắc chắn không sót gì thì liệt kê hết rồi lọc bằng PowerShell:
 
@@ -354,6 +370,21 @@ của `docs/plans/MASTER-EXECUTION-PLAN.md` đã ghi sẵn: sau L7 là **L6a**, 
 **L9** cuối cùng, còn **L8** (research) bắn lúc nào cũng được vì read-only.
 L6a từng chờ Meters track; Meters track (Weighting, Detector, Leq) **đã hạ
 cánh**, nên nó hết chặn.
+
+> **Cập nhật 2026-09-17 — L6a KHÔNG phải lane duy nhất đang mở, và stations 1+2
+> của chính nó đã bay.** Khi mục này được viết, closeout chỉ thấy L6a; hai lane
+> dưới đây mở sau đó vài chục giây tới một ngày, nên đoạn bên dưới đọc như thể
+> chưa có gì. Trước khi mở nhánh mới, đọc hai PR này đã — cả hai đều
+> PARALLEL-SAFE với nhau:
+>
+> - **L-API (remote API)** — stations 1+2 trên **PR #11**, nhánh
+>   `remote-api/stations-1-2`, head `828c223`, OPEN. Đây đúng là mảnh L6b scope
+>   out mà `MASTER-EXECUTION-PLAN.md` từng ghi là "chưa có lane"; hàng **L-API**
+>   đã được thêm vào plan TRÊN NHÁNH CỦA PR ĐÓ, nên nhánh này chưa thấy nó.
+> - **L6a (SPL-pro)** — stations 1+2 trên **PR #12**, nhánh `l6a/stations-1-2`,
+>   OPEN. Trạm 1 của L6a đã có người làm. Đừng làm lại nó; đọc PR #12 rồi tiếp
+>   từ chỗ nó dừng. Phần "Nó bắt đầu ở TRẠM 1" bên dưới là đúng lúc viết, không
+>   còn đúng hôm nay.
 
 **Phạm vi L6a:** SPL logging / history / alarms / PDF / web viewer (G7), và
 dose theo IEC 61252 (G8).
@@ -1480,8 +1511,17 @@ documented failure của ρ. Không còn task nào "probe-dependent".
   64-output hardware check (OUT §13.1), device-reconfig-while-armed (OUT §13.3, đã chọn default).
 
 ## Việc còn mở
-- **ĐÃ MERGE vào `main` tại `a937a98` (--no-ff, 2026-09-07), CHƯA push.** Chủ nhân nói
-  "Merge master local". `git diff a937a98^2 a937a98` rỗng → cây merge === tip nhánh đã
+
+> **Cập nhật 2026-09-16 bởi closeout L7 (bổ sung 2026-09-17):** gạch đầu dòng ngay
+> dưới đây nói "CHƯA push" và "`origin/main..main` > 0". **Cả hai đã sai.** `main`
+> local đã push 2026-09-15 (`4b05049→23b7ea0`), và `git rev-list --count
+> origin/main..main` đo hôm nay ra **0**. Từ đó lane này đi tiếp hoàn toàn qua PR —
+> #4 / #8 / #9 — và `a937a98` giờ là **lịch sử, không phải chỗ để đi tìm cái gì**
+> (`docs/plans/MASTER-EXECUTION-PLAN.md:42-43` nói đúng câu đó). Đừng đi push theo lời
+> dòng dưới; không còn gì để push.
+
+- **ĐÃ MERGE vào `main` tại `a937a98` (--no-ff, 2026-09-07), CHƯA push.** *(đúng
+  lúc viết; xem banner ngay trên.)* Chủ nhân nói "Merge master local". `git diff a937a98^2 a937a98` rỗng → cây merge === tip nhánh đã
   verify `afffedc`, nên OFF 551 / ON 597 vẫn đúng, không cần build lại. `origin/main..main`
   > 0 (đo, đừng chép) — push là lệnh riêng. Nhánh `claude_desk/l7-solvers-station-1-874518`
   + worktree giữ nguyên nhưng ĐÃ MERGE HẾT — phiên sau nên nhánh MỚI từ `main`, đừng commit
