@@ -5,6 +5,10 @@
 
 ---
 
+**2026-09-17 — L-API station 3 plan written: `docs/plans/2026-09-17-remote-api-impl-plan.md`; station 4 next.** Mười task (A–J), sáu task đầu chạy hết trong `RTA_BUILD_APP=OFF` không cần socket/JUCE; mười ba reconciliation `API-R1..R13` phải được orchestrator sửa vào record TRƯỚC khi builder bắt đầu; năm câu §14 đều đã chốt default có tên. Docs-only, chưa build gì.
+
+---
+
 # 2026-09-16 — Remote API trạm 1+2 đã viết (DOCS-ONLY, không đụng code)
 
 Lane **L-API** (remote read-only API) — trạm 1 nghiên cứu và trạm 2 record đã
