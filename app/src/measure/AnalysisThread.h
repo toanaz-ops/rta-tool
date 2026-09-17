@@ -12,6 +12,8 @@
 #include "measure/RoutingPlan.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
+#include "measure/SplConfig.h"
+#include "measure/SplSession.h"
 
 #include "rta/platform/CaptureBus.h"
 #include "rta/platform/Fault.h"
@@ -23,6 +25,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -144,6 +147,33 @@ public:
     /// thread; what a caller polls to confirm an Apply has taken effect.
     [[nodiscard]] int appliedReferenceDelaySamples() const noexcept;
 
+    // --- Lane L6a task W0-D: the SPL feed ---------------------------------
+
+    /// Starts SPL logging on `channels` -- message-thread call, picked up on
+    /// the NEXT `drain()`, never inside the audio callback. Replaces any
+    /// session already running and zeroes the published counters.
+    ///
+    /// The channel list is NOT bounded by `kMaxTransferFunctions`: the SPL
+    /// meters are their own array, sized by logged channels, and a route past
+    /// that cap must still log (W0-D D1b).
+    void enableSplLogging(const SplConfig& config, std::span<const int> channels);
+
+    /// Stops it, picked up the same way.
+    void disableSplLogging();
+
+    /// Blocks completed on `channel` since the session started, or 0.
+    /// Safe from any thread, same reason `routeHopCount` is.
+    [[nodiscard]] std::uint64_t splBlockCount(int channel) const noexcept;
+
+    /// The OR of every `rta::meter::BlockFlag` any block on `channel` has
+    /// carried. MONOTONIC on purpose: a later clean block must not erase the
+    /// fact that a `Gap` happened, because the log is the evidence.
+    [[nodiscard]] std::uint32_t splFlagsSeen(int channel) const noexcept;
+
+    /// Samples the bus lost across every block on `channel`. Elapsed samples
+    /// is `Sigma(blockSamples + droppedSamples)` (SPL-R1, SPL-R2).
+    [[nodiscard]] std::uint64_t splDroppedSamples(int channel) const noexcept;
+
 private:
     /// Trap T-3: `SpectrumEngine::process` (reached through
     /// `Analyser::pushMeasurement` / `pushReference`) can throw. An
@@ -169,6 +199,12 @@ private:
     /// is what makes the two halves of T11 both true from the same drain.
     void drainPaired(int refChannel, const RoutingPlan& plan);
     void drainRole(rta::platform::ChannelRole role, bool isReference);
+    /// W0-D: feeds `channel`'s ALREADY-PEEKED scratch to the SPL session and
+    /// republishes that channel's counters. Never a second read of the ring
+    /// (record §0 hazard 2: `rta::dsp::RingBuffer` has one `readIndex_` and
+    /// `drainPaired` owns it).
+    void feedSpl(int channel);
+    void applyPendingSplRequest();
     void publishIfDue();
     void recordFault(rta::platform::Fault::Kind kind, const std::string& message);
 
@@ -237,6 +273,30 @@ private:
     std::atomic<int> pendingReferenceDelay_{0};
     std::atomic<bool> applyDelayRequested_{false};
     std::atomic<int> appliedReferenceDelay_{0};
+
+    // --- Lane L6a task W0-D: the SPL feed ---------------------------------
+    // The session itself is JUCE-free and lives in measure/SplSession.h, so
+    // the block clock, the gap arithmetic and the window are all provable
+    // with RTA_BUILD_APP=OFF. What stays here is the two things only this
+    // class can own: the thread handover, and the published counters.
+    SplSession splSession_;  // analysis-thread-only
+
+    mutable std::mutex splRequestLock_;
+    SplConfig splRequestConfig_;
+    std::vector<int> splRequestChannels_;
+    bool splRequestEnable_ = false;
+    /// The handover. Same shape as `locateArmRequested_`: the message thread
+    /// writes under the lock and releases this flag; the analysis thread
+    /// acquires it once per drain and takes the lock only then, so no drain
+    /// that has nothing to pick up pays for one.
+    std::atomic<bool> splRequestPending_{false};
+
+    /// Published per channel, for the same reason `routeHopCounts_` is: a
+    /// plain counter written by this thread and read from another would be a
+    /// data race even where a stale value would look harmless.
+    std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splBlockCounts_{};
+    std::array<std::atomic<std::uint32_t>, SplSession::kMaxLoggedChannels> splFlagsSeen_{};
+    std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splDroppedSamples_{};
 };
 
 }  // namespace rta::measure

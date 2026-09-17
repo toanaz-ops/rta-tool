@@ -171,6 +171,11 @@ void AnalysisThread::applyPendingReferenceDelay() {
 }
 
 void AnalysisThread::drain() {
+    // Picked up HERE, on this thread, exactly like the Locate arm below and
+    // `applyPendingReferenceDelay` above: a session that started mid-drain
+    // would see a meter half-built.
+    applyPendingSplRequest();
+
     if (locateArmRequested_.exchange(false, std::memory_order_acquire)) {
         locateRouteIndex_ = requestedRouteIndex_.load(std::memory_order_relaxed);
         locateBuffer_.arm(requestedCaptureLength_.load(std::memory_order_relaxed));
@@ -253,6 +258,27 @@ void AnalysisThread::drainPaired(int refChannel, const RoutingPlan& plan) {
             if (route.referenceChannel != refChannel) continue;
             bus_.ring(route.measurementChannel)->discard(hop);
 
+            // THE SPL TAP, and its position is load-bearing. It sits ABOVE
+            // the kMaxTransferFunctions check below, because for a route at
+            // or past that cap the measurement ring has just been `discard`ed
+            // and the loop `continue`s past every consumer -- a tap below the
+            // check would drop those channels entirely WHILE THEIR SAMPLES
+            // WERE BEING CONSUMED, producing a log short by an unknown amount
+            // with NO `Gap`, because `CaptureBus::dropCount` never rises when
+            // a ring is drained on purpose. That is
+            // memory/a-cap-checked-on-the-drain-path-is-unchecked-on-the-
+            // publish-path.md, on this same function, one release later. The
+            // SPL meters are NOT `analysers_`: their array is sized by LOGGED
+            // channels, and kMaxTransferFunctions is an MTW-memory policy
+            // (RoutingPlan.h:25-29), not a channel-count limit.
+            //
+            // It reads the measurement channel's scratch, which the peek loop
+            // above filled for EVERY matching route regardless of position --
+            // and must not go in that loop, which can `break` on
+            // `allPeeked == false` BEFORE anything is discarded, so a tap
+            // there would double-count on the retry.
+            feedSpl(route.measurementChannel);
+
             if (routeIndex >= static_cast<std::size_t>(kMaxTransferFunctions)) continue;
             const auto& measurementScratch =
                 channelScratch_[static_cast<std::size_t>(route.measurementChannel)];
@@ -310,6 +336,14 @@ void AnalysisThread::drainRole(rta::platform::ChannelRole role, bool isReference
         } else {
             analysers_[0]->pushMeasurement(scratch);
         }
+        // Research §C4's actual requirement: "the SPL meter must sit on the
+        // measurement channel's own drain, so that a session with no
+        // reference still logs". In THIS path it is met exactly -- the
+        // measurement channel drains on its own, with no reference to wait
+        // for. In the routed path (drainPaired) it cannot be, because that
+        // drain advances the measurement channel only when the reference can
+        // advance with it, which is what the `Gap` there reports (SPL-R1).
+        feedSpl(channel);
     }
 }
 
