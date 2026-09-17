@@ -592,7 +592,9 @@ them as such.
     **No JUCE, no sockets, no `httplib.h`.** Two separate registrations, and
     the second does not follow from the first. It is added to the explicit
     `measure_has_no_framework_deps` glob list — a **textual scan**
-    (`check_no_framework_deps.cmake:49` regex-matches each file's contents and
+    (`check_no_framework_deps.cmake:54` at main `e213202` — the sole
+    `if(content MATCHES ...)` line; grep that handle, not the number —
+    regex-matches each file's contents and
     compiles nothing), so membership proves the absence of a framework include
     and that alone. It is *separately* added to the `rtatool_analysis_tests`
     target in `app/tests/CMakeLists.txt`, and that is what actually compiles
@@ -664,9 +666,36 @@ serialiser is a pure function and the validator is a pure function.
     allowed file — is copied with it, because a guard that silently scans
     nothing is worse than no guard.
 
+    **There are TWO sentinels in that script, and both get copied.** Taking
+    only the first makes the copy weaker than the original it cites
+    (`core/tests/check_no_std_atomic_shared_ptr.cmake`, at main `e213202`):
+
+    - `if(NOT ALLOW IN_LIST SOURCES)` (`:65`) — the allowed file is inside the
+      scanned set. Its analogue here is the `DIRS` argument below.
+    - `if(NOT ALLOW_CODE MATCHES "${SENTINEL_PATTERN}")` (`:145`) — the allowed
+      file **still contains** the thing it is the sole exception for. Its
+      analogue here: **`ApiServer.cpp` must still contain
+      `#include <httplib.h>`.** Without it, deleting the include from
+      `ApiServer.cpp` leaves a guard that passes while proving nothing.
+
+    Two mechanical notes for whoever writes the script. `SENTINEL_PATTERN` is
+    `set()` inside the script at `:141`, and `PATTERN` at `:134` — neither is a
+    `-D` argument, so this is a **new script** modelled on that one, not a
+    re-invocation of it. And the sentinel is matched against *comment-stripped*
+    source (`rta_strip_comments`, `:128-132`), which is what stops a mention in
+    prose from standing in for the code.
+
+    **Write `${CMAKE_SOURCE_DIR}/` on every `DIRS` entry and on `ALLOW`.** The
+    shorthand below omits it for readability; the registration must not.
+    `file(GLOB_RECURSE)` returns **absolute** paths, so a literally relative
+    `ALLOW` dies either at the `if(NOT EXISTS "${ALLOW}")` check or at `:65`.
+    The existing registration spells it out —
+    `core/tests/CMakeLists.txt:149-154`.
+
     **`app` must be in `DIRS`, and that is not a detail.** The sentinel is
     `if(NOT ALLOW IN_LIST SOURCES)` → `FATAL_ERROR`
-    (`core/tests/check_no_std_atomic_shared_ptr.cmake:65`), and `SOURCES` is
+    (`core/tests/check_no_std_atomic_shared_ptr.cmake:65` at main `e213202`),
+    and `SOURCES` is
     exactly what `DIRS` globbed. Omit `app` and the allowed file is never
     globbed, `ALLOW IN_LIST SOURCES` is false, and the guard `FATAL_ERROR`s on
     **every** run — the two halves of the specification would be mutually
@@ -688,17 +717,61 @@ serialiser is a pure function and the validator is a pure function.
     over loopback, assert 200 and a parseable body; issue one `POST`, assert
     405; issue one request with a forged `Host`, assert 403. Three requests,
     no sound card, no device.
-13. **The display rule is one function, and one test pins its output.** §12
-    constraint 2 — "the viewer rounds identically" — is the load-bearing half
-    of §6's units deviation, and until now nothing asserted it. Make the
-    rounding **one place**: `formatHz` / `formatDb` / `formatCoherence` in
-    `app/` (framework-free, therefore testable in `RTA_BUILD_APP=OFF`), called
-    by the desktop readout. The test feeds the *golden JSON's own* float32
-    values through those functions and asserts the exact strings —
-    `8.5859375 → "8.6"`, `0.9731445 → "0.97"`, `1000.4 → "1000 Hz"` — so
-    "wire full precision, display rounded" becomes a property CI checks rather
-    than an intention. Mutation: round in the serialiser instead, and test 1's
-    golden goes red; change one formatter's precision, and this test goes red.
+13. **The display rule is already one place. Reuse it; do not write a second
+    one.** §12 constraint 2 — "the viewer rounds identically" — is the
+    load-bearing half of §6's units deviation, and until now nothing asserted
+    it *against the wire values*. The rounding functions themselves already
+    exist and already satisfy every property an earlier revision of this item
+    asked a new `formatHz`/`formatDb`/`formatCoherence` to provide. **No new
+    formatter may be added for this lane.** In `app/src/view/Readouts.h`
+    (namespace `rta::view`, at main `e213202`):
+
+    ```cpp
+    [[nodiscard]] inline std::string formatHz(double hz)              // :72
+        { return std::format("{} Hz", std::llround(hz)); }
+    [[nodiscard]] inline std::string formatTrim(double trimDb)        // :79
+        { return std::format("{:.1f} dB", trimDb); }
+    [[nodiscard]] inline std::string formatAgreement(double agreement)// :87
+        { return std::format("{:.2f}", agreement); }
+    ```
+
+    Grep handle if those numbers drift: `inline std::string format` in that
+    file. They are pinned by `app/tests/test_readouts.cpp:100-115`
+    (`formatHz(1000.4) == "1000 Hz"`, `formatTrim(-3.0) == "-3.0 dB"`,
+    `formatAgreement(0.7071) == "0.71"`), `Readouts.h` is already a named
+    entry in `measure_has_no_framework_deps`'s `GLOBS`
+    (`app/tests/CMakeLists.txt:282`), and `rta::view::formatHz` already has a
+    live caller at `app/src/view/DevicePanel.cpp:102`. So "framework-free,
+    therefore testable in `RTA_BUILD_APP=OFF`" is a fact about the repository,
+    not a requirement on new code.
+
+    **Three name mappings, because they are not the names an implementer would
+    guess:** Hz → `formatHz`; the one-decimal dB rule → **`formatTrim`**;
+    the two-decimal 0..1 rule (coherence and `phaseAgreement`) →
+    **`formatAgreement`**.
+
+    **The dB and Hz formatters return the unit in the string.** The test must
+    assert with the suffix or it fails on the suffix, not on the rounding:
+
+    ```
+    formatHz(1000.4)         == "1000 Hz"
+    formatTrim(-3.2145123)   == "-3.2 dB"     // magnitudeDb[0], §6's golden
+    formatAgreement(0.9731445) == "0.97"      // coherence[0], §6's golden
+    ```
+
+    Each argument is the golden JSON's own literal; the parameters are `double`
+    and the float32→double widening is exact, so the string is the rounding of
+    the *same* value the wire carried. (An earlier revision of this item paired
+    the dB rule with `8.5859375` — that literal is `effectiveAverages`, a
+    **count**, not a level. `formatTrim(8.5859375)` does return `"8.6 dB"`, but
+    a count formatted as dB is a wrong test; use `magnitudeDb`'s own values.)
+
+    So the work this item names is: extend `app/tests/test_readouts.cpp` with
+    one `TEST_CASE` that feeds the golden JSON's float32 literals through the
+    three existing functions, and say in the test's name that it is the
+    desktop half of §12 constraint 2. Mutation: round in the serialiser
+    instead, and test 1's golden goes red; change one formatter's precision,
+    and this test goes red.
 
     **What it does not prove, stated plainly:** that L6a's *JavaScript* viewer
     rounds the same way. A C++ test cannot reach it. The constraint is
@@ -739,9 +812,11 @@ this costs if the decision is made casually.
    whole hertz, one decimal of dB, two decimals of coherence — are the
    viewer's job (§6). The web viewer must apply the identical rule the desktop
    UI applies, or the same measurement reads two ways on two screens. **§11
-   item 13 makes the desktop half of this a test** (one shared `formatHz` /
-   `formatDb` / `formatCoherence`, asserted against the golden JSON's own
-   float32 values); L6a discharges the JavaScript half by shipping the same
+   item 13 makes the desktop half of this a test** — against the three
+   formatters that **already exist**, `rta::view::formatHz` / `formatTrim` /
+   `formatAgreement` in `app/src/view/Readouts.h`, asserted on the golden
+   JSON's own float32 values; this lane writes no new formatter. L6a
+   discharges the JavaScript half by shipping the same
    thresholds against the same golden values, or records the constraint as
    untested for the viewer. Two records asserting it and neither testing it is
    the failure mode this note exists to prevent.
@@ -821,9 +896,12 @@ AtomicSharedPtr,AnalysisThread,RoutingPlan,SyntheticSnapshot}.h`,
 `app/src/trace/{Trace,TraceLibrary,SessionCodec}.h`,
 `app/src/measure/{EqSession,AlignmentWizard}.h`,
 `platform/src/AudioIo.cpp:116-148`, `platform/tests/check_callback_shape.cmake`,
-`core/tests/check_no_framework_deps.cmake:49`,
+`core/tests/check_no_framework_deps.cmake:54` (at main `e213202`),
 `core/tests/check_no_std_atomic_shared_ptr.cmake`,
-`core/tests/CMakeLists.txt:149-154`, `app/tests/CMakeLists.txt:274`,
+`core/tests/CMakeLists.txt:149-154`, `app/tests/CMakeLists.txt:280` (the
+`add_test(NAME measure_has_no_framework_deps ...)`, its `-DGLOBS=` list at
+`:282` — both at main `e213202`), `app/src/view/Readouts.h:72,79,87`,
+`app/tests/test_readouts.cpp:100-115`,
 `CMakeLists.txt:60-72`, `core/include/rta/meter/Leq.h`.
 
 **Records and rulings:** `docs/dsp/2026-09-06-multichannel-l6b.md` §8, §10;

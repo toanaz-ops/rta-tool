@@ -65,6 +65,43 @@ nhóm citation nhỏ: JUCE `*Server*` là **ba** hit (thêm `HubPipeServer`,
 một (`check_no_framework_deps.cmake:50`→49, `CMakeLists.txt:71`→72,
 `AudioIo.cpp:117-148`→116-148) — đã mở từng file xác nhận trước khi sửa.
 
+## Vòng fix thứ ba (2026-09-17): merge `main` rồi soi lại citation
+
+Verifier vòng 2 bác ba chỗ. Đã sửa hết, **sau khi merge `origin/main`
+(`e213202`, PR #10 + #13 đã vào)** nên mọi số dòng dưới đây đọc ở cây ĐÃ MERGE,
+không phải ở `6d9a53d` mà bản trước pin:
+
+1. **Chỗ thứ tư của `AudioIo.cpp:117-148`** mà vòng trước sót: bullet "the
+   audio callback is literally two calls after `ScopedNoDenormals`" trong
+   `docs/research/2026-09-16-remote-api-station1-research.md` (Part C,
+   `:609` sau merge). `grep -rn "117-148"` toàn nhánh giờ chỉ còn hit trong
+   chính `HANDOFF.md` này — tức các câu KỂ LẠI việc sửa, không còn citation
+   nào.
+2. **Citation trôi vì `main` đổi file.** PR #10 thêm 5 dòng vào
+   `check_no_framework_deps.cmake`, nên regex **`:49` → `:54`**; và
+   `measure_has_no_framework_deps` trong `app/tests/CMakeLists.txt`
+   **`:274` → `:280`** (`-DGLOBS=` ở `:282`). Mỗi citation dễ trôi giờ kèm
+   **"(at main `e213202`)"** và một **grep handle** (`content MATCHES`,
+   `add_test(NAME …)`) để lần sau không phải tin con số.
+3. **§11 item 13 (`docs/dsp/2026-09-16-remote-api.md:720`) KHÔNG đặc tả
+   formatter mới nữa.** Ba hàm đã có thật trong
+   repo: `app/src/view/Readouts.h` — `formatHz` (`:72`), `formatTrim` (`:79`),
+   `formatAgreement` (`:87`) — đã bị `app/tests/test_readouts.cpp:100-115` ghim,
+   đã nằm trong glob `measure_has_no_framework_deps`, tức đã framework-free và
+   đã test được ở `RTA_BUILD_APP=OFF`. Item 13 giờ **tái dùng** đúng ba hàm đó.
+   Lưu ý chuỗi trả về **mang đơn vị**: `formatTrim(8.5859375) == "8.6 dB"`,
+   `formatHz(1000.4) == "1000 Hz"`, `formatAgreement(0.9731445) == "0.97"`.
+4. **§11 item 10 (`:660`) ghi thêm sentinel thứ hai** của
+   `check_no_std_atomic_shared_ptr.cmake`
+   (`:145`, `ALLOW_CODE MATCHES SENTINEL_PATTERN`): file được ALLOW phải CÒN
+   chứa thứ đang bị guard. Item 10 copy cả hai, nếu không bản sao yếu hơn bản
+   gốc nó trích.
+
+Một mục **KHÔNG thuộc PR này**: `docs/HUMAN-QA-QUEUE.md` §"Tech-debt phát hiện
+lúc closeout L7" nói `check_no_framework_deps.cmake` chưa quét `tests/*.h` —
+PR #13 (`aafc5f5`) đã thêm glob đó, nên mục ấy cùng citation `:37-43` của nó
+đã lạc hậu ở `main`. Nội dung của `main`, phiên sau dọn.
+
 **Vẫn DOCS-ONLY, chưa build gì, chưa merge.**
 
 **Mục dưới đây vẫn là mục đọc trước tiên cho trạng thái build.**

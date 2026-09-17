@@ -555,7 +555,13 @@ to a new dependency (`CLAUDE.md`; global rule 10). The rule argues **for** the
 MIT header here, not against it: the smallest change that satisfies the task is
 the one that does not reimplement HTTP.
 
-## Part C — This repo's surface, as of `6d9a53d`
+## Part C — This repo's surface, as of `6d9a53d`, re-checked at main `e213202`
+
+*Line numbers below were read at `6d9a53d` and re-checked after merging
+`origin/main` = `e213202` (PRs #10 and #13). Where the two disagree the
+`e213202` number is the one written, and it says so inline. Two citations
+moved: the framework-deps regex (`:49` → `:54`) and
+`measure_has_no_framework_deps` (`app/tests/CMakeLists.txt:274` → `:280`).*
 
 ### There is still no network code, and the guard already names one library
 
@@ -567,7 +573,9 @@ prose comments. `rtatool` links `juce_audio_utils`, `juce_gui_extra`,
 `juce_opengl` (`app/CMakeLists.txt:143-152`) and nothing else. The finding the
 L6b pass recorded at `60ba99c` still holds at `6d9a53d`.
 
-`core/tests/check_no_framework_deps.cmake:49` matches
+`core/tests/check_no_framework_deps.cmake:54` at main `e213202` — the sole
+`if(content MATCHES ...)` in the file, so grep for `content MATCHES` rather
+than trusting the number — matches
 `#include <(juce|JuceHeader|Q[A-Z]|portaudio|RtAudio|asio)`. That regex already
 blocks **standalone or Boost Asio** from `core/` and `platform/types/` by name,
 which silently eliminates every server library built on Asio (Boost.Beast,
@@ -598,9 +606,10 @@ lane, but as a fact the lane inherits.
   An API thread is a **third** participant on that slot, and that is the fact
   the threading decision has to be made against.
 - The audio callback is literally two calls after `ScopedNoDenormals`
-  (`platform/src/AudioIo.cpp:117-148`): `bus_.pushFromCallback(...)` and
-  `output_.render(...)`. `platform/tests/check_callback_shape.cmake` greps that
-  function. Nothing in this lane may add a third.
+  (`platform/src/AudioIo.cpp:116-148` at main `e213202` — the
+  `audioDeviceIOCallbackWithContext` body, signature line to closing brace):
+  `bus_.pushFromCallback(...)` and `output_.render(...)`.
+  `platform/tests/check_callback_shape.cmake` greps that function. Nothing in this lane may add a third.
 
 ### What a read-only client could actually be served today
 
@@ -629,6 +638,21 @@ Two of those rows are load-bearing and both were checked by grep at `6d9a53d`:
   and `app/tests/*`. They are built and tested; they are not wired into the
   composition root. An endpoint that claims to return "the current EQ
   suggestions" would today be returning the state of an object nobody owns.
+- **The three readout-rounding rules are already code, and already tested.**
+  `CLAUDE.md`'s reading rules — whole hertz, one decimal of dB, two decimals
+  for a 0..1 figure — live in `app/src/view/Readouts.h` (namespace
+  `rta::view`, at main `e213202`) as `formatHz` (`:72`), **`formatTrim`**
+  (`:79`) and **`formatAgreement`** (`:87`); grep handle
+  `inline std::string format`. They are pinned by
+  `app/tests/test_readouts.cpp:100-115`, `Readouts.h` is already a named entry
+  in `measure_has_no_framework_deps`'s `GLOBS`
+  (`app/tests/CMakeLists.txt:282`), and `formatHz` already has a live caller
+  (`app/src/view/DevicePanel.cpp:102`). **This is a seam to reuse, not to
+  rebuild**: the dB and Hz functions return the unit inside the string
+  (`formatTrim(-3.2145123) == "-3.2 dB"`, `formatHz(1000.4) == "1000 Hz"`,
+  `formatAgreement(0.9731445) == "0.97"`), and the names are not the ones an
+  implementer would guess, so the record's §11 item 13 names all three
+  explicitly and forbids a fourth formatter.
 - **SPL is not in the live snapshot at all.** `Snapshot` carries dBFS
   (`BandReading::levelDb`, `kLevelFloorDb`); `calibrationOffsetDb` and
   `LevelUnit` exist only on a *stored* `CaptureMeta` (`Trace.h:39-40`).
@@ -644,14 +668,26 @@ Two of those rows are load-bearing and both were checked by grep at `6d9a53d`:
   explicit `GLOBS` list plus `LABEL`.
 - `no_std_atomic_over_shared_ptr` — the **allowlist** shape:
   `-DDIRS=<core>;<app>;<platform>;<ui>;<tools>` plus `-DALLOW=<one file>`
-  (`core/tests/CMakeLists.txt:149-154`, `check_no_std_atomic_shared_ptr.cmake`).
+  (`core/tests/CMakeLists.txt:149-154` at main `e213202` — the
+  `add_test(NAME no_std_atomic_over_shared_ptr ...)` block;
+  **note the `${CMAKE_SOURCE_DIR}/` prefix on every `DIRS` entry and on
+  `ALLOW`**, because `file(GLOB_RECURSE)` returns absolute paths and a
+  relative `ALLOW` dies at the `if(NOT EXISTS "${ALLOW}")` check —
+  `check_no_std_atomic_shared_ptr.cmake`).
   Its own comment states the tripwire doctrine: "a textual scan, not a C++
   parse … a tripwire for the obvious form, not a proof". That is exactly the
   shape a "no server library below `app/`" guard needs, and it also carries a
   **sentinel** check that fails if the guard has stopped watching its allowed
-  file.
+  file. **There are two sentinels, not one**, and a copy that takes only the
+  first is weaker than the original it cites: `ALLOW IN_LIST SOURCES` (`:65`)
+  proves the allowed file is inside the scanned set, and
+  `ALLOW_CODE MATCHES "${SENTINEL_PATTERN}"` (`:145`, with `SENTINEL_PATTERN`
+  `set()` at `:141` and `PATTERN` at `:134` — both literals in the script, not
+  `-D` arguments) proves the allowed file **still contains** the thing it is
+  the sole exception for. Both at main `e213202`.
 - `app/tests` is registered **outside** the `RTA_BUILD_APP` guard
-  (`CMakeLists.txt:72`, `app/tests/CMakeLists.txt:3-9`), so a JUCE-free file
+  (root `CMakeLists.txt:72`, `app/tests/CMakeLists.txt:3-9`, both at main
+  `e213202`), so a JUCE-free file
   under `app/src` is testable in the `RTA_BUILD_APP=OFF` configuration — the
   one CI runs on three OSes. A serialiser that is JUCE-free and socket-free is
   therefore provable on CI; a server that owns a socket is not.
