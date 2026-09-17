@@ -67,6 +67,39 @@ W2-D **+1**. Port viewer **4736**, không phải 4737 (API-R14). Và **static-as
 mount KHÔNG nằm trong L-API v1** — Gate 1 của Wave 4b là **hai** việc, không phải
 một. **Chưa bắt đầu bất kỳ việc gì của Wave 4b.**
 
+**Bản 3 (2026-09-18) — vòng verify thứ hai: bảy fix nặng đều ĐƯỢC XÁC NHẬN BẰNG
+ĐO** (`sizeof(Block) == 40` **biên thật**, đọc từng dòng chỗ tap, tính lại A4/A4b,
+và lý lẽ loại-trừ cờ được **phán là đúng**). **Station 4 GO, wave đầu vẫn là
+W0-A.** Thêm bốn mục nhỏ, tất cả đã vá, **mọi con số đều đo trên máy này chứ
+không suy luận**:
+
+- **N1** — hàng guard delta ghi "sum to 19" trong khi chính danh sách của nó cộng
+  ra **18**, và một trong số đó **tự động** (glob) nên số phải thêm tay là **17**.
+  Giờ in đủ ba con số kèm quy ước của từng con, và gọi tên trường hợp Wave 4b
+  (**18 tay / 19 tổng**). Đây đúng là hình dạng của defect 7 tái xuất **bên trong
+  bản vá cho defect 7**.
+- **N2** — D1b/D1c đã bị nới ra 1e-12 dựa trên một **phủ định không đo**. Đo lại:
+  `pow(10, log10(2)) == 2.0` **bitwise** trên cả g++ 16.1.0 (MinGW-W64 ucrt) lẫn
+  MSVC ucrt, và `D == 100.0` bitwise với `Q ∈ {3,4,5,6}` cả hai chiều.
+  **Trả lại "exactly"**, kèm NOTE: nếu một toolchain CI bác bỏ thì đó là **một
+  phát hiện phải báo** (tên libm, tên OS, trong PR body), **không phải cớ để nới
+  dung sai**.
+- **N3** (**có sẵn từ bản đầu, vòng 1 bỏ sót**) — W0-B B2 trích công thức
+  `1 − e^{−t/τ}` rồi in `−1.75 dB`, mà `−1.7372` là `10·log10(e^{−0.4})` — **số hạng
+  suy giảm, tức phần bù của chính công thức đứng cạnh nó**. Đúng phải là
+  `10·log10(1 − e^{−0.4}) = −4.8190745912`, lệch **3.0819 dB**; và dung sai 0.5 dB
+  "dẫn xuất từ" con số sai ấy sẽ làm **một bản choài đúng đỏ khoảng 4.3 dB**.
+  B2 viết lại quanh công thức đúng, dung sai **dẫn từ `float`** (đo: ULP float32 ở
+  100 dB là `7.62939453e-06` → lấy `1e-4 dB`), và τ **đọc từ
+  `Detector::riseTimeConstant`** chứ không gõ tay — vì 125 ms vẫn là **UNVERIFIED**
+  trong ledger §14. Thêm **B2b** chốt cả hai số hạng theo tên.
+- **N4** — một câu trong SPL-R8: offset được cộng vào **cả giá trị lẫn base**, nên
+  nó **triệt tiêu** — thứ thực sự vào `add()` là `levelDb` chưa offset, và bin 1600
+  của A8 vẫn đúng.
+
+**Vẫn chưa bắt đầu bất kỳ việc gì của Wave 4b.** Docs-only, không tally, Actions
+vẫn bị chặn billing.
+
 ---
 
 **2026-09-17 — L-API station 3 plan written: `docs/plans/2026-09-17-remote-api-impl-plan.md`; station 4 next.** Mười task (A–J), **chín** chạy hết trong `RTA_BUILD_APP=OFF` không cần JUCE (vòng verify PR #14 chỉ ra server dùng `std::thread` + `bind_to_port`/`listen_after_bind` là thuần std, nên `Host` check được chứng minh trên CI ba OS chứ không chỉ trên máy này); chỉ Task I (wiring composition root) là ON. Mười tám reconciliation (`API-R1..R17` + `R16a`) đã được ghi thành **§15 amendment** trong `docs/dsp/2026-09-16-remote-api.md`. Hai vòng verify đối kháng trên PR #14: vòng 2 cho **station 4 GO (task A–H)** và bắt thêm năm lỗi cơ học — `bind_to_port` trả `bool` và `Server` không có `port()` (phải dùng `bind_to_any_port`); `httplib::Server` để by-value sẽ kéo include vào `ApiServer.h` và làm guard mới **ĐỎ trên một bản dựng đúng**, nên phải pimpl; guard JSON thiếu red ngoài `app/src`; và WebSocket upgrade **là một `GET`** nên method allowlist không chặn — thứ chặn là không có handler nào đăng ký. Năm câu §14 đều đã chốt default có tên — port đổi **4737 → 4736** vì 4737 là IANA `ipdr-sp`. Docs-only, chưa build gì.
