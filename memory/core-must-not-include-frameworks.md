@@ -38,4 +38,29 @@ counting scanned files, not by the guard going red. The list-based mechanism
 itself is still not fixed; adding a file to `app/src/measure/` or
 `app/src/trace/` still requires a manual, unenforced second edit.
 
+**A glob list omits by extension too — found 2026-09-16.** The failure above is
+a NAMED file missing from a list. The same guard had the mirror of it in the
+directory convention: `CORE_DIR/tests/*.cpp` was globbed but `tests/*.h` and
+`tests/*.hpp` were not, so four committed fixture headers under `core/tests/`
+(`CrossoverBandFixture.h`, `DelayFilterFixtures.h`, `support/Golden.h`,
+`guard_fixtures/hex_escape_comment.h`) were outside the scan from the day the
+guard was written. Proved by putting `#include <juce_core/juce_core.h>` into
+`support/Golden.h` and running the pre-fix script: `OK (157 files scanned)`,
+exit 0. Fixed by adding the two patterns; the count moved 157 → 161, and the
+app list gained `app/tests/*.h;*.hpp` for the same reason, 64 → 67.
+
+The lesson generalises past this file: **a scan is defined by the intersection
+of its directories and its extensions, and a hole in either one is invisible
+from inside the scan.** Nothing the guard prints separates "no violation" from
+"never looked". Only the scanned-file count does, which is why that count is
+quoted in every handoff.
+
+**Still open after that fix:** `platform/tests/` is scanned by NO framework
+guard at all. `platform_types_has_no_framework_deps` passes
+`CORE_DIR=platform/types`, and that directory has no `tests/` subdirectory —
+the tests of the JUCE-free platform half live one level up at `platform/tests/`,
+outside it. They are JUCE-free today (the JUCE half is `platform/tests_juce/`),
+so nothing is broken; nothing would report it if that changed.
+
 Related: [[juce-is-agplv3-not-gplv3]]
+
