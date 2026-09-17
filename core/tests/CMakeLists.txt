@@ -153,6 +153,20 @@ add_test(NAME no_std_atomic_over_shared_ptr
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_std_atomic_shared_ptr.cmake
 )
 
+# Lane L-API Task K / record docs/dsp/2026-09-16-remote-api.md sec.11 item 10,
+# sec.15 R2/R3: exactly ONE translation unit in this repository may include the
+# vendored HTTP server header. `app` IS in DIRS and that is not a detail --
+# omit it and `ALLOW IN_LIST SOURCES` is false and the guard FATAL_ERRORs on
+# every run, which is its first sentinel doing its job. ApiServer.h is a pimpl
+# precisely so this guard stays green on a correct build.
+# See core/tests/check_no_server_library.cmake.
+add_test(NAME no_server_library_outside_api
+    COMMAND ${CMAKE_COMMAND}
+            "-DDIRS=${CMAKE_SOURCE_DIR}/core;${CMAKE_SOURCE_DIR}/platform;${CMAKE_SOURCE_DIR}/ui;${CMAKE_SOURCE_DIR}/tools;${CMAKE_SOURCE_DIR}/app"
+            -DALLOW=${CMAKE_SOURCE_DIR}/app/src/api/ApiServer.cpp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_server_library.cmake
+)
+
 # Lane L-API Task F / record docs/dsp/2026-09-16-remote-api.md sec.15 R16: the
 # vendored JSON parser is a TEST tool. Note `app/src`, NOT `app` -- app/tests
 # is outside the scan by construction, so this guard needs no ALLOW file at
