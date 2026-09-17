@@ -7,22 +7,60 @@ session prompt is: "Read docs/plans/MASTER-EXECUTION-PLAN.md lane <X>, then
 docs/reports/README.md, then the decision records it names. Continue the
 pipeline from the current git state."*
 
-## Status snapshot — 2026-09-07
+## Status snapshot — 2026-09-16
 
-Built + verified, merged to `main` (local, **not pushed**): **P1, P2 (L2), P3 (L3),
-P4 (L4a + L4b), L5a, L5c, P6-multichannel (L6b), and P7 Wave 0 (shared foundation) +
-Wave 1 (OUT, FIR) + Wave 2 (DELAY, EQ core A–D).** L7 landed at merge `a937a98`.
-Live test counts live in `docs/HANDOFF.md`'s baseline blocks — do NOT copy them here
-(this doc has twice carried a rotted number).
+**L7 (Solvers) is BUILT and MERGED. The lane is closed out —
+`docs/reports/007-solvers.md`.** All five sub-lanes are on `origin/main`:
+L7-OUT, L7-FIR, L7-DELAY, L7-EQ (core A–D + app E/F/G) and L7-ALIGN
+(G11 + G17 + G18 with relative-polarity ρ). The last piece, ALIGN Wave 3b,
+merged as **PR #9 at `6d9a53d`**. Verified by an **independent rebuild at
+`6d9a53d`**: OFF **649/649**, ON **717/717**, forced fallback **649/649**,
+0 `warning C`, **11/11** guards green, 8 snapshot PNGs.
 
-**Open / next:** **P7 is BUILT.** EQ app tasks E/F merged (PR #4, `a2de06e`);
-L7-ALIGN Wave 3a merged (PR #8, `02bd02a`) and Wave 3b — the whole of G11 + G17 +
-G18 with relative-polarity ρ — is on `l7/align-wave3b-app`, **PR open, not merged**.
-What is left of L7 is what its record deferred on purpose: the ρ threshold (two
-grids ran and did NOT agree), where the wizard's output persists, and a real
-sub/main pair measured by a person. L6a (SPL-pro) waits on the Meters track. **Blocked on a purchase only:**
-L5b (ISO 2969 / SMPTE ST 202 X-curve tolerances) and P4b (IEC 60268-16, STI). P8
-research + P9 productization last.
+**Read "BUILT" precisely: it means proven by ctest and by the offscreen
+snapshot, not visible in `rtatool.exe`.** Of the whole lane only **DELAY** has
+a UI (`LOCATE` / `APPLY` in `MainComponentDelay.cpp`). The G18 crossover
+surface ships as a headless model plus the dev-preview specimen (**ALIGN-R8**),
+and `AlignmentWizard` has no UI at all. **`MainComponent` wiring for the rest
+of L7 is a follow-up that has not started** — report §3 and §7 give the
+measured reference counts.
+
+**The workflow is GitHub-oriented since 2026-09-15** (`docs/GIT-WORKFLOW.md`,
+PR #1): `origin/main` is the truth, nothing lands on `main` except through a
+pull request, and the local-`main`-then-push habit this document used to
+describe is gone. The 36-commit local backlog was pushed `4b05049..23b7ea0`.
+
+| PR | merge commit | what |
+|---|---|---|
+| #2 | `1852dff` | L7-ALIGN station-3 plan (tasks A–J, ALIGN-R1..R14) |
+| #3 | `0855e8f` | L7-ALIGN order-4 phase-sign probe — settles record §13.1 |
+| #4 | `a2de06e` | L7-EQ tasks E/F/G + the oversampling precision fix |
+| #8 | `02bd02a` | L7-ALIGN Wave 3a, tasks A–F (core) |
+| #9 | `6d9a53d` | L7-ALIGN Wave 3b, tasks G–J (app) |
+
+Wave 0, Wave 1 (OUT, FIR) and Wave 2 (DELAY, EQ core A–D) predate the workflow
+change and reached `origin/main` with that push; the local merge `a937a98` is
+history, not a location to look for them.
+
+Built + verified and on `origin/main`: **P1, P2 (L2), P3 (L3), P4 (L4a + L4b),
+L5a, L5c, P6-multichannel (L6b), and the whole of P7.** Live test counts live
+in `docs/HANDOFF.md`'s baseline blocks — do NOT copy them here (this doc has
+twice carried a rotted number).
+
+**Open / next:** the plan's own opening order puts **L6a (SPL-pro)** next — it
+waited on the Meters track, and the Meters track landed. **L8** research lanes
+are read-only and safe to fire at any time; **L9** is last. What is left of L7
+is what its record deferred on purpose and what only a person can close: the ρ
+threshold (two grids ran and did **not** agree, so ρ ships with **no**
+threshold), where the wizard's output persists, and a real sub/main pair
+measured with a rack and a microphone. **Blocked on a purchase only:** L5b
+(ISO 2969 / SMPTE ST 202 X-curve tolerances) and P4b (IEC 60268-16, STI).
+
+**GitHub Actions is billing-blocked at the account level** since after PR #5,
+so `docs/GIT-WORKFLOW.md` rule 3's CI merge gate cannot be satisfied; PRs #1,
+#2, #3, #4, #7, #8 and #9 merged on two locally-run configurations plus an
+independent verifier. The owner restores Actions
+(`docs/HUMAN-QA-QUEUE.md`, first `[!]`).
 
 ## Ground truth at time of writing
 
@@ -73,7 +111,7 @@ graph LR
     L5b["<b>L5b</b> · targets / corridor / score<br/><i>needs ISO 2969 or SMPTE ST 202</i>"]
     L5c["<b>L5c</b> · Bode layout + workspaces<br/><i>BUILT 2026-08-29</i>"]
     P6["<b>P6</b> · SPL-pro + multichannel<br/><i>L6b multichannel BUILT 2026-09-06 · L6a SPL-pro TODO</i>"]
-    P7["<b>P7</b> · solvers<br/><i>OUT+FIR+DELAY+EQ BUILT · ALIGN BUILT 2026-09-16</i>"]
+    P7["<b>P7</b> · solvers<br/><i>BUILT + MERGED 2026-09-16 · report 007</i>"]
     P8["<b>P8</b> · research lanes<br/><i>read-only, safe anytime</i>"]
     P9["<b>P9</b> · productization<br/><i>i18n, installers, manual</i>"]
 
@@ -95,8 +133,8 @@ graph LR
     classDef blocked fill:#3d1f1f,stroke:#f87171,stroke-width:2px,color:#fde8e8
     classDef later fill:#26262b,stroke:#71717a,stroke-width:1px,color:#d4d4d8
 
-    class P1,P2,P3,P4,L5a,L5c done
-    class P6,P7 next
+    class P1,P2,P3,P4,L5a,L5c,P7 done
+    class P6 next
     class L5b,P4b blocked
     class P8,P9 later
 ```
@@ -137,10 +175,10 @@ not, and a guessed tolerance is a false Class claim.
 | **L4 — Sweep/IR** — split 2026-08-30 into **L4a** (deconvolution → IR, FR, polarity; `core/`), **L4b** (ETC, Schroeder, Lundeby, RT60, clarity), **L4c** (draggable gate G25, min/excess phase G24 — **NOTE: G24's min-phase TEST folded into L7-EQ 2026-09-06 per owner; L4c retains only the time-domain min/excess-phase DISPLAY, which reuses `rta::dsp::excessPhase`/`minimumPhaseFromMagnitude`**, offline WAV G22; `app/`), **L4d** (STI, blocked on IEC 60268-16). **L4a BUILT 2026-08-30**: decisions 1-4 and 7-9 shipped; polarity (G21) shipped as decision **6b** -- decision 6's 2.5-octave bandwidth gate was refuted by its own step-0 survey and replaced by a gate on both measured band edges (low <= 100 Hz AND high >= 8 kHz). G21 tier 3 (guided sub-against-main) was AMENDED by the owner the same day and moved to G17 as a phase question. Record `docs/dsp/2026-08-30-sweep-ir-l4a.md`, plan `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md`, state in `docs/HANDOFF.md`. Original scope: P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
 | **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6): ✅ BUILT 2026-08-29.** Ten tasks, 35 commits, `78ef14f..e14d0a0`. Record `docs/dsp/2026-08-29-display-layer-l5c.md` (with a §5a added mid-build for two interactions it had not decided); plan `docs/plans/2026-08-29-L5c-display-layer-impl-plan.md`. Numbers live in ONE place, `docs/HANDOFF.md`'s baseline block — do not copy them here. It also absorbed, on the owner's ruling, the thing no lane owned: **`app/` had never called L2's dual-FFT engine**, so `measure::Snapshot` carried no transfer function. That bridge is now built, and the stored-trace path this plan recorded as "built but unreached" is wired. **The spectrograph remains OUT of scope** — record §7 fixes three constraints and does not design it; it needs its own record when scheduled, and its decay-view half belongs with the IR/RT60 lane. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
 | **~~cepstrum/wavelet (G23)~~** | **Moved OUT of L5** — it is DSP, not display, and belongs with L2/L3. Putting it beside "draw a trace" confused two layers. | L2 | — |
-| **L6a — SPL-pro** | P6 subset: SPL logging/history/alarms/PDF/web viewer (G7), dose IEC 61252 (G8). **The web viewer (G7) is a CLIENT of L-API's surface — same server, same port, same `Host` check, same rate limit. It must not open a second listener** (`docs/dsp/2026-09-16-remote-api.md` §12; Smaart's own SPL Web Viewer shares port 26000 with its API, while SysTune shipped a bundled NGINX — the upper bound on getting this wrong). Also blocked on a fact L-API's station 1 established: **SPL is not in `Snapshot` yet** — it carries dBFS, and `rta::meter::Leq` has no `app/` caller, so `/api/v1/status`'s `available` list gains `"spl"` only when the Meters track lands it. | Meters track (in flight — wait for it to land); L-API for G7's transport | everything except L6b |
+| **L6a — SPL-pro** | P6 subset: SPL logging/history/alarms/PDF/web viewer (G7), dose IEC 61252 (G8). **NEXT LANE (2026-09-16)** — starts at **station 1**, it has no `docs/dsp/` record yet. **The web viewer (G7) is a CLIENT of L-API's surface — same server, same port, same `Host` check, same rate limit. It must not open a second listener** (`docs/dsp/2026-09-16-remote-api.md` §12; Smaart's own SPL Web Viewer shares port 26000 with its API, while SysTune shipped a bundled NGINX — the upper bound on getting this wrong). Also blocked on a fact L-API's station 1 established: **SPL is not in `Snapshot` yet** — it carries dBFS, and `rta::meter::Leq` has no `app/` caller, so `/api/v1/status`'s `available` list gains `"spl"` only when the Meters track lands it. | ~~Meters track (in flight — wait for it to land)~~ — **the Meters track has landed** (Weighting, Detector, Leq), so this is unblocked; **L-API for G7's transport** | everything except L6b |
 | **L6b — Multichannel workflows** | P6 subset: spatial averaging (G14), coherence weighting (G15), sequencing + auto-discard (G20), full routing matrix, presets, remote API. **✅ BUILT 2026-09-06** (all five stations in one orchestrator session). Record `docs/dsp/2026-09-06-multichannel-l6b.md`, research `docs/research/2026-09-06-l6b-station1-research.md`, plan `docs/plans/2026-09-06-L6b-impl-plan.md`, report `docs/reports/006-multichannel.md`. Shipped: `rta::dsp::spatialAverage` (weighted dB mean default, power option, `W = u·γ²`, circular phase mean with agreement `R`, two absence reasons), the MTW per-band variant, the overload criterion, N `Analyser`s behind a routing plan, the average as the published trace plus one solo, level align over the displayed span, a sequencer that refuses on two criteria, schema-3 presets with unbound-on-mismatch, the routing matrix view. **Not in this lane, by record §8/§10**: generator solo/mute (needs an output path that does not exist — own record) and the remote API (own record; localhost / read-only proposed). Numbers live only in `docs/HANDOFF.md`'s baseline block. | L2 (multi-TF) | L4, L5 |
 | **L-API — Remote API (read-only)** | The piece L6b §10 scoped out. **Stations 1+2 DONE 2026-09-16**, docs-only, no code: research `docs/research/2026-09-16-remote-api-station1-research.md`, record [`docs/dsp/2026-09-16-remote-api.md`](../dsp/2026-09-16-remote-api.md). **Station 3 (impl plan) next.** Decided: **HTTP/1.1 + JSON over TCP**, GET-only, version in the path (`/api/v1/…`), **cpp-httplib (MIT)** vendored through `split.py` with TLS undefined — **Mongoose disqualified, GPL-2.0-only is incompatible with AGPLv3 and the commercial arm does not fix it**; one API thread reading the same `SnapshotSource::latest()` pointer the views read, **never the audio callback**; poll-only with `Snapshot::sequence` as the version token (no webhook — REW's callback-URL push is an SSRF pivot); bind `127.0.0.1` literal, **`Host`-header allowlist as the primary defence against DNS rebinding**, Bearer token never a cookie, no CORS by default, rate limit and point cap as **real-time-safety** controls. **Cannot ship in v1 and the record says so**: solver endpoints (`EqSession`/`AlignmentWizard` have no composition-root instance) and SPL/Leq (`Snapshot` is dBFS only; `rta::meter::Leq` has no `app/` caller) — the second of those blocks **L6a G7**, not this lane. Owner questions in `docs/HUMAN-QA-QUEUE.md` "Từ lane Remote API (2026-09-16)"; none block station 3. | L6b (`SnapshotSource`, published snapshot) | ALL — `app/` only, disjoint from every core DSP lane. **L6a is the exception and it is upstream-of, not parallel-with**: G7's viewer is a client of this surface (§12), so L6a may run alongside but must not freeze a transport contract before this lane does |
-| **L7 — Solvers** — **split 2026-09-06 into five sub-lanes; stations 1+2 DONE for all five; Wave 0 + Wave 1 + Wave 2-DELAY + Wave 2-EQ-CORE BUILT + verified (2026-09-07), merged to `main` and pushed.** L7-OUT (Q3-folded prerequisite — **BUILT**), L7-FIR (G10 — **BUILT**), L7-DELAY (auto-delay — **BUILT**), L7-EQ (auto-EQ, **G24 FOLDED IN**; **core A-D BUILT, app E/F BUILT 2026-09-15**), L7-ALIGN (G11 + G17 + G18, **ρ FOLDED IN** — station-3 plan `docs/plans/2026-09-15-L7-align-impl-plan.md`; **ALIGN BUILT 2026-09-16 — tasks A–J complete.** Wave 3a (A–F: the five G11 ops, `spectralCrossover`, `crossoverBandFit`, the topology table, ρ, and the two ρ surveys that ship NO threshold) merged as PR #8 at `02bd02a`, OFF 624/ON 692; Wave 3b (G–J: `VirtualTrace`, the alignment wizard, the G18 crossover surface with its specimen, and the guards shown red-then-green in both configs) on `l7/align-wave3b-app`, **OFF 648/ON 716, PR open, NOT merged**). Build order = **Wave 0 (MinimumPhase, FilterSpec, BiquadDesign, BiquadResponse) ✅** → **Wave 1 OUT ∥ FIR ✅ (OFF 505/ON 571)** → **Wave 2 DELAY ✅ (OFF 529/ON 597) ∥ EQ core ✅ (OFF 551) → **EQ E/F app ✅ 2026-09-15 (OFF 564/ON 632)** → **Wave 3 ALIGN**. ✅ **G24 CAVEAT RESOLVED (proven, not refuted):** the shared `minimumPhaseFromMagnitude` 8× is adequate only because FIR windows first; EQ's G24 measured that raw measured magnitude needs **64× min, ships 128×** — `kExcessPhaseOversamplingFactor`. (Precision fix PAID 2026-09-15: 64× is driven by the tail-energy criterion, not by the swing `classifyDip` reads — swing alone converges at 8×; 128× ships unchanged. Record §4.3 amendment + `gen_autoeq_algo.py` docstring carry the per-fixture table.) Records `docs/dsp/2026-09-06-l7-*.md`, research `docs/research/2026-09-06-l7-*-station1-research.md`, state in `docs/HANDOFF.md` top entry. **G24 is NO LONGER an L4c item — its min-phase test is folded into L7-EQ.** Original scope: P7: auto-EQ + suggestions (both modes), auto-delay + suggestions, virtual processor (G11), alignment wizard (G17), crossover surface (G18), FIR export (G10). **Owner ruling 2026-09-06: the generator OUTPUT PATH (auto solo/mute, G20 — deferred out of L6b §8) is FOLDED INTO L7**, not a separate lane: every solver must play a signal, so L7 station 1 opened with the lock-free output-path research (which outputs, routing, mute without a lock, keep `audioio_scoped_no_denormals_is_first`) as a prerequisite, serving both solver excitation and G20. G17 is a PHASE question L4a moved here: the correct crossover phase offset is topology-defined (LR 0°, BW2 180°, odd-order BW 90°) and unrecoverable from measurement — the wizard must ASK topology, not guess. | L2 + L4 + L5 (all in) | L6a, L8 |
+| **L7 — Solvers** — **✅ BUILT 2026-09-16, MERGED. Lane report `docs/reports/007-solvers.md`.** Split 2026-09-06 into five sub-lanes; stations 1+2 DONE for all five; Wave 0 + Wave 1 + Wave 2-DELAY + Wave 2-EQ-CORE built + verified 2026-09-07 and on `origin/main` since the `4b05049..23b7ea0` push. L7-OUT (Q3-folded prerequisite — **BUILT**), L7-FIR (G10 — **BUILT**), L7-DELAY (auto-delay — **BUILT**), L7-EQ (auto-EQ, **G24 FOLDED IN**; **core A-D BUILT, app E/F BUILT 2026-09-15**), L7-ALIGN (G11 + G17 + G18, **ρ FOLDED IN** — station-3 plan `docs/plans/2026-09-15-L7-align-impl-plan.md`; **ALIGN BUILT 2026-09-16 — tasks A–J complete.** Wave 3a (A–F: the five G11 ops, `spectralCrossover`, `crossoverBandFit`, the topology table, ρ, and the two ρ surveys that ship NO threshold) merged as PR #8 at `02bd02a`, OFF 624/ON 692; Wave 3b (G–J: `VirtualTrace`, the alignment wizard, the G18 crossover surface with its specimen, and the guards shown red-then-green in both configs) **merged as PR #9 at `6d9a53d`**). **ALIGN is BUILT as MODEL + SPECIMEN — `MainComponent` wiring is a follow-up that has NOT started.** `rta::view::CrossoverSurface` is a headless, JUCE-free model whose pixels come only from `app/src/dev/preview/PhaseAlignPreview.{h,cpp}` via `rtatool_snapshot` (`shots/preview-phase.png`); it has **zero** references in `MainComponent.{h,cpp}` / `MainComponentDelay.cpp`, by decision **ALIGN-R8** ("nobody should hunt for a `MainComponent` hook"). `AlignmentWizard` has **no UI at all** — reachable only from `app/tests/`. Of the whole lane, **only DELAY is reachable from the running app** (`LOCATE` / `APPLY` in `MainComponentDelay.cpp`, task F2). **Tallies at `6d9a53d`, VERIFIER-measured by an independent rebuild: OFF 649/649, ON 717/717, forced fallback (`-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON`) 649/649, 0 `warning C`, 11/11 guards green, 8 snapshot PNGs** — and `git diff 6d9a53d^2 6d9a53d` is empty, so they describe the merge commit's tree. Build order = **Wave 0 (MinimumPhase, FilterSpec, BiquadDesign, BiquadResponse) ✅** → **Wave 1 OUT ∥ FIR ✅ (OFF 505/ON 571)** → **Wave 2 DELAY ✅ (OFF 529/ON 597) ∥ EQ core ✅ (OFF 551) → **EQ E/F app ✅ 2026-09-15 (OFF 564/ON 632)** → **Wave 3 ALIGN ✅ 2026-09-16 (OFF 649/ON 717)**. **ρ ships with NO threshold** — two grids ran and did not agree (grid A floors at ρ > 0.0640 but a correctly-signed cell sits at 0.0520; grid B has no wrong-sign cell in 2000), so `relativePolarity` returns a bounded figure and no verdict. **Five record amendments landed and one is still owed** — see `docs/reports/007-solvers.md` §5. ✅ **G24 CAVEAT RESOLVED (proven, not refuted):** the shared `minimumPhaseFromMagnitude` 8× is adequate only because FIR windows first; EQ's G24 measured that raw measured magnitude needs **64× min, ships 128×** — `kExcessPhaseOversamplingFactor`. (Precision fix PAID 2026-09-15: 64× is driven by the tail-energy criterion, not by the swing `classifyDip` reads — swing alone converges at 8×; 128× ships unchanged. Record §4.3 amendment + `gen_autoeq_algo.py` docstring carry the per-fixture table.) Records `docs/dsp/2026-09-06-l7-*.md`, research `docs/research/2026-09-06-l7-*-station1-research.md`, state in `docs/HANDOFF.md` top entry. **G24 is NO LONGER an L4c item — its min-phase test is folded into L7-EQ.** Original scope: P7: auto-EQ + suggestions (both modes), auto-delay + suggestions, virtual processor (G11), alignment wizard (G17), crossover surface (G18), FIR export (G10). **Owner ruling 2026-09-06: the generator OUTPUT PATH (auto solo/mute, G20 — deferred out of L6b §8) is FOLDED INTO L7**, not a separate lane: every solver must play a signal, so L7 station 1 opened with the lock-free output-path research (which outputs, routing, mute without a lock, keep `audioio_scoped_no_denormals_is_first`) as a prerequisite, serving both solver excitation and G20. G17 is a PHASE question L4a moved here: the correct crossover phase offset is topology-defined (LR 0°, BW2 180°, odd-order BW 90°) and unrecoverable from measurement — the wizard must ASK topology, not guess. | L2 + L4 + L5 (all in) | L6a, L8 |
 | **L8 — Research lanes** (each is a station-1/2 pass producing a decision record, no code until approved) | G12 SyncSource-class TF; G13 AES-75; G19 Dante/AVB/Milan; G26 DSP plug-in SDK | none (research only) | ALL — safe anytime, read-only |
 | **L9 — Productization** | i18n VI/EN, installers (3 OS), website content refresh cadence, manual | everything shippable | L8 |
 | **L-web — Website content package** | docs/marketing/ upkeep: re-render mockups after each landed phase, keep VI/EN copy current | none | ALL |
@@ -170,9 +208,15 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
 
 ## Session-collision rules (from hard-won incidents this week)
 
+*Superseded in part 2026-09-15 by `docs/GIT-WORKFLOW.md`: `origin/main` is the
+truth, every builder works in its own `git worktree` on its own branch, and
+nothing lands on `main` except through a pull request. Read that document
+first; the rules below still describe the physical contention it does not.*
+
 1. **core/CMakeLists.txt + core/tests/CMakeLists.txt are the contention
    points.** A lane touching core serializes its ONE integration commit;
-   coordinate via git pull before that commit, never via long-lived branches.
+   rebase or merge `origin/main` into the lane branch before opening the PR,
+   never hold a long-lived branch.
 2. Each concurrent session uses its OWN build directory (build-<lane>).
    Configure core-only (default RTA_BUILD_APP=OFF) unless the lane needs JUCE.
 3. Read docs/HANDOFF.md and `git log --oneline -15` at session start; the
@@ -194,8 +238,10 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
    Read `docs/HANDOFF.md` first, then `docs/dsp/2026-08-30-sweep-ir-l4a.md`.
    **L5b** stays blocked on the ISO 2969 / SMPTE ST 202 purchase, **L4d** on
    IEC 60268-16. L8 research lanes fire-and-forget anytime.
-4. ~~**Now**: **L4b**~~ — **BUILT 2026-08-30** (session EP06), `core/` only, on
-   `claude_desk/handoff-continuation-9045fc` and **not yet merged**. Record
+4. ~~**Now**: **L4b**~~ — **BUILT 2026-08-30** (session EP06), `core/` only,
+   ~~on `claude_desk/handoff-continuation-9045fc` and **not yet merged**~~ —
+   **MERGED 2026-08-30 at `e77e0e1`** and pushed `29b464e..7122070`
+   (`docs/HUMAN-QA-QUEUE.md`, "Từ lane L4b"). Record
    `docs/dsp/2026-08-30-ir-decay-l4b.md`; numbers and open items live in
    `docs/HANDOFF.md` and are not copied here. Three figures a later session must
    not re-derive: the B*T gate ships at **6, not the literature's 4** (the
@@ -212,11 +258,23 @@ mỏng — không tự code, không đọc file lớn, mọi claim phải qua ve
 5. ~~Then **L3**~~ — **BUILT 2026-09-06**, see its row above. ~~**L6b** next~~ —
    **BUILT 2026-09-06**, see its row; two pieces it scoped out need their own
    station-1 pass: the **generator output path** (auto solo/mute, and L7's
-   solvers also need to play a signal) — DONE, folded into L7 — and the
-   ~~**remote API**~~ — **stations 1+2 DONE 2026-09-16**, record
+   solvers also need to play a signal) — DONE, folded into L7 as its own
+   prerequisite sub-lane **L7-OUT** — and the ~~**remote API**~~ —
+   **stations 1+2 DONE 2026-09-16**, record
    [`docs/dsp/2026-09-16-remote-api.md`](../dsp/2026-09-16-remote-api.md),
    research `docs/research/2026-09-16-remote-api-station1-research.md`, lane
-   row **L-API** above; station 3 next, and **L6a's SPL web viewer (G7) rides
-   that surface — it must not open a second one**. Then **L7**,
-   which needed L2 + L4 + L5 — two of those three are in. **L6a** after
-   meters; **L9** last.
+   row **L-API** above, carried by **PR #11** (`remote-api/stations-1-2`,
+   OPEN — it was opened 69 seconds after the L7 closeout's head commit was
+   authored, which is why an earlier revision of this line said the remote API
+   had no lane); station 3 next, and **L6a's SPL web viewer (G7) rides that
+   surface — it must not open a second one**. ~~Then **L7**, which needed
+   L2 + L4 + L5 — two of those three are in.~~ — **L7 BUILT and MERGED
+   2026-09-16**, `docs/reports/007-solvers.md`.
+6. **Now: L6a (SPL-pro)** — SPL logging / history / alarms / PDF / web viewer
+   (G7) and dose IEC 61252 (G8). It waited on the Meters track and the Meters
+   track landed (Weighting, Detector, Leq — see "Ground truth" above), so the
+   dependency column's "wait for it to land" is satisfied. It starts at
+   **station 1**: there is no `docs/dsp/` record for SPL-pro yet. Read
+   `docs/HANDOFF.md`'s "L7 CLOSED OUT" section first — it carries the handoff
+   written for this lane. **L8** research lanes stay fire-and-forget;
+   **L9** last; **L5b** and **L4d** stay blocked on their purchases.

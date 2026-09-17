@@ -32,5 +32,7 @@ what the verifier refuted, and the exact commands + output that prove the state.
 | 001 | Phase 0 foundations + FFT/banding core (pre-pipeline) | see docs/features/FEAT-phase0-foundations.md |
 | 002 | Phase 1: the audio chain end to end | [002-phase1-audio-chain.md](002-phase1-audio-chain.md) |
 | 003 | Lane L2: the dual-FFT transfer-function engine | [003-dual-fft-engine.md](003-dual-fft-engine.md) |
+| 004 | Lane L5c: the display layer — Bode layout, workspaces, the app's first call into the dual-FFT engine | [004-display-layer-l5c.md](004-display-layer-l5c.md) |
 | 005 | Lane L3: the multi-time-window engine | [005-mtw-engine.md](005-mtw-engine.md) |
 | 006 | Lane L6b: multichannel workflows — spatial average, coherence weighting, routing, sequencing, presets | [006-multichannel.md](006-multichannel.md) |
+| 007 | Lane L7: solvers — output path, FIR export, auto-delay, auto-EQ, the alignment wizard and the crossover surface | [007-solvers.md](007-solvers.md) |
