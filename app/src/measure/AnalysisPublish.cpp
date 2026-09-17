@@ -187,14 +187,26 @@ std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
     view.peakCDb = static_cast<float>(latest.peakDb + config.referenceOffsetDb);
 
     view.metrics.reserve(config.metrics.size());
-    for (const SplMetricSpec& spec : config.metrics) {
+    for (std::size_t i = 0; i < config.metrics.size(); ++i) {
+        const SplMetricSpec& spec = config.metrics[i];
         const std::uint64_t windowBlocks = spec.windowBlocks == 0 ? 1 : spec.windowBlocks;
+
+        // THIS METRIC'S OWN window. `SplMeter` runs one weighting per instance
+        // (W0-B), so an A-weighted metric and a C-weighted one are averaged
+        // over different chains and `metricWindows` is what says which.
+        // Falling back to the shared `window` when none was supplied is the
+        // single-weighting case, not a guess: a caller with several weightings
+        // that failed to fill `metricWindows` would get one weighting's
+        // numbers for all of them, which is why `SplSession::fillMetricWindows`
+        // fills it unconditionally.
+        const auto source =
+            (i < input.metricWindows.size()) ? input.metricWindows[i] : input.window;
+
         // The LAST windowBlocks of the buffer. A window longer than the
         // buffer takes the whole buffer and says so through bufferFill --
         // never a shorter answer presented as a full one (record §9).
-        const std::size_t take =
-            std::min(static_cast<std::size_t>(windowBlocks), input.window.size());
-        const auto tail = input.window.subspan(input.window.size() - take, take);
+        const std::size_t take = std::min(static_cast<std::size_t>(windowBlocks), source.size());
+        const auto tail = source.subspan(source.size() - take, take);
         const auto result = rta::meter::combineBlocks(tail, input.sampleRate,
                                                       config.referenceOffsetDb, windowBlocks);
 

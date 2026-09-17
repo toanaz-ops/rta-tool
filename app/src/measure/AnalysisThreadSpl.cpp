@@ -88,6 +88,41 @@ std::uint32_t AnalysisThread::splFlagsSeen(int channel) const noexcept {
     return splFlagsSeen_[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);
 }
 
+void AnalysisThread::fillSplPublishInput(
+    SplPublishInput& input, std::span<std::span<const rta::meter::Block>> metricWindows) const {
+    // `config == nullptr` is the ONE way to say nothing is logging (W0-C C1),
+    // so it is left alone on every path that does not find a completed block.
+    const SplConfig* config = splSession_.config();
+    if (config == nullptr) return;
+
+    // Wave 0 publishes the FIRST logged channel. One SPL block per Snapshot is
+    // what `Snapshot::spl` is (record §9's payload is per-channel and the pane
+    // is W2-D); a multi-channel publish is Wave 2's, and picking the lowest
+    // logged channel is a rule a reader can state rather than whichever one
+    // the container happened to order first.
+    int channel = -1;
+    for (int ch = 0; ch < static_cast<int>(SplSession::kMaxLoggedChannels); ++ch) {
+        if (splSession_.logsChannel(ch)) {
+            channel = ch;
+            break;
+        }
+    }
+    if (channel < 0) return;
+
+    auto latest = splSession_.latestBlock(channel);
+    if (!latest.has_value()) return;  // a session with no closed block yet
+
+    input.config = config;
+    input.sampleRate = splSession_.sampleRate();
+    input.latestBlock = latest;
+    input.window = splSession_.window(channel);
+    // PER-METRIC windows: metric i's weighting decides which chain it is
+    // averaged over, and without this an A-weighted and a C-weighted metric
+    // would read the same numbers.
+    const std::size_t filled = splSession_.fillMetricWindows(channel, metricWindows);
+    input.metricWindows = metricWindows.first(filled);
+}
+
 std::uint64_t AnalysisThread::splDroppedSamples(int channel) const noexcept {
     if (channel < 0 || static_cast<std::size_t>(channel) >= splDroppedSamples_.size()) return 0;
     return splDroppedSamples_[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);

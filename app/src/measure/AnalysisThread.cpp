@@ -171,9 +171,8 @@ void AnalysisThread::applyPendingReferenceDelay() {
 }
 
 void AnalysisThread::drain() {
-    // Picked up HERE, on this thread, exactly like the Locate arm below and
-    // `applyPendingReferenceDelay` above: a session that started mid-drain
-    // would see a meter half-built.
+    // Picked up on THIS thread, like the Locate arm below: a session that
+    // started mid-drain would see a meter half-built.
     applyPendingSplRequest();
 
     if (locateArmRequested_.exchange(false, std::memory_order_acquire)) {
@@ -336,13 +335,11 @@ void AnalysisThread::drainRole(rta::platform::ChannelRole role, bool isReference
         } else {
             analysers_[0]->pushMeasurement(scratch);
         }
-        // Research §C4's actual requirement: "the SPL meter must sit on the
-        // measurement channel's own drain, so that a session with no
-        // reference still logs". In THIS path it is met exactly -- the
-        // measurement channel drains on its own, with no reference to wait
-        // for. In the routed path (drainPaired) it cannot be, because that
-        // drain advances the measurement channel only when the reference can
-        // advance with it, which is what the `Gap` there reports (SPL-R1).
+        // Research §C4's actual requirement -- "a session with no reference
+        // still logs" -- is met EXACTLY here: this channel drains on its own.
+        // In the routed path it cannot be, because that drain advances the
+        // measurement channel only when the reference can, which is what the
+        // `Gap` there reports (SPL-R1).
         feedSpl(channel);
     }
 }
@@ -363,36 +360,21 @@ void AnalysisThread::publishIfDue() {
     // file stays under the project's line cap and so that logic is
     // testable with no bus and no thread in the path.
     //
-    // Corrected AGAIN (task F2, record §6): app/tests/test_average_group.cpp
-    // now measures AverageGroup::publish() alone, fed REAL TransferSnapshots
-    // from REAL Analysers routed through a REAL RoutingPlan (not the
-    // hand-built snapshots B3's own version of this comment cited) --
-    // bytes(1) = 1359, bytes(4) = 1575, bytes(8) = 1863 in that test's own
-    // small fixture (bin count is fixture-specific, so the ABSOLUTE figures
-    // move with fftSize; what does not move is bytes(8) - bytes(4) = 288,
-    // against a bound of 4*sizeof(PositionSummary) + 4096 = 4352, because
-    // that delta comes from N additional small structs, never from bin
-    // count. That property holds because AverageGroup::publish() reads its
-    // TransferSnapshot span straight into rta::dsp::spatialAverage, which
-    // allocates only 5 vectors sized by BIN COUNT, never by member count
-    // (SpatialAverage.cpp) -- the design answer record §6 gives to the
-    // 2.21 MB-per-position-per-publish churn a naive N-Analyser publish
-    // (a FULL app-level TransferBlock+MtwBlock per position) would
-    // otherwise cost.
-    //
-    // What that bound deliberately does NOT cover: publishAverageGroup()
-    // below also gathers each member's OWN TransferSnapshot every publish
-    // (transferSnapshotForAverage(), a raw core-level read -- a few KB at
-    // realistic bin counts, nothing like the app-level duplication above) --
-    // an unavoidable, N-scaling, but much smaller cost every design pays,
-    // measured and reported (not bounded) in the same test: bytes(1) =
-    // 3343, bytes(4) = 9511, bytes(8) = 17735 in that same small fixture.
-    // buildPublishedSnapshot()'s own base-Snapshot copy is a THIRD, separate
-    // cost -- FIXED, sized by bins, the same every
-    // publish regardless of N -- not the quantity T12 bounds.
+    // The three separate publish costs -- T12's bounded delta, the
+    // N-scaling snapshot gather, and this function's fixed base-Snapshot
+    // copy -- are measured and explained beside the function they belong
+    // to, above publishAverageGroup in measure/AnalysisPublish.h.
     const RoutingPlan plan = planRouting(bus_.config(), bus_.numChannels());
-    SnapshotPtr snapshot = buildPublishedSnapshot(analysers_, averageGroup_, lastGroupTfIndices_,
-                                                   plan, bus_.totalDrops());
+
+    // W0-D: the SPL half. The per-metric window spans are a LOCAL here so
+    // nothing allocates during a publish -- see fillSplPublishInput.
+    SplPublishInput splInput;
+    std::array<std::span<const rta::meter::Block>, kMaxSplMetricWindows> metricWindows{};
+    fillSplPublishInput(splInput, metricWindows);
+
+    SnapshotPtr snapshot =
+        buildPublishedSnapshot(analysers_, averageGroup_, lastGroupTfIndices_, plan,
+                               bus_.totalDrops(), splInput.config != nullptr ? &splInput : nullptr);
     latest_.store(std::move(snapshot), std::memory_order_release);
 }
 

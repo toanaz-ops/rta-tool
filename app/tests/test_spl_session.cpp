@@ -15,8 +15,12 @@
 
 #include "measure/SplSession.h"
 
+#include "rta/dsp/Weighting.h"
+
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -169,4 +173,106 @@ TEST_CASE("feedHop allocates nothing once the session has started", "[splsession
     CHECK(bytes == 0);
     CHECK(session.blockCount(0) == 20);
     CHECK(session.blockCount(9) == 20);
+}
+
+// --- one chain per DISTINCT weighting, and the reason it is not optional --
+
+TEST_CASE("a C-weighted metric is served C-weighted numbers, not A-weighted ones",
+          "[splsession]") {
+    // THE DEFECT THIS CASE EXISTS FOR. `SplMeter` runs ONE weighting per
+    // instance (W0-B), so a session publishing both LAeq and a C-weighted
+    // level needs TWO chains on the same channel. An earlier revision of
+    // SplSession built a single A-weighted meter per channel and read every
+    // metric's window from it -- which would have served a C-weighted metric
+    // A-weighted numbers and said nothing about it, with `SplConfig::metrics`
+    // carrying a `weighting` field the code ignored.
+    SplConfig config;
+    config.blockSeconds = 0.1;
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 4});
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 4});
+    // A third metric naming a weighting ALREADY present shares that chain:
+    // two metrics differ only in window length, and combineBlocks is a
+    // recompute over whatever tail it is handed.
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LAeq_long", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Slow, 4});
+
+    SplSession session;
+    const int channels[] = {0};
+    session.start(config, kFs, channels);
+    REQUIRE(session.chainCount() == 2);
+    CHECK(session.weightings()[0] == rta::dsp::WeightingType::A);
+    CHECK(session.weightings()[1] == rta::dsp::WeightingType::C);
+
+    // 100 Hz, where A and C differ by about 19.1 dB analytically -- far more
+    // than any tolerance question. The energy in each chain's blocks must
+    // differ accordingly, which is what proves the two filters really ran.
+    std::vector<float> hop(4800);
+    for (std::size_t n = 0; n < hop.size(); ++n) {
+        const double t = static_cast<double>(n) / kFs;
+        hop[n] = static_cast<float>(0.5 * std::sin(2.0 * 3.14159265358979323846 * 100.0 * t));
+    }
+    for (int i = 0; i < 6; ++i) session.feedHop(0, hop);
+
+    const auto aWindow = session.window(0, rta::dsp::WeightingType::A);
+    const auto cWindow = session.window(0, rta::dsp::WeightingType::C);
+    REQUIRE(aWindow.size() >= 2);
+    REQUIRE(cWindow.size() >= 2);
+
+    const double aDb = 10.0 * std::log10(aWindow.back().sumSquares / aWindow.back().blockSamples);
+    const double cDb = 10.0 * std::log10(cWindow.back().sumSquares / cWindow.back().blockSamples);
+    const double expectedGap =
+        rta::dsp::Weighting::analyticDb(100.0, rta::dsp::WeightingType::A)
+        - rta::dsp::Weighting::analyticDb(100.0, rta::dsp::WeightingType::C);
+    INFO("A-weighted block level = " << aDb);
+    INFO("C-weighted block level = " << cDb);
+    INFO("measured gap = " << (aDb - cDb) << ", analytic gap = " << expectedGap);
+    // The gap is the WEIGHTING's, not this code's: asserted against
+    // rta::dsp::Weighting's own analytic curve, loosely, because the digital
+    // cascade only approximates it and the size of that approximation is that
+    // class's property. What matters here is that the two chains are NOT the
+    // same numbers.
+    CHECK(aDb < cDb - 10.0);
+    CHECK_THAT(aDb - cDb, WithinAbs(expectedGap, 1.0));
+
+    // A weighting the config never named yields an EMPTY span -- how a caller
+    // learns it asked for something absent, never a silent substitution.
+    CHECK(session.window(0, rta::dsp::WeightingType::Z).empty());
+
+    // And fillMetricWindows hands metric 1 the C chain, metrics 0 and 2 the A
+    // chain. This is what buildSplBlockView reads.
+    std::array<std::span<const rta::meter::Block>, 3> windows{};
+    REQUIRE(session.fillMetricWindows(0, windows) == 3);
+    CHECK(windows[0].data() == aWindow.data());
+    CHECK(windows[1].data() == cWindow.data());
+    CHECK(windows[2].data() == aWindow.data());
+}
+
+TEST_CASE("a gap rides every chain exactly once, never chainCount times",
+          "[splsession]") {
+    SplConfig config;
+    config.blockSeconds = 0.1;
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 4});
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 4});
+
+    SplSession session;
+    const int channels[] = {0};
+    session.start(config, kFs, channels);
+    REQUIRE(session.chainCount() == 2);
+
+    std::vector<float> block(4800, 0.2f);
+    session.noteDropCount(0, 0);  // baseline
+    session.feedHop(0, block);
+    session.noteDropCount(0, 12000);
+    session.feedHop(0, block);
+
+    CHECK(rta::meter::hasFlag(session.flagsSeen(0), BlockFlag::Gap));
+    // 12 000, NOT 24 000. The same loss is upstream of both filters, so both
+    // chains record it -- but summing over chains would report it twice and
+    // make a reconstructed timestamp LATE, which is the same defect the count
+    // exists to prevent, in the other direction.
+    CHECK(session.droppedSamplesTotal(0) == 12000);
 }

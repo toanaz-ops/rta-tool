@@ -15,8 +15,10 @@
 
 #include "rta/meter/Block.h"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <span>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -275,6 +277,56 @@ TEST_CASE("a window longer than the buffer reports bufferFill and no value", "[s
     // what it holds. What must not happen is publishing it without saying the
     // window is not full, which is what leqBufferFill is for (record §9).
     CHECK_THAT(static_cast<double>(view->metrics[1].valueDb), WithinAbs(85.0, 1e-5));
+}
+
+TEST_CASE("each metric is averaged over ITS OWN window, not a shared one", "[splpublish]") {
+    // The publish half of the one-chain-per-weighting rule. `SplMeter` runs
+    // ONE weighting per instance (W0-B), so an A-weighted metric and a
+    // C-weighted one come out of different chains and `metricWindows` is what
+    // says which. Without it, `SplConfig::metrics` would carry a `weighting`
+    // field the publish path ignored.
+    SplConfig config;
+    config.blockSeconds = 1.0;
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 2});
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 2});
+
+    // Two windows 20 dB apart, which no tolerance question can confuse.
+    std::vector<Block> aWindow{blockAtLevel(0, 48000, 70.0), blockAtLevel(1, 48000, 70.0)};
+    std::vector<Block> cWindow{blockAtLevel(0, 48000, 90.0), blockAtLevel(1, 48000, 90.0)};
+    const std::array<std::span<const Block>, 2> metricWindows{aWindow, cWindow};
+
+    SplPublishInput in;
+    in.config = &config;
+    in.sampleRate = kFs;
+    in.latestBlock = aWindow.back();
+    in.window = aWindow;  // the shared fallback, deliberately the WRONG one for metric 1
+    in.metricWindows = metricWindows;
+
+    const auto view = rta::measure::buildSplBlockView(in);
+    REQUIRE(view.has_value());
+    REQUIRE(view->metrics.size() == 2);
+    CHECK_THAT(static_cast<double>(view->metrics[0].valueDb), WithinAbs(70.0, 1e-4));
+    // 90, not 70: the fallback `window` above is A-weighted and metric 1 must
+    // not read it. **Made red** by dropping the metricWindows lookup.
+    CHECK_THAT(static_cast<double>(view->metrics[1].valueDb), WithinAbs(90.0, 1e-4));
+
+    SECTION("a metric whose weighting has no chain is ABSENT, not substituted") {
+        // An empty span is how SplSession says "this session never built that
+        // chain". combineBlocks over nothing has no Leq, so the reading floors
+        // rather than quietly carrying another weighting's number.
+        const std::array<std::span<const Block>, 2> withHole{aWindow, {}};
+        SplPublishInput holed = in;
+        holed.metricWindows = withHole;
+        const auto holedView = rta::measure::buildSplBlockView(holed);
+        REQUIRE(holedView.has_value());
+        REQUIRE(holedView->metrics.size() == 2);
+        CHECK_THAT(static_cast<double>(holedView->metrics[0].valueDb), WithinAbs(70.0, 1e-4));
+        CHECK(holedView->metrics[1].valueDb
+              == static_cast<float>(rta::measure::kLevelFloorDb));
+        CHECK(holedView->metrics[1].leqBufferFill == 0.0f);
+    }
 }
 
 TEST_CASE("Wave 0 publishes no dose and no Ln, and says so by absence", "[splpublish]") {

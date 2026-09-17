@@ -97,9 +97,34 @@ public:
     [[nodiscard]] std::uint32_t flagsSeen(int channel) const noexcept;
     [[nodiscard]] std::uint64_t droppedSamplesTotal(int channel) const noexcept;
 
+    /// The latest block on `channel`'s FIRST chain -- the one `Snapshot`'s
+    /// held maxima and sampled peak are read from.
     [[nodiscard]] std::optional<rta::meter::Block> latestBlock(int channel) const noexcept;
-    /// `channel`'s window, oldest first and contiguous, or an empty span.
+    /// `channel`'s FIRST chain's window, oldest first and contiguous, or an
+    /// empty span.
     [[nodiscard]] std::span<const rta::meter::Block> window(int channel) const noexcept;
+    /// The window of the chain running `weighting`, or an EMPTY span when this
+    /// session has no such chain. Empty is how a caller learns it asked for
+    /// something the config never named -- never a silent fall back to a
+    /// different weighting's numbers.
+    [[nodiscard]] std::span<const rta::meter::Block> window(
+        int channel, rta::dsp::WeightingType weighting) const noexcept;
+
+    /// Fills `out[i]` with metric `i`'s OWN window, for the config this
+    /// session was started with, and returns how many entries it wrote (0 if
+    /// `out` is shorter than `config()->metrics`).
+    ///
+    /// This is what `buildSplBlockView` reads, and it is the whole reason the
+    /// chains exist: metric `i`'s WEIGHTING decides which window it is
+    /// averaged over. Allocation-free -- the caller supplies the storage.
+    std::size_t fillMetricWindows(
+        int channel, std::span<std::span<const rta::meter::Block>> out) const noexcept;
+
+    /// How many distinct weightings this session's metrics named.
+    [[nodiscard]] std::size_t chainCount() const noexcept { return weightings_.size(); }
+    [[nodiscard]] std::span<const rta::dsp::WeightingType> weightings() const noexcept {
+        return weightings_;
+    }
 
     [[nodiscard]] const SplConfig* config() const noexcept {
         return running_ ? &config_ : nullptr;
@@ -107,25 +132,49 @@ public:
     [[nodiscard]] double sampleRate() const noexcept { return sampleRate_; }
 
 private:
-    struct ChannelState {
-        ChannelState(const SplConfig& config, double sampleRate, std::size_t windowCapacity);
+    /// One `SplMeter` and one window, for ONE weighting.
+    ///
+    /// ONE CHAIN PER DISTINCT WEIGHTING, and that is not a refinement -- it is
+    /// what stops `SplConfig::metrics` carrying a field the code ignores.
+    /// `SplMeter` runs one weighting per instance (W0-B), so a session
+    /// publishing both `LAeq` and a C-weighted level needs two chains on the
+    /// same channel. An earlier revision of this file built a single
+    /// A-weighted meter per channel and read EVERY metric's window from it,
+    /// which would have served a C-weighted metric A-weighted numbers and said
+    /// nothing about it. Two metrics naming the SAME weighting share one
+    /// chain, because they differ only in window length and `combineBlocks` is
+    /// a recompute over whatever tail it is handed.
+    struct Chain {
+        Chain(const SplConfig& config, rta::dsp::WeightingType weighting, double sampleRate,
+              std::size_t windowCapacity);
 
+        rta::dsp::WeightingType weighting;
         SplMeter meter;
         std::vector<rta::meter::Block> window;  ///< oldest first, capacity fixed at start()
         std::uint64_t blocks = 0;
         std::uint32_t flagsSeen = 0;
         std::uint64_t droppedSamplesTotal = 0;
+    };
+
+    struct ChannelState {
+        /// One per entry of `weightings_`, in the same order. Reserved once.
+        std::vector<Chain> chains;
         std::uint64_t lastBusDropCount = 0;
         bool dropBaselineSet = false;
     };
 
     [[nodiscard]] ChannelState* state(int channel) noexcept;
     [[nodiscard]] const ChannelState* state(int channel) const noexcept;
+    [[nodiscard]] const Chain* chain(int channel, rta::dsp::WeightingType w) const noexcept;
 
     SplConfig config_;
     double sampleRate_ = 0.0;
     bool running_ = false;
     std::size_t windowCapacity_ = 1;
+    /// The distinct weightings `config_.metrics` named, in first-seen order.
+    /// At most three: A, C and Z is the whole of `rta::dsp::WeightingType`, so
+    /// a channel can never need a chain it cannot have.
+    std::vector<rta::dsp::WeightingType> weightings_;
     std::array<std::unique_ptr<ChannelState>, kMaxLoggedChannels> channels_;
 };
 

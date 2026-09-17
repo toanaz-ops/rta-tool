@@ -149,6 +149,12 @@ public:
 
     // --- Lane L6a task W0-D: the SPL feed ---------------------------------
 
+    /// How many per-metric window spans `publishIfDue` has room for. A config
+    /// naming more metrics than this publishes the first `kMaxSplMetricWindows`
+    /// and no more, rather than allocating on the analysis thread; W2-A's
+    /// ring is where a real bound belongs.
+    static constexpr std::size_t kMaxSplMetricWindows = 16;
+
     /// Starts SPL logging on `channels` -- message-thread call, picked up on
     /// the NEXT `drain()`, never inside the audio callback. Replaces any
     /// session already running and zeroes the published counters.
@@ -205,6 +211,13 @@ private:
     /// `drainPaired` owns it).
     void feedSpl(int channel);
     void applyPendingSplRequest();
+    /// W0-D: fills `input` from the live session, writing metric `i`'s own
+    /// window into `metricWindows[i]`. `input.config` stays nullptr -- the one
+    /// way to say "nothing is logging" -- when there is no session or the
+    /// first block has not closed. The caller owns `metricWindows` so nothing
+    /// here allocates during a publish.
+    void fillSplPublishInput(SplPublishInput& input,
+                             std::span<std::span<const rta::meter::Block>> metricWindows) const;
     void publishIfDue();
     void recordFault(rta::platform::Fault::Kind kind, const std::string& message);
 
