@@ -392,6 +392,12 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
 > có ghi tên, ghi § và ghi **giá nếu chủ nhân lật**. Ba ô dưới vẫn để `[ ]` —
 > một default không phải một câu trả lời. Bảy câu còn lại cũng đã được lấy
 > default theo đề xuất của record (bảng thứ hai đầu plan) để các wave dựng được.
+>
+> **Bản 2 (2026-09-18):** vòng verify đối kháng trên PR #15 cho **SOUND-WITH-FIXES,
+> station 4 GO**, và **mười bốn lỗi** đã được vá vào plan. Ba default dưới
+> **không đổi**. Thêm **Q11** ở cuối mục này — một câu mới mà vòng verify làm
+> lộ ra, có default và có năm fixture, nhưng đáng một câu của chủ nhân vì nó
+> đổi **mọi con số Leq công bố trong một show to**.
 
 - [ ] **`[!]` Q1 — seam 3.0103 dB: readout SPL theo convention nào?**
   `app/src/measure/Levels.h` định nghĩa dB sao cho một **sine full-scale đọc
@@ -565,6 +571,32 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   > **Đã có người nhặt (2026-09-17):** plan trạm 3 của L6a nhận nó làm
   > **Task G2**. Vẫn là code, nên nó thuộc **trạm 4**, không đụng ở PR
   > docs-only này. Để ngỏ tới khi trạm 4 chạy.
+
+- [ ] **Q11 — cờ nào loại một block khỏi `combineBlocks`?** (vòng verify PR #15,
+  defect 14). Record §2 liệt kê `overload | underRange | dropped |
+  calibrationInvalid` và **không nói cái nào loại**. Một quyết định, và nó đổi
+  **mọi con số Leq công bố trong một show to**.
+
+  **Default đã lấy trong plan (Wave 0, task W0-A A9–A13): chỉ
+  `CalibrationInvalid` loại.** Lý do, từng cờ một:
+  - `CalibrationInvalid` **LOẠI** — dB của nó tham chiếu một offset mà chính
+    **ISO 1996-2 cl. 5.2** nói phải huỷ. Đây là cờ duy nhất có một clause
+    normative đứng sau.
+  - `Overload` **KHÔNG loại** — sóng đã clip mang **ÍT** năng lượng hơn tín
+    hiệu làm nó clip, nên bỏ block đó là **xoá khoảnh khắc to nhất của show**
+    khỏi con số pháp lý, lệch đúng hướng có lợi cho người vận hành. Cùng một
+    kiểu sai mà §2 đã bác khi nó từ chối lấy mẫu tức thời.
+  - `UnderRange` **KHÔNG loại** — loại đáy thì Leq lệch **lên**.
+  - `Dropped` / `Gap` **KHÔNG loại** — năng lượng chúng mang là thật trên số
+    mẫu thực sự có, và `blockSamples` là mẫu số trung thực cho nó. Thứ mất là
+    **thời gian**, và đó là việc của cột `droppedSamples`.
+
+  Cả năm cờ đều được **đếm và in ra** dù có loại hay không (§9 mục 8).
+
+  **Vì sao vẫn hỏi:** hai tài liệu chi phối — **IEC 61672-1 cl. 3.28** (định
+  nghĩa validity) và **ISO 1996-2 cl. 10.3** ("incomplete or corrupted data")
+  — đều **tường phí và chưa đọc**, nên dự án **không claim** cơ sở tiêu chuẩn
+  cho bất kỳ hướng nào và nói thẳng điều đó. Một câu của chủ nhân là đủ.
 
 ---
 
