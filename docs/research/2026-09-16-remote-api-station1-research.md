@@ -33,13 +33,13 @@ localhost"**, and **the data model and its schema**.
 | **JUCE ships no HTTP server** — hand-rolling on `StreamingSocket` is the alternative, and it is several hundred lines whose bugs are security bugs | Grep of all 24 modules of the pinned 9.0.1 checkout for a `*Server*` class returns `SVGPaintServer` and `InterprocessConnectionServer` only; `waitForNextConnection()` blocks and you supply the thread | JUCE 9.0.1 checkout; `docs.juce.com` `StreamingSocket` |
 | The API thread reads the **same published snapshot the views read**, through `SnapshotSource::latest()` | Publish is one `AtomicSharedPtr` store at ≤ 20 Hz; the views already poll `latest()` at exactly 20 Hz | `AnalysisThread.cpp:316-325`, `RtaView.cpp:26`, `TransferView.cpp:34` |
 | …and that slot is **not lock-free on this project's own toolchain**, so the API thread is a third participant on a spin/lock, not a free read | Measured on MSVC 14.51: `is_lock_free()` false on the C++20 path; the Apple libc++ fallback takes a lock from an address-keyed table | `app/src/measure/AtomicSharedPtr.h` class comment |
-| Nothing in this lane may touch the audio callback | The callback is `ScopedNoDenormals` then exactly two calls, and a brace-counting grep enforces the first | `platform/src/AudioIo.cpp:117-148`, `platform/tests/check_callback_shape.cmake` |
+| Nothing in this lane may touch the audio callback | The callback is `ScopedNoDenormals` then exactly two calls, and a brace-counting grep enforces the first | `platform/src/AudioIo.cpp:116-148`, `platform/tests/check_callback_shape.cmake` |
 | The trace library **cannot** be read from an API thread as it stands | `TraceLibrary` is owned by `MainComponent`, mutable, copy and move deleted, with a `revision()` counter and no atomic publish | `MainComponent.h:160`, `TraceLibrary.h:51-54, 83` |
 | An endpoint for solver suggestions would return the state of an object nobody owns | `grep -rl` over `app/` finds `EqSession` and `AlignmentWizard` only in their own files and their tests — no composition-root instance exists | Repo-wide grep at `6d9a53d` |
 | **SPL cannot ship in v1**, which directly constrains L6a's web viewer | `Snapshot` carries dBFS only; `calibrationOffsetDb`/`LevelUnit` exist on stored `CaptureMeta`, not live; `rta::meter::Leq` has no `app/` caller | `Snapshot.h`, `Trace.h:39-40`, repo-wide grep |
 | The bind default is **127.0.0.1** and it is the only surveyed default under which "no auth" is not a contradiction | REW binds `localhost`:4735 with no auth; Smaart binds **all adapters including wireless** with an optional blank password; OSM broadcasts and multicasts link-local with none; GALAXY has no authentication at all | REW API help; Smaart v8 guide p. 98 + support article; OSM `server.cpp`; GALAXY Programming Guide |
 | Binding loopback is **not** sufficient — a `Host`-header allowlist is the highest-value control | Under DNS rebinding the origin genuinely matches, so the same-origin policy does not apply and CORS is inapplicable; it "does not require a misconfiguration or bug" | NCC Group Singularity wiki; GitHub Security blog, 3 Apr 2025 |
-| Any token must be a **Bearer/header token, never a cookie** | A rebound request is same-origin and *would* carry cookies for that origin; the defence works because the attacker cannot read the token | GitHub Security blog, 3 Apr 2025 |
+| Any token must be a **Bearer/header token, never a cookie** | A cookie is an *ambient* credential: the browser attaches it to any request to `127.0.0.1:<port>` whichever page issued it, so any site the operator visits is authenticated to the listener (CSRF, no DNS trick needed). A `Bearer` header is attached only by a caller that knows the secret. **Not** a rebinding argument — rebinding is answered by the `Host` allowlist, and cookie jars key on host *name*, so a rebound request carries the attacker's cookies, not this app's | GitHub Security blog, 3 Apr 2025 (rebinding "cannot contain cookies") |
 | Absence of CORS headers is **not** a posture — the request is still sent and executed | A simple `GET` gets no preflight; the browser rejects the *response* after the server has run it | MDN CORS |
 | A record-count parameter must be clamped **server-side**, and here that is a real-time control | API4:2023 names "server-side validation for … the one that controls the number of records to be returned"; in this product unbounded work during a show is a dropout | OWASP API Security Top 10 (2023) |
 | Read-only should be expressed as **GET-only over HTTP**, not as a verb field in a message | Smaart's `action` field makes read-only inexpressible to a firewall, a proxy or a browser; REW's method split is expressible in all three (and is weakened only by REW's own `POST …/command` endpoints) | Smaart Companion `src/index.js`; REW API help |
@@ -420,10 +420,14 @@ casually.
 
 A grep across all 24 modules of the pinned checkout
 (`D:\DEV CAVE EP3\PROJECT005-AZ-handsfree\external\JUCE`, `JUCE_MAJOR_VERSION 9`
-/ `MINOR 0` / `BUILDNUMBER 1`) for a class name containing `Server` returns
-exactly **two** hits: `SVGPaintServer` (an SVG internal) and
-`juce::InterprocessConnectionServer`. There is no HTTP server class in any
-module. What JUCE does ship:
+/ `MINOR 0` / `BUILDNUMBER 1`) for a `class` **or `struct`** name containing
+`Server` returns exactly **three** hits: `SVGPaintServer` (an SVG internal),
+`juce::InterprocessConnectionServer`, and `HubPipeServer`
+(`modules/juce_graphics/native/juce_Direct2DMetrics_windows.h:264`,
+`struct HubPipeServer : public InterprocessConnection` — a Direct2D
+debug-metrics named pipe, which a `class ...Server` grep misses because it is
+declared `struct`). There is no HTTP server class in any module. What JUCE does
+ship:
 
 | Class | What it actually is |
 |---|---|
@@ -563,7 +567,7 @@ prose comments. `rtatool` links `juce_audio_utils`, `juce_gui_extra`,
 `juce_opengl` (`app/CMakeLists.txt:143-152`) and nothing else. The finding the
 L6b pass recorded at `60ba99c` still holds at `6d9a53d`.
 
-`core/tests/check_no_framework_deps.cmake:50` matches
+`core/tests/check_no_framework_deps.cmake:49` matches
 `#include <(juce|JuceHeader|Q[A-Z]|portaudio|RtAudio|asio)`. That regex already
 blocks **standalone or Boost Asio** from `core/` and `platform/types/` by name,
 which silently eliminates every server library built on Asio (Boost.Beast,
@@ -647,7 +651,7 @@ Two of those rows are load-bearing and both were checked by grep at `6d9a53d`:
   **sentinel** check that fails if the guard has stopped watching its allowed
   file.
 - `app/tests` is registered **outside** the `RTA_BUILD_APP` guard
-  (`CMakeLists.txt:71`, `app/tests/CMakeLists.txt:3-9`), so a JUCE-free file
+  (`CMakeLists.txt:72`, `app/tests/CMakeLists.txt:3-9`), so a JUCE-free file
   under `app/src` is testable in the `RTA_BUILD_APP=OFF` configuration — the
   one CI runs on three OSes. A serialiser that is JUCE-free and socket-free is
   therefore provable on CI; a server that owns a socket is not.
@@ -698,9 +702,24 @@ reference implementation of the attack) and the GitHub writeup agree:
 2. **Require a token — and it must not be a cookie.** GitHub: "adding simple
    authentication for all sensitive and critical endpoints will prevent this
    attack". The mechanism matters: it works because the attacker cannot *read*
-   the token, not because credentials are blocked. A rebound request **is**
-   same-origin and **would** carry cookies for that origin. So: Bearer header
-   or an explicit token parameter, **never a cookie or a session**.
+   the token.
+
+   **Against rebinding alone, a cookie would have worked too** — the same page
+   says rebinding "cannot contain cookies". A cookie jar is keyed on the host
+   *name*, and rebinding changes only what a name *resolves to*, so the browser
+   attaches `attacker.example`'s cookies, never the ones this app set for
+   `127.0.0.1`. Whatever defends against rebinding here, it is item 1's `Host`
+   allowlist, not the token's format.
+
+   The reason to refuse a cookie is a different and larger one: a cookie is an
+   **ambient** credential. The browser attaches it to *every* request to
+   `127.0.0.1:<port>` regardless of which page issued it, so any site the
+   operator happens to visit during a show is authenticated to this listener —
+   textbook CSRF, needing no DNS trick at all, and Part D's CORS note explains
+   why the absence of CORS headers does not stop such a request from being
+   *executed*. A `Bearer` header is not ambient: nothing attaches it but a
+   caller that already knows the secret. So: Bearer header or an explicit token
+   parameter, **never a cookie or a session**.
 3. **NCC Group also recommends TLS even on localhost.** For a desktop app this
    is awkward — self-signed certificate warnings, and no valid name for
    `127.0.0.1` without shipping a certificate. Declining it is defensible;

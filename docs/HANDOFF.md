@@ -27,6 +27,46 @@ Hai thứ **không ship được ở v1** và record nói thẳng: solver sugges
 SPL/Leq (`Snapshot` chỉ mang dBFS; `rta::meter::Leq` chưa có caller trong
 `app/`). Điều thứ hai chặn **L6a G7**, không chặn lane này.
 
+## Vòng verify đối kháng + fix (2026-09-17), PR #11
+
+Verifier (không có `Edit`/`Write`) đọc lại diff tại `828c223`, đối chiếu repo ở
+`6d9a53d` và fetch lại mọi nguồn ngoài. **Verdict: SOUND-WITH-FIXES, trạm 3 mở
+được.** Không quyết định kiến trúc nào bị bác. Hai defect CONFIRMED, cả hai đã
+sửa trong vòng này:
+
+1. **Lập luận cookie bị đảo ngược ở bốn chỗ** (research `:42` và Part D mục 2,
+   record §9, `HUMAN-QA-QUEUE.md`). Bản cũ viết "request bị rebinding là
+   same-origin nên **sẽ** mang cookie của origin đó" — **ngược với nguồn được
+   trích**. Cookie jar key theo **host name**, rebinding chỉ đổi cái name đó
+   resolve ra IP nào, nên rebound request mang cookie của `attacker.example`.
+   Quyết định "Bearer, không bao giờ cookie" **giữ nguyên**, nhưng lý do đúng là
+   **ambient authority / CSRF**, còn phòng thủ rebinding là **`Host`-header
+   allowlist**. Câu hỏi §14 q.4 trong QA queue đã được **đặt lại trên tiền đề
+   đã sửa**, kèm một đoạn đính chính tường minh phòng khi chủ nhân đã đọc bản
+   cũ.
+2. **§11 acceptance test 10 được đặc tả ở một cấu hình không thể pass.**
+   `-DDIRS=core;platform;ui;tools` thiếu `app`, mà sentinel
+   `ALLOW IN_LIST SOURCES` (`check_no_std_atomic_shared_ptr.cmake:65`) đòi file
+   được ALLOW phải nằm trong tập quét → `FATAL_ERROR` **mọi lần chạy**. Đã đổi
+   thành `core;platform;ui;tools;app`, và ghi rõ guard khi đó chứng minh hai
+   việc: bốn tầng dưới không có server library nào, **và** trong `app/` chỉ
+   `ApiServer.cpp` include nó — tức `ApiSerialise.cpp` không include
+   `httplib.h`, đúng cái §10 tách ra để chứng minh.
+
+Năm mục non-blocking cũng đã làm luôn: §10 bỏ chữ "therefore compiled" (glob
+list chỉ là textual scan — muốn compile phải thêm vào `rtatool_analysis_tests`);
+§4 tính lại accounting ở **30 rps** (default của §8) thay vì 20 Hz; endpoint
+spec ghép `If-None-Match` với **`ETag` server phát ra**; §11 thêm **item 13** —
+một hàm format dùng chung, test chuỗi readout so với giá trị float32 của golden,
+và nói thẳng nửa JavaScript của §12 constraint 2 chỉ L6a mới discharge được;
+JSON examples đổi sang **shortest-round-trip float32** kèm caption. Cộng hai
+nhóm citation nhỏ: JUCE `*Server*` là **ba** hit (thêm `HubPipeServer`,
+`juce_Direct2DMetrics_windows.h:264`, khai bằng `struct`), và ba số dòng lệch
+một (`check_no_framework_deps.cmake:50`→49, `CMakeLists.txt:71`→72,
+`AudioIo.cpp:117-148`→116-148) — đã mở từng file xác nhận trước khi sửa.
+
+**Vẫn DOCS-ONLY, chưa build gì, chưa merge.**
+
 **Mục dưới đây vẫn là mục đọc trước tiên cho trạng thái build.**
 
 ---

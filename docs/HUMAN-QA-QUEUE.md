@@ -112,10 +112,23 @@ impl plan** — chúng quyết bề mặt v1, không quyết kiến trúc.*
   cũng là thêm một thứ để mất giữa show. Trên loopback đã có `Host`-header
   allowlist thì phần lợi biên là nhỏ; nhưng **ngày nào có LAN bind thì token là
   bắt buộc** dù chọn đường nào hôm nay. Ghi rõ: token phải là **Bearer header
-  hoặc tham số tường minh, TUYỆT ĐỐI không phải cookie** — một request bị DNS
-  rebinding là same-origin thật, nên nó **sẽ** mang cookie của origin đó theo,
-  tức cookie hỏng đúng ngay cái tấn công mà token sinh ra để chặn. Nguồn:
-  record §8, §9, §14 q.4.
+  hoặc tham số tường minh, TUYỆT ĐỐI không phải cookie** — lý do là **ambient
+  authority / CSRF**, KHÔNG phải DNS rebinding. Cookie được browser tự đính vào
+  **mọi** request tới `127.0.0.1:<port>`, bất kể trang nào phát ra nó: chỉ cần
+  operator mở một trang web bất kỳ giữa show là trang đó đã authenticated với
+  listener này, không cần trò DNS nào. Bearer header thì không ambient — chỉ
+  caller đã biết secret mới gắn được.
+
+  **Đính chính bản trước của mục này** (nếu chủ nhân đã đọc nó): bản cũ viết
+  "rebinding là same-origin thật nên nó **sẽ** mang cookie của origin đó theo"
+  — **sai, và ngược với nguồn được trích**. Cookie jar key theo **host name**;
+  rebinding chỉ đổi cái name đó *resolve* ra IP nào, chứ không đổi name. Nên
+  request bị rebind mang cookie của `attacker.example`, KHÔNG mang cookie app
+  đặt cho `127.0.0.1` — đúng như GitHub Security blog 3/4/2025 nói ("cannot
+  contain cookies"). Chặn rebinding là việc của **`Host`-header allowlist**,
+  không phải của format token. Câu hỏi vẫn y nguyên, chỉ tiền đề được sửa: lợi
+  biên của token trên loopback là nhỏ **vì đã có `Host` check**, không phải vì
+  cookie hay Bearer gì. Nguồn: record §8, §9, §14 q.4.
 
 - [ ] **Có xin **Smaart API SDK** không?** Free, theo terms công bố thì không
   NDA. Đây là đường duy nhất tới **một mảnh prior art trạm 1 không đọc được**:

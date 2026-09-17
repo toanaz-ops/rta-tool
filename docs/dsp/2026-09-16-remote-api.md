@@ -111,9 +111,13 @@ asserted.
 
 **The alternative was hand-rolling on `juce::StreamingSocket`, and it was
 costed.** JUCE 9.0.1 ships **no HTTP server** — a grep across all 24 modules of
-the pinned checkout for a `*Server*` class returns `SVGPaintServer` and
-`InterprocessConnectionServer`, and the latter speaks JUCE's own length-prefixed
-framing that no browser, `curl` or Lua script can talk to. Hand-rolling means an
+the pinned checkout for a `class` or `struct` named `*Server*` returns three
+hits and not one of them speaks HTTP: `SVGPaintServer`,
+`InterprocessConnectionServer`, and `HubPipeServer`
+(`juce_graphics/native/juce_Direct2DMetrics_windows.h:264`, a Direct2D
+debug-metrics named pipe). The second speaks JUCE's own length-prefixed framing
+that no browser, `curl` or Lua script can talk to; the third is not a network
+server at all. Hand-rolling means an
 accept thread, read buffering with a header cap, request-line and header
 parsing, `Host` validation, response framing, keep-alive state and its timer,
 read and write timeouts, the 400/404/405/413/429/500 paths, and a shutdown that
@@ -133,11 +137,15 @@ a JSON-only API has no use for that attack surface.
 
 ## 3. Decision: polling with a version token in v1; no push, and never REW's push
 
-**Decision.** v1 is **poll-only**. Every response carries the snapshot's
-`sequence`; a client that wants change detection sends
-`If-None-Match: "<sequence>"` (or `?since=<sequence>`) and receives **304 Not
-Modified** with no body when nothing has advanced. There is **no** WebSocket,
-no SSE and no webhook in v1.
+**Decision.** v1 is **poll-only**. Every 200 carries the snapshot's `sequence`
+in the body **and sets `ETag: "<sequence>"` on the response**. The `ETag` is not
+decoration: HTTP conditional requests are driven by a validator the *server*
+issued, so without it a client has nothing legitimate to echo and only the
+`?since=` form would actually work. A client that wants change detection then
+sends `If-None-Match: "<sequence>"` (or `?since=<sequence>`, which needs no
+validator) and receives **304 Not Modified** with no body when nothing has
+advanced; the 304 repeats the same `ETag`. There is **no** WebSocket, no SSE
+and no webhook in v1.
 
 **Why polling is enough here.** The publish rate is already bounded at 20 Hz
 (`AnalysisThread::publishIfDue`, `kMinPublishIntervalMs`), and the app's own
@@ -183,7 +191,7 @@ never on the analysis thread and never on the message thread.
 **The one rule about the audio callback.** The callback is
 `juce::ScopedNoDenormals` followed by exactly two calls —
 `bus_.pushFromCallback(...)` and `output_.render(...)`
-(`platform/src/AudioIo.cpp:117-148`) — and
+(`platform/src/AudioIo.cpp:116-148`) — and
 `platform/tests/check_callback_shape.cmake` greps that function. **Nothing in
 this lane adds a third call, a socket, an allocation, a lock, or a branch to
 that function.** The API cannot reach it: the server lives in `app/`, and
@@ -199,10 +207,18 @@ comes from **who calls it**. Today that is the analysis thread (writer) and the
 message thread (reader). This record adds a **third** participant, and the
 accounting is:
 
-- The API thread does exactly **one** `load()` per request, at most 20 times a
-  second, matching what one view already does. Two views plus the API is three
-  readers at 20 Hz against one writer at 20 Hz — the same order of traffic the
-  slot already carries.
+- The API thread does exactly **one** `load()` per request. **The rate that
+  governs this accounting is §8's shipped default
+  `api.maxRequestsPerSecond = 30`, not the 20 Hz publish rate** — a conforming
+  client may poll faster than the data changes, and §6 exposes ten endpoints,
+  so the ceiling the argument has to survive is 30 loads per second and not 20.
+  Above it the limiter answers 429 *before* the load, so 30 is a hard bound on
+  this thread's traffic rather than a typical figure. Two views at 20 Hz plus
+  the API at 30 is three readers against one writer at 20 Hz — still the same
+  order of traffic the slot already carries, which is why 30 was chosen: above
+  the publish rate with headroom, far below anything that could starve the
+  message thread. Stated at the shipped default rather than at the convenient
+  one, per `memory/a-default-must-be-run-through-the-gate-it-feeds.md`.
 - The contended party is the **message thread and the analysis thread**, not
   the audio callback, which never touches the slot. A message-thread stall is a
   late repaint; an analysis-thread stall is a late publish. Neither is a
@@ -324,13 +340,21 @@ track puts SPL in the snapshot, and not a day earlier.
   "schemaVersion": 1,
   "sequence": 12345,
   "axis": { "kind": "uniform", "sampleRate": 48000, "fftSize": 4096, "pointCount": 2049 },
-  "effectiveAverages": 8.59,
+  "effectiveAverages": 8.5859375,
   "appliedDelaySamples": 512,
-  "magnitudeDb": [ -3.2, -3.1, ... ],
-  "phaseDeg":    [ 12.4, 11.9, ... ],
-  "coherence":   [ 0.97, 0.96, ... ]
+  "magnitudeDb": [ -3.2145123, -3.107789, ... ],
+  "phaseDeg":    [ 12.421333, 11.901777, ... ],
+  "coherence":   [ 0.9731445, 0.9642334, ... ]
 }
 ```
+
+*The float values in this and every following example are written at
+**shortest-round-trip float32 precision**, which is what the serialiser emits
+(§6, "Units on the wire"). They are deliberately not `-3.2` / `0.97`: an
+implementer who copies a rounded example reproduces exactly the rounding the
+wire format forbids. Up to nine significant digits is normal here and is not a
+false claim of accuracy — it is the shortest decimal that reads back as the
+same `float`.*
 
 - **`coherence` is absent — the key is not present at all — when the engine's
   gate has not opened.** It is never `null`, never an array of `1.0`, never
@@ -354,15 +378,15 @@ track puts SPL in the snapshot, and not a day earlier.
   "schemaVersion": 1,
   "sequence": 12345,
   "axis": { "kind": "explicit", "pointCount": 1536 },
-  "frequencyHz": [ 0, 11.7, ... ],
+  "frequencyHz": [ 0, 11.71875, ... ],
   "magnitudeDb": [ ... ],
   "phaseDeg":    [ ... ],
   "coherence":   [ ... ],
   "appliedDelaySamples": 512,
   "bands": [
     { "firstIndex": 0, "pointCount": 256, "fftSize": 32768,
-      "windowSeconds": 0.683, "integrationSeconds": 5.461,
-      "effectiveAverages": 8.59, "seamHz": 0, "coherenceAvailable": false }
+      "windowSeconds": 0.6826667, "integrationSeconds": 5.4613333,
+      "effectiveAverages": 8.5859375, "seamHz": 0, "coherenceAvailable": false }
   ]
 }
 ```
@@ -495,10 +519,23 @@ contain '127.0.0.1:3000' and/or 'localhost:3000'. If the host header contains
 anything else, then the request should be denied." It is a handful of lines and
 it is the highest-value control in the whole API.
 
-**Why the token must not be a cookie.** The token defence works because the
-attacker cannot *read* the secret — not because credentials are blocked. A
-rebound request **is** same-origin and **would** carry cookies for that origin.
-A cookie-based scheme fails against exactly the attack it was added for.
+**Why the token must not be a cookie — and it is not the rebinding argument.**
+Rebinding is answered by the `Host` allowlist above. The cited GitHub post is
+explicit that a rebound request "cannot contain cookies": a cookie jar is keyed
+on the host *name*, and rebinding changes only what a name *resolves to*, so the
+browser attaches `attacker.example`'s cookies and never the ones this app set
+for `127.0.0.1`. Against rebinding alone a cookie would have been adequate, and
+a reader who believes otherwise will under-rate how much work the `Host` check
+is doing.
+
+The reason to refuse a cookie is **ambient authority**. The browser attaches a
+cookie to every request to `127.0.0.1:<port>` regardless of which page issued
+it, so any site the operator visits during a show is authenticated to this
+listener — textbook CSRF, needing no DNS trick at all, and the next paragraph
+is why the absent CORS headers do not stop such a request from being
+*executed*. A `Bearer` header is not ambient: nothing attaches it but a caller
+that already knows the secret, and the attacker cannot read it. That argument
+stands on its own, with no rebinding premise in it.
 
 **Why "we set no CORS headers" is not a posture.** Per MDN, a *simple* request —
 `GET` with only safelisted headers — gets **no preflight**. The browser sends
@@ -552,9 +589,16 @@ them as such.
   to prove anything:
   - **`ApiSerialise.{h,cpp}`** — pure functions from a `const Snapshot&` (plus
     a validated, clamped request description) to a `std::string` of JSON.
-    **No JUCE, no sockets, no `httplib.h`.** Added to the explicit
-    `measure_has_no_framework_deps` glob list, and therefore compiled and
-    tested in the `RTA_BUILD_APP=OFF` configuration CI runs on three OSes.
+    **No JUCE, no sockets, no `httplib.h`.** Two separate registrations, and
+    the second does not follow from the first. It is added to the explicit
+    `measure_has_no_framework_deps` glob list — a **textual scan**
+    (`check_no_framework_deps.cmake:49` regex-matches each file's contents and
+    compiles nothing), so membership proves the absence of a framework include
+    and that alone. It is *separately* added to the `rtatool_analysis_tests`
+    target in `app/tests/CMakeLists.txt`, and that is what actually compiles
+    and tests it in the `RTA_BUILD_APP=OFF` configuration CI runs on three
+    OSes. §11 items 1-9 need the second registration; the glob list on its own
+    would not buy it.
   - **`ApiServer.{h,cpp}`** — the one translation unit that includes
     `httplib.h`, owns the thread and the socket, does the `Host` check, the
     method allowlist, the parameter validation and the rate limit, and calls
@@ -611,13 +655,31 @@ serialiser is a pure function and the validator is a pure function.
    test is the whole DNS-rebinding defence and deserves to be read that way.
 9. **Method allowlist.** `methodIsAllowed` accepts `GET`/`HEAD`/`OPTIONS` and
    rejects `POST`/`PUT`/`DELETE`/`PATCH`/an empty string/a lowercase `get`.
-10. **No server library below `app/`.** A new ctest reusing the
-    `check_no_std_atomic_shared_ptr.cmake` **DIRS + ALLOW** shape:
-    `-DDIRS=core;platform;ui;tools`, pattern `httplib|civetweb|mongoose`, and
-    an `ALLOW` naming `app/src/api/ApiServer.cpp` as the one file permitted to
-    include it. That script's own sentinel idiom — fail if the guard has
-    stopped watching its allowed file — is copied with it, because a guard
-    that silently scans nothing is worse than no guard.
+10. **Exactly one file in the repository includes a server library.** A new
+    ctest reusing the `check_no_std_atomic_shared_ptr.cmake` **DIRS + ALLOW**
+    shape: `-DDIRS=core;platform;ui;tools;app`, pattern
+    `httplib|civetweb|mongoose`, and an `ALLOW` naming
+    `app/src/api/ApiServer.cpp` as the one file permitted to include it. That
+    script's own sentinel idiom — fail if the guard has stopped watching its
+    allowed file — is copied with it, because a guard that silently scans
+    nothing is worse than no guard.
+
+    **`app` must be in `DIRS`, and that is not a detail.** The sentinel is
+    `if(NOT ALLOW IN_LIST SOURCES)` → `FATAL_ERROR`
+    (`core/tests/check_no_std_atomic_shared_ptr.cmake:65`), and `SOURCES` is
+    exactly what `DIRS` globbed. Omit `app` and the allowed file is never
+    globbed, `ALLOW IN_LIST SOURCES` is false, and the guard `FATAL_ERROR`s on
+    **every** run — the two halves of the specification would be mutually
+    exclusive. With `app` in `DIRS` the guard proves two things, and both are
+    load-bearing:
+
+    - `core/`, `platform/`, `ui/` and `tools/` contain no server library at
+      all — §10's layer boundary, stated as a test rather than as a habit;
+    - within `app/`, `ApiServer.cpp` is the **only** file that includes one, so
+      **`ApiSerialise.cpp` does not include `httplib.h`** — §10's split, and
+      the half a `DIRS` without `app` could not have proved at all. That split
+      is the reason items 1-9 can run in `RTA_BUILD_APP=OFF`; a guard that
+      never scanned `app/` would leave it resting on nothing but intent.
 11. **`ApiSerialise` is in the framework-free glob list.** Adding it to
     `measure_has_no_framework_deps`'s explicit `GLOBS` is itself the test:
     that check prints `OK (N files scanned)` and N must rise by two.
@@ -626,7 +688,27 @@ serialiser is a pure function and the validator is a pure function.
     over loopback, assert 200 and a parseable body; issue one `POST`, assert
     405; issue one request with a forged `Host`, assert 403. Three requests,
     no sound card, no device.
-13. **Every guard above is shown red-then-green** before the lane closes, per
+13. **The display rule is one function, and one test pins its output.** §12
+    constraint 2 — "the viewer rounds identically" — is the load-bearing half
+    of §6's units deviation, and until now nothing asserted it. Make the
+    rounding **one place**: `formatHz` / `formatDb` / `formatCoherence` in
+    `app/` (framework-free, therefore testable in `RTA_BUILD_APP=OFF`), called
+    by the desktop readout. The test feeds the *golden JSON's own* float32
+    values through those functions and asserts the exact strings —
+    `8.5859375 → "8.6"`, `0.9731445 → "0.97"`, `1000.4 → "1000 Hz"` — so
+    "wire full precision, display rounded" becomes a property CI checks rather
+    than an intention. Mutation: round in the serialiser instead, and test 1's
+    golden goes red; change one formatter's precision, and this test goes red.
+
+    **What it does not prove, stated plainly:** that L6a's *JavaScript* viewer
+    rounds the same way. A C++ test cannot reach it. The constraint is
+    dischargeable there and only there — L6a ships the same thresholds as a
+    table shared with these functions plus its own test against the same
+    golden values, or §12 constraint 2 stays **untested** for the viewer and
+    must be labelled so in L6a's record. This lane proves the desktop half and
+    hands over a named seam; it does not get to claim the other half.
+
+14. **Every guard above is shown red-then-green** before the lane closes, per
     `docs/GIT-WORKFLOW.md`'s PR checklist and
     `memory/mutation-testing-needs-the-exe-deleted-first.md` — delete the
     binary before re-running a mutation, because `cmake --build` can log
@@ -656,7 +738,13 @@ this costs if the decision is made casually.
 2. **The viewer rounds, the wire does not.** `CLAUDE.md`'s reading rules —
    whole hertz, one decimal of dB, two decimals of coherence — are the
    viewer's job (§6). The web viewer must apply the identical rule the desktop
-   UI applies, or the same measurement reads two ways on two screens.
+   UI applies, or the same measurement reads two ways on two screens. **§11
+   item 13 makes the desktop half of this a test** (one shared `formatHz` /
+   `formatDb` / `formatCoherence`, asserted against the golden JSON's own
+   float32 values); L6a discharges the JavaScript half by shipping the same
+   thresholds against the same golden values, or records the constraint as
+   untested for the viewer. Two records asserting it and neither testing it is
+   the failure mode this note exists to prevent.
 3. **Static assets ride the same server** — a tiny HTML/JS bundle served from
    the same origin — because a viewer served from `127.0.0.1:<port>` fetching
    `127.0.0.1:<port>` is same-origin, needs no CORS headers at all, and passes
@@ -732,8 +820,8 @@ AtomicSharedPtr,AnalysisThread,RoutingPlan,SyntheticSnapshot}.h`,
 `app/src/view/TransferView.cpp:34`, `app/src/MainComponent.h:129,160`,
 `app/src/trace/{Trace,TraceLibrary,SessionCodec}.h`,
 `app/src/measure/{EqSession,AlignmentWizard}.h`,
-`platform/src/AudioIo.cpp:117-148`, `platform/tests/check_callback_shape.cmake`,
-`core/tests/check_no_framework_deps.cmake:50`,
+`platform/src/AudioIo.cpp:116-148`, `platform/tests/check_callback_shape.cmake`,
+`core/tests/check_no_framework_deps.cmake:49`,
 `core/tests/check_no_std_atomic_shared_ptr.cmake`,
 `core/tests/CMakeLists.txt:149-154`, `app/tests/CMakeLists.txt:274`,
 `CMakeLists.txt:60-72`, `core/include/rta/meter/Leq.h`.
