@@ -652,10 +652,28 @@ numbers:
 - **§1.1.4 Ceiling Limit, p.4**, complete and verbatim — this **resolves** the
   conflict an earlier revision left open: *"Exposure to continuous, varying,
   intermittent, or impulsive noise shall not exceed 140 dBA."* One sentence, no
-  footnote. It is **A-weighted and it covers impulsive noise**. §3.2 (p.19)
-  explains the wording: *"Because NIOSH is recommending a 3-dB exchange rate
-  with an 85-dBA REL, a ceiling limit for continuous-type noise is
-  unnecessary."*
+  footnote. It is **A-weighted and it covers impulsive noise**.
+- **But "140 dB peak SPL" is in the document too, three times, and a later
+  revision of this file was wrong to call it "a summary's error".** Every
+  `140 dB` occurrence in the 126 pages was searched this session. The normative
+  limit is the dBA one above; the peak-SPL wording belongs to Chapter 3's
+  discussion of the limit NIOSH **inherited and departed from**:
+  - **p.17** — *"For impulsive noise, the generally accepted limit not to be
+    exceeded for any time is a peak level of 140 dB SPL."*
+  - **§3.2, p.24** — *"The generally accepted ceiling limit of 140 dB peak SPL
+    for impulsive noise is based on a report by Kryter et al. [1966]."* The
+    same section explains why no separate continuous-noise ceiling was needed:
+    *"Because NIOSH is recommending a 3-dB exchange rate with an 85-dBA REL, a
+    ceiling limit for continuous-type noise is unnecessary… an exposure
+    duration of less than 28 sec would be allowed at a 115-dBA level."*
+    (An earlier revision cited this section as p.19; it is **printed p.24**,
+    PDF p.42.)
+  - **§3.4 Impulsive Noise, p.29** — quotes **OSHA's** wording, *"Exposure to
+    impulsive or impact noise should not exceed 140 dB peak sound pressure"*,
+    and adds that *"the 140-dB limit is advisory rather than mandatory"*.
+  - **p.25** gives NIOSH's own reasoning for the substitution: *"the allowable
+    exposure time at 140 dBA is less than 0.1 sec; thus, 140 dBA is a
+    reasonable ceiling limit for impulsive noise."*
 - **§1.3.3, p.4:** *"all continuous, varying, intermittent, and impulsive sound
   levels from 80 to 140 dBA shall be integrated into the noise measurements."*
   This is the source of the 80 dB(A) threshold, and it is why Table 1-1 starts
@@ -734,11 +752,12 @@ defining L_EX,8h via ISO 1999:1990 §3.6, a pure energy average. **Cite Article 
 things. A single "140 dB peak" readout cannot serve all three, and conflating
 them is the most likely correctness bug in a dose feature.
 
-*(This was carried as unresolved in the first revision — "140 dBA" on a mirror
-against "140 dB peak SPL for impulsive noise" in a machine summary of Chapter 3.
-**Reading the born-digital primary on 2026-09-17 settles it**: p.4 reads
-"140 dBA", the section is one sentence long, and there is no footnote. The
-summary was wrong.)*
+*(The first revision carried this as unresolved and the second blamed the
+peak-SPL wording on a machine summary. **Reading the born-digital primary
+settles it, and neither was right**: NIOSH's normative §1.1.4 (p.4) is "140 dBA",
+one sentence, no footnote — **and** "140 dB peak SPL" appears three times in
+Chapter 3 as the accepted limit NIOSH discusses and replaces, including a direct
+quotation of OSHA's own advisory wording at §3.4 p.29. See §A4.2.)*
 
 ## A5. IEC 60942 calibrators, and what the repo would need
 

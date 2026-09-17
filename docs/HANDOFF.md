@@ -47,8 +47,13 @@ và web viewer có ship trong lane này không (Q8).
 # 2026-09-16 — Remote API trạm 1+2 đã viết (DOCS-ONLY, không đụng code)
 
 Lane **L-API** (remote read-only API) — trạm 1 nghiên cứu và trạm 2 record đã
-xong, nhánh `remote-api/stations-1-2` từ `6d9a53d`, PR docs-only, **CHƯA
-merge**. **Trạm 3 (impl plan) là việc kế tiếp.**
+xong, nhánh `remote-api/stations-1-2` từ `6d9a53d`, PR docs-only. **Trạm 3
+(impl plan) là việc kế tiếp.**
+
+> **Cập nhật 2026-09-17 bởi lane L6a:** mục này ghi "CHƯA merge" khi viết.
+> **PR #11 đã merge vào `origin/main` tại `a39a02e`** (2026-09-17T15:35:44Z).
+> Record của nó giờ là quyết định đã đáp, không còn là đề xuất — L6a §9 trích
+> theo nghĩa đó.
 
 - Nghiên cứu: [`docs/research/2026-09-16-remote-api-station1-research.md`](research/2026-09-16-remote-api-station1-research.md)
 - Record: [`docs/dsp/2026-09-16-remote-api.md`](dsp/2026-09-16-remote-api.md)
@@ -520,9 +525,11 @@ cánh**, nên nó hết chặn.
 > PARALLEL-SAFE với nhau:
 >
 > - **L-API (remote API)** — stations 1+2 trên **PR #11**, nhánh
->   `remote-api/stations-1-2`, head `828c223`, OPEN. Đây đúng là mảnh L6b scope
->   out mà `MASTER-EXECUTION-PLAN.md` từng ghi là "chưa có lane"; hàng **L-API**
->   đã được thêm vào plan TRÊN NHÁNH CỦA PR ĐÓ, nên nhánh này chưa thấy nó.
+>   `remote-api/stations-1-2`. Đây đúng là mảnh L6b scope out mà
+>   `MASTER-EXECUTION-PLAN.md` từng ghi là "chưa có lane"; hàng **L-API** đã
+>   được thêm vào plan TRÊN NHÁNH CỦA PR ĐÓ, nên nhánh này chưa thấy nó.
+>   **Cập nhật 2026-09-17: PR #11 ĐÃ MERGE tại `a39a02e`** (bản gốc của dòng
+>   này ghi `828c223`, OPEN). Hàng L-API và record của nó đã có trên `main`.
 > - **L6a (SPL-pro)** — stations 1+2 trên **PR #12**, nhánh `l6a/stations-1-2`,
 >   OPEN. Trạm 1 của L6a đã có người làm. Đừng làm lại nó; đọc PR #12 rồi tiếp
 >   từ chỗ nó dừng. Phần "Nó bắt đầu ở TRẠM 1" bên dưới là đúng lúc viết, không
