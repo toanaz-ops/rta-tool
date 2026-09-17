@@ -31,6 +31,10 @@ vẫn bị chặn ở mức tài khoản (billing).
 
 ---
 
+**2026-09-17 — L-API station 3 plan written: `docs/plans/2026-09-17-remote-api-impl-plan.md`; station 4 next.** Mười task (A–J), **chín** chạy hết trong `RTA_BUILD_APP=OFF` không cần JUCE (vòng verify PR #14 chỉ ra server dùng `std::thread` + `bind_to_port`/`listen_after_bind` là thuần std, nên `Host` check được chứng minh trên CI ba OS chứ không chỉ trên máy này); chỉ Task I (wiring composition root) là ON. Mười tám reconciliation (`API-R1..R17` + `R16a`) đã được ghi thành **§15 amendment** trong `docs/dsp/2026-09-16-remote-api.md`. Hai vòng verify đối kháng trên PR #14: vòng 2 cho **station 4 GO (task A–H)** và bắt thêm năm lỗi cơ học — `bind_to_port` trả `bool` và `Server` không có `port()` (phải dùng `bind_to_any_port`); `httplib::Server` để by-value sẽ kéo include vào `ApiServer.h` và làm guard mới **ĐỎ trên một bản dựng đúng**, nên phải pimpl; guard JSON thiếu red ngoài `app/src`; và WebSocket upgrade **là một `GET`** nên method allowlist không chặn — thứ chặn là không có handler nào đăng ký. Năm câu §14 đều đã chốt default có tên — port đổi **4737 → 4736** vì 4737 là IANA `ipdr-sp`. Docs-only, chưa build gì.
+
+---
+
 # 2026-09-16 — **L6a (SPL-pro) trạm 1+2 XONG — nhánh `l6a/stations-1-2`, docs-only, PR mở, CHƯA merge. Trạm 3 (impl plan) là việc kế tiếp.**
 
 Hai tài liệu mới, không có một dòng code nào:
