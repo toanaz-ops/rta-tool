@@ -112,6 +112,14 @@ add_executable(rtatool_analysis_tests
     # -- split out when three rounds of verification grew the declaration scan
     # into its own subject.
     test_crossover_surface_objective.cpp
+    # --- L6a Wave 0 (docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md) -------
+    # AllocationProbe.cpp: task W0-B0. THE ONE definition of the replaced
+    # global operator new/delete in this binary -- a replaceable global
+    # allocation function is one definition per program, so test_average_
+    # group.cpp, test_spl_meter.cpp and every later measuring file share this
+    # one rather than each carrying a copy that would not link.
+    AllocationProbe.cpp
+    # --- end L6a Wave 0 ---------------------------------------------------
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md) -- Analyser.cpp calls
