@@ -3,9 +3,10 @@
 *2026-09-16. Station-2 decision record. Station-1 research:
 `docs/research/2026-09-16-remote-api-station1-research.md`. Repo at `6d9a53d`.*
 
-> **AMENDED 2026-09-17 — read [§15](#15-amendment-2026-09-17--the-seventeen-reconciliations-station-3-filed) before acting on any section below.**
+> **AMENDED 2026-09-17 — read [§15](#15-amendment-2026-09-17--the-reconciliations-station-3-filed) before acting on any section below.**
 > Station 3 (`docs/plans/2026-09-17-remote-api-impl-plan.md`) and the adversarial
-> verify of it on PR #14 filed **seventeen** corrections against this record.
+> verify of it on PR #14 — two rounds — filed **eighteen** corrections against
+> this record (`R1`..`R17`, plus `R16a`).
 > The wrong sentences are left in place on purpose — a record whose errors are
 > erased teaches the next session nothing — and each one now carries an inline
 > pointer. The five that most change what a builder does: **§2**'s `split.py`
@@ -915,7 +916,7 @@ this costs if the decision is made casually.
    repo's docs; it could only inform. It is a days-long round trip, so the
    answer is worth having before station 3, not after.
 
-## 15. Amendment, 2026-09-17 — the seventeen reconciliations station 3 filed
+## 15. Amendment, 2026-09-17 — the reconciliations station 3 filed
 
 *Added after `docs/plans/2026-09-17-remote-api-impl-plan.md` was written against
 the landed code, and after the adversarial verify of that plan on PR #14. Every
@@ -1083,9 +1084,9 @@ sentence.
 §4 says the server owns one thread created and joined by the composition root;
 §10 marks `ApiServer.{h,cpp}` ON-only. The only thing that forced ON was the
 choice of `juce::Thread`. cpp-httplib is pure standard C++ — `bind_to_port(host,
-port)` and `listen_after_bind()` (`httplib.h` v0.56.0 `:2267`, `:2269`) —
-and `app/tests` is registered **outside** the `RTA_BUILD_APP` guard (root
-`CMakeLists.txt:72`). There is **one** CI job and it is `RTA_BUILD_APP=OFF`
+port)`, `bind_to_any_port(host)` and `listen_after_bind()` (`httplib.h`
+v0.56.0 `:2267`, `:2269`) — and `app/tests` is registered **outside** the
+`RTA_BUILD_APP` guard (root `CMakeLists.txt:72`). There is **one** CI job and it is `RTA_BUILD_APP=OFF`
 (`.github/workflows/ci.yml:9`, `:21`, three OSes at `:15`), so an ON-only server
 is a server proven on **zero** machines except a developer's Windows box, by
 hand — including the end-to-end `Host` check, which §9 calls the highest-value
@@ -1097,6 +1098,18 @@ into the `RTA_BUILD_APP=OFF` half of `app/`, and its loopback tests run on all
 three CI operating systems. §4's contract is unchanged — the composition root
 still constructs it and still joins its thread, and the ownership and ordering
 argument is untouched. **Only the composition-root wiring stays ON.**
+
+Two mechanical consequences the plan's first revision got wrong and its second
+fixed, recorded here because a later reader will otherwise rediscover them.
+**`Server::bind_to_port` returns `bool` and discards the port, and `Server` has
+no `port()` accessor** — that member belongs to `Client`. The call that returns
+the bound port is **`Server::bind_to_any_port(host)`**, and binding on the
+constructing thread before `listen_after_bind()` runs on the server thread is
+what lets a test read the port with no sleep and no polling. And **`ApiServer`
+must be a pimpl**: a by-value `httplib::Server` member forces
+`#include <httplib.h>` into `ApiServer.h`, which §11 item 10's guard — whose
+`ALLOW` is `ApiServer.cpp` alone and whose scan covers `app/**/*.h` — would then
+turn **red on a correct build**. The header is what bends, never the guard.
 
 Two costs, stated rather than absorbed. (a) CI now compiles the vendored header
 on ubuntu, macos and windows; §2's compile measurement was MSVC-only, so the
@@ -1133,6 +1146,21 @@ only under `app/tests/`** and never by shipped code. A new guard
 anything. MIT flows into an AGPLv3 work imposing only notice retention, the same
 chain §2 established for cpp-httplib. The compile cost is confined to one test
 TU, the same discipline §2 applies to the server header.
+
+### R16a — a WebSocket upgrade is a `GET`, so no method check stops it
+
+Recorded because the plan asserted the opposite twice before it was measured
+against the library. At v0.56.0 cpp-httplib compiles WebSocket support in with
+**no macro guard**, and an upgrade request is `GET /path HTTP/1.1` carrying
+`Upgrade: websocket` — so §9 control 2's method allowlist **accepts** it, and
+with no upgrade handler registered the request falls through to ordinary
+routing: `200` with the route's normal JSON body, or `404`. Never `405`.
+
+**The conclusion §3 and §13 reach is unchanged** — no WebSocket can be
+established — but it rests on **the absence of a registered handler alone**, not
+on any check this code performs. The server never emits `101 Switching
+Protocols` and never sends `Sec-WebSocket-Accept`. The plan's Task I carries a
+case that measures it rather than asserting it.
 
 ### R17 — §9 control 3's `406` and `415` are dropped; `413` is kept and tested
 

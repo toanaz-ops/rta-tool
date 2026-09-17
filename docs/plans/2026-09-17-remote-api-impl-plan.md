@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL `superpowers:test-driven-development` and `superpowers:executing-plans`. Steps are checkboxes; the failing test is written and *seen to fail* before the code. Station 5 (adversarial verify, a reviewer with **no Write tools**) is not optional.
 
-*2026-09-17, lane L-API, station 3. Written from the decision record `docs/dsp/2026-09-16-remote-api.md` and the station-1 research `docs/research/2026-09-16-remote-api-station1-research.md`, **after opening every file they cite** — not after reading their description of those files. Revised 2026-09-17 after the adversarial verify of the first draft on **PR #14** (verdict SOUND-WITH-FIXES, twelve defects `V1`..`V12`, all addressed below and each named where it changed something). Worktree `.claude\worktrees\agent-a3c60992e3c5ae938`, branched from `main` at `a39a02e`, merged up to `af8a9d0` (PR #12, docs-only — `git diff a39a02e af8a9d0 -- core/ app/ platform/ ui/ tools/ CMakeLists.txt .github/` is **empty**, so every file:line citation below still holds). Every path was existence-checked; a path marked **NEW** is not in the tree today. **The seventeen reconciliations `API-R1..R17` are now landed in the record as its §15 amendment**, with inline pointers at §2, §4, §6, §8, §9, §10, §11 and §14 (V12) — station 4 is no longer waiting on that gate.*
+*2026-09-17, lane L-API, station 3. Written from the decision record `docs/dsp/2026-09-16-remote-api.md` and the station-1 research `docs/research/2026-09-16-remote-api-station1-research.md`, **after opening every file they cite** — not after reading their description of those files. Revised twice on 2026-09-17 against two adversarial verify rounds on **PR #14**: round 1 (SOUND-WITH-FIXES, twelve defects `V1`..`V12`) and round 2 (eleven of twelve fixes confirmed, station 4 GO, five defects `D1`..`D5` — four of them mechanical facts about cpp-httplib and CMake that only a reader with the library open could have caught). Every one is addressed below and named where it changed something. Worktree `.claude\worktrees\agent-a3c60992e3c5ae938`, branched from `main` at `a39a02e`, merged up to `af8a9d0` (PR #12, docs-only — `git diff a39a02e af8a9d0 -- core/ app/ platform/ ui/ tools/ CMakeLists.txt .github/` is **empty**, so every file:line citation below still holds). Every path was existence-checked; a path marked **NEW** is not in the tree today. **The reconciliations `API-R1..R17` plus `R16a` are landed in the record as its §15 amendment**, with inline pointers at §2, §4, §6, §8, §9, §10, §11 and §14 (V12) — station 4 is no longer waiting on that gate.*
 
 ## 0. Hazard first: the one rule, and what this lane may never touch
 
@@ -67,6 +67,7 @@ For the ON config append `-DRTA_BUILD_APP=ON -DRTA_JUCE_PATH="D:/DEV CAVE EP3/PR
 | **R14** | §8, §14 q.1 | **Port 4736.** 4737 is IANA `ipdr-sp`; 4734/4735/4736 are absent from the registry (**V1**) |
 | **R15** | §4, §10, §11 item 12 | **`std::thread`, not `juce::Thread`; the server is JUCE-free and runs on CI's three OSes.** Only the composition-root wiring is ON (**V2**) |
 | **R16** | §11 | **A JSON parser is vendored, test-only.** Nothing in the OFF configuration asserted the emitted document is well-formed; every OFF assertion was a substring match or a byte-compare against the same serialiser's output (**V4**) |
+| **R16a** | §3, §13 | **A WebSocket upgrade is a `GET`**, so no method check stops it; what makes one impossible is the absence of a registered handler, and the server never emits `101` (**D4**) |
 | **R17** | §9 control 3 | **413 is built and tested; 406 and 415 are dropped** with the reason, rather than left listed in a record and absent from the code (**V10**) |
 
 ---
@@ -125,7 +126,7 @@ struct Request { int points = 0; };   // already validated and clamped by ApiPol
 [[nodiscard]] std::string serialisePositions(const measure::Snapshot&);
 ```
 
-`ApiServer` (OFF, after API-R15) owns one `std::thread`, one `httplib::Server`, an `ApiSettings` and a `measure::SnapshotSource&`. Its whole request path, **in this order, because the order is the decision**: rate limit → body-size cap → `Host` check → method check → Bearer → route → clamp → **one `latest()`** → `conditionalVerdict` → respond with `ETag`. The limiter runs **before** the work, so `maxRequestsPerSecond` is a hard bound on this thread's traffic against the publish slot and not a typical figure.
+`ApiServer` (OFF, after API-R15) owns one `std::thread`, one `httplib::Server`, an `ApiSettings` and a `measure::SnapshotSource&` — **all of them behind a pimpl**, so `ApiServer.h` includes nothing from httplib and Task K's guard stays green on a correct build (D2). It exposes `running()` and **`boundPort()`**, the latter because `httplib::Server::bind_to_port` returns `bool` and keeps the port to itself (D1). Its whole request path, **in this order, because the order is the decision**: rate limit → body-size cap → `Host` check → method check → Bearer → route → clamp → **one `latest()`** → `conditionalVerdict` → respond with `ETag`. The limiter runs **before** the work, so `maxRequestsPerSecond` is a hard bound on this thread's traffic against the publish slot and not a typical figure.
 
 **Absence rules that must survive the wire, and each has a test.** `coherence` absent ⇒ **the key is not present at all** (never `null`, never ones, never zeros). `coherenceAvailable` is **per band** and travels. `underResolved` travels. `absence` and `membership` are **strings**. A `nullopt` block's key is absent from `/snapshot`.
 
@@ -156,7 +157,7 @@ The smallest thing, and everything else emits through it. Shortest-round-trip fl
 
 ## Task B — `ApiSettings.h` + `Host`, method, Bearer, point cap, body cap (OFF; record §8, §9; §11 items 6, 8, 9; API-R14, R17)
 
-**Files.** Create `app/src/api/ApiSettings.h` (**NEW**, ≤ 120), `app/src/api/ApiPolicy.h` (**NEW**, ≤ 150), `app/src/api/ApiPolicy.cpp` (**NEW**, ≤ 280), `app/tests/test_api_policy.cpp` (**NEW**, ≤ 260). Modify `app/tests/CMakeLists.txt`: **`ApiPolicy.cpp` goes into `rtatool_analysis_tests`' source list** *and* all three headers/sources go into the GLOBS — again two registrations, not one.
+**Files.** Create `app/src/api/ApiSettings.h` (**NEW**, ≤ 120), `app/src/api/ApiPolicy.h` (**NEW**, ≤ 150), `app/src/api/ApiPolicy.cpp` (**NEW**, ≤ **200** — Task C extends this file and its budget is restated there), `app/tests/test_api_policy.cpp` (**NEW**, ≤ **280**, and it holds **B1-B10 only**: at this suite's measured ~26 lines per case, B's ten plus C's eight in one file reaches ≈468 and blows the 400-line cap, so **Task C opens its own test file** rather than discovering the cap halfway through). Modify `app/tests/CMakeLists.txt`: **`ApiPolicy.cpp` goes into `rtatool_analysis_tests`' source list** *and* all three headers/sources go into the GLOBS — again two registrations, not one.
 
 **Every case below runs against `ApiSettings{}` — the shipped defaults** (`memory/a-default-must-be-run-through-the-gate-it-feeds.md`) — **except B7-B9, and the exception is the finding.** The shipped token is empty, so at the defaults the Bearer control never executes; a suite that only ever used the defaults would ship an untested authentication path that looks tested (`memory/a-fixed-defect-returns-through-the-silent-fallback.md`). Those three cases construct a settings object with a token **and say in the test name why**.
 
@@ -184,7 +185,7 @@ The smallest thing, and everything else emits through it. Shortest-round-trip fl
 
 Both are pure and both are real-time-safety controls, not hygiene: an uncapped poll rate and an uncapped `?points=` are two ways for a remote caller to make this program do unbounded work while a show is running.
 
-**Files.** Modify `app/src/api/ApiPolicy.{h,cpp}` and `app/tests/test_api_policy.cpp`. No CMake edit.
+**Files.** Modify `app/src/api/ApiPolicy.h` (≤ 150 unchanged — three declarations and the `RateLimiter` class) and `app/src/api/ApiPolicy.cpp` (**restated budget: ≤ 340**, from Task B's ≤ 200 plus roughly 90 lines of limiter, `etagFor` and `conditionalVerdict`; if it passes 400 the seam is *admission control* versus *request shape*, and the limiter is the half that moves). Create `app/tests/test_api_limits.cpp` (**NEW**, ≤ 240) holding **C1-C8**; modify `app/tests/CMakeLists.txt` in both places for it. **This split is why Task B's test file is capped at B1-B10** — eighteen cases in one file overruns the cap (D5).
 
 **The window model is pinned, and V7 is why.** The first draft's C1-C3 all passed under either a fixed or a sliding window, so "30 requests per second" had no shipped meaning. **It is a sliding window.** A fixed window admits 30 at the end of one window and 30 at the start of the next — sixty loads inside one real second — and §4's accounting is that 30 is a *hard bound on this thread's traffic against the publish slot*. A bound that holds only on aligned seconds is not that bound.
 
@@ -207,7 +208,7 @@ The limiter takes an **injected** `std::chrono::steady_clock::time_point`. No re
 
 ## Task D — `ApiSerialise`: `/status`, `/transfer`, `/spectrum`, `/bands` (OFF; record §6; §11 items 1, 2, 5, 6)
 
-**Files.** Create `app/src/api/ApiSerialise.h` (**NEW**, ≤ 120), `app/src/api/ApiSerialise.cpp` (**NEW**, ≤ 380 — if it passes 400 the seam is *fixed-axis blocks* versus *spatial blocks*, which is exactly the Task D / Task E split, so split the `.cpp` rather than the tests), `app/tests/ApiFixture.h` (**NEW**, ≤ 120), `app/tests/test_api_serialise.cpp` (**NEW**, ≤ 300), `app/tests/golden/api-v1-snapshot.json` (**NEW** — `app/tests/golden/` does not exist today; `core/tests/golden/` does).
+**Files.** Create `app/src/api/ApiSerialise.h` (**NEW**, ≤ 120), `app/src/api/ApiSerialise.cpp` (**NEW**, ≤ **300** — the fixed-axis blocks only; the spatial blocks get their own `.cpp` in Task E, and that split is now **unconditional** rather than "if the cap is reached", because discovering a cap mid-task is how a file ends up at 399 lines with two jobs in it), `app/tests/ApiFixture.h` (**NEW**, ≤ 120), `app/tests/test_api_serialise.cpp` (**NEW**, ≤ **260**, **D1-D8 only** — Task E opens its own, D5), `app/tests/golden/api-v1-snapshot.json` (**NEW** — `app/tests/golden/` does not exist today; `core/tests/golden/` does).
 
 **Modify `app/tests/CMakeLists.txt` in three named places** (V11 — the first draft said only "modify", while every other CMake edit in this plan is named to the line):
 1. `ApiSerialise.cpp` and `test_api_serialise.cpp` into `rtatool_analysis_tests`' source list (`:10-167`).
@@ -237,7 +238,7 @@ The limiter takes an **injected** `std::chrono::steady_clock::time_point`. No re
 
 The three blocks that carry a state a well-meaning implementer drops, plus the union endpoint API-R13 defines.
 
-**Files.** Modify `app/src/api/ApiSerialise.{h,cpp}` (or add `ApiSerialiseSpatial.cpp` **NEW** if the cap is reached — the seam is named in Task D), `app/tests/test_api_serialise.cpp`, `app/tests/golden/api-v1-snapshot.json`, and `app/tests/CMakeLists.txt` in both places if a file was added.
+**Files.** Create `app/src/api/ApiSerialiseSpatial.cpp` (**NEW**, ≤ 300 — the split is unconditional, per Task D) and `app/tests/test_api_serialise_spatial.cpp` (**NEW**, ≤ 280, **E1-E8 only**). Modify `app/src/api/ApiSerialise.h` (the four new declarations; still ≤ 120), `app/tests/golden/api-v1-snapshot.json`, and `app/tests/CMakeLists.txt` in both places for both new files. **Budgets are restated here rather than inherited** (D5): a task that extends a file without restating its cap is a task that discovers the cap by breaking it.
 
 | # | case (record §6, §11) | acceptance |
 |---|---|---|
@@ -313,17 +314,42 @@ The `TEST_CASE` name must say it is the **desktop half of §12 constraint 2**. D
 | `CPPHTTPLIB_ZSTD_SUPPORT` | same |
 | `CPPHTTPLIB_NO_EXCEPTIONS` | the rest of the app builds with exceptions; changing that for one TU is an ODR-shaped hazard, not a tidy-up |
 
-**One thing the macro list cannot cover, and `PROVENANCE.md` must say so (V9).** At v0.56.0 **WebSocket support is compiled in with no macro guard** (upstream README `:1673-1713`). The record forbids push of any shape (§3, §13) and this plan repeats it — yet the vendored TU carries the upgrade machinery whatever either document says. **Judgement: acceptable, and stated rather than discovered later.** It is unroutable: a WebSocket upgrade needs a registered handler, this server registers eight `Get` routes and nothing else, and Task K's method allowlist answers the upgrade request with 405 before anything else runs. It is named in `PROVENANCE.md` so the next person to read §13's "no push" does not conclude the code makes it impossible when what makes it impossible is the absence of a handler.
+**One thing the macro list cannot cover, and `PROVENANCE.md` must say so (V9).** At v0.56.0 **WebSocket support is compiled in with no macro guard** (upstream README `:1673-1713`). The record forbids push of any shape (§3, §13) and this plan repeats it — yet the vendored TU carries the upgrade machinery whatever either document says. **Judgement: acceptable — and the first draft of this paragraph gave the wrong mechanism, which is worth more than the judgement (D4).** It said the method allowlist answers the upgrade with 405. **It does not.** A WebSocket upgrade *is* a `GET` — `GET /path HTTP/1.1` carrying `Upgrade: websocket` and `Connection: Upgrade` — so `methodIsAllowed` accepts it, and with no upgrade handler registered httplib falls through to **ordinary routing**: `200` with the route's normal JSON body, or `404` on an unknown path. Never `405`.
+
+**What actually makes it unreachable is narrower and worth stating precisely:** the server registers eight `Get` routes and **nothing that can upgrade a connection**, so it never emits `101 Switching Protocols` and never sends a `Sec-WebSocket-Accept` header. The client's upgrade offer is simply ignored and answered as an ordinary request. The judgement stands — no WebSocket can be established — but it rests on the absence of a handler alone, not on any check this code performs. **Task I's I11 turns that from a claim into a test**; this paragraph and `PROVENANCE.md` carry the reasoning, and the correction is named here so the next reader does not inherit the plausible-sounding 405 story.
 
 Everything §8 tunes — the four timeouts, the keep-alive max count, the thread pool, and API-R17's payload limit — is set at **run time** on the `httplib::Server` object (`set_read_timeout`, `set_write_timeout`, `set_keep_alive_timeout`, `set_keep_alive_max_count`, `new_task_queue`, `set_payload_max_length`), never by a compile-time macro, so the values live next to the record's reasoning in `ApiServer.cpp` instead of in a build file.
 
-- [ ] **Accept:** OFF **and** ON configure succeed; `sha256sum external/cpp-httplib/httplib.h` **pasted** and matching `PROVENANCE.md` (the verifier read v0.56.0 as 22875 lines, sha256 `1f99e51881c4c9d0649b27c611442c2f4d9bcfec5a22a14d5fcd1f8106f730b4` — **confirm it, do not copy it**); `external/cpp-httplib/LICENSE`'s first line is the MIT header.
+**Station-4 hazard, and it has already been observed once.** A copy of `httplib.h` lying around in a scratch directory or a package cache can report the **same version string** and still be a different file — one such copy measured **22885 lines / sha256 `a6e65d30…`** against the release's 22875 / `1f99e518…`. A version string is not an identity. **Fetch from the release tag, verify the SHA-256 against it, and commit that file — never the one already on the machine**, and never copy either figure out of this plan without re-measuring. The whole argument for the amalgamated header over `split.py` (API-R2) is that it is hash-checkable; a vendored file nobody hashed throws that away and leaves a dependency whose provenance is a guess.
+
+- [ ] **Accept:** OFF **and** ON configure succeed; `sha256sum external/cpp-httplib/httplib.h` **pasted**, matching `PROVENANCE.md` **and matching the upstream release tag** (the verifier read v0.56.0 as 22875 lines, sha256 `1f99e51881c4c9d0649b27c611442c2f4d9bcfec5a22a14d5fcd1f8106f730b4` — **confirm against the tag, do not copy, and see the hazard above**); `wc -l external/cpp-httplib/httplib.h` pasted beside it; `external/cpp-httplib/LICENSE`'s first line is the MIT header.
 - [ ] **Measure, do not assume (API-R7, and now on three platforms):** the OFF build's `warning C` count **before** and **after**, pasted. If it rose, apply the `#pragma warning(push, 0)` wrap in Task I and re-measure; if insufficient, the `SYSTEM` include + `/external:W0 /external:anglebrackets` fallback, and say which was needed. **Record §2's compile figures were MSVC-only; CI now compiles this header on ubuntu and macos too, so report the real per-OS cost from the CI logs rather than transferring the Windows number.**
 - [ ] **Commit:** `build: vendor cpp-httplib (MIT) as the amalgamated header, TLS and every optional backend left undefined`
 
 ## Task I — `ApiServer`: one `std::thread`, one httplib TU, tested over a real socket on three OSes (OFF; API-R15; record §4, §8, §9, §10; V2, V5, V6)
 
-**Files.** Create `app/src/api/ApiServer.h` (**NEW**, ≤ 140), `app/src/api/ApiServer.cpp` (**NEW**, ≤ 380 — the seam if it grows is validation-versus-routing, and Task B already took the validation half out), `app/tests/RawHttpClient.h` (**NEW**, ≤ 120 — see below), `app/tests/test_api_server.cpp` (**NEW**, ≤ 240). Modify `app/tests/CMakeLists.txt` (source list, GLOBS, link `ws2_32` on `WIN32` — cpp-httplib needs Winsock and the test target has never linked it).
+**Files.** Create `app/src/api/ApiServer.h` (**NEW**, ≤ 140), `app/src/api/ApiServer.cpp` (**NEW**, ≤ 380 — the seam if it grows is validation-versus-routing, and Task B already took the validation half out), `app/tests/RawHttpClient.h` (**NEW**, ≤ 120 — see below), `app/tests/test_api_server.cpp` (**NEW**, ≤ 280). Modify `app/tests/CMakeLists.txt` (source list, GLOBS, link `ws2_32` on `WIN32` — cpp-httplib needs Winsock and the test target has never linked it).
+
+**`ApiServer.h` is a pimpl, and the guard is why (D2).** A by-value `httplib::Server` member would force `#include <httplib.h>` into `ApiServer.h` — and Task K's guard scans `app/**/*.h` with `ALLOW` naming **`ApiServer.cpp` and nothing else**, so a *correct* build would turn the guard red. That is the guard punishing the design rather than protecting it, and the fix is one line of C++ rather than a weaker guard:
+
+```cpp
+// app/src/api/ApiServer.h  --  includes NOTHING from httplib
+class ApiServer {
+public:
+    ApiServer(measure::SnapshotSource& source, ApiSettings settings);
+    ~ApiServer();                                   // out of line: Impl is incomplete here
+    ApiServer(const ApiServer&) = delete;
+    ApiServer& operator=(const ApiServer&) = delete;
+
+    [[nodiscard]] bool running() const noexcept;
+    [[nodiscard]] int  boundPort() const noexcept;  // -1 until a successful bind; see D1
+private:
+    struct Impl;                                    // holds httplib::Server and the std::thread
+    std::unique_ptr<Impl> impl_;
+};
+```
+
+The out-of-line destructor is **required**, not stylistic: `std::unique_ptr<Impl>` cannot be destroyed where `Impl` is incomplete, and letting the compiler generate it in the header is exactly the mistake that drags the include back in. `ApiServer.cpp` is then the one and only file in the repository that includes `httplib.h`, which is what §11 item 10's title claims and what Task K's sentinel 2 checks.
 
 **Why the test client is a raw socket and not `httplib::Client` (V2's second-order note).** A client built on `httplib::Client` would be a **second file including `httplib.h`**, and Task K's guard permits exactly one. Three ways out were weighed. Making `ALLOW` a list weakens the guard's headline claim from *exactly one* file to two and makes sentinel 2 ambiguous about which file must still carry the include. Exposing a pure `respond(RequestView)` seam and testing that instead would keep the guard intact but **would not test a socket at all**, which is the entire point of V2. So: `RawHttpClient.h` sends three fixed request lines and reads a status line — about forty lines, no parsing, no keep-alive, no timeouts, no security surface. **That is not the hand-rolling §2 rejected**; §2 rejected hand-rolling a *server*, and listed exactly the machinery a fixed-string test client does not contain.
 
@@ -332,17 +358,31 @@ Everything §8 tunes — the four timeouts, the keep-alive max count, the thread
 1. `RateLimiter::admit(now)` → **429 before any `latest()`**. The limiter is the real-time-safety control, so it runs before the work.
 2. Body-size cap → **413** (API-R17).
 3. `hostIsAllowed(req.get_header_value("Host"), settings.port)` → **403 before any handler runs**. Highest-value control in the whole API.
-4. `methodIsAllowed` → **405**, with an `Allow: GET, HEAD, OPTIONS` header. This is also what answers a WebSocket upgrade attempt (Task H).
+4. `methodIsAllowed` → **405**, with an `Allow: GET, HEAD, OPTIONS` header. **This is *not* what answers a WebSocket upgrade** — an upgrade is a `GET` and passes this check (D4); see I11 and Task H.
 5. `bearerAccepted` when `settings.token` is non-empty → **401**. Header only, never a cookie, never a query parameter.
 6. Route → `clampPoints` → **one** `source.latest()` → null check (no snapshot yet ⇒ 503) → `conditionalVerdict` → **304 with the same `ETag` and no body**, or serialise from the copy → **200** with `ETag: "<sequence>"`.
 7. **No CORS headers**, and no pretence that their absence is a defence: a `GET` with only safelisted headers is a *simple* request, gets no preflight, and is **executed** by this program before the browser decides whether the script may read the reply.
 
-The thread is a **`std::thread`** (API-R15). `ApiServer` starts it only when `settings.enabled`, and `~ApiServer` calls `svr_.stop()` **then** joins — the belt-and-braces second guarantee `AnalysisThread`'s destructor comment already argues for, because getting shutdown wrong is a crash that happens once, at exit, on a customer's machine. Binding uses `bind_to_port(settings.bindAddress, settings.port)` followed by `listen_after_bind()` so the test can take an **ephemeral** port (`port = 0`) and read back the real one before any request is sent — no polling, no sleep, no fixed port a developer's own instance could already hold.
+The thread is a **`std::thread`** (API-R15). `ApiServer` starts it only when `settings.enabled`, and `~ApiServer` calls `impl_->svr.stop()` **then** joins — the belt-and-braces second guarantee `AnalysisThread`'s destructor comment already argues for, because getting shutdown wrong is a crash that happens once, at exit, on a customer's machine.
+
+**Binding: `bind_to_any_port`, not `bind_to_port`, and the first draft was wrong about this (D1).** `Server::bind_to_port(const std::string& host, int port, int socket_flags = 0)` returns **`bool`** and **discards** the port it bound; `Server` has **no `port()` accessor** — that member is on `Client`, not `Server` (verifier-confirmed against `httplib.h` v0.56.0; the builder re-confirms both signatures in the vendored header at Task H before writing a line of this). So "bind to 0 and read the port back" does not work as written. The one that returns the port is **`Server::bind_to_any_port(const std::string& host, int socket_flags = 0)`**, which returns the bound port or `-1`.
+
+```cpp
+// ApiServer::Impl, on the CONSTRUCTING thread -- before the std::thread starts
+boundPort = (settings.port == 0) ? svr.bind_to_any_port(settings.bindAddress)
+          : (svr.bind_to_port(settings.bindAddress, settings.port) ? settings.port : -1);
+// then, on the server thread: svr.listen_after_bind();
+```
+
+**Splitting bind from listen is what removes the startup race, and that is the reason it is used here rather than `listen()`.** The bind completes on the constructing thread, so `boundPort()` is already valid when the constructor returns and **before** the server thread has run at all. Every over-the-wire case below therefore reads `server.boundPort()` — **no `sleep_for`, no polling on `is_running()`, no retry loop, and no fixed port a developer's own running instance could already hold.** `grep -rn "sleep_for\|sleep(" app/tests/test_api_server.cpp` must come back empty, exactly as it must for Task C.
 
 | # | case | acceptance |
 |---|---|---|
-| **I1 (first)** | it binds nothing it was not told to | with `settings.enabled == false`, constructing and destroying `ApiServer` starts no thread and opens no socket; asserted on the object's own state, not with `netstat` |
-| I2 | one real request over loopback | bind `127.0.0.1:0`, `GET /api/v1/status` → **200**, body parses with the Task F parser, `schemaVersion == 1`, and the `ETag` header equals `etagFor(sequence)` |
+**Every over-the-wire case reads its port from `server.boundPort()`** (D1). `<port>` below is that value, never a literal and never `settings.port`, because the fixture binds with `settings.port == 0`.
+
+| **I1 (first)** | it binds nothing it was not told to | with `settings.enabled == false`, constructing and destroying `ApiServer` starts no thread and opens no socket, and **`boundPort() == -1`**; asserted on the object's own state, not with `netstat` |
+| **I1b** | the port is knowable before the first request (D1) | with `settings.port == 0` and `enabled == true`, **`boundPort()` is > 0 the moment the constructor returns**, before the server thread has run. This is the case that would have caught the first draft's `bind_to_port`-returns-bool error, and it is the reason no test in this file sleeps |
+| I2 | one real request over loopback | `GET http://127.0.0.1:<port>/api/v1/status` → **200**, body parses with the Task F parser, `schemaVersion == 1`, and the `ETag` header equals `etagFor(sequence)` |
 | I3 | the method boundary is real over the wire | `POST /api/v1/status` → **405** with an `Allow` header; `HEAD /api/v1/status` → 200 with no body |
 | I4 | the `Host` boundary is real over the wire | `Host: attacker.example:<port>` on a **valid** path → **403**, body not served |
 | **I5** | **the `Host` check runs BEFORE routing, and this is the test that tells the difference** (V5) | `Host: attacker.example:<port>` on a path that **does not exist** (`/api/v1/nope`) → **403**, not 404. Pre-routing gives 403; a per-handler check gives 404, because routing ran first and found nothing. The first draft settled for "delete the check, I4 goes red", which tests **presence, not order**, and §9 control 1's wording is "before any handler runs" |
@@ -350,9 +390,10 @@ The thread is a **`std::thread`** (API-R15). `ApiServer` starts it only when `se
 | **I7** | **the CORS posture is asserted, not assumed** (V6) | a 200 response carries **no** `Access-Control-Allow-Origin`, no `Access-Control-Allow-Credentials` and no `Vary: Origin`, at the shipped defaults and with an `Origin: https://evil.example` request header present |
 | I8 | 304 round trip | `GET /api/v1/status`, then repeat with `If-None-Match` set to the returned `ETag` → **304**, empty body, same `ETag` |
 | I9 | 413 over the wire (API-R17) | a `GET` carrying a body larger than `maxRequestBodyBytes` → **413**, and the handler never ran |
-| I10 | shutdown is clean and repeatable | construct / start / stop / destroy in a loop ten times: no hang, no leaked thread, and a fresh ephemeral bind succeeds each time. **This is one of the two behaviours that differ most across Windows, Linux and macOS sockets, and after API-R15 it runs on all three** |
+| I10 | shutdown is clean and repeatable | construct / start / stop / destroy in a loop ten times: no hang, no leaked thread, and a fresh ephemeral bind succeeds each time with a **different** `boundPort()` being acceptable. **This is one of the two behaviours that differ most across Windows, Linux and macOS sockets, and after API-R15 it runs on all three** |
+| **I11** | **no WebSocket can be established, and the reason is measured** (D4) | `GET /api/v1/status` carrying `Upgrade: websocket`, `Connection: Upgrade` and a `Sec-WebSocket-Key` → **200 with the ordinary JSON body**; the response status is **not `101`** and carries **no `Sec-WebSocket-Accept`** header. The same request to `/api/v1/nope` → **404**. Both are *not* 405: an upgrade is a `GET`, so the method allowlist passes it (the first draft claimed 405 — D4). What makes an upgrade impossible is that **no handler registers one**, and this case is what turns that from a claim into an observation. **If the measured behaviour differs — if the vendored header answers an upgrade itself — that is a finding for the orchestrator and a change to Task H's judgement, not a number to bend** |
 
-- [ ] **Accept:** OFF ctest `base_off + N` on **all three CI operating systems**, not only this machine — that is what API-R15 bought and the PR body must show it. Zero `warning C` (API-R7 — paste the count); `wc -l` on all four new files.
+- [ ] **Accept:** OFF ctest `base_off + N` on **all three CI operating systems**, not only this machine — that is what API-R15 bought and the PR body must show it. Zero `warning C` (API-R7 — paste the count); `wc -l` on all four new files; `grep -n "httplib" app/src/api/ApiServer.h` comes back **empty** (D2 — the pimpl is what keeps Task K green on a correct build); the `sleep_for` grep over `test_api_server.cpp` pasted **empty** (D1).
 - [ ] **Mutation 1 (the order mutation, and it is the important one):** move the `Host` check **after** routing → **I5 returns 404 and goes red while I4 stays green**; paste both, revert. **Mutation 2:** delete the `Host` check entirely → I4 and I5 both red; revert. **Mutation 3:** emit `Access-Control-Allow-Origin: *` → I7 red; revert.
 - [ ] **Stated limit, not implied:** nothing test-visible catches a second `latest()` inside one handler. That constraint is held by review and by the file's own comment, and this line is where the plan says so instead of leaving a reader to assume a test exists.
 - [ ] **Commit:** `feat(app): ApiServer -- one std::thread, one httplib TU, limiter then body cap then Host then method then Bearer then one latest()`
@@ -387,10 +428,26 @@ No new behaviour; a procedure whose output goes in the PR body. Every count is *
 
 **One deliberate deviation from "copy and change nothing else" (V3).** The original's source glob at `:51-52` collects only `*.h` and `*.cpp`, so `.hpp`, `.cc` and `.inl` are blind spots the copy would inherit. **The copies glob `*.h;*.hpp;*.cpp;*.cc;*.inl`.** One line, strictly more coverage, and it is named here so a reviewer diffing the two scripts knows the difference is intended. (Widening the *original* is a separate change and belongs in its own PR.)
 
+**The two literals, written out rather than described (D2).** They are `set()` inside the script, never `-D` arguments:
+
+```cmake
+# check_no_server_library.cmake -- anchored on the INCLUDE DIRECTIVE, not on the
+# bare word, which is this repo's own idiom for an include-scanning guard:
+# check_no_framework_deps.cmake:54 is
+#   "#[ \t]*include[ \t]*[<\"](juce|JuceHeader|Q[A-Z]|portaudio|RtAudio|asio)"
+# Anchoring deliberately narrows the false-positive surface: a comment that
+# merely NAMES cpp-httplib is fine, and only a literal include directive trips.
+set(PATTERN          "#[ \t]*include[ \t]*[<\"](httplib|civetweb|mongoose)")
+set(SENTINEL_PATTERN "#[ \t]*include[ \t]*<httplib\\.h>")
+```
+
 **Both sentinels get copied into `check_no_server_library.cmake`. A copy that takes only the first is weaker than the original it cites.**
 
 - `if(NOT ALLOW IN_LIST SOURCES)` (`:65`) — the allowed file is inside the scanned set. Its analogue here is `app` being in `DIRS`.
 - `if(NOT ALLOW_CODE MATCHES "${SENTINEL_PATTERN}")` (`:145`) — the allowed file **still contains** the thing it is the sole exception for. Its analogue: **`ApiServer.cpp` must still contain `#include <httplib.h>`**.
+- And the original's `if(SOURCES STREQUAL "")` → `FATAL_ERROR` (`:56-58`) comes across too. A guard that scanned nothing is the failure both copies exist to make loud.
+
+**`ALLOW` is `ApiServer.cpp` and nothing else, which is precisely why `ApiServer.h` must be a pimpl (D2).** The scan covers `app/**/*.h`, so a by-value `httplib::Server` member — forcing the include into the header — would turn this guard red on a *correct* build. The guard is not weakened to accommodate that; the header is.
 
 ```cmake
 # core/tests/CMakeLists.txt, beside no_std_atomic_over_shared_ptr
@@ -412,7 +469,10 @@ add_test(NAME no_json_parser_in_shipped_code
 )
 ```
 
-`check_no_json_parser.cmake` has no `ALLOW`, so it replaces sentinel 2 with a **witness**: at least one file under `WITNESS_DIR` must include the parser, or the guard `FATAL_ERROR`s. A parser nothing tests with has stopped meaning anything, and a guard that keeps printing OK over that is the failure mode sentinel 2 exists to prevent, in its other direction.
+`check_no_json_parser.cmake` has no `ALLOW`, so it cannot carry sentinel 1 (*"is the allowed file inside the scanned set?"* — there is no allowed file) and it replaces sentinel 2 with a **witness**: at least one file under `WITNESS_DIR` must include the parser, or the guard `FATAL_ERROR`s. A parser nothing tests with has stopped meaning anything, and a guard that keeps printing OK over that is the failure mode sentinel 2 exists to prevent, in its other direction. Its `PATTERN` is
+`"#[ \t]*include[ \t]*[<\"]([^>\"]*/)?(json\\.hpp|nlohmann|rapidjson|picojson|json/json\\.h)"`, and it keeps the empty-`SOURCES` `FATAL_ERROR` too.
+
+**Losing sentinel 1 costs something specific, and D3 named it: without an `ALLOW IN_LIST SOURCES` check, a typo in any `DIRS` entry is silent** — the remaining directories still glob files, `SOURCES` is non-empty, the witness still passes, and the guard prints OK while watching four directories instead of five. **The replacement is not another sentinel but two more reds** (below), one planted under `core/` and one under `platform/`, which is the same thing V3 demanded of the server guard and for the same reason.
 
 **`${CMAKE_SOURCE_DIR}/` on every `DIRS` entry and on `ALLOW`** — `file(GLOB_RECURSE)` returns **absolute** paths, so a relative `ALLOW` dies either at the `if(NOT EXISTS "${ALLOW}")` check or at `:65`. **`app` must be in the first guard's `DIRS`** and that is not a detail: omit it and `ALLOW IN_LIST SOURCES` is false and the guard `FATAL_ERROR`s on every run.
 
@@ -420,14 +480,16 @@ add_test(NAME no_json_parser_in_shipped_code
 - [ ] **RED 1, sentinel 1:** drop `app` from the first registration's `DIRS` → `FATAL_ERROR` naming `ApiServer.cpp` as unwatched. Paste; restore.
 - [ ] **RED 2, sentinel 2:** delete `#include <httplib.h>` from `ApiServer.cpp` → the guard fails saying it is not proving anything. Paste; restore. **Then rebuild from the current tree and hash-check against HEAD** — `memory/mutation-testing-needs-the-exe-deleted-first.md`: restoring a header leaves objects built from the mutated one, and a header mutation is not recompiled at all unless a dependent `.cpp` is touched.
 - [ ] **RED 3, the offender scan inside `app/`:** add `#include <httplib.h>` to `app/src/api/ApiSerialise.cpp` → the guard names that file. Paste; remove. **This proves the OFF-testability split is enforced and not merely intended.**
-- [ ] **RED 4, the false-positive case (API-R8):** put the word `httplib` inside a `/** ... */` doxygen block in `ApiPolicy.h` → the guard goes red, because that comment shape is not stripped. Paste, then rewrite the comment as `//` lines and show green. A guard's false positives are part of its contract.
+- [ ] **RED 4, the false-positive case (API-R8), restated for the anchored `PATTERN` (D2):** the pattern matches an **include directive**, not the bare word, so merely naming cpp-httplib in a comment is now fine — which is a deliberate narrowing, and the plan says so where the literal is given. What still trips it is a **literal `#include <httplib.h>` line inside a `/** ... */` doxygen block** — a usage example in a doc comment, which is an ordinary thing to write — because `rta_strip_comments` removes only `/* ... */` bodies **containing no `*`** (`check_no_std_atomic_shared_ptr.cmake:129-130`). Put exactly that in `ApiPolicy.h` → red. Paste, then move the example into `//` lines and show green. **A guard's false positives are part of its contract, and this one is narrower than the first draft's but has not gone away.**
 - [ ] **RED 5 — the one the first draft did not have (V3): plant the offender OUTSIDE `app/`.** Add `#include <httplib.h>` to a file under **`core/`** → the guard names it. Paste; remove. All four earlier reds exercise `app/` or the `ALLOW` file, so the guard's *headline* claim — that `core/`, `platform/`, `ui/` and `tools/` contain no server library at all — was the half nothing turned red. **A typo in any of those four `DIRS` entries leaves `SOURCES` non-empty, `ALLOW IN_LIST SOURCES` true, sentinel 2 satisfied, and every `app/` mutation still red: the guard would silently watch one directory out of five.**
-- [ ] **RED 6, the parser guard:** add `#include <nlohmann/json.hpp>` to `app/src/api/ApiSerialise.cpp` → `no_json_parser_in_shipped_code` names it. Paste; remove. **RED 7, its witness:** remove the include from `app/tests/test_api_schema.cpp` → the guard fails for the opposite reason. Paste; restore.
+- [ ] **RED 6, the parser guard inside `app/src`:** add `#include <nlohmann/json.hpp>` to `app/src/api/ApiSerialise.cpp` → `no_json_parser_in_shipped_code` names it. Paste; remove.
+- [ ] **RED 7 and RED 8 — the parser guard OUTSIDE `app/src` (D3).** Plant the same include in a file under **`core/`**, then in a file under **`platform/`**; the guard must name each. Paste both; remove both. Reds 6 alone would have left this guard in exactly the state V3 condemned in the server guard — a `DIRS` typo dropping four of five directories, silently, with every `app/src` mutation still red. This guard has no `ALLOW`, so it has no sentinel 1 to catch that, and these two reds are what stand in for it.
+- [ ] **RED 9, its witness:** remove the include from `app/tests/test_api_schema.cpp` → the guard fails for the opposite reason, saying nothing is testing with a parser any more. Paste; restore.
 - [ ] **GREEN, `measure_has_no_framework_deps`, with the risen count.** Every OFF source file appended to the GLOBS at `app/tests/CMakeLists.txt:282`; paste the `OK (N files scanned)` line and say by how much N rose **and why** (API-R6 — `app/tests/*.h` is globbed, so `ApiFixture.h` and `RawHttpClient.h` raise it too). **RED once:** `#include <juce_core/juce_core.h>` atop `ApiSerialise.h` → paste the failure naming the file → remove.
 - [ ] **GREEN, `no_std_atomic_over_shared_ptr`.** It already globs `app/`, so the new files are in its scope from the moment they land; paste it green.
 - [ ] **GREEN, `test_names_are_ascii`.** New `TEST_CASE` names are pure ASCII; paste it green.
 - [ ] **GREEN, `audioio_scoped_no_denormals_is_first` and both RT-hazard guards, unchanged.** `git diff main --stat -- platform/ core/src core/include ui/` is **empty**. This lane touched no layer below `app/` except `core/tests/`, and the diff is the proof, not the claim.
-- [ ] **Commit:** `test(ci): the server-library and JSON-parser guards -- seven reds pasted, including one planted outside app/`
+- [ ] **Commit:** `test(ci): the server-library and JSON-parser guards -- nine reds pasted, three of them planted outside app/`
 
 ---
 
@@ -465,7 +527,7 @@ Every figure below is a prediction to falsify. Measure the baselines on `main` a
 
 **Ten of the eleven tasks are OFF**, so the serialiser, the schema, the validator, the limiter, the `Host` check *including its ordering*, the Bearer path, the CORS posture, shutdown and every guard run on ubuntu, macos and windows. **That is the single biggest change this revision makes** (API-R15 / V2): in the first draft the entire network layer was proven on zero CI machines.
 
-**Acceptance gate.** OFF green on all three CI OSes and ON green locally, at the measured counts; **0 `warning C`** in both; `no_server_library_outside_api` green in both configs and shown red **five** times (two sentinels, one offender inside `app/`, one doxygen false positive, **one offender planted under `core/`**); `no_json_parser_in_shipped_code` green and shown red twice (an offender and a missing witness); `measure_has_no_framework_deps` green with the risen scanned count and shown red once; `test_names_are_ascii` and `no_std_atomic_over_shared_ptr` green; forced-fallback OFF config green; every new file < 400 lines; `git diff main --stat -- platform/ core/src core/include ui/` empty; the golden JSON's diff reviewed line by line.
+**Acceptance gate.** OFF green on all three CI OSes and ON green locally, at the measured counts; **0 `warning C`** in both; `no_server_library_outside_api` green in both configs and shown red **five** times (two sentinels, one offender inside `app/`, one doxygen false positive, **one offender planted under `core/`**); `no_json_parser_in_shipped_code` green and shown red **four** times (an offender in `app/src`, **one under `core/` and one under `platform/`** standing in for the sentinel 1 it cannot have, and a missing witness); `measure_has_no_framework_deps` green with the risen scanned count and shown red once; `test_names_are_ascii` and `no_std_atomic_over_shared_ptr` green; forced-fallback OFF config green; every new file < 400 lines; `git diff main --stat -- platform/ core/src core/include ui/` empty; the golden JSON's diff reviewed line by line.
 
 ## What this lane does NOT include (deferred; record §5, §12, §13, §15)
 
@@ -477,7 +539,7 @@ Every figure below is a prediction to falsify. Measure the baselines on `main` a
 - **Solver endpoints** (`/eq`, `/align`). `EqSession` and `AlignmentWizard` have no caller anywhere in `app/` outside their own files and their tests — an endpoint returning "the current EQ suggestions" would report the state of an object nobody owns.
 - **SPL and Leq.** `Snapshot` carries dBFS only; `rta::meter::Leq` has no `app/` caller. `"spl"` joins `available` when the Meters track lands it in the snapshot. **This blocks L6a's G7, not this lane.**
 - **The SPL web viewer itself (L6a, G7).** It is a **client of this surface**, on **this** port, behind **this** `Host` check, rate limit and token, with its static assets served from the same origin. It must not open a second socket, a second port, a second bind default or a second auth model (§12; Smaart serves its SPL Web Viewer on the same port 26000 as its API, while SysTune shipped a bundled NGINX — the upper bound on getting this casually wrong).
-- **Push of any shape** — no WebSocket, no SSE, and **never** REW's callback-URL webhook, which turns the analyser into an HTTP client aimed at an address an untrusted caller chose (§3). Note what makes this true in the code: the vendored header **does** carry WebSocket machinery unguarded at v0.56.0 (Task H), and what makes it unreachable is that no handler is registered and the method allowlist answers the upgrade with 405.
+- **Push of any shape** — no WebSocket, no SSE, and **never** REW's callback-URL webhook, which turns the analyser into an HTTP client aimed at an address an untrusted caller chose (§3). Note what makes this true in the code, stated correctly on the second attempt (D4): the vendored header **does** carry WebSocket machinery unguarded at v0.56.0 (Task H), and the method allowlist does **not** stop an upgrade — an upgrade is a `GET` and passes it. What makes it unreachable is that **no handler registers one**, so the request is answered by the ordinary route (200) or 404 and the server never emits `101`. Task I's I11 measures it.
 - **Base64 float32 bodies** behind `?encoding=base64` (§7) — named as the first optimisation, not built. If it is ever built, **state the byte order in the schema**: REW's is big-endian and half the surveyed formats do not say.
 - **An OSC scalar surface** (§1), **discovery / mDNS** (§13), **a LAN bind and the mandatory password that must come with it**, **Q-SYS QRC / ECP / QRWC**, **Dante** (L8's G19).
 
