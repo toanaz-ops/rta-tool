@@ -112,6 +112,17 @@ add_executable(rtatool_analysis_tests
     # -- split out when three rounds of verification grew the declaration scan
     # into its own subject.
     test_crossover_surface_objective.cpp
+    # --- lane L-API (docs/plans/2026-09-17-remote-api-impl-plan.md) ---
+    # The read-only remote API's pure half: the wire's number format, the
+    # request-shape policy and the serialiser. All framework-free and all in
+    # the RTA_BUILD_APP=OFF target, which is the only configuration CI runs
+    # (record sec.15 R15) -- so the whole surface is proven on three OSes.
+    test_api_json.cpp
+    test_api_policy.cpp
+    test_api_limits.cpp
+    test_api_serialise.cpp
+    test_api_serialise_spatial.cpp
+    test_api_schema.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md) -- Analyser.cpp calls
@@ -164,14 +175,37 @@ add_executable(rtatool_analysis_tests
     # CrossoverSurface.cpp: lane L7-ALIGN task I (record Sec.6) --
     # test_crossover_surface.cpp calls straight into it.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurface.cpp
+    # ApiPolicy.cpp: lane L-API Tasks B and C (record sec.9, sec.15 R1) --
+    # the Host/method/Bearer/cap policy and the rate limiter, framework-free
+    # and server-library-free so record sec.11 items 6-9 are proven OFF.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiPolicy.cpp
+    # ApiSerialise.cpp: lane L-API Task D (record sec.6) -- the fixed-axis
+    # blocks. The spatial blocks are ApiSerialiseSpatial.cpp, and that
+    # split is unconditional: discovering the 400-line cap mid-task is how
+    # a file ends up at 399 lines doing two jobs.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiSerialise.cpp
+    # ApiSerialiseSpatial.cpp: lane L-API Task E (record sec.6, sec.15 R4)
+    # -- /mtw, /average and /positions, the three blocks that carry a state
+    # a well-meaning implementer drops.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiSerialiseSpatial.cpp
 )
 target_include_directories(rtatool_analysis_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    # external/: lane L-API Task F (record sec.15 R16). The vendored JSON
+    # parser is TEST-ONLY, and no_json_parser_in_shipped_code enforces that
+    # with no permitted file at all under app/src. It lives at the repo root
+    # rather than under app/, outside every guard's DIRS (sec.15 R3).
+    ${CMAKE_SOURCE_DIR}/external)
 # RTA_REPO_ROOT: L7-ALIGN task D6 scans core/ from the test itself, so the
 # "core stays topology-free" rule runs in CI on all three operating systems
 # instead of living in a grep somebody has to remember to type.
+# RTA_API_GOLDEN_DIR: lane L-API Task D. A golden the test finds by a
+# compiled-in absolute path runs from any working directory on any of the
+# three CI operating systems -- the same reasoning as core/tests's
+# RTA_GOLDEN_DIR, on the same target as RTA_REPO_ROOT above.
 target_compile_definitions(rtatool_analysis_tests PRIVATE
-    RTA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+    RTA_REPO_ROOT="${CMAKE_SOURCE_DIR}"
+    RTA_API_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
 target_link_libraries(rtatool_analysis_tests PRIVATE
     # rta::platform_types: RoutingPlan.h (task B2) is a pure function over
     # rta::platform::ChannelConfig, JUCE-free like the rest of this target --
@@ -279,6 +313,6 @@ rta_report_atomic_shared_ptr_branch()
 # remembering to list it. Until 2026-09-16 no header here was scanned at all.
 add_test(NAME measure_has_no_framework_deps
     COMMAND ${CMAKE_COMMAND}
-            "-DGLOBS=${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Levels.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Snapshot.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SnapshotSource.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AtomicSharedPtr.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PlotGeometry.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/Readouts.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/Trace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TraceDecimator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceBlobCodec.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionStore.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionStore.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RepaintGate.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/AxisMetrics.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/BodeLayout.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PhaseDecimator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CoherenceAlpha.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PairedDrain.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticImpairment.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/Workspace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PaneRegistry.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/ColumnMap.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodecDetail.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionDecode.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RoutingPlan.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/LevelAlign.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/OutputPolicy.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirExport.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirTextWriter.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RawCaptureBuffer.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqTrustMask.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqSession.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqSession.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/EqTextExport.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CrossoverTopology.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CrossoverTopology.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/VirtualTrace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/VirtualTrace.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizardSignals.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurface.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurface.cpp;${CMAKE_CURRENT_SOURCE_DIR}/*.h;${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
+            "-DGLOBS=${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Levels.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Snapshot.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SnapshotSource.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AtomicSharedPtr.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PlotGeometry.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/Readouts.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/Trace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TraceDecimator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceBlobCodec.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionStore.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionStore.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/TraceLibrary.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RepaintGate.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/AxisMetrics.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/BodeLayout.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PhaseDecimator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CoherenceAlpha.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PairedDrain.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticImpairment.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/Workspace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/PaneRegistry.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/ColumnMap.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodecDetail.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionDecode.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RoutingPlan.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AverageGroup.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/LevelAlign.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/OutputPolicy.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirExport.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/FirTextWriter.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RawCaptureBuffer.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqTrustMask.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqSession.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqSession.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/EqTextExport.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CrossoverTopology.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CrossoverTopology.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/VirtualTrace.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/VirtualTrace.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizardSignals.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurface.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurface.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiJson.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiSettings.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiPolicy.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiPolicy.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiSerialise.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiSerialise.cpp;${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ApiSerialiseSpatial.cpp;${CMAKE_CURRENT_SOURCE_DIR}/*.h;${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
             -DLABEL=app_measure
             -P ${CMAKE_SOURCE_DIR}/core/tests/check_no_framework_deps.cmake)
