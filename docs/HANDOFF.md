@@ -5,6 +5,32 @@
 
 ---
 
+# 2026-09-17 — **L6a station 3 plan written: `docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md`; station 4 next.**
+
+Nhánh `l6a/station-3-plan` từ `main` (`af8a9d0`, nơi PR #12 đã merge), **docs-only,
+không một dòng code**, nên không có tally nào ở đây và đó là đúng. GitHub Actions
+vẫn bị chặn ở mức tài khoản (billing).
+
+- **Năm wave**: Wave 0 SPL publish path (block + sample-count clock → `Snapshot::spl`,
+  seam 3.0103 dB đóng bằng closed form), Wave 1 core pure math (histogram Ln 2000+2,
+  dose hai accumulator, headroom, alarm latch), Wave 2 app (ring theo declared span,
+  alarms, log `#key=value`, pane), Wave 3 calibration flow, Wave 4a report / 4b viewer.
+- **Ba scope default đã lấy thay cho ba câu `[!]`** — Q1 (quy đổi một lần tại meter
+  seam, không động vào bands), Q2 (**dựng** calibration flow → Wave 3), Q8 (viewer
+  **ship, cuối cùng, có gate** → Wave 4b). Chi phí nếu chủ nhân lật nằm trong bảng
+  đầu plan; Wave 3 và Wave 4b bị cắt là **xoá nguyên tác vụ**, không viết lại cái khác.
+- **Mười hai reconciliation `SPL-R1..R12`** trong plan, orchestrator sửa record trước.
+  Nặng nhất: **SPL-R1** — `rta::dsp::RingBuffer` chỉ có MỘT `readIndex_`, nên yêu cầu
+  "SPL meter ngồi trên drain riêng của measurement channel" (§C4) **không dựng được
+  như viết**; feed đi theo scratch buffer, và đường routed bị reference gate — block
+  mang cờ `Gap` để log **nói ra** là nó đứng, thay vì nói dối.
+- **Một việc chỉ chủ nhân làm được**: phép thử Chrome Local Network Access (Wave 4b
+  Gate 2) — thủ tục và bốn thứ cần báo lại nằm trong plan.
+- **Task G2** nhặn nốt §13 Q10: `core/tests/check_no_conformance_claim.cmake:18,61`
+  còn ghi "Table 2" — đúng là **Table 3**. Đó là code, thuộc trạm 4, không đụng ở PR này.
+
+---
+
 # 2026-09-16 — **L6a (SPL-pro) trạm 1+2 XONG — nhánh `l6a/stations-1-2`, docs-only, PR mở, CHƯA merge. Trạm 3 (impl plan) là việc kế tiếp.**
 
 Hai tài liệu mới, không có một dòng code nào:

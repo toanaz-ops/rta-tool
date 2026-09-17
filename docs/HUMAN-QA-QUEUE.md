@@ -362,6 +362,13 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
 
 *Mười câu. Q1, Q2 và Q8 định phạm vi trạm 3; bảy câu còn lại không chặn việc.*
 
+> **Cập nhật 2026-09-17 — trạm 3 đã viết xong plan**
+> (`docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md`). Plan **không chờ** ba câu
+> `[!]`: mỗi câu được lấy **đúng đề xuất của record** làm một *scope default*,
+> có ghi tên, ghi § và ghi **giá nếu chủ nhân lật**. Ba ô dưới vẫn để `[ ]` —
+> một default không phải một câu trả lời. Bảy câu còn lại cũng đã được lấy
+> default theo đề xuất của record (bảng thứ hai đầu plan) để các wave dựng được.
+
 - [ ] **`[!]` Q1 — seam 3.0103 dB: readout SPL theo convention nào?**
   `app/src/measure/Levels.h` định nghĩa dB sao cho một **sine full-scale đọc
   đúng `0.0 dBFS`** (cộng `kFullScaleSineOffsetDb = 3.0102999566398120`), và
@@ -382,6 +389,20 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   có trên màn hình và trong mọi trace đã lưu** — đó là một quyết định phá vỡ
   dữ liệu cũ, không phải một lựa chọn thẩm mỹ. Cần chủ nhân xác nhận.
 
+  > **Default đã lấy — plan §"Defaults this plan TAKES", thi hành ở Wave 0 task
+  > W0-E; lật nếu sai.** Plan lấy đúng đề xuất trên: quy đổi một lần tại meter
+  > seam, ghi nhãn cả hai, **không động vào bands**. W0-E là test closed-form:
+  > cùng một sine full-scale đọc **cùng một số dB** qua cả hai đường sau khi
+  > offset được áp (`levelDbFs(0.5) == 0.0` và, với
+  > `referenceOffsetDb = kFullScaleSineOffsetDb`, metric SPL cũng đọc `0.0`).
+  > **Giá nếu lật:** `kFullScaleSineOffsetDb` (`Levels.h:22`) về `0.0`; mọi số
+  > dBFS trên màn và trong **mọi `Trace` đã lưu** dịch 3.0103 dB; golden và tám
+  > PNG của `rtatool_snapshot` đều đổi; và `kSchemaVersion` (`SessionCodec.h:30`)
+  > phải lên **4** với một khoá `levelConvention` — nếu không, session cũ đọc
+  > bằng build mới sai 3 dB mà không ai biết. Tức là **một schema bump cộng một
+  > lần regenerate golden, không phải sửa một hằng số**. Đây là câu đáng trả lời
+  > **trước khi trạm 4 commit W0-E**.
+
 - [ ] **`[!]` Q2 — dựng calibration flow ngay trong L6a? (mở rộng scope)**
   Hàng L6a của master plan không liệt kê nó. Nhưng hiện tại repo có
   `Trace::calibrationOffsetDb` mà **không có gì set nó một cách trung thực**:
@@ -396,6 +417,17 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   10EaZy đều KHÔNG in cặp calibration trước/sau vào report** (danh sách field
   của Smaart là đầy đủ và không có mục calibration nào). Cirrus AuditStore thì
   có lưu. **Đề xuất: dựng.** Cần chủ nhân duyệt vì nó là scope addition.
+
+  > **Default đã lấy — plan §"Defaults this plan TAKES", thi hành ở **Wave 3**;
+  > lật nếu sai.** Plan lấy đúng đề xuất trên: **dựng**, và dựng thành một wave
+  > riêng đứng một mình.
+  > **Giá nếu lật: ba task biến mất, không task nào phải viết lại.** Wave 0–2
+  > nhận calibration offset **như dữ liệu** (`SplConfig::referenceOffsetDb`)
+  > chính là để phép cắt này là một phép xoá. Mất gì:
+  > `flags.calibrationInvalid` không bao giờ được set, và report mục 3 in
+  > *"calibration check not performed"* thay cho cặp đọc đầu/cuối cùng clause
+  > ISO 1996-2 cl. 5.2. Một dòng `meter::calibrationOffsetDb` vẫn ở lại `core/`
+  > vì test seam W0-E dùng nó.
 
 - [ ] **Q3 — ship bao nhiêu Ln, và có cho người dùng đặt phần trăm không?**
   Larson Davis 831/LxT phơi **sáu** slot với phần trăm settable
@@ -475,6 +507,23 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   (ledger UNVERIFIED của chính PR #11, mục 7). Một buổi chiều thử với Chrome
   142+ là xong. Đây là thứ **sạch nhất để cắt** nếu lane quá to.
 
+  > **Default đã lấy — plan §"Defaults this plan TAKES", thi hành ở **Wave 4a /
+  > 4b**; lật nếu sai.** Plan lấy đúng build order của record §9: viewer
+  > **ship, nhưng cuối cùng và có gate**. Và nó **tách làm đôi**: **4a =
+  > report** (payload đóng băng, không socket, **không bị gate**), **4b =
+  > viewer** (cùng renderer, payload fetch qua L-API). Lý do tách: thứ một
+  > venue thực sự cầm đọc là **report**, không phải cái socket — cắt cái sau
+  > không được phép cắt luôn cái trước.
+  > **Giá nếu lật: Wave 4b biến mất nguyên, cộng đúng một câu** — ràng buộc
+  > rounding §12 constraint 2 được ghi là **untested for the viewer** và câu đó
+  > vào report, đúng như §9 đã cho phép sẵn.
+  > **Hai gate, cả hai nằm ngoài tay lane này:** (1) L-API trạm 4 phải land
+  > `ApiServer` + route static asset; (2) **phép thử Chrome LNA — việc chỉ chủ
+  > nhân làm được.** Thủ tục từng bước và **bốn thứ cần báo lại** (phiên bản
+  > Chrome; có prompt hay không và nó viết đúng chữ gì; status của
+  > `GET /api/v1/spl` trong tab Network; dòng console nào nhắc local/private
+  > network) nằm ở **Wave 4b Gate 2** trong plan.
+
 - [ ] **Q9 — có mua ISO 1996-2:2017 không?** Clause **13 "Information to be
   recorded and reported"** đúng là clause báo cáo cho một logging meter, và
   **thân bài bị tường phí**; hai clause còn lại lane này sẽ xây theo là
@@ -488,6 +537,10 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   chính trong chính PR này (Table 2 → **Table 3**). Nhưng
   `core/tests/check_no_conformance_claim.cmake:18,61` còn mang số sai ở comment
   và ở message lỗi — **đó là code**, nên PR docs-only này không đụng. Ai nhặt?
+
+  > **Đã có người nhặt (2026-09-17):** plan trạm 3 của L6a nhận nó làm
+  > **Task G2**. Vẫn là code, nên nó thuộc **trạm 4**, không đụng ở PR
+  > docs-only này. Để ngỏ tới khi trạm 4 chạy.
 
 ---
 
