@@ -119,6 +119,7 @@ add_executable(rtatool_analysis_tests
     # (record sec.15 R15) -- so the whole surface is proven on three OSes.
     test_api_json.cpp
     test_api_policy.cpp
+    test_api_limits.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md) -- Analyser.cpp calls

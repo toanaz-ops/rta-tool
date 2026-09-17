@@ -6,6 +6,7 @@
 
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cstddef>
 #include <string_view>
 #include <system_error>
@@ -158,6 +159,56 @@ std::optional<std::string> startRefusal(const ApiSettings& settings) {
             "2 s per request on Windows with misconfigured IPv6.");
     }
     return std::nullopt;
+}
+
+std::string etagFor(std::uint64_t sequence) {
+    return '"' + std::to_string(sequence) + '"';
+}
+
+Verdict conditionalVerdict(std::string_view ifNoneMatch, std::optional<std::uint64_t> since,
+                           std::uint64_t sequence) {
+    // If-None-Match is the primary form and DECIDES when present, agreeing
+    // with ?since= or not: a client that sends a validator has one, and the
+    // validator is the thing the standard defines the semantics of.
+    if (!ifNoneMatch.empty()) {
+        // RFC 9110 sec.13.1.2: `*` matches any current representation.
+        if (ifNoneMatch == "*") {
+            return Verdict::NotModified;
+        }
+        return ifNoneMatch == etagFor(sequence) ? Verdict::NotModified : Verdict::Serve;
+    }
+
+    if (since.has_value()) {
+        // Equality only. A `since` AHEAD of the server means the client (or
+        // the server) restarted; serving is the only recovery, so anything
+        // that is not "you already have exactly this one" is served.
+        return *since == sequence ? Verdict::NotModified : Verdict::Serve;
+    }
+    return Verdict::Serve;
+}
+
+RateLimiter::RateLimiter(int maxPerSecond) : maxPerSecond_(maxPerSecond) {}
+
+bool RateLimiter::admit(Clock::time_point now) {
+    if (maxPerSecond_ <= 0) {
+        return false;   // a limiter configured to admit nothing admits nothing
+    }
+
+    constexpr auto kWindow = std::chrono::seconds{1};
+
+    // `>=` is the shipped comparison and test C3's t0+1000ms case is what
+    // says so: an admission exactly one window old has left the window. The
+    // alternative (`>`) keeps it for one more nanosecond, which is a
+    // different bound, and an untested one either way.
+    while (!admissions_.empty() && (now - admissions_.front()) >= kWindow) {
+        admissions_.pop_front();
+    }
+
+    if (static_cast<int>(admissions_.size()) >= maxPerSecond_) {
+        return false;
+    }
+    admissions_.push_back(now);
+    return true;
 }
 
 }  // namespace rta::api

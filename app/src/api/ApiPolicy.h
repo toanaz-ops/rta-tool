@@ -10,7 +10,9 @@
 
 #include "api/ApiSettings.h"
 
+#include <chrono>
 #include <cstdint>
+#include <deque>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -22,6 +24,10 @@ namespace rta::api {
 /// what matters -- a new verb invented by a client is refused by being
 /// unknown, not by being listed.
 enum class Method { Get, Head, Options, Other };
+
+/// What a conditional GET resolves to. `NotModified` is 304 with the same
+/// `ETag` and no body; `Serve` is the ordinary 200 path.
+enum class Verdict { Serve, NotModified };
 
 /// Record sec.9 control 1. The `Host` header names a host and a port, and
 /// BOTH must match, because this is the DNS-rebinding defence: an attacker
@@ -88,5 +94,53 @@ enum class Method { Get, Head, Options, Other };
 /// Two ways to ask for a LAN bind, one refusal. A setting that silently did
 /// nothing, or silently did it, are the two failure modes this refuses.
 [[nodiscard]] std::optional<std::string> startRefusal(const ApiSettings& settings);
+
+/// The `ETag` for a snapshot, quotes INCLUDED: an HTTP entity tag is a
+/// quoted string (RFC 9110 sec.8.8.3), and a bare `12345` is a malformed
+/// validator a conforming client will not echo -- which degrades every
+/// conditional GET to a full response, silently, forever.
+[[nodiscard]] std::string etagFor(std::uint64_t sequence);
+
+/// Record sec.3's polling contract as a pure function. `If-None-Match` is
+/// the primary form and wins when both are present; `?since=` is the form
+/// that needs no server-issued validator.
+///
+/// A client whose `since` is AHEAD of the server is served, not refused: it
+/// is a client that restarted, or a server that did, and serving is the only
+/// recovery from either.
+[[nodiscard]] Verdict conditionalVerdict(std::string_view ifNoneMatch,
+                                         std::optional<std::uint64_t> since,
+                                         std::uint64_t sequence);
+
+/// A SLIDING window, and the choice is load-bearing (record sec.4, sec.15
+/// R15's neighbourhood). A fixed window admits `maxPerSecond` at the end of
+/// one window and `maxPerSecond` at the start of the next -- twice the rate
+/// inside one real second -- while sec.4's accounting is that this number is
+/// a HARD BOUND on the API thread's traffic against the publish slot. A
+/// bound that holds only on aligned seconds is not that bound.
+///
+/// The clock is INJECTED. Nothing here reads the time, so the tests need no
+/// sleep and cannot be flaky on a CI runner; `ApiServer` passes
+/// `std::chrono::steady_clock::now()`.
+///
+/// `admit` runs BEFORE any `SnapshotSource::latest()`, which is what makes
+/// the limiter a real-time-safety control rather than hygiene: the expensive
+/// work is what it is bounding, so it cannot run after it.
+class RateLimiter {
+public:
+    using Clock = std::chrono::steady_clock;
+
+    explicit RateLimiter(int maxPerSecond);
+
+    /// False => 429, and the caller must not touch the publish slot.
+    [[nodiscard]] bool admit(Clock::time_point now);
+
+private:
+    /// The admission instants still inside the window, oldest first. Bounded
+    /// by `maxPerSecond_` by construction -- an entry is only ever pushed
+    /// after the size check passes -- so this never grows with traffic.
+    std::deque<Clock::time_point> admissions_;
+    int maxPerSecond_;
+};
 
 }  // namespace rta::api
