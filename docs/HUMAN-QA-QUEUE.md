@@ -358,6 +358,139 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
 
 ---
 
+## Từ lane L6a (2026-09-16, record `docs/dsp/2026-09-16-spl-pro-l6a.md`)
+
+*Mười câu. Q1, Q2 và Q8 định phạm vi trạm 3; bảy câu còn lại không chặn việc.*
+
+- [ ] **`[!]` Q1 — seam 3.0103 dB: readout SPL theo convention nào?**
+  `app/src/measure/Levels.h` định nghĩa dB sao cho một **sine full-scale đọc
+  đúng `0.0 dBFS`** (cộng `kFullScaleSineOffsetDb = 3.0102999566398120`), và
+  comment của chính nó gọi đó là "the ONE definition of dB the rest of the app
+  reads through". `core/include/rta/meter/Leq.h` định nghĩa Leq theo IEC —
+  `10*log10(mean(p^2))`, mean-square referenced — nên cùng sine đó đọc
+  **`−3.0103`**. Cả hai đều đúng, chúng trả lời hai câu hỏi khác nhau (một RMS
+  level và một peak-equivalent reference).
+
+  Nhưng đặt broadband Leq cạnh RTA bands mà không quy đổi thì một tone 1 kHz
+  đọc **lệch 3.0103 dB giữa hai readout**, và người vận hành đọc ra đó là lỗi
+  thiết bị. Sau khi calibrate thì không sao — offset nuốt hằng số — chỗ đau
+  đúng là **dBFS chưa calibrate**, tức là cái operator nhìn thấy trước khi họ
+  calibrate.
+
+  **Đề xuất: quy đổi đúng một lần tại meter seam, ghi nhãn cả hai, và KHÔNG
+  động vào bands.** Chuyển bands sang mean-square sẽ đổi **mọi con số dBFS đang
+  có trên màn hình và trong mọi trace đã lưu** — đó là một quyết định phá vỡ
+  dữ liệu cũ, không phải một lựa chọn thẩm mỹ. Cần chủ nhân xác nhận.
+
+- [ ] **`[!]` Q2 — dựng calibration flow ngay trong L6a? (mở rộng scope)**
+  Hàng L6a của master plan không liệt kê nó. Nhưng hiện tại repo có
+  `Trace::calibrationOffsetDb` mà **không có gì set nó một cách trung thực**:
+  không có routine nào đo calibrator rồi tính offset. Không có flow thì log
+  SPL là log dBFS, và report không thể mang cặp đọc đầu/cuối mà **ISO 1996-2
+  cl. 5.2 đòi** (calibrator class 1 IEC 60942, kiểm ở đầu và cuối mỗi phép đo,
+  lệch hai lần liên tiếp **≤ 0,5 dB**, vượt thì **huỷ toàn bộ kết quả kể từ lần
+  kiểm đạt trước đó**). Đây là số published duy nhất tìm được cho drift, và nó
+  đến từ một clause normative.
+
+  Đáng nói thêm, vì nó là điểm khác biệt chứ không phải parity: **Smaart SPL và
+  10EaZy đều KHÔNG in cặp calibration trước/sau vào report** (danh sách field
+  của Smaart là đầy đủ và không có mục calibration nào). Cirrus AuditStore thì
+  có lưu. **Đề xuất: dựng.** Cần chủ nhân duyệt vì nó là scope addition.
+
+- [ ] **Q3 — ship bao nhiêu Ln, và có cho người dùng đặt phần trăm không?**
+  Larson Davis 831/LxT phơi **sáu** slot với phần trăm settable
+  (`NUM_LNS = 6`, `m_fLnPercents[]`); report của Smaart in **L10/L50/L90**;
+  NoiseCapture chỉ implement đúng ba cái đó. **Đề xuất: sáu slot, default
+  L1/L5/L10/L50/L90/L95.**
+
+- [ ] **Q4 — NIOSH ship theo convention nào? (98-126 mâu thuẫn với chính nó,
+  giữa hai bảng trong CÙNG một chương)** **Bảng 1-1** (trang 2) và công thức in
+  ngay trên nó ở §1.1.1 (trang 1) — `T (min) = 480 / 2^((L−85)/3)`, kèm đúng
+  chữ *"where 3 = the exchange rate"* — cần `q = 3/log10(2) = 9.9657843`. Còn
+  **Bảng 1-2** (trang 3) và footnote in dưới nó, `*TWA = 10 × Log(D/100) + 85`,
+  cần `q = 10` chẵn. Dòng cuối Bảng 1-2 là bằng chứng không cần diễn giải:
+  **32,500,000 % → 140.1 dBA**, và `10·log10(325000) + 85 = 140.1188`.
+
+  Lệch bao nhiêu là một closed form, không phải một con số:
+  `D(q=10)/D(q=3/log10 2) = 10^(−0.00034333·ΔL)`, tức `q = 10` đọc **thấp**
+  1.1788 % ở 100 dBA, 2.3437 % ở 115, 3.4949 % ở 130, và **4.2549 % ở
+  140 dBA** — đúng đỉnh dải đo 80–140 dBA mà chính §1.3.3 của NIOSH quy định.
+
+  > **Sửa bản trước, ghi lại để khỏi ai tin lại con số cũ.** Bản đầu của record
+  > viết "bảng chọi công thức, lệch tới 1.18 %". Cả hai vế đều sai, cùng một
+  > gốc: nó lấy **bảng tóm tắt sáu dòng của CDC bulletin 2016** (8 h/85 …
+  > 15 min/100) và tưởng đó là bảng của NIOSH. 1.18 % chính là giá trị ở
+  > 100 dBA — endpoint của bảng tóm tắt, thấp hơn endpoint thật 40 dB. Bảng
+  > thật là **Table 1-1, 51 dòng, bước 1 dB, 80 dBA → `130–140 <1 sec`**. Lý do
+  > trạm 1 không đọc bản gốc ("chỉ có bản scan ảnh") cũng đã bị bác: bản
+  > born-digital có text layer nằm ở
+  > `web.archive.org/web/2020/https://www.cdc.gov/niosh/docs/98-126/pdfs/98-126.pdf`,
+  > đã đọc và trích 2026-09-17.
+
+  **Đề xuất: ship giá trị tái tạo được Bảng 1-1** (`q = 9.9657843`), vì đó là
+  bảng một inspector cầm đọc *và* nó khớp với công thức in cùng trang; đồng
+  thời in TWA theo đúng công thức NIOSH và ghi rõ hai bảng hàm ý hai hằng số
+  exchange khác nhau.
+
+  **Hỏi luôn một câu đi kèm, vì quyết cùng lúc thì rẻ:** 98-126 có **ba lỗi số
+  học** (record §7) — Bảng 1-1 dòng 99 dBA in `18 min 59 sec` (công thức cho
+  18 min 53.93 sec); Bảng 1-2 dòng `50,000 % → 102.0` (đúng ra 111.99, lỗi đảo
+  chữ số, hai dòng kề là 111.5 và 112.8) và `26,000,000 % → 139.0` (139.15).
+  App tái tạo **bảng đã in kể cả lỗi**, hay tái tạo **công thức**? Hai sản phẩm
+  khác nhau. (Đề xuất: theo công thức; test chặn từng dòng bảng bằng cận
+  `100·r/T_exact` suy ra từ độ phân giải in — cận đó đúng ở cả 50 dòng **trừ
+  đúng dòng 99 dBA**, nên nó vừa dung sai làm tròn vừa **bắt được lỗi in**.)
+
+  **OSHA KHÔNG đối xứng như bản trước viết.** Bản trước bảo OSHA "tự nhất
+  quán, chỉ làm tròn" còn NIOSH "sai về bản chất" — không phải. Dose của OSHA
+  tính theo **Table G-16a** (Appendix A I(1)(i), bắt buộc), không phải
+  Table G-16; và G-16a **cũng làm tròn**: ở 81 dBA giá trị đúng là
+  **27.857618 h**, bảng in **27.9**. Cả hai cơ quan đều in một công thức đúng
+  và một bảng làm tròn theo nó.
+
+- [ ] **Q5 — alarm window là sliding hay consecutive-fixed?** Cả hai đều suy ra
+  được từ block của §3. Sliding **nghiêm ngặt hơn** (max của nó ≥ max của
+  fixed). Thực tế thị trường dùng một quantity dài rồi so, chứ không so
+  instantaneous: VLAREM đăng ký `LAeq,60min` và **deem** là đạt nếu
+  `LAeq,15min ≤ 102 dB(A)`; Pop Code cl. 4.12 theo dõi `LAeq` 1 phút để cảnh
+  báo sớm cho limit 15 phút. **Đề xuất: sliding, hiện cả regulated window lẫn
+  proxy window.**
+
+- [ ] **Q6 — log có cần tamper-evident không?** 10EaZy ghi **checksum** xuống
+  cuối file log và ship riêng một app **Log File Validator**; Cirrus giữ một
+  bản secure song song. Record §9 mục 9 đề xuất **hash** in trong report.
+  **Chữ ký số thì cần một khoá, và một khoá cần một câu chuyện về nơi nó
+  sống** — ngoài scope cho tới khi chủ nhân hỏi tới.
+
+- [ ] **Q7 — retention và rotation.** VLAREM đòi dữ liệu đã đăng ký giữ **ít
+  nhất một tháng**; tóm tắt cấp bang của Thuỵ Sĩ nói **sáu tháng** (nguồn liên
+  bang 502, nên UNVERIFIED). Default log span là bao nhiêu (§4), segment size
+  bao nhiêu, và app có bao giờ tự xoá không?
+
+- [ ] **`[!]` Q8 — web viewer có ship trong L6a không?** Nó là thứ cuối cùng
+  trong build order (§9), phụ thuộc PR #11 land, và phụ thuộc một phép thử
+  **chưa ai chạy**: một trang phục vụ *từ* `127.0.0.1` fetch `127.0.0.1` có
+  được miễn prompt **Local Network Access** của Chrome không. Suy ra được từ mô
+  hình same-address-space của LNA nhưng **không tìm thấy phát biểu nguyên văn**
+  (ledger UNVERIFIED của chính PR #11, mục 7). Một buổi chiều thử với Chrome
+  142+ là xong. Đây là thứ **sạch nhất để cắt** nếu lane quá to.
+
+- [ ] **Q9 — có mua ISO 1996-2:2017 không?** Clause **13 "Information to be
+  recorded and reported"** đúng là clause báo cáo cho một logging meter, và
+  **thân bài bị tường phí**; hai clause còn lại lane này sẽ xây theo là
+  **10.2.2 (L_N,T)** và **10.3 (incomplete or corrupted data)**. Khác ISO 2969
+  và IEC 60268-16: nó **KHÔNG chặn** lane — danh sách nội dung report ở §9 dựng
+  từ market practice và đã ghi rõ là *không* claim conformant với clause 13 —
+  nhưng mua thì biến một danh sách lắp ghép thành một danh sách có citation.
+  Đừng xếp nó cạnh hai mục "mua tiêu chuẩn" ở trên như thể cùng mức khẩn.
+
+- [ ] **Q10 — ai sửa số bảng sai trong guard?** Record weighting đã được đính
+  chính trong chính PR này (Table 2 → **Table 3**). Nhưng
+  `core/tests/check_no_conformance_claim.cmake:18,61` còn mang số sai ở comment
+  và ở message lỗi — **đó là code**, nên PR docs-only này không đụng. Ai nhặt?
+
+---
+
 ## Từ phiên EP06 (2026-08-30)
 
 - [ ] **`[!]` ISO 3382-1 — mua, hay dựng từ nguồn mở? CHỦ NHÂN HOÃN CÓ CHỦ Ý.**
