@@ -47,7 +47,449 @@ và web viewer có ship trong lane này không (Q8).
 
 ---
 
-# 2026-09-16 — **L7-ALIGN Wave 3b (tasks G–J) XONG — nhánh `l7/align-wave3b-app`, PR mở, CHƯA merge. ALIGN BUILT.**
+# 2026-09-16 — **L7 (Solvers) CLOSED OUT. PR #9 đã merge tại `6d9a53d`. Lane report: `docs/reports/007-solvers.md`.**
+
+**Đọc mục này trước tiên.** Toàn bộ lane L7 — OUT, FIR, DELAY, EQ (core A–D +
+app E/F/G), ALIGN (Wave 3a + 3b) — đã BUILT và đã nằm trên `origin/main`.
+Mảnh cuối, ALIGN Wave 3b, merge bằng **PR #9 tại `6d9a53d`**. Lane report
+`docs/reports/007-solvers.md` mang đầy đủ: xây gì ở từng sub-lane, năm
+amendment của các decision record (và một cái còn nợ), ρ ship KHÔNG ngưỡng vì
+sao, verifier bác được gì, và các mục còn chờ CHỦ NHÂN.
+
+`docs/plans/MASTER-EXECUTION-PLAN.md` đã có "Status snapshot — 2026-09-16":
+hàng L7 → **BUILT 2026-09-16, merged**; lane kế theo chính "opening order" của
+plan là **L6a (SPL-pro)**.
+
+## Số đo — **verifier-measured**, lượt dựng lại độc lập tại `6d9a53d` đã XONG
+
+```
+6d9a53d (merge commit PR #9) -- worktree sạch, verifier dựng lại độc lập
+  RTA_BUILD_APP=OFF                                            -> 649/649, 0 failed
+  RTA_BUILD_APP=ON                                             -> 717/717, 0 failed
+  forced fallback (-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON)  -> 649/649, 0 failed
+  "warning C" trong các build log                              -> 0
+  guard xanh                                                   -> 11/11
+  rtatool_snapshot                                             -> 8 PNG (bytes ở mục 4)
+```
+
+Đây **không còn là số của builder** — lượt dựng lại độc lập đã chạy xong và
+xác nhận đúng hai con số builder báo, cộng cấu hình thứ ba (forced fallback).
+Vẫn **không phải CI**: GitHub Actions vẫn bị chặn billing, nên bằng chứng là
+ba cấu hình chạy cục bộ + một verifier độc lập, không hơn.
+
+`git diff --stat 6d9a53d^2 6d9a53d` **RỖNG**, nên các con số trên là của cây
+merge commit chứ không chỉ của tip nhánh.
+
+Một chỗ trung thực cần giữ: **OFF baseline 624 (tại `02bd02a`) chưa ai đo trực
+tiếp.** ON 692 thì verifier PR #9 đã đo trên cây sạch. 624 khép bằng số học:
+`717 − 692 = 25 = 649 − 624`.
+
+---
+
+## Rule 12 vế 2 — người có thể tự chạy cái gì, và trông đợi THẤY gì
+
+### 0. ĐỌC TRƯỚC: mở `rtatool.exe` lên thì thấy được gì của L7?
+
+Câu này dễ bị bỏ sót nhất trong một closeout, nên nó đứng đầu và **đo được**,
+không phải nhớ được.
+
+- **DELAY là solver DUY NHẤT của L7 mà operator chạm tới được trong app.**
+  `MainComponent` có nút **`LOCATE`** (hint: "pink noise, output ch 1,
+  one-shot"), một readout delay, và nút **`APPLY`** chỉ bật khi verdict là
+  `DelayVerdict::Accepted` (`app/src/MainComponentDelay.cpp`, task F2). Thứ tự
+  §8 của record được tôn trọng ngay trong wiring: `disarmSource()` chạy TRƯỚC
+  `suggestDelay`.
+- **`rta::view::CrossoverSurface` là một model KHÔNG có mặt.** Nó JUCE-free và
+  được chứng minh ở cấu hình OFF; pixel của nó đến từ **đúng một chỗ**:
+  `app/src/dev/preview/PhaseAlignPreview.{h,cpp}`, render offscreen bởi
+  `tools/snapshot.cpp` ra `shots/preview-phase.png`. **KHÔNG được nối vào
+  `MainComponent`** — đo: `grep -c CrossoverSurface` trên `MainComponent.cpp`,
+  `MainComponent.h`, `MainComponentDelay.cpp` ra **0, 0, 0**. Đó **không phải
+  thiếu sót**: đó là quyết định **ALIGN-R8** ("G18 ships as the existing
+  dev-preview specimen driven by a real model, not as `MainComponent` wiring"),
+  kết thúc bằng đúng câu "nobody should hunt for a `MainComponent` hook". Nên
+  trạng thái đúng của ALIGN là **BUILT (model + specimen)**, còn **nối vào
+  `MainComponent` là follow-up CHƯA BẮT ĐẦU**.
+- **`AlignmentWizard` còn ít hơn thế — nó KHÔNG có UI nào cả.** Toàn bộ tham
+  chiếu tới nó trong `app/src` là ba file của chính nó
+  (`measure/AlignmentWizard.h`, `AlignmentWizard.cpp`,
+  `AlignmentWizardSignals.cpp`); không view, không panel, **không cả một
+  dev-preview specimen**. Nó chỉ chạm tới được **từ `app/tests/`** — bốn file
+  test cộng `AlignmentWizardFixture.h`. Bốn câu hỏi nó HỎI, solo sequence và
+  chín refusal đều do ctest chứng minh và không có đường nào khác. **Không có
+  gì trong app đang chạy khởi động được một wizard.**
+- Các solver còn lại cũng vậy, đo được: `EqSession`, `EqVerify`,
+  `RawCaptureBuffer`, `CaptureSequencer` đều **0** tham chiếu trong
+  `MainComponent.{h,cpp}` và `MainComponentDelay.cpp`.
+
+Nói cách khác: bằng chứng của L7 là **ctest + snapshot offscreen**, không phải
+một cái pane mở lên nhìn. Đừng viết, và đừng để ai đọc thành, "operator thấy bề
+mặt crossover trong `rtatool.exe`".
+
+Mọi lệnh dưới đây viết cho **PowerShell 7** trong terminal của chủ nhân: một
+lệnh một block, không `&&`. Chạy từ gốc checkout. `[verified]` = đã chạy thật
+trong phiên closeout này; `[not run here]` = chưa chạy (build nặng, worktree
+docs-only không có build dir).
+
+### 1. Hai cấu hình test — cái gì cũng bắt đầu từ đây
+
+`[not run here]` Configure OFF (core-only, không cần JUCE):
+
+```bash
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+```
+
+`[not run here]` Build OFF:
+
+```bash
+cmake --build build --config Release --parallel
+```
+
+`[not run here]` Chạy test OFF. **Sẽ thấy:** `100% tests passed, 0 tests failed
+out of 649`.
+
+```bash
+ctest --test-dir build -C Release --output-on-failure
+```
+
+`[not run here]` Configure ON (cần JUCE 9.0.1; đường dẫn dưới là checkout đang
+chạy production của PROJECT005):
+
+```bash
+cmake -S . -B build-on -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=ON -DRTA_JUCE_PATH="D:\DEV CAVE EP3\PROJECT005-AZ-handsfree\external\JUCE"
+```
+
+`[not run here]` Build ON:
+
+```bash
+cmake --build build-on --config Release --parallel
+```
+
+`[not run here]` Chạy test ON. **Sẽ thấy:** `100% tests passed, 0 tests failed
+out of 717`.
+
+```bash
+ctest --test-dir build-on -C Release --output-on-failure
+```
+
+### 2. Liệt kê test của từng solver
+
+**Đọc kỹ chỗ này trước khi gõ:** `-R` là regex trên **tên case Catch2**, mà tên
+case ở repo này là một CÂU tiếng Anh chứ không phải tên file — và nó **phân biệt
+hoa thường**. Nên mỗi pattern dưới đây đã được đếm bằng grep trên chính chuỗi
+`TEST_CASE("…")` của cây `9698447`; con số kèm theo là số case pattern đó chạm
+tới, không phải ước lượng.
+
+`[not run here]` Một lệnh gom đủ mọi họ solver của L7 `[verified: 104 matches]`:
+
+```bash
+ctest --test-dir build-on -C Release -N -R "^[GHI][0-9]|Eq|crossoverBandFit|spectralCrossover|rho|delay|polarity"
+```
+
+**Sẽ thấy:** tên case — là câu, không phải tên file — rồi dòng `Total Tests: N`.
+Đổi `-R` sang đúng một pattern trong bảng để xem riêng một họ:
+
+| pattern | chạm | tên CÓ THẬT trong danh sách |
+|---|---|---|
+| `^H[0-9]` | **14** | `H1: feeding captures in never moves an asked answer`, `H4b: EVERY named refusal is reachable, and each one is reached here` — 13 case của wizard, cộng `H1 over H2 is exactly the coherence` của transfer estimator |
+| `^G[0-9]` | **15** | `G3: a VirtualTrace cannot become a Trace and cannot reach the library`, `G4: a VirtualTrace has no CaptureMeta`, `G11 delay carries the NEGATIVE exponent -- the sign a flipped convention loses` |
+| `^I[0-9]` | **5** | `I1b: the target line carries a SIGN, so a flipped odd-order row goes red` |
+| `Eq` | **27** | `EqSession: …` (9), `EqVerify: …` (9), `EqTextExport: …` (7), `EqTrustMask: a plain coherence floor, and absent coherence is untrusted`, `rankCandidates/autoEq refuse malformed input and degrade honestly otherwise` |
+| `crossoverBandFit` | **8** | `crossoverBandFit returns the competing delay candidates instead of hiding them` |
+| `spectralCrossover` | **5** | `spectralCrossover on an analytic BW4 pair lands within half a bin of fc` |
+| `rho` | **8** | `rho is scale-invariant and the SIGN survives the scaling` |
+| `delay` | **29** | `an integer delay is found exactly`, `a compensated delay leaves the phase flat` |
+| `polarity` | **3** | `G11 polarity is the sign bit -- magnitude bitwise unchanged, phase turned by pi` |
+
+Ba cái bẫy mà bộ lọc cũ ở đây (`"eq|delay|align|crossover|virtual|polarity|fir"`)
+mắc phải, ghi ra để đừng ai viết lại: `align` **không chạm case nào** — wizard
+tên là `H1:`…`H10:`, vì `app/tests/CMakeLists.txt:186` gọi
+`catch_discover_tests(rtatool_analysis_tests)` không có `TEST_PREFIX`;
+`crossover` bỏ sót cả 5 case `spectralCrossover` (chữ `C` hoa); `virtual` bỏ sót
+`G3`/`G4` vì tên viết `VirtualTrace`; và trong 7 case `EqTextExport` thì bộ lọc
+cũ chạm đúng **1**, mà chạm tình cờ — `fir` nằm trong chữ `first` của
+`EqTextExport: a Windows BOM does not rewrite the first row's filter type`.
+
+Muốn chắc chắn không sót gì thì liệt kê hết rồi lọc bằng PowerShell:
+
+`[not run here]`
+
+```bash
+ctest --test-dir build-on -C Release -N | Select-String -Pattern 'rho|eq|delay|align|crossover|virtual|polarity|fir' -CaseSensitive:$false
+```
+
+### 3. Guard — tám cái, và chúng là thứ giữ kiến trúc
+
+`[not run here]` **Sẽ thấy:** mỗi guard in `OK (N files scanned)`. Ở `6d9a53d`:
+`core_has_no_framework_deps` **157**, `measure_has_no_framework_deps` **64**,
+`coherence_gate_is_not_bypassed` **96**,
+`filter_design_has_no_polynomial_form` **183**;
+`output_render_has_no_rt_hazards` quét dòng 126–210 của `OutputEngine.cpp`,
+`audioio_callback_has_no_rt_hazards` (chỉ ON) dòng 119–146 của `AudioIo.cpp`.
+
+```bash
+ctest --test-dir build-on -C Release --output-on-failure -R "has_no_framework_deps|coherence_gate_is_not_bypassed|filter_design_has_no_polynomial_form|rt_hazards|denormals"
+```
+
+Lượt dựng lại độc lập đếm **11/11 guard xanh** — tám cái trên cộng
+`core_makes_no_class_1_claim`, `no_std_atomic_over_shared_ptr`,
+`test_names_are_ascii`.
+
+**MỘT LỖ trong guard, tìm thấy trong lúc viết closeout, không phải do closeout
+gây ra.** `core/tests/check_no_framework_deps.cmake:37-43` glob
+`${CORE_DIR}/include/*.h`, `*.hpp`, `${CORE_DIR}/src/*.h`, `*.cpp` và
+`${CORE_DIR}/tests/*.cpp` — **nhưng KHÔNG glob `${CORE_DIR}/tests/*.h`**. Bốn
+test header vì thế chưa bao giờ bị quét: `core/tests/CrossoverBandFixture.h`,
+`core/tests/DelayFilterFixtures.h`, `core/tests/support/Golden.h`,
+`core/tests/guard_fixtures/hex_escape_comment.h`. Một `#include <juce…>` trong
+bất kỳ file nào trong số đó vẫn biên dịch vào `rta_core_tests` và guard **vẫn
+in OK**. Hôm nay không file nào có — lỗ nằm ở phép quét, không nằm ở cây. Fix
+một dòng đang chạy ở nhánh **`ci/guard-scan-test-headers`**, KHÔNG thuộc PR
+closeout này. Ghi ở `docs/HUMAN-QA-QUEUE.md`.
+
+### 4. Snapshot offscreen — cách DUY NHẤT để nhìn GUI
+
+**Đừng screen-capture app đang chạy** (CLAUDE.md "Seeing the GUI"): cửa sổ khác
+trôi lên trước, DPI scaling co lại, layout chưa ổn định sau resize, và binary
+đang chạy giữ lock chính file .exe của nó nên lần build sau không link được.
+
+`[not run here]` Build target snapshot:
+
+```bash
+cmake --build build-on --config Release --target rtatool_snapshot --parallel
+```
+
+`[not run here]` Render tám PNG vào `shots/` (`shots/` đã gitignore). **Sẽ
+thấy:** exit 0 và tám file. Kích thước byte dưới đây là của lượt dựng lại ĐỘC
+LẬP tại `6d9a53d` — nếu máy bạn ra số lệch đáng kể thì có gì đó đã đổi:
+
+| file | bytes | là cái gì |
+|---|---|---|
+| `preview-phase.png` | 45851 | **bằng chứng nhìn được của L7-ALIGN** — bề mặt G18 trên cặp BW4 synthetic |
+| `preview-target.png` | 46908 | dev-preview specimen, target/corridor |
+| `preview-tf.png` | 45311 | dev-preview specimen, transfer function |
+| `transfer.png` | 42213 | Bode composite trên fixture tất định — **chỗ dữ liệu ĐO nằm** |
+| `workspace.png` | 55099 | stack 1–3 pane dọc (L5c decision 6) |
+| `main-live.png` | 39853 | cửa sổ measurement thật, `MainComponent`, 1280×800 |
+| `specimen.png` | 42023 | swatch design system `az_ui` — **KHÔNG** phải `Snapshot`, không phải dữ liệu đo |
+| `rta-view.png` | 21384 | riêng plot RTA, diff được byte-for-byte |
+
+```bash
+.\build-on\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots 1100 760
+```
+
+**`shots/preview-phase.png` là bằng chứng nhìn được của L7-ALIGN** (1100×760).
+Mở ra sẽ thấy:
+
+- **Pane trên** — đường relative phase `arg(H_A conj H_B)` PHẲNG ở 0° suốt cửa
+  sổ fit 50–200 Hz (vệt amber), nằm ĐÚNG trên đường target gạch đứt mà BW4 đặt
+  ở `N·90° = 360° ≡ 0`. "Đúng target" hiện ra như một tính chất của trace, không
+  phải một con số — đúng điều record §6 đòi. Chip bên phải đọc
+  `TOPOLOGY -- ASKED, NEVER INFERRED / BW4  ASKED TARGET 0 deg`.
+- **Pane dưới** — HP side (amber) đi lên, LP side (trắng) đi xuống, cắt nhau ở
+  100 Hz. GHOST gạch đứt màu xám (tổng TRƯỚC khi align, lệch 4 ms) khoét một hố
+  triệt tiêu xuống khoảng **−11 dB** ngay trên 110 Hz, trong khi PREDICTED (xanh
+  lá, liền) lên khoảng **+3 dB** tại crossover và đậu đúng mark 3.0 dB. Hai mark
+  6.0 dB và 3.0 dB ghi ở mép phải.
+
+**Và đây là chỗ DUY NHẤT `CrossoverSurface` biến thành pixel.** Nó là một model
+headless; `PhaseAlignPreview.{h,cpp}` là consumer duy nhất, `rtatool_snapshot`
+là thứ render. Không có pane nào trong `rtatool.exe` mở ra cái này (ALIGN-R8 —
+xem mục 0 ở đầu phần này). Ai muốn nó vào app thì đó là một follow-up **chưa
+bắt đầu**, không phải một cái hook đi tìm là thấy.
+
+**`shots/specimen.png`** là swatch của design system `az_ui` — bảng màu, thang
+chữ, primitive. **Nó KHÔNG phải một `Snapshot` đo được**; bằng chứng đo nằm ở
+`transfer.png` (Bode composite) và `main-live.png` (cửa sổ measurement thật).
+Lỗi này từng bị mắc một lần ở L3 — đừng đọc `specimen.png` như dữ liệu.
+
+### 5. Hai survey ρ, và probe order-4
+
+Ba script này **không ghi gì** và `--help` không chạy pipeline (chúng có
+argparse thật — khác với `tools/gen_*.py`, xem
+`memory/a-gen-script-runs-the-moment-you-invoke-it.md`). Interpreter phải là
+venv của **checkout chính**; worktree không thấy numpy/scipy
+(`memory/build-toolchain-on-this-machine.md`).
+
+`[verified]` **Sẽ thấy:**
+`usage: probe_rho_a.py [-h] [--quick] [--seed SEED] [--csv CSV] [--no-crossover]`
+và dòng `Survey A of rho. Prints distributions; adopts no threshold.`
+
+```bash
+& "D:\DEV CAVE EP3\PRJ010-RTA-TOOL\.venv\Scripts\python.exe" tools\probe_rho_a.py --help
+```
+
+`[verified]` **Sẽ thấy:**
+`Survey B of rho. Prints distributions and a trade-off curve; adopts nothing.`
+
+```bash
+& "D:\DEV CAVE EP3\PRJ010-RTA-TOOL\.venv\Scripts\python.exe" tools\probe_rho_b.py --help
+```
+
+`[not run here]` Chạy thật survey A ở chế độ smoke (subsample mọi trục). **Sẽ
+thấy:** phân bố ρ theo từng ô, KHÔNG có dòng nào chốt một ngưỡng — đó là điểm
+của nó. Grid A đầy đủ đọc 2 ô sai dấu trên 43200 (sàn ρ > 0.0640) nhưng có một
+ô ĐÚNG dấu ở 0.0520, tức hai phân bố CHỒNG nhau; grid B không có ô sai dấu nào
+trên 2000 nên không đặt được sàn. Hai lưới **không đồng ý** — đó là lý do
+`relativePolarity` ship không verdict.
+
+```bash
+& "D:\DEV CAVE EP3\PRJ010-RTA-TOOL\.venv\Scripts\python.exe" tools\probe_rho_a.py --quick
+```
+
+`[verified]` Probe order-4 (`--help`). **Sẽ thấy:** các section
+`{identity,sum,xcorr,repo,forensic,all}` và dòng `Writes nothing.`
+
+```bash
+& "D:\DEV CAVE EP3\PRJ010-RTA-TOOL\.venv\Scripts\python.exe" tools\probe_align_order4.py --help
+```
+
+`[not run here]` Chạy section identity. **Sẽ thấy:** đồng nhất `N·90°` đúng tới
+độ chính xác máy — analog `0.00e+00°`, digital `~1.16e-11°` — ở mọi bậc 1–8,
+BW lẫn LR. Đây là thứ đã đóng ALIGN §13.1.
+
+```bash
+& "D:\DEV CAVE EP3\PRJ010-RTA-TOOL\.venv\Scripts\python.exe" tools\probe_align_order4.py --section identity
+```
+
+### 6. FIR export — text và WAV
+
+**Không có menu nào gọi nó.** `app/src/export/` là thư viện; đường export được
+chứng minh bằng test, và đó là chỗ để nhìn nó làm gì.
+
+`[not run here]` Text writer (`FirExport.h` + `FirTextWriter.cpp`, chạy ở CẢ
+HAI config). **Sẽ thấy:** năm case xanh — mọi key trong header parse lại được,
+`sample_rate_hz` trong file bằng `FirResult::sampleRate`, số coefficient khớp
+số tap và round-trip trong 1e-6, một request "bare" (không header) bị TỪ CHỐI,
+và `Peak0dBFS` co tap sao cho đỉnh đúng bằng 1.0 đồng thời ghi ra mức trim.
+
+```bash
+ctest --test-dir build-on -C Release --output-on-failure -R "headerless|sample_rate_hz|Coefficient count|Peak0dBFS|documented header key"
+```
+
+`[not run here]` WAV writer (`FirWavExport.h` + `FirWavWriter.cpp`, **chỉ ON**
+— nó nhận `juce::File`, nên nó ở `app/tests_juce/`). **Sẽ thấy:** ghi rồi đọc
+lại round-trip đủ sample rate / channel count / length / samples; file là
+**32-bit IEEE float** và một yêu cầu định dạng integer bị TỪ CHỐI; và
+`firFilenameStem` mang sample rate, số tap, và phase. Lý do từ chối int16 nằm
+ở research FIR: **trường sample-rate trong WAV không đáng tin** — CamillaDSP
+bỏ qua nó — nên tên file phải mang thông tin đó.
+
+```bash
+ctest --test-dir build-on -C Release --output-on-failure -R "32-bit IEEE float|firFilenameStem|Write then read back"
+```
+
+### 7. EQ text export, và cột `applied`
+
+`[not run here]` **Sẽ thấy:** bảy case xanh của `EqTrustMask` +
+`EqTextExport`. Định dạng là một filter một dòng,
+`type fc_hz q gain_db [applied]`, ở đúng độ chính xác readout của repo — **Hz
+nguyên**, Q 2 chữ số thập phân, dB 1 chữ số. Độ chính xác GHI chính là độ chính
+xác round-trip.
+
+```bash
+ctest --test-dir build-on -C Release --output-on-failure -R "EqTextExport|EqTrustMask"
+```
+
+**Cột thứ năm `applied` là một deviation có chủ ý so với plan Task E** (plan
+chốt bốn cột `type, fc, Q, gain`). Vòng verify thứ hai chỉ ra: một danh sách
+KHÔNG mang bit đó thì không an toàn khi nạp ngược vào chính processor đã sinh
+ra phép đo — hàng đã applied sẽ đáp xuống lần hai, **−7.1 dB thành −14.2 dB**
+trên một bump 8 dB. Nên: chỉ GHI cho hàng đã applied, **tuỳ chọn khi ĐỌC** (file
+bốn cột vẫn import được), và một hàng không có cờ đọc là **chưa** applied. Một
+token thứ năm lạ thì bị TỪ CHỐI chứ không đọc thành "chưa applied" — đoán ở đây
+là đoán nguy hiểm. Ghi thành amendment §7 trong
+`docs/dsp/2026-09-06-l7-auto-eq.md`, kèm đính chính rằng ghost identity của
+record là trên các filter **CHƯA** applied, không phải trên mọi filter đã
+commit.
+
+---
+
+## Rule 12 vế 3 — HANDOFF cho lane kế: **L6a (SPL-pro)**
+
+Lane kế **không do closeout này chọn** — nó là thứ "Suggested opening order"
+của `docs/plans/MASTER-EXECUTION-PLAN.md` đã ghi sẵn: sau L7 là **L6a**, rồi
+**L9** cuối cùng, còn **L8** (research) bắn lúc nào cũng được vì read-only.
+L6a từng chờ Meters track; Meters track (Weighting, Detector, Leq) **đã hạ
+cánh**, nên nó hết chặn.
+
+> **Cập nhật 2026-09-17 — L6a KHÔNG phải lane duy nhất đang mở, và stations 1+2
+> của chính nó đã bay.** Khi mục này được viết, closeout chỉ thấy L6a; hai lane
+> dưới đây mở sau đó vài chục giây tới một ngày, nên đoạn bên dưới đọc như thể
+> chưa có gì. Trước khi mở nhánh mới, đọc hai PR này đã — cả hai đều
+> PARALLEL-SAFE với nhau:
+>
+> - **L-API (remote API)** — stations 1+2 trên **PR #11**, nhánh
+>   `remote-api/stations-1-2`, head `828c223`, OPEN. Đây đúng là mảnh L6b scope
+>   out mà `MASTER-EXECUTION-PLAN.md` từng ghi là "chưa có lane"; hàng **L-API**
+>   đã được thêm vào plan TRÊN NHÁNH CỦA PR ĐÓ, nên nhánh này chưa thấy nó.
+> - **L6a (SPL-pro)** — stations 1+2 trên **PR #12**, nhánh `l6a/stations-1-2`,
+>   OPEN. Trạm 1 của L6a đã có người làm. Đừng làm lại nó; đọc PR #12 rồi tiếp
+>   từ chỗ nó dừng. Phần "Nó bắt đầu ở TRẠM 1" bên dưới là đúng lúc viết, không
+>   còn đúng hôm nay.
+
+**Phạm vi L6a:** SPL logging / history / alarms / PDF / web viewer (G7), và
+dose theo IEC 61252 (G8).
+
+**Nó bắt đầu ở TRẠM 1, không phải trạm 3.** Chưa có `docs/dsp/` record nào cho
+SPL-pro. Theo CLAUDE.md "Before each phase: research, then argue, then build":
+đọc chuẩn và nêu đúng clause, đọc CODE của sản phẩm khác (không đọc README),
+viết ra hai-ba phương án kèm trade-off và cãi lại cái trông hiển nhiên nhất,
+rồi chốt và ghi lý do vào `docs/dsp/`.
+
+**Đọc trước, theo thứ tự:**
+
+1. `docs/GIT-WORKFLOW.md` — luật hiện hành: `origin/main` là sự thật, không
+   commit nào lên `main` ngoài đường PR, merge là lời của chủ nhân **trong
+   chính phiên đó**.
+2. `docs/plans/MASTER-EXECUTION-PLAN.md` — "Status snapshot — 2026-09-16",
+   hàng **L6a**, và cột PARALLEL-SAFE (L6a an toàn song song với mọi thứ trừ
+   L6b).
+3. `docs/reports/007-solvers.md` — L7 vừa đóng; §7 "Known gaps" và §8 "Open,
+   and it is the owner's" là những thứ có thể đụng vào L6a.
+4. `docs/dsp/2026-08-27-weighting-and-meters.md` và
+   `docs/plans/2026-08-27-weighting-meters-impl-plan.md` — Meters track là nền
+   trực tiếp của L6a.
+5. `docs/HUMAN-QA-QUEUE.md` — mục `[!]` đầu tiên (Actions billing) và mục
+   `test_weighting.cpp` chờ duyệt: **cả hai nằm đúng trên đường của L6a**, vì
+   L6a xây trên chính weighting đó và sẽ mở PR cần CI.
+
+**Đang chặn, và chỉ chủ nhân gỡ được:**
+
+- **GitHub Actions bị chặn billing.** Cho tới khi mở lại, gate CI của
+  `docs/GIT-WORKFLOW.md` luật 3 không kiểm được; PR của L6a sẽ phải merge trên
+  bằng chứng local hai cấu hình + verifier độc lập, và **phải ghi rõ điều đó
+  trong PR body**.
+- **Duyệt assertion `core/tests/test_weighting.cpp`** (hoãn từ PR #5). L6a động
+  thẳng vào weighting; nếu chủ nhân muốn quay lại `isinf` thì tốt nhất là biết
+  TRƯỚC khi L6a xây lên trên nó.
+- **L5b vẫn chặn** vì ISO 2969 / SMPTE ST 202 (bảng dung sai X-curve) và
+  **L4d** vì IEC 60268-16 (STI). Không phải việc của L6a, nhưng đừng để một
+  phiên nào mở nhầm chúng.
+- **ISO 61252 thì sao?** Câu hỏi "mua hay dựng từ nguồn mở" cho dose CHƯA được
+  hỏi. Đừng suy ra câu trả lời; luật tạm của L4b là mẫu tốt — dựng từ literature,
+  ghi provenance là *literature*, và **không được viết "theo IEC 61252" ở bất kỳ
+  đâu** cho tới khi cầm bản thật (bẫy AES-2id).
+
+**Trạm đầu tiên, cụ thể:** một agent Explore (không có write tool) đọc
+IEC 61252 (nêu tên clause, không trích), IEC 61672-1 cho detector/weighting mà
+Meters track đã thi công, và **code** của các sản phẩm đang làm cùng việc
+(Open Sound Meter, NIOSH SLM, các SPL logger thương mại) — rồi trả về chỗ chúng
+**bất đồng với nhau**, vì đó mới là chỗ có quyết định thật.
+
+**Món nợ doc mà L7 để lại, nên trả sớm:** ALIGN-R1's `1e-12` vẫn chưa được
+amend trong §5 của `docs/dsp/2026-09-06-l7-alignment-wizard.md` và trong Wave 0
+plan — nó là thuộc tính của fixture Butterworth-SOS, không phải của lock. Chi
+tiết ở `docs/reports/007-solvers.md` §5 mục 6.
+
+---
+
+# 2026-09-16 — **L7-ALIGN Wave 3b (tasks G–J) XONG — nhánh `l7/align-wave3b-app`, ĐÃ MERGE (PR #9, `6d9a53d`). ALIGN BUILT.**
+
+> **Cập nhật 2026-09-16 bởi closeout L7:** mục này ghi "PR mở, CHƯA merge" khi
+> viết. PR #9 đã merge vào `origin/main` tại **`6d9a53d`**, và
+> `git diff 6d9a53d^2 6d9a53d` RỖNG nên số 649/717 dưới đây đúng cho cả cây
+> merge. Lane report: `docs/reports/007-solvers.md`.
 
 **Đọc mục này trước tiên.** Nửa sau của plan
 `docs/plans/2026-09-15-L7-align-impl-plan.md` đã xây và verify cục bộ trên
@@ -81,8 +523,9 @@ thêm 1 (case H4b), nên `649 − 25 = 624` và `717 − 25 = 692`.
 
 ## Commit — ba task một commit, cộng docs, memory và một vòng sửa theo verifier
 
-**PR #9** (`https://github.com/toanaz-ops/rta-tool/pull/9`), **CHƯA merge** —
-merge là lời của chủ nhân trong chính phiên đó (`docs/GIT-WORKFLOW.md` luật 4).
+**PR #9** (`https://github.com/toanaz-ops/rta-tool/pull/9`), ~~**CHƯA merge**~~ —
+**ĐÃ MERGE tại `6d9a53d`** sau khi chủ nhân nói "merge"
+(`docs/GIT-WORKFLOW.md` luật 4). Sửa 2026-09-16 bởi closeout L7.
 
 **Head sha KHÔNG ghi ở đây, có chủ ý.** Bản trước ghi `e5b1c84` và nó đã sai
 ngay khi commit kế tiếp hạ xuống — verifier PR #9 bắt đúng lỗi này (D6). Một
@@ -1063,10 +1506,12 @@ R14 hợp đồng đối số **A = phía HP, B = phía LP** (record không nói
 lẫn φ₀ trong im lặng).
 
 **Order-4 ĐÃ NGÃ NGŨ** theo PR #3 (`docs/research/2026-09-15-l7-align-order4-probe.md`,
-CHƯA merge): identity `N·90°` đúng tuyệt đối theo convention của repo, bảng §3 giữ
+~~CHƯA merge~~ — **ĐÃ MERGE tại `0855e8f`**): identity `N·90°` đúng tuyệt đối theo convention của repo, bảng §3 giữ
 nguyên; dấu sai của L4a là do quy tắc **dấu-đỉnh tương quan KHÔNG whitened** của
-L4a decision 6b (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1195` — ρ, estimator repo này
-CHƯA ship; `relativePolarity()` không tồn tại ở `core/` lẫn `app/`) áp qua hai hệ khác
+L4a decision 6b (`docs/dsp/2026-08-30-sweep-ir-l4a.md:1195` — ρ; ~~estimator repo này
+CHƯA ship; `relativePolarity()` không tồn tại ở `core/` lẫn `app/`~~ — **ĐÃ SHIP
+2026-09-16: `rta::ir::relativePolarity` vào ở Wave 3a commit `5a05904`, bounded,
+KHÔNG verdict, KHÔNG ngưỡng**) áp qua hai hệ khác
 passband, KHÔNG phải do convention. **Correlator repo ĐANG ship (PHAT `findDelayPhat`,
 `DelayFinder.cpp:34`) KHÔNG tái tạo L4a — nó đọc gương lại: đúng ở bậc 4, sai ở bậc 8.**
 Hai correlator bất đồng trên cùng một cặp loa ở 2/6 bậc → luật: **đừng đọc dấu topology
@@ -1108,8 +1553,17 @@ documented failure của ρ. Không còn task nào "probe-dependent".
   64-output hardware check (OUT §13.1), device-reconfig-while-armed (OUT §13.3, đã chọn default).
 
 ## Việc còn mở
-- **ĐÃ MERGE vào `main` tại `a937a98` (--no-ff, 2026-09-07), CHƯA push.** Chủ nhân nói
-  "Merge master local". `git diff a937a98^2 a937a98` rỗng → cây merge === tip nhánh đã
+
+> **Cập nhật 2026-09-16 bởi closeout L7 (bổ sung 2026-09-17):** gạch đầu dòng ngay
+> dưới đây nói "CHƯA push" và "`origin/main..main` > 0". **Cả hai đã sai.** `main`
+> local đã push 2026-09-15 (`4b05049→23b7ea0`), và `git rev-list --count
+> origin/main..main` đo hôm nay ra **0**. Từ đó lane này đi tiếp hoàn toàn qua PR —
+> #4 / #8 / #9 — và `a937a98` giờ là **lịch sử, không phải chỗ để đi tìm cái gì**
+> (`docs/plans/MASTER-EXECUTION-PLAN.md:42-43` nói đúng câu đó). Đừng đi push theo lời
+> dòng dưới; không còn gì để push.
+
+- **ĐÃ MERGE vào `main` tại `a937a98` (--no-ff, 2026-09-07), CHƯA push.** *(đúng
+  lúc viết; xem banner ngay trên.)* Chủ nhân nói "Merge master local". `git diff a937a98^2 a937a98` rỗng → cây merge === tip nhánh đã
   verify `afffedc`, nên OFF 551 / ON 597 vẫn đúng, không cần build lại. `origin/main..main`
   > 0 (đo, đừng chép) — push là lệnh riêng. Nhánh `claude_desk/l7-solvers-station-1-874518`
   + worktree giữ nguyên nhưng ĐÃ MERGE HẾT — phiên sau nên nhánh MỚI từ `main`, đừng commit

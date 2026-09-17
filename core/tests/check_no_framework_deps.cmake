@@ -17,6 +17,9 @@ cmake_minimum_required(VERSION 3.22)
 # Two ways to select what gets scanned; exactly one must be given:
 #   CORE_DIR  the include/src/tests convention rta_core and rta_platform_types
 #             both follow -- everything under CORE_DIR/{include,src,tests}.
+#             tests/ is scanned for headers as well as .cpp: until 2026-09-16
+#             it was .cpp only, so four committed fixture headers under
+#             core/tests/ could have included JUCE unreported.
 #   GLOBS     an explicit, semicolon-separated list of files (or glob
 #             patterns), for a layer with no such directory convention.
 #             app/src/measure is the reason this exists: it sits flat, and it
@@ -40,6 +43,8 @@ else()
         "${CORE_DIR}/src/*.h"
         "${CORE_DIR}/src/*.cpp"
         "${CORE_DIR}/tests/*.cpp"
+        "${CORE_DIR}/tests/*.h"
+        "${CORE_DIR}/tests/*.hpp"
     )
 endif()
 
