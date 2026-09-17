@@ -10,6 +10,11 @@
 
 namespace rta::api {
 
+/// The shipped point cap, named so `Request`'s own default can be the same
+/// number without constructing an `ApiSettings` to read it. One constant,
+/// two users -- a cap spelled twice is a cap that can disagree with itself.
+inline constexpr int kDefaultMaxPointsPerResponse = 8192;
+
 /// The API's settings, as record sec.8 lists them except where sec.15 amends
 /// sec.8. A PLAIN STRUCT and nothing more: sec.15 R5 records that no
 /// preferences store exists anywhere in `app/`, so v1 persists nothing and
@@ -54,7 +59,7 @@ struct ApiSettings {
 
     /// Clamps any caller-supplied `?points=`. The second way a remote caller
     /// can make this program do unbounded work while a show is running.
-    int maxPointsPerResponse = 8192;
+    int maxPointsPerResponse = kDefaultMaxPointsPerResponse;
 
     /// Record sec.15 R17. A GET should carry no body at all; anything over
     /// this is refused with 413 BEFORE routing, which is what makes 415

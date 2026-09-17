@@ -44,14 +44,27 @@ cannot say what C++ type a number was born as.
 
 ## The invariant that is true and still has teeth
 
-Narrow the parsed value to float32, re-emit the shortest decimal, and require
-it to be **byte-identical to the token on the wire** — applied only to keys
-whose source really is a `float`, listed by name in the test.
+**The shortest decimal of the parsed value must equal the shortest decimal of
+its float32 narrowing** — `number(v) == number((float)v)` — applied only to
+keys whose source really is a `float`, listed by name in the test, because a
+document cannot say what C++ type a number was born as.
 
-A widened double fails it immediately: `25.118864059448242` narrows to
-`25.118864f`, re-emits as `"25.118864"`, and does not match the token. Proven
-by mutation — widening float32 to double before printing turns that case red
-and nothing else.
+A widened double fails it immediately: `25.118864059448242` re-emits as
+itself, its float32 narrowing re-emits as `"25.118864"`, and the two differ.
+Proven by mutation — widening float32 to double before printing turns that
+case red and nothing else.
+
+**Say what the code compares, not what you meant.** The first version of this
+file, and of the test's own comment, said the re-emission must be
+"byte-identical to the token on the wire". It is not: by the time the walk
+runs, the document is parsed and the token no longer exists — the only things
+in scope are the parsed `double` and what the emitter would print for it. The
+two formulations coincide for documents this serialiser produces, since a
+token that is already a shortest form re-emits to itself, but they are
+different claims and only the weaker one is checked. A verifier caught the
+gap between the comment and the line below it. **A comment that overstates an
+assertion is the same defect class as an assertion that proves nothing: both
+leave the next reader believing something nothing enforces.**
 
 ## The general shape
 

@@ -465,6 +465,19 @@ for printing (`server.cpp:386-390`, `item.cpp:169-175`): the values are float32
 and are serialised at float32 precision, because
 `memory/float32-fft-precision.md` already says what these numbers are worth.
 
+**Amendment, 2026-09-17 (station 4 wave 1).** Every numeric field on this wire
+is **a JSON number or `null`, and a number only when the value is finite**: a
+non-finite float emits the literal `null`, never the tokens `nan` or `inf`,
+which are not JSON and which a conforming parser rejects outright — taking the
+whole document with them, not just the one field. §6 above specified the
+precision of the numbers and never said what happens when there is no number
+to print; the rule existed only in the plan's Task A row (A4) and in
+`app/src/api/ApiJson.h`, which is a decision living in code with no record
+behind it. Pinned by `test_api_json.cpp` A4 at the emitter and re-asserted
+through a third-party parser by `test_api_schema.cpp` F3 and F7 at the
+document level. A client must therefore treat any numeric field as
+`number | null`.
+
 ## 7. Decision: the response body is JSON numbers in v1, not Base64 float32
 
 **Decision.** v1 ships plain JSON number arrays. Base64-encoded float32 (REW's

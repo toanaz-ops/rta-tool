@@ -18,6 +18,7 @@
 #include "api/ApiSettings.h"
 
 #include <cstddef>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -133,6 +134,40 @@ TEST_CASE("D6 the point cap bounds the output LENGTH", "[api][serialise]") {
           != std::string::npos);
 }
 
+TEST_CASE("D6b a DEFAULT-CONSTRUCTED Request is capped, not unbounded", "[api][serialise]") {
+    // The cap is a REAL-TIME-SAFETY control (record sec.9), and until this
+    // case existed it depended on every caller remembering to run
+    // clampPoints. `Request{}` meant "no limit", so a wave-2 handler that
+    // built a Request without going through clampPoints would have served an
+    // unbounded body -- the control gone, with nothing red to say so.
+    //
+    // A default now means the SHIPPED cap, which is the conservative reading:
+    // an operator who configured a LARGER cap and forgot to clamp gets 8192
+    // rather than everything.
+    const ApiSettings settings{};
+    auto snapshot = makeApiFixture();
+    snapshot.spectrumDb.assign(20'000, -42.5f);
+
+    const Request defaulted{};
+    CHECK(defaulted.points == settings.maxPointsPerResponse);
+
+    const std::string body = serialiseSpectrum(snapshot, defaulted);
+    CHECK(countOf(body, "-42.5") == static_cast<std::size_t>(settings.maxPointsPerResponse));
+    CHECK(body.find("\"pointCount\":" + std::to_string(settings.maxPointsPerResponse))
+          != std::string::npos);
+
+    // And the same through the union endpoint, which is the one a client
+    // reaches for when it wants everything at once. Asserted on the emitted
+    // pointCount rather than by counting "-42.5" occurrences: the union body
+    // also carries transfer.phaseDeg[482] == -42.539062, whose decimal
+    // CONTAINS that substring, so a substring count reads 8193 here and the
+    // test would be measuring its own sloppiness rather than the cap.
+    const std::string unionBody = rta::api::serialiseSnapshot(snapshot, defaulted);
+    CHECK(unionBody.find("\"pointCount\":" + std::to_string(settings.maxPointsPerResponse))
+          != std::string::npos);
+    CHECK(unionBody.find("\"pointCount\":20000") == std::string::npos);
+}
+
 TEST_CASE("D7 REGRESSION LOCK: the golden /snapshot body has not drifted", "[api][serialise]") {
     // This is a REGRESSION LOCK, not a correctness test. It proves the format
     // has not drifted; it proves nothing about whether any number in it is
@@ -140,12 +175,13 @@ TEST_CASE("D7 REGRESSION LOCK: the golden /snapshot body has not drifted", "[api
     // test_analyser_transfer.cpp, test_analyser_mtw.cpp, test_average_group.cpp,
     // test_synthetic_snapshot.cpp.
     //
-    // To regenerate, name the hidden case below explicitly:
-    //   rtatool_analysis_tests.exe "regenerate the API golden"
-    // It is tagged [.] so Catch2 hides it, ctest never discovers it and no
-    // wildcard run can reach it -- the shape
-    // memory/a-gen-script-runs-the-moment-you-invoke-it.md asks for, where
-    // regeneration takes an explicit act and nothing else overwrites the file.
+    // To regenerate, BOTH halves are required and the environment variable
+    // is the half that actually holds:
+    //   RTA_API_GOLDEN_WRITE=1 rtatool_analysis_tests.exe "regenerate the API golden"
+    // The `[.]` tag alone does NOT protect this file -- it hides the
+    // regenerator from the DEFAULT run only, and a filtered run such as
+    // `exe "[api]"` used to reach it and rewrite the lock mid-suite. See the
+    // regenerator's own comment for the measurement, and D9 for the gate.
     const auto snapshot = makeApiFixture();
     const std::string emitted = rta::api::serialiseSnapshot(snapshot, allPoints());
 
@@ -172,16 +208,78 @@ TEST_CASE("D8 the golden is UTF-8 with LF endings and no BOM", "[api][serialise]
     CHECK_FALSE(text.empty());
 }
 
-TEST_CASE("regenerate the API golden", "[.][api][golden-write]") {
-    // Hidden ([.]): Catch2 excludes it from --list-tests, so
-    // catch_discover_tests never registers it and no ctest run and no
-    // wildcard filter can trip it. It overwrites the lock, so reaching it
-    // must be an explicit act -- name it on the command line or it does not
-    // run. std::ios::binary keeps the LF endings D8 asserts on Windows.
+/// True only when the environment says so. This is the gate on the
+/// regenerator, and the reason it is an ENVIRONMENT VARIABLE rather than a
+/// Catch2 tag is a measured defect, not a preference:
+///
+/// `[.]` hides a case from the DEFAULT run only. It does not hide it from a
+/// filtered one. Measured on this exact binary: with the golden replaced by
+/// an 8-byte sentinel, `rtatool_analysis_tests.exe "[api]"` ran the
+/// regenerator, **rewrote the golden to 198045 bytes**, and a second
+/// identical invocation then PASSED. A real format regression would have
+/// reported itself once and then repaired the evidence -- the regression lock
+/// silently unlocking itself, which is worse than having no lock, because the
+/// green on run two looks like proof.
+///
+/// A tag cannot fix this, because the attack surface IS the tag matcher. The
+/// gate has to be something no `-# [tag]` or `[*]` expression can supply.
+[[nodiscard]] bool goldenWriteRequested() {
+#if defined(_MSC_VER)
+    // std::getenv is deprecated under MSVC's secure-CRT warnings, and this
+    // target builds with /W4 as 0-warnings.
+    std::size_t length = 0;
+    char value[8] = {};
+    if (getenv_s(&length, value, sizeof value, "RTA_API_GOLDEN_WRITE") != 0) {
+        return false;
+    }
+    return length != 0 && value[0] == '1';
+#else
+    const char* const value = std::getenv("RTA_API_GOLDEN_WRITE");
+    return value != nullptr && value[0] == '1' && value[1] == '\0';
+#endif
+}
+
+TEST_CASE("regenerate the API golden", "[.][golden-write]") {
+    // Two independent gates, and the SECOND is the one that actually holds.
+    //
+    //  1. `[.]` keeps it out of the default run and out of
+    //     catch_discover_tests, so ctest never registers it. Necessary, and
+    //     NOT sufficient -- see goldenWriteRequested above for the measurement.
+    //  2. RTA_API_GOLDEN_WRITE=1 must be in the environment. A test filter
+    //     cannot set an environment variable, so no invocation of this binary
+    //     that merely SELECTS this case can make it write.
+    //
+    // Its tag list also no longer carries `[api]`: the lane's own tag was the
+    // one that reached it, and a case that rewrites a lock has no business
+    // answering to the tag every test in the lane shares.
+    //
+    // To regenerate, both halves, deliberately:
+    //   RTA_API_GOLDEN_WRITE=1 rtatool_analysis_tests.exe "regenerate the API golden"
+    //
+    // memory/a-gen-script-runs-the-moment-you-invoke-it.md is the lesson this
+    // is the second attempt at honouring.
+    if (!goldenWriteRequested()) {
+        SKIP("RTA_API_GOLDEN_WRITE=1 is not set, so the golden is left alone. "
+             "Selecting this case is not the same as asking for a rewrite.");
+    }
+
     const auto snapshot = makeApiFixture();
+    // std::ios::binary keeps the LF endings D8 asserts, on Windows too.
     std::ofstream out(std::string(RTA_API_GOLDEN_DIR) + "/api-v1-snapshot.json",
                       std::ios::binary | std::ios::trunc);
     REQUIRE(out.good());
     out << rta::api::serialiseSnapshot(snapshot, allPoints());
     CHECK(out.good());
+}
+
+TEST_CASE("D9 a filtered run cannot rewrite the golden", "[api][serialise]") {
+    // The defect above, as a test rather than as a comment. This case runs
+    // under the very filter that used to trip the regenerator -- `[api]` --
+    // and asserts that the gate is shut while it does so.
+    //
+    // It cannot observe the file directly without racing the case it is
+    // testing, so it asserts the GATE, which is the thing that was missing.
+    // The end-to-end proof (sentinel byte-for-byte survives `exe "[api]"`)
+    // is in the commit message, where a two-process experiment belongs.
+    CHECK_FALSE(goldenWriteRequested());
 }

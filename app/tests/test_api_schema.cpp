@@ -119,11 +119,24 @@ namespace {
 /// plan's wording asks for and what Task A's whole decision refuses.
 ///
 /// The invariant that IS true, and that still catches the defect the row
-/// exists for: **narrow the parsed value to float32, re-emit the shortest
-/// decimal, and it must be byte-identical to the token on the wire.** A
-/// value widened to double before printing -- OSM's own mistake
-/// (`server.cpp:386-390`, `item.cpp:169-175`) -- prints more digits than the
-/// float32 shortest form and fails this immediately.
+/// exists for, stated as what the code below actually compares: **the
+/// shortest decimal of the parsed value must equal the shortest decimal of
+/// its float32 narrowing** -- `number(v) == number((float)v)`. That says the
+/// value carries no more precision than a float32 can hold.
+///
+/// Note what this is NOT, because the first version of this comment claimed
+/// it: it is **not** a comparison against the token on the wire. By the time
+/// this function runs the document is parsed and the original token is gone;
+/// the only things in scope are the parsed `double` and what the emitter
+/// would print for it. The two formulations coincide for documents THIS
+/// serialiser produces -- a token that is already a shortest form re-emits to
+/// itself, which A1 and A2 pin at the primitive level -- but they are
+/// different claims, and only the weaker one is checked here.
+///
+/// It keeps the teeth either way. A value widened to double before printing
+/// -- OSM's own mistake (`server.cpp:386-390`, `item.cpp:169-175`) -- parses
+/// to a double whose shortest decimal has more digits than its float32
+/// narrowing's, and fails immediately. Proven by mutation, not assumed.
 [[nodiscard]] std::string firstBadNumber(const json& node, const std::string& path,
                                          std::string_view owningKey) {
     if (node.is_object()) {

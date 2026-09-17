@@ -14,6 +14,7 @@ không có JUCE ở đâu trong wave này, nên cả bảy chạy trên ba OS c�
 |---|---|
 | baseline OFF tại `a02fb29` | **649/649**, 0 `warning C`, guard quét **67** file |
 | OFF tại `73148a9` | **698/698** (+49), 0 `warning C`, guard quét **75** file |
+| OFF sau fix verifier PR #16 | **700/700**, 0 `warning C` (thêm `D6b` cap mặc định, `D9` cổng golden) |
 | baseline ON tại `a02fb29` | **717/717**, 0 `warning C` |
 | ON tại `73148a9` | **766/766** (+49), 0 `warning C` |
 | forced-fallback OFF | **698/698**, 0 `warning C` |
@@ -52,13 +53,28 @@ golden) · `6c2901b` E (serialiser spatial + union) · `73148a9` F+G
    với `std::quoted`: ADL tìm thấy nó khi đối số là `std::string` và thắng
    overload resolution. Đo được, không đoán — build đầu đỏ với C2678 trên
    `std::_Quote_out`. Đừng đổi lại.
-4. **Golden regenerate bằng một Catch2 case gắn tag `[.]`**, tên
-   `"regenerate the API golden"`. Catch2 giấu nó khỏi `--list-tests` nên
-   `catch_discover_tests` không đăng ký, ctest không thấy, và không filter
-   wildcard nào chạm tới. Muốn ghi đè phải gõ đúng tên trên command line —
-   đúng hình dạng `memory/a-gen-script-runs-the-moment-you-invoke-it.md` đòi.
-   Nó ghi ở chế độ `std::ios::binary` để golden giữ LF trên Windows (D8
-   assert điều đó).
+4. **Golden regenerate cần BIẾN MÔI TRƯỜNG `RTA_API_GOLDEN_WRITE=1`**, không
+   chỉ tag `[.]`:
+
+   ```
+   RTA_API_GOLDEN_WRITE=1 rtatool_analysis_tests.exe "regenerate the API golden"
+   ```
+
+   **Bản đầu của mục này SAI và verifier PR #16 bắt được.** Nó viết rằng `[.]`
+   khiến "không filter wildcard nào chạm tới". `[.]` chỉ ẩn case khỏi lần chạy
+   MẶC ĐỊNH, không ẩn khỏi lần chạy có filter. Đo trên đúng binary đó: thay
+   golden bằng sentinel 8 byte rồi chạy `rtatool_analysis_tests.exe "[api]"` →
+   nó **chạy regenerator, ghi lại golden thành 198045 byte**, và lần chạy thứ
+   hai y hệt thì **PASS**. Một format regression thật sẽ tự báo một lần rồi tự
+   xoá bằng chứng — regression lock tự mở khoá, tệ hơn không có lock, vì màu
+   xanh ở lần hai trông như bằng chứng.
+
+   Tag không sửa được lỗi này vì chỗ bị tấn công CHÍNH LÀ bộ khớp tag. Nên cổng
+   phải là thứ filter không cấp được: một biến môi trường. Case cũng đã bỏ tag
+   `[api]` (tag của chính lane là thứ chạm tới nó), và `SKIP` kèm thông điệp khi
+   cổng chưa mở. Test `D9` assert cổng đóng, và nó chạy DƯỚI đúng filter `[api]`
+   từng gây lỗi. Nó ghi ở chế độ `std::ios::binary` để golden giữ LF trên
+   Windows (D8 assert điều đó).
 
 **Cho wave 2, theo thứ tự plan: H (vendor cpp-httplib) → I (`ApiServer`) →
 J (composition root, ON) → K (guard server-library + chín red).** Ba bẫy đã

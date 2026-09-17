@@ -28,11 +28,14 @@ using json::stringValue;
 }
 
 [[nodiscard]] std::size_t limitOf(const Request& request) {
-    // A non-positive `points` has already been normalised by clampPoints; a
-    // serialiser called directly in a test with a zero still means "no
-    // cap", never "no data", so absence cannot silently truncate a body.
+    // A non-positive `points` falls back to the SHIPPED CAP, never to
+    // SIZE_MAX. "No limit" is not a value this function is allowed to
+    // produce: the cap is a real-time-safety control, and a serialiser that
+    // treats a malformed Request as permission to emit everything hands a
+    // remote caller unbounded work. Absence still cannot truncate a body --
+    // it just cannot exceed the cap either.
     return request.points > 0 ? static_cast<std::size_t>(request.points)
-                              : static_cast<std::size_t>(-1);
+                              : static_cast<std::size_t>(kDefaultMaxPointsPerResponse);
 }
 
 /// The uniform axis: bin i is at i*sampleRate/fftSize, so NO frequency
