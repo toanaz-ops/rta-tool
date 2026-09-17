@@ -78,6 +78,67 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
   callback nên trạm 1 phải mở bằng research đường output. Ghi ở master plan hàng
   L7. Nguồn: record §8.
 
+## Từ lane Remote API (2026-09-16)
+
+*Trạm 1+2 đã xong, docs-only: nghiên cứu
+`docs/research/2026-09-16-remote-api-station1-research.md`, record
+`docs/dsp/2026-09-16-remote-api.md`. **Không câu nào dưới đây chặn trạm 3 viết
+impl plan** — chúng quyết bề mặt v1, không quyết kiến trúc.*
+
+- [ ] **Số port mặc định — chọn cố định hay ephemeral?** Đề xuất **4737**
+  (sát REW 4735, chưa thấy tool nào chiếm; hàng xóm: Smaart 26000, OSM 49007,
+  GALAXY 25003/25004, Q-SYS 1702/1710, X32 10023). Không có standard nào áp
+  được. Câu hỏi thật không phải "số nào" mà là: **port cố định** thì client dò
+  được nhưng có thể đụng port máy khác, còn **ephemeral port ghi ra một file
+  cho client đọc** thì không bao giờ đụng nhưng phải có chỗ hẹn. Một câu là
+  chốt được. Nguồn: record §8, §14 q.1.
+
+- [ ] **`api.allowLanBind` có ship ở v1 dạng setting TẮT sẵn, hay KHÔNG tồn
+  tại?** `docs/UPGRADE-BACKLOG.md` hoãn cái *tính năng* LAN bind, nhưng không
+  nói cái *setting* có hiện ra hay không. Hai bên đều bảo vệ được: setting có
+  mà từ chối thì **thành thật về roadmap**; setting không có thì **không ai bật
+  nhầm được**, kể cả theo một post trên forum. Nguồn: record §8, §14 q.2.
+
+- [ ] **`/traces` và `/session` có nằm trong v1 không?** Hai endpoint này cần
+  một **publish mới trên message thread** mà hiện không có gì khác trong app
+  cần: `TraceLibrary` do `MainComponent` sở hữu, mutable, xoá cả copy lẫn move,
+  có `revision()` nhưng **không có atomic publish** — đọc thẳng từ API thread
+  là race với mọi `rename`/`setVisible`/`soloOnly`. Đo live thì không cần gì cả
+  vì `Snapshot` đã publish sẵn. Nếu chủ nhân chốt "chưa", **v1 còn sáu endpoint
+  và không phải xây publish path nào**. Nguồn: record §5, §6, §14 q.3.
+
+- [ ] **Token: ship setting rỗng, hay sinh token ngay lần bật đầu tiên?** Token
+  sinh sẵn để operator copy ra khỏi panel preferences thì an toàn hơn hẳn, và
+  cũng là thêm một thứ để mất giữa show. Trên loopback đã có `Host`-header
+  allowlist thì phần lợi biên là nhỏ; nhưng **ngày nào có LAN bind thì token là
+  bắt buộc** dù chọn đường nào hôm nay. Ghi rõ: token phải là **Bearer header
+  hoặc tham số tường minh, TUYỆT ĐỐI không phải cookie** — lý do là **ambient
+  authority / CSRF**, KHÔNG phải DNS rebinding. Cookie được browser tự đính vào
+  **mọi** request tới `127.0.0.1:<port>`, bất kể trang nào phát ra nó: chỉ cần
+  operator mở một trang web bất kỳ giữa show là trang đó đã authenticated với
+  listener này, không cần trò DNS nào. Bearer header thì không ambient — chỉ
+  caller đã biết secret mới gắn được.
+
+  **Đính chính bản trước của mục này** (nếu chủ nhân đã đọc nó): bản cũ viết
+  "rebinding là same-origin thật nên nó **sẽ** mang cookie của origin đó theo"
+  — **sai, và ngược với nguồn được trích**. Cookie jar key theo **host name**;
+  rebinding chỉ đổi cái name đó *resolve* ra IP nào, chứ không đổi name. Nên
+  request bị rebind mang cookie của `attacker.example`, KHÔNG mang cookie app
+  đặt cho `127.0.0.1` — đúng như GitHub Security blog 3/4/2025 nói ("cannot
+  contain cookies"). Chặn rebinding là việc của **`Host`-header allowlist**,
+  không phải của format token. Câu hỏi vẫn y nguyên, chỉ tiền đề được sửa: lợi
+  biên của token trên loopback là nhỏ **vì đã có `Host` check**, không phải vì
+  cookie hay Bearer gì. Nguồn: record §8, §9, §14 q.4.
+
+- [ ] **Có xin **Smaart API SDK** không?** Free, theo terms công bố thì không
+  NDA. Đây là đường duy nhất tới **một mảnh prior art trạm 1 không đọc được**:
+  đối thủ encode **coherence** trên dây ra sao. REW không dạy được gì về
+  coherence vì REW là swept-sine một kênh, **API của nó không có coherence ở
+  đâu cả**. Terms cấm phát tán lại SDK, nên **không bao giờ được trích nội dung
+  nó vào docs của repo này** — chỉ dùng để biết. Vòng xin mất vài ngày, nên nếu
+  muốn thì xin **trước** trạm 3, đừng đợi tới lúc freeze schema. Nguồn: record
+  §14 q.5, ledger UNVERIFIED mục 1.
+
 ## Từ lane L7 (2026-09-06, phiên orchestrator trạm 1+2)
 
 - [x] **Hai tiền đề chưa xây → GỘP vào sub-lane phụ thuộc, 2026-09-06.** Chủ nhân

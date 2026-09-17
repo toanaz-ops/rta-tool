@@ -5,6 +5,109 @@
 
 ---
 
+# 2026-09-16 — Remote API trạm 1+2 đã viết (DOCS-ONLY, không đụng code)
+
+Lane **L-API** (remote read-only API) — trạm 1 nghiên cứu và trạm 2 record đã
+xong, nhánh `remote-api/stations-1-2` từ `6d9a53d`, PR docs-only, **CHƯA
+merge**. **Trạm 3 (impl plan) là việc kế tiếp.**
+
+- Nghiên cứu: [`docs/research/2026-09-16-remote-api-station1-research.md`](research/2026-09-16-remote-api-station1-research.md)
+- Record: [`docs/dsp/2026-09-16-remote-api.md`](dsp/2026-09-16-remote-api.md)
+- Câu hỏi chủ nhân: `docs/HUMAN-QA-QUEUE.md`, mục "Từ lane Remote API (2026-09-16)" — 5 câu, **không câu nào chặn trạm 3 viết plan**.
+
+Ba điều phiên sau đừng suy lại: transport là **HTTP/1.1 + JSON over TCP** (OSC
+không tải nổi một curve 2049 điểm trong một datagram 1472 byte, và blob/bundle
+không cứu được); thư viện là **cpp-httplib (MIT)**, **Mongoose bị loại vì
+GPL-2.0-only** không tương thích AGPLv3 và mua licence thương mại cũng không
+gỡ được; và `Host`-header allowlist là phòng thủ chính chứ không phải bind
+localhost — DNS rebinding làm origin khớp thật nên CORS không dính dáng.
+
+Hai thứ **không ship được ở v1** và record nói thẳng: solver suggestions
+(`EqSession`/`AlignmentWizard` chưa có instance nào trong composition root) và
+SPL/Leq (`Snapshot` chỉ mang dBFS; `rta::meter::Leq` chưa có caller trong
+`app/`). Điều thứ hai chặn **L6a G7**, không chặn lane này.
+
+## Vòng verify đối kháng + fix (2026-09-17), PR #11
+
+Verifier (không có `Edit`/`Write`) đọc lại diff tại `828c223`, đối chiếu repo ở
+`6d9a53d` và fetch lại mọi nguồn ngoài. **Verdict: SOUND-WITH-FIXES, trạm 3 mở
+được.** Không quyết định kiến trúc nào bị bác. Hai defect CONFIRMED, cả hai đã
+sửa trong vòng này:
+
+1. **Lập luận cookie bị đảo ngược ở bốn chỗ** (research `:42` và Part D mục 2,
+   record §9, `HUMAN-QA-QUEUE.md`). Bản cũ viết "request bị rebinding là
+   same-origin nên **sẽ** mang cookie của origin đó" — **ngược với nguồn được
+   trích**. Cookie jar key theo **host name**, rebinding chỉ đổi cái name đó
+   resolve ra IP nào, nên rebound request mang cookie của `attacker.example`.
+   Quyết định "Bearer, không bao giờ cookie" **giữ nguyên**, nhưng lý do đúng là
+   **ambient authority / CSRF**, còn phòng thủ rebinding là **`Host`-header
+   allowlist**. Câu hỏi §14 q.4 trong QA queue đã được **đặt lại trên tiền đề
+   đã sửa**, kèm một đoạn đính chính tường minh phòng khi chủ nhân đã đọc bản
+   cũ.
+2. **§11 acceptance test 10 được đặc tả ở một cấu hình không thể pass.**
+   `-DDIRS=core;platform;ui;tools` thiếu `app`, mà sentinel
+   `ALLOW IN_LIST SOURCES` (`check_no_std_atomic_shared_ptr.cmake:65`) đòi file
+   được ALLOW phải nằm trong tập quét → `FATAL_ERROR` **mọi lần chạy**. Đã đổi
+   thành `core;platform;ui;tools;app`, và ghi rõ guard khi đó chứng minh hai
+   việc: bốn tầng dưới không có server library nào, **và** trong `app/` chỉ
+   `ApiServer.cpp` include nó — tức `ApiSerialise.cpp` không include
+   `httplib.h`, đúng cái §10 tách ra để chứng minh.
+
+Năm mục non-blocking cũng đã làm luôn: §10 bỏ chữ "therefore compiled" (glob
+list chỉ là textual scan — muốn compile phải thêm vào `rtatool_analysis_tests`);
+§4 tính lại accounting ở **30 rps** (default của §8) thay vì 20 Hz; endpoint
+spec ghép `If-None-Match` với **`ETag` server phát ra**; §11 thêm **item 13** —
+một hàm format dùng chung, test chuỗi readout so với giá trị float32 của golden,
+và nói thẳng nửa JavaScript của §12 constraint 2 chỉ L6a mới discharge được;
+JSON examples đổi sang **shortest-round-trip float32** kèm caption. Cộng hai
+nhóm citation nhỏ: JUCE `*Server*` là **ba** hit (thêm `HubPipeServer`,
+`juce_Direct2DMetrics_windows.h:264`, khai bằng `struct`), và ba số dòng lệch
+một (`check_no_framework_deps.cmake:50`→49, `CMakeLists.txt:71`→72,
+`AudioIo.cpp:117-148`→116-148) — đã mở từng file xác nhận trước khi sửa.
+
+## Vòng fix thứ ba (2026-09-17): merge `main` rồi soi lại citation
+
+Verifier vòng 2 bác ba chỗ. Đã sửa hết, **sau khi merge `origin/main`
+(`e213202`, PR #10 + #13 đã vào)** nên mọi số dòng dưới đây đọc ở cây ĐÃ MERGE,
+không phải ở `6d9a53d` mà bản trước pin:
+
+1. **Chỗ thứ tư của `AudioIo.cpp:117-148`** mà vòng trước sót: bullet "the
+   audio callback is literally two calls after `ScopedNoDenormals`" trong
+   `docs/research/2026-09-16-remote-api-station1-research.md` (Part C,
+   `:609` sau merge). `grep -rn "117-148"` toàn nhánh giờ chỉ còn hit trong
+   chính `HANDOFF.md` này — tức các câu KỂ LẠI việc sửa, không còn citation
+   nào.
+2. **Citation trôi vì `main` đổi file.** PR #10 thêm 5 dòng vào
+   `check_no_framework_deps.cmake`, nên regex **`:49` → `:54`**; và
+   `measure_has_no_framework_deps` trong `app/tests/CMakeLists.txt`
+   **`:274` → `:280`** (`-DGLOBS=` ở `:282`). Mỗi citation dễ trôi giờ kèm
+   **"(at main `e213202`)"** và một **grep handle** (`content MATCHES`,
+   `add_test(NAME …)`) để lần sau không phải tin con số.
+3. **§11 item 13 (`docs/dsp/2026-09-16-remote-api.md:720`) KHÔNG đặc tả
+   formatter mới nữa.** Ba hàm đã có thật trong
+   repo: `app/src/view/Readouts.h` — `formatHz` (`:72`), `formatTrim` (`:79`),
+   `formatAgreement` (`:87`) — đã bị `app/tests/test_readouts.cpp:100-115` ghim,
+   đã nằm trong glob `measure_has_no_framework_deps`, tức đã framework-free và
+   đã test được ở `RTA_BUILD_APP=OFF`. Item 13 giờ **tái dùng** đúng ba hàm đó.
+   Lưu ý chuỗi trả về **mang đơn vị**: `formatTrim(8.5859375) == "8.6 dB"`,
+   `formatHz(1000.4) == "1000 Hz"`, `formatAgreement(0.9731445) == "0.97"`.
+4. **§11 item 10 (`:660`) ghi thêm sentinel thứ hai** của
+   `check_no_std_atomic_shared_ptr.cmake`
+   (`:145`, `ALLOW_CODE MATCHES SENTINEL_PATTERN`): file được ALLOW phải CÒN
+   chứa thứ đang bị guard. Item 10 copy cả hai, nếu không bản sao yếu hơn bản
+   gốc nó trích.
+
+Một mục **KHÔNG thuộc PR này**: `docs/HUMAN-QA-QUEUE.md` §"Tech-debt phát hiện
+lúc closeout L7" nói `check_no_framework_deps.cmake` chưa quét `tests/*.h` —
+PR #13 (`aafc5f5`) đã thêm glob đó, nên mục ấy cùng citation `:37-43` của nó
+đã lạc hậu ở `main`. Nội dung của `main`, phiên sau dọn.
+
+**Vẫn DOCS-ONLY, chưa build gì, chưa merge.**
+
+**Mục dưới đây vẫn là mục đọc trước tiên cho trạng thái build.**
+
+---
+
 # 2026-09-16 — **L7 (Solvers) CLOSED OUT. PR #9 đã merge tại `6d9a53d`. Lane report: `docs/reports/007-solvers.md`.**
 
 **Đọc mục này trước tiên.** Toàn bộ lane L7 — OUT, FIR, DELAY, EQ (core A–D +
