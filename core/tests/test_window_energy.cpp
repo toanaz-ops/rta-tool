@@ -9,10 +9,15 @@
 // that shows round-off is NOT the reason the subtraction was rejected (B2b),
 // the mutable membership that IS the reason (B2c), and SEL (B3).
 //
-// B1 was REWRITTEN after PR #20's verifier showed its gate was hollow: an
-// accessor that returned the logarithm inverted survived it. A guard credited
-// with a property it does not have stops the next reader looking for the real
-// one -- memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md.
+// B1 was REWRITTEN TWICE. First after PR #20's verifier showed its gate was
+// hollow -- an accessor that returned the logarithm inverted survived it; a
+// guard credited with a property it does not have stops the next reader
+// looking for the real one
+// (memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md). Then
+// again when the first three-OS CI run of this wave showed its bitwise round
+// trip was non-portable: see the long comment inside B1 on floating-point
+// contraction, and memory/a-bitwise-check-must-copy-the-expression-not-the-
+// arithmetic.md.
 //
 // It is its own file rather than an extension of test_block.cpp and
 // test_leq.cpp because appending it to either would have pushed that file past
@@ -97,19 +102,47 @@ TEST_CASE("B1 sumSquares sits beside leqDb, and the two agree bitwise", "[leq]")
         // row; the un-log mutant reddens 4 of the 6. Trimming this list to the
         // "clean" amplitudes would hollow the gate again
         // (memory/a-fixture-can-be-too-well-behaved-to-fail.md).
+        // A BITWISE COMPARISON AGAINST AN IMPLEMENTATION MUST REPRODUCE THE
+        // IMPLEMENTATION'S EXPRESSION SHAPE, NOT JUST ITS MATHEMATICS -- and
+        // this is the case that taught it. The two loops and the round trip
+        // below are deliberately written in the same STATEMENT STRUCTURE as
+        // Leq.cpp:51-53 and Leq.cpp:70-74: each product or logarithm lands in
+        // a named intermediate before it is added to anything.
+        //
+        // Why it matters: floating-point contraction is a property of the
+        // EXPRESSION, not of the arithmetic. Apple clang defaults to
+        // `-ffp-contract=on`, so `10.0 * std::log10(m) + offset` written as one
+        // expression becomes a single `fma` -- one rounding instead of two --
+        // while the same arithmetic split across two statements in Leq.cpp
+        // cannot contract. The values then differ in the last bit, and a
+        // bitwise check fails on exactly one of three toolchains.
+        //
+        // That is not a hypothesis. It is what the first three-OS run of this
+        // wave reported, at the round trip below:
+        //
+        //   ubuntu-latest (GCC)     72/818 B1 ... Passed
+        //   windows-latest (MSVC)   72/818 B1 ... Passed
+        //   macos-latest (clang)    72/818 B1 ... ***Failed   test_window_energy.cpp:113
+        //
+        // Only the rows with a NON-ZERO offset can fail, because `db + 0.0` is
+        // exact whatever the shape. The fix is structural and NOT a widened
+        // tolerance: the property being asserted is real and holds on all three
+        // toolchains once the test stops asking a differently-shaped question.
         double independent = 0.0;
         for (float sample : x) {
             const double sd = static_cast<double>(sample);
-            independent += sd * sd;
+            const double sq = sd * sd;  // named, exactly as Leq.cpp:52 does
+            independent += sq;
         }
         CHECK(leq.sumSquares() == independent);
 
         // The consistency round trip. NOT a gate on the accessor -- see above
         // -- but still worth asserting: it pins that leqDb() divides by
         // sampleCount() and adds the offset, and nothing else.
-        const double fromEnergy =
-            10.0 * std::log10(leq.sumSquares() / static_cast<double>(leq.sampleCount())) +
-            s.offset;
+        const double meanSquare =
+            leq.sumSquares() / static_cast<double>(leq.sampleCount());
+        const double db = 10.0 * std::log10(meanSquare);  // named, as Leq.cpp:72
+        const double fromEnergy = db + s.offset;
         CHECK(leq.leqDb() == fromEnergy);
 
         // And the energy itself is the closed form, not whatever was summed:
