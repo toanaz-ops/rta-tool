@@ -22,6 +22,26 @@ constexpr std::uint32_t kMinPublishIntervalMs = 50;
 
 }  // namespace
 
+// THE WINDOW ARRAY'S BOUND IS A GATE, NOT A CONVENTION (round-2 verifier).
+//
+// `publishIfDue` below declares its per-metric window storage as
+// `std::array<..., kMaxSplMetricWindows>`, and that header constant is written
+// as `= SplConfig::kMaxMetrics`. Written that way it is only a CONVENTION: a
+// literal 16 there with `kMaxMetrics` raised to 24 compiles, every test stays
+// green, and the eight metrics past the array's end silently lose their
+// windows -- which `buildSplBlockView`'s no-fallback rule then publishes as
+// ABSENT readings. This assertion is in THIS translation unit, beside the
+// array it guards, so the drift fails the BUILD rather than a test somebody
+// has to think to write.
+//
+// The behavioural half is `app/tests/test_spl_publish.cpp`'s "every metric the
+// config can express gets a PRESENT reading", which runs in the OFF build CI
+// actually executes and catches the same drift at run time if this assertion
+// is ever deleted along with the constant.
+static_assert(AnalysisThread::kMaxSplMetricWindows == SplConfig::kMaxMetrics,
+              "the per-metric window array must be sized by SplConfig::kMaxMetrics -- a "
+              "smaller array silently drops the metrics past its end to ABSENT readings");
+
 AnalysisThread::AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::Config& config)
     : juce::Thread("rta AnalysisThread")
     , bus_(bus)

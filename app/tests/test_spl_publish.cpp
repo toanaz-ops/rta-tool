@@ -594,3 +594,153 @@ TEST_CASE("defect 2: buildPublishedSnapshot attaches spl only when something is 
         CHECK_FALSE(snapshot->bands.empty());
     }
 }
+
+// --- the ROUTED branch, which is the normal live-show configuration ------
+
+TEST_CASE("round 2: a ROUTED session publishes spl too -- the branch a live show uses",
+          "[splpublish]") {
+    // ROUND-2 VERIFIER GAP. `buildPublishedSnapshot` has TWO branches that
+    // attach the SPL block: the unrouted one (`plan.routes.empty()`) and the
+    // routed one below it. Every earlier case in this file used an EMPTY
+    // RoutingPlan, so deleting the routed branch's
+    // `snapshot->spl = std::move(splView)` left the whole suite green -- and a
+    // routed session, which is what a dual-FFT measurement rig actually runs
+    // during a show, would have published no SPL at all. Silently: the block
+    // would simply be absent, which every consumer is required to tolerate.
+    //
+    // Two routes on one reference, so the routed branch really runs
+    // `publishAverageGroup` and `mergeRoutePositions` rather than falling into
+    // some degenerate shape that happens to skip the line under test.
+    std::vector<std::unique_ptr<rta::measure::Analyser>> analysers;
+    for (int i = 0; i < 2; ++i) {
+        analysers.push_back(std::make_unique<rta::measure::Analyser>(fastAnalyserConfig()));
+    }
+    rta::measure::AverageGroup group;
+    std::vector<int> lastTfIndices;
+
+    rta::measure::RoutingPlan plan;
+    plan.routes.push_back(rta::measure::TransferRoute{1, 0, 0});
+    plan.routes.push_back(rta::measure::TransferRoute{2, 0, 1});
+    plan.distinctReferences = {0};
+    REQUIRE_FALSE(plan.routes.empty());
+
+    // Real paired frames, so the routed branch has something to publish.
+    std::vector<float> reference(64), measurement(64);
+    for (std::size_t n = 0; n < 64; ++n) {
+        const double t = static_cast<double>(n);
+        reference[n] = static_cast<float>(
+            std::sin(2.0 * 3.14159265358979323846 * 6.0 * t / 64.0));
+        measurement[n] = reference[n] * 0.7f;
+    }
+    for (int frame = 0; frame < 30; ++frame) {
+        for (auto& a : analysers) a->pushPair(reference, measurement);
+    }
+
+    const SplConfig config = configWithOneMetric();
+    std::vector<Block> window;
+    for (std::uint64_t i = 0; i < 90; ++i) window.push_back(blockAtLevel(i, 48000, 85.0));
+    window.back().flags |= static_cast<std::uint32_t>(rta::meter::BlockFlag::Gap);
+    window.back().droppedSamples = 12000;
+
+    SplPublishInput in;
+    in.config = &config;
+    in.sampleRate = kFs;
+    in.latestBlock = window.back();
+    in.window = window;
+
+    const auto snapshot =
+        buildPublishedSnapshot(analysers, group, lastTfIndices, plan, 0, &in);
+    REQUIRE(snapshot != nullptr);
+    // The routed branch really ran: it is the one that fills `positions`.
+    REQUIRE(snapshot->positions.size() == plan.routes.size());
+
+    // THE LINE UNDER TEST.
+    REQUIRE(snapshot->spl.has_value());
+    // The block's own VALUES, not just its presence -- the same set the
+    // unrouted case asserts, because the two branches must agree.
+    CHECK(snapshot->spl->blockIndex == 89);
+    CHECK(snapshot->spl->blockSamples == 48000);
+    CHECK(snapshot->spl->sampleRate == kFs);
+    CHECK(snapshot->spl->droppedSamples == 12000);
+    CHECK(rta::meter::hasFlag(snapshot->spl->flags, rta::meter::BlockFlag::Gap));
+    REQUIRE(snapshot->spl->metrics.size() == 2);
+    CHECK(snapshot->spl->metrics[0].id == "LAeq_1s");
+    CHECK_THAT(static_cast<double>(snapshot->spl->metrics[0].valueDb), WithinAbs(85.0, 1e-4));
+    CHECK(snapshot->spl->refusedMetrics == 0);
+
+    SECTION("and a routed session with nothing logging still has no spl block") {
+        const auto none =
+            buildPublishedSnapshot(analysers, group, lastTfIndices, plan, 0, nullptr);
+        REQUIRE(none != nullptr);
+        CHECK_FALSE(none->spl.has_value());
+        // Still a real routed snapshot: absence of SPL is not absence of a
+        // publish, on this branch either.
+        CHECK(none->positions.size() == plan.routes.size());
+    }
+}
+
+// --- the window-array bound is a GATE, not a convention -----------------
+
+TEST_CASE("round 2: every metric the config can express gets a PRESENT reading",
+          "[splpublish]") {
+    // ROUND-2 VERIFIER GAP. `AnalysisThread::kMaxSplMetricWindows =
+    // SplConfig::kMaxMetrics` is a convention: a literal 16 there with
+    // kMaxMetrics raised to 24 compiles and every test stays green, because
+    // nothing measured the relationship. A `static_assert` in the TU that owns
+    // the array is the compile-time half (see AnalysisThread.cpp); this is the
+    // BEHAVIOURAL half, and it is the one that runs in the OFF build CI
+    // actually executes.
+    //
+    // The property: a session started with as many metrics as the config can
+    // express must publish a PRESENT value for every one of them. If the
+    // window array is smaller than the metric list, the metrics past its end
+    // get no window, `buildSplBlockView`'s no-fallback rule makes them ABSENT,
+    // and this goes red. That catches drift in the direction that matters --
+    // an array too small for the list it is filled from.
+    SplConfig config;
+    config.blockSeconds = 0.1;
+    for (std::size_t i = 0; i < SplConfig::kMaxMetrics; ++i) {
+        config.metrics.push_back(rta::measure::SplMetricSpec{
+            "L" + std::to_string(i), rta::dsp::WeightingType::A,
+            rta::meter::TimeWeighting::Fast, 4});
+    }
+    REQUIRE(config.refusedMetricCount() == 0);
+
+    rta::measure::SplSession session;
+    const int channels[] = {0};
+    session.start(config, kFs, channels);
+    REQUIRE(session.config()->metrics.size() == SplConfig::kMaxMetrics);
+
+    std::vector<float> hop(4800, 0.2f);
+    for (int i = 0; i < 6; ++i) session.feedHop(0, hop);
+
+    // SIZED FROM THE SAME CONSTANT THE PRODUCTION ARRAY IS SIZED FROM.
+    // AnalysisThread's own buffer is `kMaxSplMetricWindows`, which the
+    // static_assert there pins to this; sizing from `kMaxMetrics` here and
+    // from a literal there is exactly the drift this case exists to detect.
+    std::array<std::span<const Block>, SplConfig::kMaxMetrics> windows{};
+    const std::size_t filled = session.fillMetricWindows(0, windows);
+    INFO("metrics = " << SplConfig::kMaxMetrics << ", windows filled = " << filled);
+    REQUIRE(filled == SplConfig::kMaxMetrics);
+
+    SplPublishInput in;
+    in.config = session.config();
+    in.sampleRate = session.sampleRate();
+    in.latestBlock = session.latestBlock(0);
+    in.window = session.window(0);
+    in.refusedMetrics = session.refusedMetrics();
+    in.metricWindows = std::span<const std::span<const Block>>(windows).first(filled);
+
+    const auto view = rta::measure::buildSplBlockView(in);
+    REQUIRE(view.has_value());
+    REQUIRE(view->metrics.size() == SplConfig::kMaxMetrics);
+    CHECK(view->refusedMetrics == 0);
+    const auto floorDb = static_cast<float>(rta::measure::kLevelFloorDb);
+    for (std::size_t i = 0; i < view->metrics.size(); ++i) {
+        INFO("metric " << i << " (" << view->metrics[i].id << ") = "
+                       << view->metrics[i].valueDb << " dB");
+        // PRESENT: not the floor, and its window reported as full.
+        CHECK(view->metrics[i].valueDb != floorDb);
+        CHECK(view->metrics[i].leqBufferFill > 0.0f);
+    }
+}

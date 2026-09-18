@@ -19,7 +19,7 @@ namespace rta::meter {
 /// 40 as laid out, because the `double` forces 4 bytes of padding after the
 /// leading uint64 + uint32. `droppedSamples` occupies exactly that padding, so
 /// the block gained a field and `sizeof(Block)` did not move -- record §4's
-/// ring-size table is unchanged. The two static_asserts below are what make
+/// ring-size table is unchanged. The three static_asserts below are what make
 /// that a measurement rather than an assumption; a compiler that disagrees
 /// fails the build instead of silently resizing an eight-hour ring.
 struct Block {

@@ -25,6 +25,7 @@
 
 #include <array>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -301,4 +302,59 @@ TEST_CASE("D4 nothing under platform/ was touched by this lane", "[spl_drain]") 
     INFO("platform files scanned = " << scanned);
     REQUIRE(scanned > 0);  // a scan that found nothing to read proves nothing
     CHECK(splMentions == 0);
+}
+
+// --- the window-array bound, sized from the constant the array uses -----
+
+TEST_CASE("D5 the per-metric window array is sized for every metric a config can express",
+          "[spl_drain]") {
+    // ROUND-2 VERIFIER GAP, the ON half. `AnalysisThread::kMaxSplMetricWindows`
+    // is what `publishIfDue`'s own `std::array` is declared from, and it is
+    // written `= SplConfig::kMaxMetrics`. A literal there instead would compile
+    // and leave every test green while the metrics past the array's end lost
+    // their windows and published as ABSENT.
+    //
+    // Three guards now cover that, at three different times:
+    //   - compile: the static_assert at the top of AnalysisThread.cpp, beside
+    //     the array it guards;
+    //   - OFF run time: test_spl_publish.cpp's "every metric the config can
+    //     express gets a PRESENT reading", in the build CI actually runs;
+    //   - HERE: the same property asserted through the ON type that owns the
+    //     array, sizing the buffer from ITS constant rather than from
+    //     SplConfig's, so the two names are compared by use and not only by
+    //     declaration.
+    static_assert(AnalysisThread::kMaxSplMetricWindows == SplConfig::kMaxMetrics,
+                  "the ON-side array bound drifted from the config's cap");
+    CHECK(AnalysisThread::kMaxSplMetricWindows == SplConfig::kMaxMetrics);
+
+    SplConfig config;
+    config.blockSeconds = 64.0 / 48000.0;
+    for (std::size_t i = 0; i < SplConfig::kMaxMetrics; ++i) {
+        config.metrics.push_back(rta::measure::SplMetricSpec{
+            "L" + std::to_string(i), rta::dsp::WeightingType::A,
+            rta::meter::TimeWeighting::Fast, 4});
+    }
+    REQUIRE(config.refusedMetricCount() == 0);
+
+    rta::measure::SplSession session;
+    const std::array<int, 1> logged{0};
+    session.start(config, 48000.0, logged);
+    REQUIRE(session.config()->metrics.size() == SplConfig::kMaxMetrics);
+
+    std::vector<float> hop(64, 0.2f);
+    for (int i = 0; i < 8; ++i) session.feedHop(0, hop);
+    REQUIRE(session.blockCount(0) > 0);
+
+    // SIZED FROM AnalysisThread's OWN CONSTANT -- the one the production array
+    // uses. If that constant shrinks below the config's cap, `filled` comes
+    // back short and the REQUIRE below is the failure.
+    std::array<std::span<const rta::meter::Block>, AnalysisThread::kMaxSplMetricWindows>
+        windows{};
+    const std::size_t filled = session.fillMetricWindows(0, windows);
+    INFO("kMaxSplMetricWindows = " << AnalysisThread::kMaxSplMetricWindows
+                                   << ", SplConfig::kMaxMetrics = " << SplConfig::kMaxMetrics
+                                   << ", metrics = " << session.config()->metrics.size()
+                                   << ", filled = " << filled);
+    REQUIRE(filled == session.config()->metrics.size());
+    for (const auto& w : windows) CHECK_FALSE(w.empty());
 }
