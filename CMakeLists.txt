@@ -52,6 +52,45 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# --- The floating-point contract: NO FMA CONTRACTION -------------------
+#
+# `a * b + c` must be two roundings, not one. Clang and GCC are free to fuse
+# the pair into a single `fma` instruction (`-ffp-contract=on` is clang's C++
+# default) wherever the target ISA has one, and that changes the last bits of
+# every multiply-add in the DSP path: `std::norm` on a complex<float>, the FFT
+# butterflies, `acc += alpha * (psd - acc)` in SpectrumEngine, and
+# `10*log10(p) + kFullScaleSineOffsetDb` in app/src/measure/Levels.h.
+#
+# MEASURED, run 35306075307 on d071269: ubuntu-latest and windows-latest agreed
+# on all 198045 bytes of app/tests/golden/api-v1-snapshot.json; macos-latest
+# differed on 35 of the 2049 `spectrum.spectrumDb` values, every one of them by
+# exactly +-1 float32 ULP, and three closed-form dB identities read 2^-53 dB
+# instead of zero. The pattern names the cause: x86-64's BASELINE ISA has no
+# FMA, so gcc's `-ffp-contract=fast` and MSVC's `/fp:precise` both emit the two
+# roundings by default and agree bit for bit -- including through libm, which
+# is what rules libm out as the source. Only Apple arm64, where FMA is in the
+# baseline, contracts. One flag covers the whole observed divergence.
+#
+# This is therefore NOT a new numeric regime. It is the regime every golden
+# vector and every bitwise identity in this repository was written and
+# validated under; the flag says so out loud instead of relying on an ISA
+# having no FMA instruction. Bit-identical numbers across the three CI
+# operating systems are what let a golden file be a lock rather than a record
+# of one runner's mood, and CLAUDE.md's whole verification standard rests on a
+# claim proving the same thing wherever it runs.
+#
+# The cost is throughput, not latency: contraction speeds up inner loops, and
+# real-time safety in this app is about allocation and locks (the audio
+# callback only copies into a ring buffer). If a hot loop ever measurably
+# needs FMA, re-enable it AT THAT SITE with `#pragma clang fp contract(fast)`
+# and a comment -- an explicit local decision beats a silent global one.
+#
+# The canary if this flag is ever lost: the D7 regression lock in
+# app/tests/test_api_serialise.cpp, which compares those 198045 bytes.
+if(NOT MSVC)
+    add_compile_options(-ffp-contract=off)
+endif()
+
 # --- Vendored server library -------------------------------------------
 # cpp-httplib v0.56.0, the amalgamated header, MIT. See
 # external/cpp-httplib/PROVENANCE.md for the tag, the SHA-256 and why the
