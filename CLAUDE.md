@@ -120,6 +120,32 @@ job — split it along the seam that made it long. This applies to headers too.
 - **Fable** — adversarial review. It reads the real files and tries to refute
   the claim that the work is done. Never review your own work.
 
+## Token & context discipline
+
+The RTA+ session proved the failure mode: 13,385 messages, 76% of a 1M window,
+680k of it conversation body — because Fable ran a whole build + mutation +
+verify campaign *inline* in the main session. Every micro-turn re-sends the
+entire transcript, so an inline grind costs tokens quadratically in its own
+length. The rules below keep the main session's window flat.
+
+- **Dispatch the loop, do not grind it.** Build/mutation/verify campaigns run in
+  a subagent (`Agent`, model per the table above). The subagent's transcript
+  does not count against the parent window — only its final report returns. The
+  main session holds judgement and context, not thousands of Bash turns. This is
+  the same "dispatch, do not do" rule the global CLAUDE.md opens with; the cost
+  of ignoring it is measured above.
+- **Never dump a green build into the window.** `ctest --output-on-failure` (only
+  failures print), and for `849/849` runs pipe to a file and report the tally,
+  not the log. A passing test list is pure waste in-context.
+- **Script the mutants, don't turn them.** One script loops every mutant and
+  emits a compact PASS/FAIL table; do not spend one turn per mutant with prose
+  between each. Batch independent Bash calls into a single turn.
+- **Match effort to the work.** A mechanical build-and-verify grind does not
+  need `high`; reserve high/xhigh for design and adversarial reasoning.
+- **A finished campaign is a fresh window.** When a PR merges, hand off and let
+  the session be archived. Do not reopen a 700k-token window to start the next
+  task — a new session starts near zero.
+
 ## Upstream design language
 
 The visual language is **SODIUM RACK**, established in
