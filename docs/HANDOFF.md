@@ -48,13 +48,13 @@ Microsoft nói thế, nên đó là **cam kết**, không phải tai nạn. MSVC
 trong `memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md`:
 **khi hai cấu hình khớp nhau, "vì sao" là câu hỏi cho TỪNG cấu hình.**
 
-## Số đo, tại `HEAD_SHA`
+## Số đo, tại `2fbdc27`
 
 | | |
 |---|---|
 | OFF `-DRTA_BUILD_APP=OFF` | **777/777**, 0 `warning C` |
 | ON (`-DRTA_JUCE_PATH=...PROJECT005.../external/JUCE`) | **851/851**, 0 `warning C` |
-| CI ba OS | CI_LINE |
+| CI ba OS | **777/777 cả ba** — run [35315366045](https://github.com/toanaz-ops/rta-tool/actions/runs/35315366045): ubuntu 3m15s, macos 2m22s, windows 8m51s. Build warning 16 / 3 / 0, **không đổi** so với PR #22 |
 | một process, `[allocationprobe]`, `--order decl` / `lex` / `rand --rng-seed 1,7,104324450` | **77 assertion / 3 case, xanh cả năm lần** |
 | toàn bộ binary, một process, `--order decl` | **39178 assertion / 378 case, xanh** |
 
