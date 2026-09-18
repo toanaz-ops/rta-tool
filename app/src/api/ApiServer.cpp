@@ -12,6 +12,7 @@
 #include "api/ApiServer.h"
 
 #include "api/ApiPolicy.h"
+#include "api/ApiRoutes.h"
 #include "api/ApiSerialise.h"
 
 #include "measure/Snapshot.h"
@@ -36,7 +37,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -50,16 +50,22 @@ namespace {
 
 using HandlerResponse = httplib::Server::HandlerResponse;
 
+/// The `Allow` field value, spelled ONCE. It appears on a 405 and on every
+/// `OPTIONS` response, and PR #18's defect was precisely that the advertised
+/// set and the served set had drifted -- OPTIONS was named here and
+/// registered nowhere. Two spellings of a method list is two lists that can
+/// disagree, so there is one.
+///
+/// `methodIsAllowed` (ApiPolicy.cpp) is the third party to this agreement and
+/// must permit exactly these three. It does.
+constexpr const char* kAllowedMethods = "GET, HEAD, OPTIONS";
+
 /// What `Content-Length` declares, clamped into `long long` so
 /// `bodyIsAcceptable` -- which takes one deliberately, so a hostile value
 /// beyond `INT_MAX` clamps rather than wraps -- sees a number and not an
-/// overflow. Absent means zero: a GET should carry no body at all.
-///
-/// A CHUNKED body declares no length, so this reads 0 for one and the cap
-/// that catches it is `set_payload_max_length` below. Two layers, named here
-/// rather than left as an apparent gap: this one refuses BEFORE the body is
-/// read, which is the point of sec.9 control 3, and httplib's refuses while
-/// reading, which is the only place a length nobody declared can be known.
+/// overflow. Absent means zero: a GET should carry no body at all, and a
+/// CHUNKED body declares no length, which is what the second cap in
+/// configure() is for.
 [[nodiscard]] long long declaredBodyBytes(const httplib::Request& request) {
     const auto declared = static_cast<std::uint64_t>(
         request.get_header_value_u64("Content-Length", 0));
@@ -116,19 +122,15 @@ struct ApiServer::Impl {
     void installPreRouting();
     void installRoutes();
 
-    /// One route's response. `body` is the serialiser, already chosen.
-    using Serialiser = std::function<std::string(const measure::Snapshot&, const Request&)>;
-    void serve(const httplib::Request& request, httplib::Response& response,
-               const Serialiser& body);
+    /// One route's response. `body` is the serialiser, already chosen --
+    /// `rta::api::Serialiser` from ApiRoutes.h, a plain function pointer.
+    void serve(const httplib::Request& request, httplib::Response& response, Serialiser body);
 
     measure::SnapshotSource& source;
     ApiSettings settings;
 
-    /// The limiter is shared across the thread pool's workers, so it is
-    /// guarded. It is a `std::deque` with a one-second sliding window, not an
-    /// atomic counter: the bound sec.4's accounting needs is "at most
-    /// maxPerSecond loads in EVERY one-second interval", and a counter reset
-    /// on a boundary admits twice that across one.
+    /// Shared across the thread pool's workers, so it is guarded. Why a
+    /// sliding window and not a counter is ApiPolicy.h's own argument.
     RateLimiter limiter;
     std::mutex limiterMutex;
 
@@ -158,28 +160,48 @@ void ApiServer::Impl::configure() {
 
 void ApiServer::Impl::installPreRouting() {
     // THE ORDER BELOW IS THE DECISION, not an implementation detail.
+    //
+    // THE RATE LIMITER RUNS LAST, AND PR #18's FIRST VERSION HAD IT FIRST.
+    // That was wrong, and the station-5 verifier measured it: at a limit of
+    // 3, three forged-`Host` requests filled the sliding window and the
+    // legitimate fourth got 429. A caller who cannot read one byte of this
+    // API, from outside the allowlist, with no token, could deny it to the
+    // operator during a show.
+    //
+    // The plan's reasoning for limiter-first -- "the limiter is the
+    // real-time-safety control, so it cannot run after the work it bounds" --
+    // is sound and does not require this position. sec.4's accounting is a
+    // bound on `SnapshotSource::latest()` LOADS, and every refusal below
+    // returns WITHOUT touching the publish slot. A refused request has no
+    // load to bound, so admitting it into the window spends a legitimate
+    // client's quota on work that never happened. The limiter still sits
+    // immediately before routing, which is the last point before a load.
+    //
+    // WHAT THIS GIVES UP, stated rather than glossed: the limiter no longer
+    // bounds total INBOUND traffic, only SERVED traffic. A hostile caller
+    // can send forged-`Host` requests as fast as it likes and each costs an
+    // accept plus a header parse. That is the right trade -- the control
+    // exists to protect the publish slot, httplib's 2/8 thread pool bounds
+    // the concurrency, and the alternative hands that same caller a denial
+    // of service against the operator.
     svr.set_pre_routing_handler(
         [this](const httplib::Request& request, httplib::Response& response) {
-            // 1. The rate limit, BEFORE any latest(). The limiter is the
-            //    real-time-safety control, so it cannot run after the work it
-            //    bounds.
-            {
-                const std::lock_guard<std::mutex> lock(limiterMutex);
-                if (!limiter.admit(std::chrono::steady_clock::now())) {
-                    response.status = 429;
-                    return HandlerResponse::Handled;
-                }
-            }
-
-            // 2. The body cap -> 413 (sec.15 R17), refused before the body is
-            //    read, which is what makes sec.9's 415 unreachable rather
-            //    than merely unimplemented.
-            if (!bodyIsAcceptable(declaredBodyBytes(request), settings)) {
-                response.status = 413;
+            // 1. MORE THAN ONE `Host` FIELD -> 400. RFC 9112 sec.3.2 requires
+            //    exactly this, and it is not pedantry:
+            //    `get_header_value("Host")` reads only the FIRST field, so
+            //    `Host: 127.0.0.1:<port>` followed by
+            //    `Host: attacker.example:<port>` would pass the allowlist
+            //    below while every proxy, cache and log downstream may read
+            //    the other one. Refused on COUNT, not on disagreement -- the
+            //    rule is one field line, and "reject only when they differ"
+            //    leaves the parser-disagreement class open for the price of
+            //    the same comparison.
+            if (request.get_header_value_count("Host") > 1) {
+                response.status = 400;
                 return HandlerResponse::Handled;
             }
 
-            // 3. The `Host` allowlist -> 403 BEFORE any handler runs. The
+            // 2. The `Host` allowlist -> 403 BEFORE any handler runs. The
             //    highest-value control in the whole API, and the ORDER is
             //    what test I5 measures: a forged Host on a path that does not
             //    exist must be 403, not 404.
@@ -199,17 +221,24 @@ void ApiServer::Impl::installPreRouting() {
                 return HandlerResponse::Handled;
             }
 
-            // 4. The method allowlist -> 405 with an `Allow` header. This is
+            // 3. The method allowlist -> 405 with an `Allow` header. This is
             //    NOT what answers a WebSocket upgrade: an upgrade is a `GET`
             //    and passes here (sec.15 R16a). What makes one impossible is
             //    that installRoutes() registers no `WebSocket` handler.
+            //
+            //    All three names in this string are SERVED: `Get` routes
+            //    answer GET and HEAD (httplib dispatches both to
+            //    `get_handlers_`), and `Options` routes answer OPTIONS. PR
+            //    #18 advertised OPTIONS here and registered none, so the
+            //    method passed this check, found no route and answered 404 --
+            //    an API naming a method it does not serve.
             if (!methodIsAllowed(methodOf(request.method))) {
                 response.status = 405;
-                response.set_header("Allow", "GET, HEAD, OPTIONS");
+                response.set_header("Allow", kAllowedMethods);
                 return HandlerResponse::Handled;
             }
 
-            // 5. The Bearer token, when one is set -> 401. Header only. There
+            // 4. The Bearer token, when one is set -> 401. Header only. There
             //    is no parameter `bearerAccepted` could receive a cookie or a
             //    query string through, and that absence is the control.
             if (!bearerAccepted(request.get_header_value("Authorization"), settings)) {
@@ -218,7 +247,26 @@ void ApiServer::Impl::installPreRouting() {
                 return HandlerResponse::Handled;
             }
 
-            // 6. NO CORS HEADERS, and no pretence that their absence is a
+            // 5. The body cap -> 413 (sec.15 R17), refused before the body is
+            //    read, which is what makes sec.9's 415 unreachable rather
+            //    than merely unimplemented.
+            if (!bodyIsAcceptable(declaredBodyBytes(request), settings)) {
+                response.status = 413;
+                return HandlerResponse::Handled;
+            }
+
+            // 6. THE RATE LIMIT, last, immediately before routing -- the last
+            //    point before a `latest()`. See the paragraph above this
+            //    lambda for why it moved here and what that gives up.
+            {
+                const std::lock_guard<std::mutex> lock(limiterMutex);
+                if (!limiter.admit(std::chrono::steady_clock::now())) {
+                    response.status = 429;
+                    return HandlerResponse::Handled;
+                }
+            }
+
+            // 7. NO CORS HEADERS, and no pretence that their absence is a
             //    defence: a GET with only safelisted headers is a SIMPLE
             //    request, gets no preflight, and is EXECUTED by this program
             //    before the browser decides whether the calling script may
@@ -230,7 +278,7 @@ void ApiServer::Impl::installPreRouting() {
 }
 
 void ApiServer::Impl::serve(const httplib::Request& request, httplib::Response& response,
-                            const Serialiser& body) {
+                            Serialiser body) {
     Request shape;
     shape.points = clampPoints(requestedPoints(request), settings);
 
@@ -257,43 +305,39 @@ void ApiServer::Impl::serve(const httplib::Request& request, httplib::Response& 
     }
 
     response.status = 200;
-    response.set_content(body(*snapshot, shape), "application/json");
+    response.set_content(body(*snapshot, shape, settings), "application/json");
 }
 
 void ApiServer::Impl::installRoutes() {
     const auto route = [this](const char* path, Serialiser body) {
-        svr.Get(std::string("/api/v1/") + path,
-                [this, body = std::move(body)](const httplib::Request& request,
-                                               httplib::Response& response) {
-                    serve(request, response, body);
-                });
+        const std::string target = std::string("/api/v1/") + path;
+        svr.Get(target, [this, body = std::move(body)](const httplib::Request& request,
+                                                      httplib::Response& response) {
+            serve(request, response, body);
+        });
+
+        // OPTIONS on the same resource -> 204 with `Allow`, reading NO
+        // snapshot; HEAD needs no registration at all. ApiRoutes.h's "Which
+        // methods each resource answers" carries both arguments, including
+        // what PR #18 got wrong and why 204 rather than 200.
+        svr.Options(target, [](const httplib::Request&, httplib::Response& response) {
+            response.status = 204;
+            response.set_header("Allow", kAllowedMethods);
+        });
     };
 
-    // The EIGHT endpoints of sec.15 R12 -- eight, not the six names in
-    // `available`, which is a capability list and not an endpoint count. And
-    // nothing else: no `WebSocket(...)`, which is the entire reason no upgrade
-    // can be established here (sec.15 R16a, and I11 measures it).
-    route("status", [this](const measure::Snapshot& s, const Request&) {
-        return serialiseStatus(s, settings);
-    });
-    route("snapshot", [](const measure::Snapshot& s, const Request& r) {
-        return serialiseSnapshot(s, r);
-    });
-    route("transfer", [](const measure::Snapshot& s, const Request& r) {
-        return serialiseTransfer(s, r);
-    });
-    route("mtw",
-          [](const measure::Snapshot& s, const Request& r) { return serialiseMtw(s, r); });
-    route("bands",
-          [](const measure::Snapshot& s, const Request&) { return serialiseBands(s); });
-    route("spectrum", [](const measure::Snapshot& s, const Request& r) {
-        return serialiseSpectrum(s, r);
-    });
-    route("average", [](const measure::Snapshot& s, const Request& r) {
-        return serialiseAverage(s, r);
-    });
-    route("positions",
-          [](const measure::Snapshot& s, const Request&) { return serialisePositions(s); });
+    // The endpoint table is `ApiRoutes.h` -- eight entries, framework-free
+    // and server-library-free, so "which paths exist and what each serialises"
+    // is asserted directly in the RTA_BUILD_APP=OFF target with no server in
+    // the picture (test_api_server_refusals.cpp). This loop is the only place
+    // that knows a path is an HTTP route at all.
+    //
+    // And NOTHING ELSE is registered: no `WebSocket(...)`, which is the entire
+    // reason no upgrade can be established here (sec.15 R16a, and I11 measures
+    // it).
+    for (const RouteEntry& entry : apiRoutes()) {
+        route(entry.path, entry.body);
+    }
 }
 
 ApiServer::ApiServer(measure::SnapshotSource& source, ApiSettings settings)

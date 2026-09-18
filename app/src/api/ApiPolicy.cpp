@@ -36,9 +36,18 @@ namespace {
 
 /// Parses a port that occupies the WHOLE token. `from_chars` stopping short
 /// is a failure here, not a partial success: that is what rejects
-/// `127.0.0.1:4736.attacker.example` and `127.0.0.1:4736 ` -- the substring
-/// trap and the trailing-whitespace trap, both of which a lenient parse
+/// `127.0.0.1:4736.attacker.example`, the substring trap a lenient parse
 /// admits.
+///
+/// It also rejects `127.0.0.1:4736 ` -- but that one is a FUNCTION-LEVEL
+/// guarantee only, and the distinction was corrected after the station-5
+/// verify pass on PR #18 claimed more. Over the wire it cannot fire: httplib
+/// trims optional whitespace off a field value before this function ever sees
+/// it, so no HTTP client can deliver a trailing space here. The strictness is
+/// still worth having, for the reason a pure function is worth testing at all
+/// -- `hostIsAllowed` is callable from anywhere, and the next caller may not
+/// be a header parser that already trimmed. Do not describe it as a wire-level
+/// defence.
 [[nodiscard]] bool portEquals(std::string_view token, int expected) noexcept {
     int parsed = 0;
     const auto* const end = token.data() + token.size();

@@ -52,7 +52,7 @@ Commit: `8318f87` H (vendor cpp-httplib) · `5afb42e` I (`ApiServer`) ·
    `Sec-WebSocket-Key` trả **200 với body JSON bình thường** trên path có
    thật, **404** trên path không có; không 405, không 101, không
    `Sec-WebSocket-Accept`. Đúng như R16a dự đoán. Hai ghi chú: comment trong
-   `httplib.h:14436` nói "fall through to 404" là **sai** (nó rỡt xuống routing,
+   `httplib.h:14487` nói "fall through to 404" là **sai** (PR #18 trích `:14436`, trạm 5 bắt — `:14436` là dòng "Send 101 Switching Protocols") (nó rỡt xuống routing,
    nên path có thật ra 200); và `pre_routing_handler_` chạy **HAI lần** cho
    một request upgrade (`:14408` rồi `Server::routing` `:13881`), tức một
    request như vậy tiêu **hai** suất rate-limiter. Cả hai đã ghi trong

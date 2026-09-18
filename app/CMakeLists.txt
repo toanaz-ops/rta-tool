@@ -126,6 +126,7 @@ target_sources(rtatool PRIVATE
     # one-static-library caveat as Analyser.cpp above. ApiPolicy.cpp and the
     # two serialiser TUs come with it: ApiServer.cpp calls straight into them.
     src/api/ApiServer.cpp
+    src/api/ApiRoutes.cpp
     src/api/ApiPolicy.cpp
     src/api/ApiSerialise.cpp
     src/api/ApiSerialiseSpatial.cpp
@@ -264,6 +265,7 @@ target_sources(rtatool_snapshot PRIVATE
     # with no glob, so all four have to be here or preview renders fail to
     # link with undefined symbols.
     src/api/ApiServer.cpp
+    src/api/ApiRoutes.cpp
     src/api/ApiPolicy.cpp
     src/api/ApiSerialise.cpp
     src/api/ApiSerialiseSpatial.cpp

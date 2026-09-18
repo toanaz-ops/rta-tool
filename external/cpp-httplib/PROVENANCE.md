@@ -52,13 +52,19 @@ is a capability the vendored TU carries whatever either document says.
 `:5481`), so the method allowlist passes it and can never answer one with 405.
 What makes an upgrade impossible is that **`ApiServer` registers eight `Get`
 routes and no `WebSocket` handler**, so `websocket_handlers_` is empty, the loop
-at `:14413` matches nothing, and control falls through to ordinary routing. The
+at `:14414` matches nothing, and control falls through to ordinary routing. The
 server never writes the `101` line at `:14437` and never emits
 `Sec-WebSocket-Accept`. `app/tests/test_api_server.cpp` I11 measures that.
 
 **Two mechanical facts I11 recorded against that code.** The comment at
-`:14436` says "fall through to 404" and is wrong — the fall-through reaches
+`:14487` says "fall through to 404" and is wrong — the fall-through reaches
 routing, so a *known* path answers 200. And `pre_routing_handler_` runs
 **twice** for an upgrade, at `:14408` and again from `Server::routing`
 (`:13881`), so one such request spends two rate-limiter admissions. Neither
 changes the judgement; both are facts a later reader would have to rediscover.
+*(Line citations re-measured 2026-09-18 after the station-5 verify pass on PR
+#18 caught the first one: `:14436` is "Send 101 Switching Protocols", and the
+"fall through to 404" comment is `:14487`. Re-checking the rest at the same
+time moved the handler loop from `:14413` to `:14414`; `:2189`, `:5481`,
+`:13881`, `:14407`, `:14408` and `:14437` were confirmed correct against the
+vendored bytes. A citation nobody re-measured is a guess with a colon in it.)*
