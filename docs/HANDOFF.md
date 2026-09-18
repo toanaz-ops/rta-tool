@@ -182,18 +182,54 @@ different route to the same closed form. This project's verification standard
 catching the person applying it, in the commit that exists to fix two other
 instances of the same mistake.
 
-### CI is live again, and `main` is red on macOS for reasons that are not this branch
+### CI came back, and found a real defect in this wave within minutes
 
-The account's Actions billing block is lifted, so PR #20 now has a real
-three-OS matrix — which is what rule 3 of `docs/GIT-WORKFLOW.md` wants. `main`
-itself is red on macOS for **four unrelated tests**, with a fix in flight on
-`ci/macos-fixes`, so this PR's macOS job inherits that failure. Not chased
-here. The bitwise assertions this wave rests on — D1b, D1c, the
-`10^(Q/q) == 2.0` set, B2's 3600-step equality, C1's exactly-representable
-triple, A6's merge, and now B1's independent accumulation — will get their
-first non-MSVC evidence from that matrix, and the note at
-`test_dose_constants.cpp` says what to do if one of them disagrees: report a
-named libm on a named OS, do not widen.
+The account's Actions billing block is lifted, so PR #20 got the first
+three-OS matrix this wave has ever had — which is what rule 3 of
+`docs/GIT-WORKFLOW.md` wants. It immediately paid for itself.
+
+**B1's bitwise round trip was non-portable.** GCC and MSVC green, clang red at
+`test_window_energy.cpp:113`. The test recomputed `Leq::leqDb()`'s arithmetic
+in ONE expression where the implementation uses two statements, and Apple
+clang defaults to `-ffp-contract=on`: `10.0 * log10(m) + offset` contracts to
+a single `fma`, one rounding instead of two. Same mathematics, different
+expression SHAPE, last-bit disagreement — and a bitwise check is exactly what
+notices. Only the non-zero-offset rows could fail, because `db + 0.0` is exact
+either way.
+
+Fixed **structurally, not by widening**: every product and logarithm the
+implementation names before adding is now named in the test too. The
+verifier's un-log mutant still reddens the rewritten gate (4 assertions at
+`:137`). New memory:
+`a-bitwise-check-must-copy-the-expression-not-the-arithmetic.md`, which also
+audits the wave's other bitwise checks and says why each is safe (B2's offset
+is 0.0 and `fma(10, log10, 0.0)` rounds once to the same value; `percent() ==
+100.0` has no addition to contract into; A6's merge is integer arithmetic).
+
+Confirmed fixed by CI at `5337d46`: macOS went from 5 failures to **4**, and
+the four that remain are the pre-existing set.
+
+**HANDED OVER, not chased: two of those four are L6a Wave 0's own, and they
+have the SAME root cause.** `test_spl_seam.cpp:85` asserts
+`levelDbFs(0.5) == 0.0` bitwise, and `Levels.h:46` is
+
+```cpp
+return clampLevelDb(10.0 * std::log10(power) + kFullScaleSineOffsetDb);
+```
+
+one expression, multiply-then-add — so clang contracts it and the result does
+not land exactly on 0.0. E1 and E3 in that file are the same shape. This is
+shipped `app/src` code rather than a fixture, so the fix is a judgement the
+seam's owner should make (split the expression, or stop claiming the identity
+is bitwise), and it belongs to `ci/macos-fixes` rather than to this branch.
+The other two, `B0c` (AllocationProbe) and `D7` (the golden `/snapshot` body),
+are not this lane's.
+
+The remaining single-toolchain risk is now smaller but not zero: every bitwise
+assertion in the wave has GCC and MSVC evidence, and macOS evidence for all of
+them except whatever the four pre-existing failures mask. The note at
+`test_dose_constants.cpp` stands: a disagreeing toolchain is a named libm on a
+named OS in the PR thread, not a widened tolerance.
 
 ---
 
