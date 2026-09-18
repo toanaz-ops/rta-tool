@@ -149,7 +149,9 @@ add_executable(rtatool_analysis_tests
     # global operator new/delete in this binary -- a replaceable global
     # allocation function is one definition per program, so test_average_
     # group.cpp, test_spl_meter.cpp and every later measuring file share this
-    # one rather than each carrying a copy that would not link.
+    # one rather than each carrying a copy that would not link. The C++17
+    # over-aligned set is replaced here too, so an alignas(64) type such as
+    # rta::dsp::RingBuffer is counted rather than invisible.
     AllocationProbe.cpp
     # test_allocation_probe.cpp: the probe's OWN cases (B0b, B0c), split out of
     # test_average_group.cpp during the macOS CI fix (run 35306075307). "Does
