@@ -99,8 +99,18 @@ commercial licence does not fix the direction of the incompatibility.
 | sha256 | `1f99e51881c4c9d0649b27c611442c2f4d9bcfec5a22a14d5fcd1f8106f730b4` | `aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63` |
 | `wc -l` | 22875 | 25526 |
 | licence | MIT, `LICENSE` sha256 `4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b` | MIT, `LICENSE.MIT` sha256 `46a65cffd1ea955132d95a8dd921640714a8d6b537d2e4e482d31145ae95b603` |
-| includers | exactly one: `app/src/api/ApiServer.cpp` | exactly one: `app/tests/test_api_schema.cpp` |
+| includers | exactly one: `app/src/api/ApiServer.cpp` | **two test TUs, both under `app/tests`**: `test_api_schema.cpp:25` and `test_api_server.cpp:23` |
 | provenance | `external/cpp-httplib/PROVENANCE.md` | `external/nlohmann/PROVENANCE.md` |
+
+**The parser has two includers, not one, and this report said one until a
+verifier refuted it.** `test_api_schema.cpp:25` is the TU the record's `R16`
+argument is about; `test_api_server.cpp:23` includes it too and uses it at
+`:149`, `:165` and `:338` to assert that what came back **over the socket**
+parses. That is the right place for it — a document proven well-formed by the
+serialiser's own test says nothing about what the server actually wrote to the
+wire — and the guard already knew: `no_json_parser_in_shipped_code` reports
+**2 witnesses**, which is the number to trust over any prose. Both are under
+`app/tests`, so the test-only property is intact; only the count was wrong.
 
 Both hashes were measured **on the committed bytes** and against the release
 asset, and the cpp-httplib hash was also checked against
@@ -550,22 +560,44 @@ independent rebuild then read the same 774 and 848 off `d071269`.
 
 ### And then CI, which this closeout found running — and red
 
-**`docs/GIT-WORKFLOW.md` rule 3's merge gate is enforceable again, and it is
-not being met.** Every PR body and handoff entry in this lane says "GitHub
-Actions is billing-blocked at the account level, so these are local runs". That
-was true when the lane opened. It stopped being true on **2026-09-17T17:31Z**,
-when a push to `main` ran the three-OS matrix and passed. Measured now with
+**GitHub Actions is LIVE again — the billing block is resolved — so
+`docs/GIT-WORKFLOW.md` rule 3's merge gate is enforceable again, and it is not
+being met.** Every PR body and handoff entry in this lane says "GitHub Actions
+is billing-blocked at the account level, so these are local runs". That was
+true when the lane opened. It stopped being true on **2026-09-17T17:31Z**, when
+a push to `main` ran the three-OS matrix and passed. Measured now with
 `gh run list`: every run since has executed. So **PRs #16, #17, #18 and #19
 merged with a live, visibly failing matrix rather than with none** — which is a
 worse position than the one the PR bodies describe, and nobody looked.
 
-At `main` `d071269`, reproduced across four consecutive runs:
+At `main` `d071269`:
 
 ```
 rta_core (ubuntu-latest)   100% tests passed, 0 tests failed out of 774
 rta_core (windows-latest)  100% tests passed out of 774
 rta_core (macos-latest)     99% tests passed, 4 tests failed out of 774
 ```
+
+**An earlier revision of this section said that was "reproduced across four
+consecutive runs". That was wrong, and the true history is more damning, not
+less.** Measured per run, on the macOS job:
+
+| run | tree | macOS |
+|---|---|---|
+| 35260003002 | PR #16 (`remote-api/wave1-serialise`) | **1 failed of 700** — `D7` alone |
+| 35303640976 | PR #17 (`l6a/wave0-spl-publish`) | 4 failed of 747 |
+| 35305764296 | PR #18 (`remote-api/wave2-server`) | 4 failed of 774 |
+| 35305862353 | `main` after PR #18 | 4 failed of 774 |
+| 35306020025 | PR #19 (`fix/cmake-comment-mojibake`) | 4 failed of 774 |
+| 35306075307 | `main` `d071269` | 4 failed of 774 |
+
+So the **four**-failure set appears in five runs and at 774 in four of them, and
+the earliest run in the sequence had **one** failure of 700 — because L6a Wave
+0's three tests did not exist yet. The part that matters: **`D7` has been red on
+macOS in every CI run since the run that first contained it.** It was never
+green on that platform. A byte-compare over computed floats was machine-specific
+from the commit that introduced it, and the lane merged twice over it while its
+own PR bodies said there was no CI to read.
 
 **The good half is genuinely good**: ubuntu and windows are the **first
 confirmation of OFF 774 by anything other than this machine**, on two
@@ -597,6 +629,12 @@ broken: `F1`–`F7`, the third-party-parser checks, **pass on all three OSes**, 
 the document is well-formed, correctly typed and finite everywhere. Only the
 byte lock is machine-specific. §8 has the options; this closeout does not pick
 one, because picking one changes code and this is a docs-only pass.
+
+**A fix is in flight on branch `ci/macos-fixes`** — covering all four failures,
+not only L-API's — and it is not part of this PR. As of this closeout that
+branch is **not yet on `origin`** and has no PR, so this report cites it as
+work in progress and not as a result. Whoever lands it should re-read §8 first:
+the cheap repair and the right repair are different repairs.
 
 ### Guards, and each was made red in the shape that trips it
 
@@ -730,7 +768,7 @@ full inventory is in the four PR threads; these are the ones with teeth.
 - **`D7` fails on macOS and the lane merged anyway** (§5). It is the one L-API
   claim this report cannot make.
 - **The `"spl"` trigger has fired and `available` did not follow.**
-  `ApiSerialise.cpp:74` still reads `"spl" joins it the day the Meters track
+  `ApiSerialise.cpp:74-75` still reads `"spl" joins it the day the Meters track
   puts SPL in the Snapshot and not a day earlier`, and `:77` still emits the
   hardcoded six-name literal. That day was **PR #17**, which merged *before*
   this lane's own PR #18. Nothing is wrong on the wire — no endpoint
@@ -808,6 +846,17 @@ float identity that holds on MSVC/x64 and not on Apple clang/arm64) —
 `memory/two-builds-disagreeing-is-not-evidence-one-is-wrong.md` is the right
 thing to read before assuming which side is wrong. That is for whoever picks up
 L6a Wave 1, and it is named in the handoff.
+
+**All four are being taken together on `ci/macos-fixes`**, which is the right
+grouping: they are one portability question with four symptoms, and fixing them
+in four PRs would spread one decision across four reviews. Two things for that
+branch to hold onto. First, rule 1 — a green macOS job is necessary and not
+sufficient; the fix has to be *argued*, because widening a tolerance until the
+red goes away is how a lock stops locking
+(`memory/a-threshold-read-off-a-grid-is-that-grids-floor.md`). Second, `D7` is
+the one of the four where the honest answer may be to **change what the test
+compares** rather than what it tolerates: there is no tolerance in a
+byte-compare to widen.
 
 ---
 

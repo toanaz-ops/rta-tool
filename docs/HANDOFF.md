@@ -22,21 +22,50 @@ twenty-one record amendments, what each verifier refuted, and what is open.
 
 ## THE ONE THING THAT CHANGED SINCE EVERY PR BODY IN THIS LANE
 
-**GitHub Actions runs again, and the three-OS matrix is RED on macOS.** Every
-PR body and handoff entry in this lane says Actions is billing-blocked and the
-numbers are therefore local-only. That stopped being true at
-**2026-09-17T17:31Z**, when a push to `main` ran the matrix and passed. Measured
-with `gh run list`: every run since has executed. So **PRs #16, #17, #18 and
-#19 merged with a live, visibly failing matrix rather than with none** — a
-worse position than the PR bodies describe, and nobody looked.
+**GitHub Actions is LIVE again — billing resolved — and the three-OS matrix is
+RED on macOS.** Every PR body and handoff entry in this lane says Actions is
+billing-blocked and the numbers are therefore local-only. That stopped being
+true at **2026-09-17T17:31Z**, when a push to `main` ran the matrix and passed.
+Measured with `gh run list`: every run since has executed. So **PRs #16, #17,
+#18 and #19 merged with a live, visibly failing matrix rather than with none**
+— a worse position than the PR bodies describe, and nobody looked.
 
-At `main` `d071269`, the same across four consecutive runs:
+**Hệ quả quy trình:** cổng CI của `docs/GIT-WORKFLOW.md` **luật 3 giờ kiểm
+được**, nên nó không còn là "không thể đạt" mà là "đang không đạt" — hai câu
+khác nhau, và câu thứ hai buộc phiên phải làm gì đó.
+
+**Một fix cho cả bốn test đang chạy trên nhánh `ci/macos-fixes`** — không nằm
+trong PR này. Lúc viết mục này nhánh đó **chưa lên `origin`** và chưa có PR, nên
+đây là việc-đang-làm, không phải kết quả. Gộp cả bốn vào một nhánh là đúng: đó
+là **một** câu hỏi portability với bốn triệu chứng, tách ra bốn PR là rải một
+quyết định qua bốn vòng review.
+
+At `main` `d071269`:
 
 ```
 rta_core (ubuntu-latest)   100% tests passed, 0 tests failed out of 774
 rta_core (windows-latest)  100% tests passed out of 774
 rta_core (macos-latest)     99% tests passed, 4 tests failed out of 774
 ```
+
+**Bản đầu của mục này viết "giống nhau qua bốn run liên tiếp". SAI, và lịch sử
+thật thì nặng hơn chứ không nhẹ hơn.** Đo từng run, job macOS:
+
+| run | cây | macOS |
+|---|---|---|
+| 35260003002 | PR #16 (`remote-api/wave1-serialise`) | **1 đỏ / 700** — chỉ `D7` |
+| 35303640976 | PR #17 (`l6a/wave0-spl-publish`) | 4 đỏ / 747 |
+| 35305764296 | PR #18 (`remote-api/wave2-server`) | 4 đỏ / 774 |
+| 35305862353 | `main` sau PR #18 | 4 đỏ / 774 |
+| 35306020025 | PR #19 (`fix/cmake-comment-mojibake`) | 4 đỏ / 774 |
+| 35306075307 | `main` `d071269` | 4 đỏ / 774 |
+
+Tức bộ **bốn** test đỏ xuất hiện ở năm run, và ở mức 774 thì bốn run; run sớm
+nhất chỉ có **một** đỏ trên 700 vì ba test của L6a Wave 0 chưa tồn tại. Chỗ
+đáng kể: **`D7` đỏ trên macOS ở MỌI run CI kể từ run đầu tiên chứa nó.** Nó
+chưa bao giờ xanh trên nền tảng đó. Một phép so byte trên float do DSP tính ra
+đã phụ thuộc máy ngay từ commit sinh ra nó, và lane này merge hai lần đè lên
+nó trong khi PR body của chính nó nói "không có CI để đọc".
 
 Ubuntu and windows are the **first confirmation of OFF 774 by anything other
 than this machine**. The four macOS failures:
@@ -470,8 +499,11 @@ XONG, **station 4 Wave 0 BUILT và ĐÃ MERGE (PR #17 tại `b1e14a9`)**, và
    L-API — một tolerance hoặc một float identity đúng trên MSVC/x64 và không
    đúng trên Apple clang/arm64. Đọc
    `memory/two-builds-disagreeing-is-not-evidence-one-is-wrong.md` **trước khi**
-   giả định bên nào sai. Wave 1 nên mở bằng việc này: nó chặn mọi PR sau đó
-   nếu luật 3 được bật lại.
+   giả định bên nào sai. **Cả bốn đang được sửa chung trên `ci/macos-fixes`**,
+   nên việc của Wave 1 là *review* nhánh đó chứ không phải mở lại từ đầu — và
+   review nó theo luật 1: một job macOS xanh là **cần**, không **đủ**. Nới một
+   tolerance cho tới khi hết đỏ là cách một lock thôi khoá
+   (`memory/a-threshold-read-off-a-grid-is-that-grids-floor.md`).
 2. **Gate 1 của G7 (viewer) ĐÃ ĐẠT; gate 2 thì CHƯA CHẠY.** Transport tồn
    tại, đã đóng băng, một port một `Host` check một rate limit. Gate 2 là
    record `2026-09-16-remote-api.md` §12 constraint 4: **một trang được serve
@@ -481,7 +513,7 @@ XONG, **station 4 Wave 0 BUILT và ĐÃ MERGE (PR #17 tại `b1e14a9`)**, và
    7). Một buổi chiều với Chrome 142+. **Đó là test của L6a, không phải của
    L-API**, và Wave 4b là chỗ nó cắn.
 3. **`"spl"` trong `available`: cổng đã mở, danh sách chưa theo.**
-   `app/src/api/ApiSerialise.cpp:74` vẫn ghi `"spl" joins it the day the Meters
+   `app/src/api/ApiSerialise.cpp:74-75` vẫn ghi `"spl" joins it the day the Meters
    track puts SPL in the Snapshot and not a day earlier`, và `:77` vẫn phát
    literal sáu tên. Ngày đó là **PR #17**, merge **trước** PR #18 của chính
    lane L-API. Trên dây không có gì sai — không endpoint nào serialise SPL, nên

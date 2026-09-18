@@ -23,9 +23,12 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   chạy và đang ĐỎ**, không phải với "không có CI" như PR body của chúng viết.
   Không ai nhìn, vì mọi người đang tin câu cũ.
 
-  Tại `main` `d071269`, giống nhau qua bốn run liên tiếp: **ubuntu-latest
-  774/774**, **windows-latest 774/774** (lần đầu tiên OFF 774 được xác nhận bởi
-  cái gì khác máy này), **macos-latest 770/774 — 4 đỏ**:
+  Tại `main` `d071269`: **ubuntu-latest 774/774**, **windows-latest 774/774**
+  (lần đầu tiên OFF 774 được xác nhận bởi cái gì khác máy này), **macos-latest
+  770/774 — 4 đỏ**. Bộ bốn test này đỏ ở **năm** run (PR #17, PR #18, `main`
+  sau #18, PR #19, `main` `d071269`); run sớm hơn nữa — PR #16 — chỉ **1 đỏ
+  trên 700**, và đó là `D7` một mình, vì ba test của L6a Wave 0 chưa tồn tại.
+  **`D7` chưa bao giờ xanh trên macOS**, kể từ run đầu tiên chứa nó:
 
   | test | file | lane |
   |---|---|---|
@@ -41,10 +44,17 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
   phụ thuộc máy. `docs/reports/008-remote-api.md` §8 có ba phương án và lập
   luận cho phương án 1 (sinh lại golden từ fixture biểu diễn chính xác được).
 
-  **Cần một câu của chủ nhân:** có hold merge theo `docs/GIT-WORKFLOW.md` luật
-  3 hay không. Luật nói có; bốn merge gần nhất nói không. Sửa được (agent làm
-  được cả bốn test) nhưng **đó là đổi code**, nên nó thuộc lane sở hữu từng
-  test — một cho L-API, ba cho L6a Wave 1.
+  **Billing đã được giải quyết** — đây không còn là mục cần chủ nhân trả tiền.
+
+  **Một fix cho CẢ BỐN test đang chạy trên nhánh `ci/macos-fixes`** (lúc ghi
+  mục này: chưa lên `origin`, chưa có PR). Gộp bốn vào một nhánh là đúng — một
+  câu hỏi portability, bốn triệu chứng.
+
+  **Cần một câu của chủ nhân, và chỉ một:** có hold merge theo
+  `docs/GIT-WORKFLOW.md` luật 3 hay không, cho tới khi matrix xanh. Luật nói
+  có; bốn merge gần nhất nói không. Đây giờ là một **lựa chọn thật** chứ không
+  phải một thứ bị chặn — trước đây cổng không kiểm được, giờ kiểm được và đang
+  không đạt.
 - [ ] **Duyệt thay đổi assertion `core/tests/test_weighting.cpp` (PR #5, hoãn
   2026-09-16).** Cũ: `isinf(|H(Nyquist)| dB)`. Mới: zero DC khẳng định trên hệ
   số `b0 − b1 + b2 = 0` (đồng nhất chính xác, Sterbenz) + `> 200 dB` tại
