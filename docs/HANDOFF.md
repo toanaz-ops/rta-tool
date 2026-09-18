@@ -14,17 +14,73 @@ TDD từng cái, red dán trước green. **Chỉ Task J là ON**; cả server v
 | | |
 |---|---|
 | baseline OFF tại `7b4773f` (main) | **700/700**, 0 `warning C`, guard quét **75** file |
-| OFF tại `f20e003` | **718/718** (+18), 0 `warning C`, guard quét **78** file |
+| OFF sau vòng sửa trạm 5 | **725/725** (+25), 0 `warning C`, guard quét **80** file |
 | baseline ON tại `7b4773f` | **768/768**, 0 `warning C` |
-| ON tại `f20e003` | **786/786** (+18: 17 case OFF-target + 1 guard), 0 `warning C` |
-| forced-fallback OFF tại `f20e003` | **718/718**, 0 `warning C` |
-| `no_server_library_outside_api` | xanh **390 file** ở CẢ HAI cấu hình, đỏ **6 lần** |
+| ON sau vòng sửa trạm 5 | **793/793** (+25: 24 case OFF-target + 1 guard), 0 `warning C` |
+| forced-fallback OFF | **725/725**, 0 `warning C` |
+| `no_server_library_outside_api` | xanh **393 file** ở CẢ HAI cấu hình, đỏ **6 lần** |
 | `git diff main --stat -- platform/ core/src core/include ui/` | **rỗng** |
 | `rtatool_snapshot` | 8 PNG, exit 0 — `main-live.png` dụng và huỷ `MainComponent` (giờ sở hữu một `ApiServer` tắt) sạch |
 
 Commit: `8318f87` H (vendor cpp-httplib) · `5afb42e` I (`ApiServer`) ·
 `02b5cd0` J (composition root) · `2705b9e` K (guard server-library) ·
 `ef8d93a` I-bổ-sung (nhánh bind cổng CỐ ĐỊNH + `allowLanBind` từ chối).
+
+## Vòng verify trạm 5 trên PR #18 — BA DEFECT, đã sửa, record thêm `R18`/`R19`/`R20`
+
+Cả ba **đo được qua socket**, không ai đọc code mà thấy. Commit sửa:
+`d3be858`.
+
+1. **`R19` — rate limiter chạy TRƯỚC các refusal, tức một `Host` giả tiêu
+   quota của client thật.** Đo: limit 3, ba request `Host` giả rồi một request
+   thật → **429**. Một kẻ không đọc được một byte nào của API này, từ ngoài
+   allowlist, không token, vẫn khoá được API của chủ nhà giữa show. Thứ tự
+   mới: **400 (Host trùng) → 403 (Host) → 405 → 401 → 413 → 429 → route**.
+   Lý lẽ "limiter trước công việc" của §4 KHÔNG đòi nó đứng đầu: bound là
+   bound trên số `latest()` **LOAD**, và mọi refusal ở trên không chạm
+   publish slot. **Đánh đổi phải nói ra:** limiter không còn bound lưu lượng
+   *vào*, chỉ bound lưu lượng *được phục vụ*.
+2. **`R18` — `Allow` quảng cáo OPTIONS mà không ai phục vụ nó.**
+   `methodIsAllowed` cho phép OPTIONS, 405 ghi nó vào `Allow`, nhưng
+   `installRoutes` chỉ đăng ký `Get` → OPTIONS qua allowlist, không khớp route,
+   trả **404 không có `Allow`**. Giờ **phục vụ**: `204` + `Allow`, **không đọc
+   snapshot** (OPTIONS mô tả RESOURCE, phải trả lời giống nhau trước publish
+   đầu tiên — chỗ mà GET trả 503), `204` chứ không `200` vì không có
+   representation nào để trả. HEAD không cần đăng ký (httplib đẩy GET và HEAD
+   vào cùng `get_handlers_`) và giờ có test trên cả tám route.
+   `Allow` giờ là **một** hằng — hai chỗ viết danh sách method là hai danh
+   sách có thể lệch nhau, và defect này chính là hình dạng của nó.
+3. **`R20` — hai field `Host` → 400.** `get_header_value("Host")` chỉ đọc field
+   ĐẦU, nên `Host` đúng rồi `Host` giả **qua được allowlist** trong khi proxy /
+   cache / log phía sau có thể đọc cái kia. Chối theo **SỐ LƯỢNG** (RFC 9112
+   §3.2), không theo "khác nhau thì chối": luật là một field line.
+4. **Trích dẫn dòng sai.** `httplib.h:14436` là "Send 101 Switching Protocols";
+   comment "fall through to 404" là **`:14487`**. Đo lại luôn cả các trích dẫn
+   khác: loop handler `:14413` → **`:14414`**; `:2189`, `:5481`, `:13881`,
+   `:14407`, `:14408`, `:14437` đúng.
+
+**Hai quan sát đã gấp vào, không phải defect:**
+
+- **"API thread không bao giờ block analysis thread" là cách nói SAI.** Nói
+  đúng: nó **không giữ lock xuyên qua serialisation** — phần đắt tiền chạy sau
+  khi đã có bản copy. Nhưng `AtomicSharedPtr` **không lock-free trên MSVC**
+  (đo trong class comment của nó), nên bản thân atomic load VẪN có thể tranh
+  chấp với publish. Bound là **số học** (≤ `maxRequestsPerSecond` load/giây),
+  không phải cấu trúc — và đó là lý do limiter là control an toàn thực, và vì
+  sao nó đứng ngay TRƯỚC load chứ không ở đâu sau đó. Đã sửa trong
+  `ApiServer.h`.
+- **"Bẫy khoảng trắng cuối" trong `ApiPolicy.cpp` chỉ đúng Ở MỨC HÀM.** httplib
+  đã trim OWS trước khi `hostIsAllowed` thấy giá trị, nên không client HTTP nào
+  gửi được nó tại đây. Vẫn nên chặt — `hostIsAllowed` là hàm thuần, caller sau
+  có thể không phải header parser — nhưng đừng gọi nó là phòng ngự mức dây.
+
+**Một deviation nữa cần ghi:** acceptance của plan đòi
+`grep -n "httplib" app/src/api/ApiServer.h` **rỗng**. Không thể đúng: class
+comment của file đó **của ý** gọi tên cpp-httplib nhiều lần để giải thích pimpl.
+Thay bằng grep **neo vào include directive**, đúng thứ guard thật sự quét:
+`grep -nE '^[ 	]*#[ 	]*include.*httplib' app/src/api/ApiServer.h` — rỗng.
+
+---
 
 **Sáu điều một phiên sau phải biết:**
 

@@ -46,14 +46,23 @@ namespace rta::api {
 /// THE REAL-TIME RULE THIS CLASS HOLDS, and it is the one a maintainer can
 /// break. Each request does exactly ONE `SnapshotSource::latest()`, takes the
 /// `shared_ptr<const Snapshot>` copy, and serialises from that copy WITH THE
-/// SLOT RELEASED. `AtomicSharedPtr` is not lock-free on this project's own
-/// toolchain (its class comment records the measurement on MSVC 14.51), so
-/// this thread is a third participant on a slot whose safety comes from who
-/// calls it and how often, not from lock-freedom. The rate limiter runs
-/// BEFORE the load for the same reason. Nothing test-visible catches a second
-/// `latest()` inside one handler -- that constraint is held by review and by
-/// this comment, and saying so is better than leaving a reader to assume a
-/// test exists.
+/// SLOT RELEASED.
+///
+/// **Stated precisely, because the loose version of this sentence is wrong.**
+/// This thread never holds a lock ACROSS serialisation -- the expensive work,
+/// thousands of floats into JSON, happens entirely after the load and touches
+/// no shared state. It is NOT true that it never blocks the analysis thread:
+/// `AtomicSharedPtr` is **not lock-free on this project's own toolchain** (its
+/// class comment records the measurement on MSVC 14.51), so the atomic load
+/// itself can contend with the publish. The bound on that contention is
+/// arithmetic, not structural -- at most `maxRequestsPerSecond` loads per
+/// second, which is why the rate limiter is a real-time-safety control and
+/// not hygiene, and why it sits immediately before the load rather than
+/// anywhere after it.
+///
+/// Nothing test-visible catches a second `latest()` inside one handler --
+/// that constraint is held by review and by this comment, and saying so is
+/// better than leaving a reader to assume a test exists.
 class ApiServer {
 public:
     /// Binds ON THIS THREAD and only then starts the server thread, so
