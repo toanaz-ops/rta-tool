@@ -14,11 +14,11 @@ TDD từng cái, red dán trước green. **Chỉ Task J là ON**; cả server v
 | | |
 |---|---|
 | baseline OFF tại `7b4773f` (main) | **700/700**, 0 `warning C`, guard quét **75** file |
-| OFF tại `ef8d93a` | **718/718** (+18), 0 `warning C`, guard quét **78** file |
+| OFF tại `f20e003` | **718/718** (+18), 0 `warning C`, guard quét **78** file |
 | baseline ON tại `7b4773f` | **768/768**, 0 `warning C` |
-| ON tại `ef8d93a` | **783/783** (+15: 14 case OFF-target + 1 guard), 0 `warning C` |
-| forced-fallback OFF tại `ef8d93a` | **718/718**, 0 `warning C` |
-| `no_server_library_outside_api` | xanh **389 file** ở CẢ HAI cấu hình, đỏ **6 lần** |
+| ON tại `f20e003` | **786/786** (+18: 17 case OFF-target + 1 guard), 0 `warning C` |
+| forced-fallback OFF tại `f20e003` | **718/718**, 0 `warning C` |
+| `no_server_library_outside_api` | xanh **390 file** ở CẢ HAI cấu hình, đỏ **6 lần** |
 | `git diff main --stat -- platform/ core/src core/include ui/` | **rỗng** |
 | `rtatool_snapshot` | 8 PNG, exit 0 — `main-live.png` dụng và huỷ `MainComponent` (giờ sở hữu một `ApiServer` tắt) sạch |
 
