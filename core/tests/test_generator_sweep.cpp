@@ -23,6 +23,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -33,17 +34,22 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
-std::vector<rta::test::GoldenCase> sweepGolden() {
+const std::vector<rta::test::GoldenCase>& sweepGolden() {
     static const auto cases = rta::test::loadGolden(std::string(RTA_GOLDEN_DIR) + "/generator.txt");
     return cases;
 }
 
+// `name` is a by-value view, not `const std::string&`: gcc's -Wdangling-reference
+// heuristic flags any reference-returning call that binds a temporary to a
+// reference parameter, and the string built from a literal here is compared,
+// never returned. A view has no reference for the heuristic to trip on and
+// skips the allocation.
 const rta::test::GoldenCase& findCase(const std::vector<rta::test::GoldenCase>& cases,
-                                       const std::string& name) {
+                                      std::string_view name) {
     for (const auto& c : cases) {
         if (c.name == name) return c;
     }
-    throw std::runtime_error("golden case not found: " + name);
+    throw std::runtime_error("golden case not found: " + std::string(name));
 }
 
 double amplitudeFromDb(double db) { return std::pow(10.0, db / 20.0); }
@@ -218,10 +224,12 @@ TEST_CASE("The sweep phase matches the closed form K(e^(t/L)-1)", "[sweep][golde
         CHECK_THAT(sweep.phaseAt(sample), WithinRel(expected, 1.0e-12));
     }
 
-    // `cases` must be named: findCase() returns a reference into its
-    // argument, and an unnamed sweepGolden() temporary dies at the end of
-    // THIS statement -- binding straight to findCase(sweepGolden(), ...)
-    // left `g` dangling (a deterministic SIGSEGV once memory was reused).
+    // sweepGolden() hands back a REFERENCE to a function-local static, so the
+    // vector outlives every findCase() result taken from it. It used to return
+    // by VALUE, and `findCase(sweepGolden(), ...)` then left `g` bound into a
+    // temporary destroyed at the end of the full expression -- a deterministic
+    // SIGSEGV once the freed memory was reused. The reference return closes
+    // that shape at the source.
     const auto cases = sweepGolden();
     const auto& g = findCase(cases, "sweep_params");
     Sweep::Config gcfg;
@@ -400,8 +408,8 @@ TEST_CASE("Sweep then inverse filter recovers a synthetic IR at SNR above 60 dB"
     CHECK_THAT(result.amp2300Rel, WithinRel(-0.25, 0.005));
     CHECK(result.snrDb > 60.0);
 
-    // Same dangling-reference trap as "sweep_params" above -- `cases` must be
-    // a named local so it outlives `g`.
+    // sweepGolden() returns a reference to a function-local static; see
+    // "sweep_params" above for the by-value return that used to dangle here.
     const auto cases = sweepGolden();
     const auto& g = findCase(cases, "sweep_deconv");
     // +/-2 dB, not the plan's +/-0.5 dB: two independent pipelines (float32

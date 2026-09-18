@@ -35,7 +35,39 @@ jobs:
       # three jobs comparable and keeps the next generator change from
       # re-opening this.
       - name: Build
-        run: cmake --build build --config Release --parallel 4
+        shell: bash
+        run: cmake --build build --config Release --parallel 4 2>&1 | tee build.log
+
+      # Warnings are a merge gate on every OS, counted from the build log.
+      #
+      # Why a log grep and not -Werror: -Werror makes every warning a build
+      # error at the compiler's discretion, and the compiler on `ubuntu-latest`
+      # / `macos-latest` changes whenever the runner image does. A new gcc or
+      # AppleClang release then breaks `main` with no code change, and the fix
+      # is a per-compiler `-Wno-<x>` that has to be re-argued each time. A
+      # count from the log is compiler-agnostic, prints the offending lines
+      # so the triage is in the CI output, and a deliberate exclusion (say a
+      # FetchContent'd header) is one visible grep pattern here rather than a
+      # flag scattered across three toolchains. -Werror on a chosen subset was
+      # rejected for the opposite reason: it only catches the classes we
+      # already know, and the point is the class we do not.
+      #
+      # Before this step existed the project measured `warning C`, MSVC's
+      # prefix only; gcc and clang were at 16 and 3 on every run from at
+      # least d071269, unseen. The pattern matches `warning:` (gcc, clang,
+      # Apple ld) and `warning C4100:` / `warning MSB3073:` / `warning
+      # LNK4217:` (MSVC, MSBuild, link.exe). It does not match the summary
+      # lines `1 warning generated.` (no colon) or `0 Warning(s)` (capital W).
+      - name: Warnings
+        shell: bash
+        run: |
+          pattern='warning( [A-Z]+[0-9]+)?:'
+          count=$(grep -cE "$pattern" build.log || true)
+          echo "warnings (${{ matrix.os }}): $count"
+          if [ "$count" != "0" ]; then
+            grep -nE "$pattern" build.log
+            exit 1
+          fi
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure

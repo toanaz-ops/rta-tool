@@ -284,7 +284,13 @@ target_link_libraries(rtatool_analysis_tests PRIVATE
     # rta::platform_types: RoutingPlan.h (task B2) is a pure function over
     # rta::platform::ChannelConfig, JUCE-free like the rest of this target --
     # ChannelConfig.h lives in that target, not rta::core.
-    rta::core rta::platform_types Catch2::Catch2WithMain
+    #
+    # rta::core is deliberately NOT named here: platform/types/CMakeLists.txt:31
+    # links it PUBLIC, so both its include paths and its archive arrive
+    # transitively. Naming it as well put librta_core.a on the link line twice,
+    # and Apple's ld warned `ignoring duplicate libraries:
+    # '../../core/librta_core.a'` on macos-latest.
+    rta::platform_types Catch2::Catch2WithMain
     # --- lane L-API Task I --------------------------------------------------
     # rta_httplib is the vendored amalgamated header's INTERFACE target, and
     # on WIN32 it carries ws2_32 with it. This target had never linked Winsock

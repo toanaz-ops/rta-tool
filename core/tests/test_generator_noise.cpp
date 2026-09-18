@@ -34,6 +34,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -52,18 +53,23 @@ constexpr std::size_t kFixtureSamples = std::size_t(1) << 22;  // 4194304, ~87.4
 // (kFixtureSamples - kFftSize) / kHop + 1 == 511 Welch frames, matching the
 // K used to justify every tolerance in the file banner above.
 
-std::vector<rta::test::GoldenCase> generatorGolden() {
+const std::vector<rta::test::GoldenCase>& generatorGolden() {
     static const auto cases =
         rta::test::loadGolden(std::string(RTA_GOLDEN_DIR) + "/generator.txt");
     return cases;
 }
 
+// `name` is a by-value view, not `const std::string&`: gcc's -Wdangling-reference
+// heuristic flags any reference-returning call that binds a temporary to a
+// reference parameter, and the string built from a literal here is compared,
+// never returned. A view has no reference for the heuristic to trip on and
+// skips the allocation.
 const rta::test::GoldenCase& findCase(const std::vector<rta::test::GoldenCase>& cases,
-                                       const std::string& name) {
+                                      std::string_view name) {
     for (const auto& c : cases) {
         if (c.name == name) return c;
     }
-    throw std::runtime_error("golden case not found: " + name);
+    throw std::runtime_error("golden case not found: " + std::string(name));
 }
 
 /// Runs 2^22 samples of white or pink noise through the shared Welch fixture
@@ -248,11 +254,13 @@ TEST_CASE("White noise is flat across 1/3-octave bands", "[generator][noise]") {
 }
 
 TEST_CASE("The Kellet pink filter reproduces the golden output", "[generator][noise][golden]") {
-    // `cases` must be named: findCase() returns a reference into its
-    // argument, and an unnamed generatorGolden() temporary dies at the end
-    // of THIS statement -- binding straight to
-    // findCase(generatorGolden(), ...) leaves goldenCase dangling (a
-    // deterministic SIGSEGV on next use, once the freed memory is reused).
+    // generatorGolden() hands back a REFERENCE to a function-local static, so
+    // the vector outlives every findCase() result taken from it. It used to
+    // return by VALUE, and `findCase(generatorGolden(), ...)` then bound
+    // goldenCase into a temporary destroyed at the end of the full expression
+    // -- a deterministic SIGSEGV on next use, once the freed memory was
+    // reused. The reference return closes that shape at the source, so no call
+    // site has to remember to name a local first.
     const auto cases = generatorGolden();
     const auto& goldenCase = findCase(cases, "pink_kellet");
     const auto& expectedWhite = goldenCase.row("white");
@@ -286,7 +294,8 @@ TEST_CASE("The Kellet pink filter reproduces the golden output", "[generator][no
 }
 
 TEST_CASE("The pink RMS gain constant matches its analytic value", "[generator][noise][golden]") {
-    // Same dangling-reference trap as "pink_kellet" above.
+    // generatorGolden() returns a reference to a function-local static; see
+    // "pink_kellet" above for the by-value return that used to dangle here.
     const auto cases = generatorGolden();
     const auto& goldenCase = findCase(cases, "pink_rms_gain");
     const auto& value = goldenCase.row("value");
