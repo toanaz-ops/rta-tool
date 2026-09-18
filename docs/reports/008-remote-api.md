@@ -561,8 +561,11 @@ independent rebuild then read the same 774 and 848 off `d071269`.
 ### And then CI, which this closeout found running — and red
 
 **GitHub Actions is LIVE again — the billing block is resolved — so
-`docs/GIT-WORKFLOW.md` rule 3's merge gate is enforceable again, and it is not
-being met.** Every PR body and handoff entry in this lane says "GitHub Actions
+`docs/GIT-WORKFLOW.md` rule 3's merge gate became enforceable again, and for two
+days it was not being met.** *(It is met now: PR #22 at `20f3c65` turned all
+three jobs green. The paragraphs below describe the two days, because the two
+days are the finding.)* Every PR body and handoff entry in this lane says "GitHub
+Actions
 is billing-blocked at the account level, so these are local runs". That was
 true when the lane opened. It stopped being true on **2026-09-17T17:31Z**, when
 a push to `main` ran the three-OS matrix and passed. Measured now with
@@ -627,14 +630,24 @@ DSP computes differs in the last bit between MSVC/x64 and Apple clang/arm64, and
 a byte-for-byte lock over computed floats cannot survive that. What is *not*
 broken: `F1`–`F7`, the third-party-parser checks, **pass on all three OSes**, so
 the document is well-formed, correctly typed and finite everywhere. Only the
-byte lock is machine-specific. §8 has the options; this closeout does not pick
-one, because picking one changes code and this is a docs-only pass.
+byte lock is machine-specific.
 
-**A fix is in flight on branch `ci/macos-fixes`** — covering all four failures,
-not only L-API's — and it is not part of this PR. As of this closeout that
-branch is **not yet on `origin`** and has no PR, so this report cites it as
-work in progress and not as a result. Whoever lands it should re-read §8 first:
-the cheap repair and the right repair are different repairs.
+**FIXED, and not by changing the test.** `ci/macos-fixes` merged as **PR #22 at
+`20f3c65`**, covering all four failures, and **`main` is now green on all three
+operating systems**. The repair for `D7` was to remove the *divergence* rather
+than to relax the *assertion*: `-ffp-contract=off` outside MSVC
+(`CMakeLists.txt`, 39 lines of which 33 are the argument). Clang defaults to
+`-ffp-contract=on`, so `a * b + c` becomes a single `fma` — one rounding
+instead of two — wherever the ISA has the instruction. **x86-64's baseline has
+no FMA, so gcc and MSVC already emitted two roundings and already agreed bit
+for bit; only Apple arm64, where FMA is baseline, contracted.** That pattern is
+what identifies the cause and, incidentally, rules out libm. Measured on the
+same run this report cites: 35 of the 2049 `spectrum.spectrumDb` values
+differed, **every one by exactly ±1 float32 ULP**.
+
+So `D7` survives as a byte-for-byte lock over all 198045 bytes, on three
+operating systems, which is strictly more than it was proving before. §8 below
+records what this report got wrong about the options.
 
 ### Guards, and each was made red in the shape that trips it
 
@@ -813,50 +826,72 @@ full inventory is in the four PR threads; these are the ones with teeth.
 
 ---
 
-## 8. The macOS failure, and what the options are
+## 8. The macOS failure — fixed at the cause, and what this report got wrong about it
 
-Not a decision this report takes — it changes code — but the next session should
-not have to re-derive the shape.
+**Resolved. `ci/macos-fixes` merged as PR #22 at `20f3c65`, and `main` is green
+on ubuntu, windows and macos.** This section is kept, and its wrong half is
+kept with it, because the way it was wrong is the useful part.
 
-`D7` locks **198 KB of computed float32 numbers** byte-for-byte. The lock's
-value is real: it is what catches a format drift that no schema assertion would
-see, and it did catch one during this lane (the trailing-comma mutation reddened
-`D7` alongside `F1`–`F5`). Its cost is that it is only valid on the toolchain
-that generated the golden.
+### What the fix actually was
 
-Three shapes, with what each gives up:
+`-ffp-contract=off` outside MSVC, in the root `CMakeLists.txt`. Clang's C++
+default is `-ffp-contract=on`, so `a * b + c` may become a single `fma` — **one
+rounding instead of two** — wherever the target ISA has the instruction. That
+reaches every multiply-add in the DSP path: `std::norm` on a `complex<float>`,
+the FFT butterflies, `acc += alpha * (psd - acc)` in `SpectrumEngine`, and
+`10*log10(p) + kFullScaleSineOffsetDb` in `app/src/measure/Levels.h`.
 
-1. **Generate the golden from a fixture with no DSP in it** — exactly
-   representable inputs whose outputs are exact in `float` on every toolchain.
-   Keeps a byte lock, keeps CI portable, and gives up the incidental coverage of
-   locking realistic values. This is the shape `CLAUDE.md`'s verification
-   standard already prefers ("a closed-form identity"), and it is what the L6a
-   Wave 0 tolerance corrections converged on for the same reason.
-2. **Compare structurally rather than bytewise** — parse both documents and
-   compare keys, types, array lengths and numbers to a stated float32 tolerance.
-   Portable, but it stops being a *format* lock, which is the one thing `F1`–`F7`
-   do not provide.
-3. **Keep the byte lock and mark it platform-specific.** Honest, cheap, and it
-   means the three-OS matrix can never be green — which makes rule 3's gate
-   permanently unsatisfiable and is therefore the worst of the three.
+The evidence that identifies the cause is the *shape* of the disagreement, not
+its size: **x86-64's baseline ISA has no FMA**, so gcc and MSVC both emitted two
+roundings and already agreed bit for bit — which is also what rules libm out —
+and **only Apple arm64, where FMA is baseline, contracted.** One flag covered
+the whole observed divergence: 35 of 2049 `spectrum.spectrumDb` values, each off
+by exactly **±1 float32 ULP**, plus three closed-form dB identities reading
+`2^-53 dB` instead of zero.
 
-The other three macOS failures are **L6a Wave 0's**, not this lane's, and the
-two in `test_spl_seam.cpp` look like the same class of problem (a tolerance or a
-float identity that holds on MSVC/x64 and not on Apple clang/arm64) —
-`memory/two-builds-disagreeing-is-not-evidence-one-is-wrong.md` is the right
-thing to read before assuming which side is wrong. That is for whoever picks up
-L6a Wave 1, and it is named in the handoff.
+So this is **not a new numeric regime**. It is the regime every golden vector
+and every bitwise identity in this repository was written under; the flag states
+it instead of relying on an ISA happening to lack an instruction. `D7` survives
+as a byte-for-byte lock over all 198045 bytes **on three operating systems**,
+which is strictly more than it proved before. The flag's own comment names `D7`
+as the canary if it is ever lost — which is the right relationship between a
+build flag and a test.
 
-**All four are being taken together on `ci/macos-fixes`**, which is the right
-grouping: they are one portability question with four symptoms, and fixing them
-in four PRs would spread one decision across four reviews. Two things for that
-branch to hold onto. First, rule 1 — a green macOS job is necessary and not
-sufficient; the fix has to be *argued*, because widening a tolerance until the
-red goes away is how a lock stops locking
-(`memory/a-threshold-read-off-a-grid-is-that-grids-floor.md`). Second, `D7` is
-the one of the four where the honest answer may be to **change what the test
-compares** rather than what it tolerates: there is no tolerance in a
-byte-compare to widen.
+### What this report got wrong
+
+The three options this section originally listed were **all variations on one
+mistaken premise**: that the divergence was irreducible and therefore the *test*
+had to give something up. Option 1 gave up realistic values, option 2 gave up
+the format lock, option 3 gave up the green matrix. The report even wrote that
+`D7` was "the one of the four where the honest answer may be to change what the
+test compares rather than what it tolerates" — and named that as the sharp
+insight.
+
+The actual answer was a fourth option nobody listed: **make the two platforms
+compute the same number.** Asking "what should the assertion concede?" is what
+kept it out of view; the question that found it was "*why* do these differ?"
+Three candidate repairs, each with its trade-off honestly stated, still added up
+to a survey of ways to weaken a lock — which is exactly the failure CLAUDE.md
+rule 10 names ("do not weaken to save lines"), arrived at by a route that felt
+rigorous.
+
+Worth keeping for the next session that meets a cross-toolchain numeric
+disagreement: a **±1 ULP difference concentrated in multiply-adds, on one
+architecture, with the other two agreeing**, is an FP-contraction signature and
+not a tolerance problem. Reach for `-ffp-contract` before reaching for the
+assertion. And `memory/two-builds-disagreeing-is-not-evidence-one-is-wrong.md`
+was the right thing to read — it just needed reading one step further: neither
+build was wrong, and the third build was the witness that said so.
+
+### The other three
+
+`test_spl_seam.cpp` E1/E3 and `test_average_group.cpp` B0c were **L6a Wave 0's**
+and landed in the same PR — correctly, since they were one portability question
+with four symptoms. Two were the same FP-contraction cause; B0c was a different
+one entirely, an allocation clang was permitted to elide, and it produced its
+own memory lesson
+(`memory/an-allocation-the-optimiser-removed-reads-as-zero-bytes.md`, alongside
+`memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md`).
 
 ---
 
@@ -879,9 +914,12 @@ None of these is an agent's to close.
    coherence anywhere. The terms forbid redistributing the SDK, so nothing from
    it could ever be quoted into this repository; it could only inform. It is a
    days-long round trip. Still unasked.
-3. **GitHub Actions is running again, and the matrix is red** (§5). Whether to
-   hold merges on it — rule 3 says yes and the last four merges say no — is the
-   owner's, and it is now a real choice rather than a blocked one.
+3. ~~**GitHub Actions is running again, and the matrix is red.**~~ **CLOSED the
+   same day, and not by an owner decision** — PR #22 at `20f3c65` turned all
+   three jobs green, so there is nothing left to hold merges on (§5, §8). What
+   remains is not a question but a habit: the two days in which four PRs merged
+   citing a blocker that had lifted are what
+   `memory/a-blocker-in-the-queue-has-a-date-too.md` was written for.
 4. **The other four §14 questions are closed by the build, not by an answer**,
    and the owner may still overrule any of them: `allowLanBind` ships present
    and refusing; the token setting ships empty (so the Bearer control is **off**

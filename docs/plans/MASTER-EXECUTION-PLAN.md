@@ -99,7 +99,11 @@ threshold), where the wizard's output persists, and a real sub/main pair
 measured with a rack and a microphone. **Blocked on a purchase only:** L5b
 (ISO 2969 / SMPTE ST 202 X-curve tolerances) and P4b (IEC 60268-16, STI).
 
-**GitHub Actions RUNS AGAIN — and the three-OS matrix is RED on macOS.**
+**GitHub Actions RUNS AGAIN — it was RED on macOS for two days, and it is GREEN
+now.** Resolved by **PR #22 at `20f3c65`**: `main` passes on ubuntu, windows
+**and** macos, so `docs/GIT-WORKFLOW.md` rule 3's gate is both enforceable and
+**met**. The paragraph below is the state during the L-API closeout and is kept
+because the two days are the lesson.
 Corrected 2026-09-18 during the L-API closeout; the sentence this paragraph
 carried for two days ("billing-blocked at the account level since after PR #5,
 so rule 3's CI merge gate cannot be satisfied") is **false**, and so is every
@@ -129,8 +133,24 @@ portability defect, not a wire-format defect** — `F1`–`F7` (the third-party
 parser) pass on all three OSes, so the document is well-formed and correctly
 typed everywhere; only the byte-for-byte lock is machine-specific.
 `docs/reports/008-remote-api.md` §8 carries the options. **Rule 3's merge gate
-is now enforceable and is not being met** (`docs/HUMAN-QA-QUEUE.md`, first
-`[!]`, rewritten the same day).
+was enforceable and was not being met** for those two days
+(`docs/HUMAN-QA-QUEUE.md`, first `[!]`).
+
+**Closed the same day by PR #22 at `20f3c65`, and closed at the CAUSE.** All
+four failures were one portability question; the repair for `D7` and for
+`test_spl_seam.cpp`'s two was **`-ffp-contract=off` outside MSVC**, not a
+relaxed assertion. Clang defaults to contracting `a * b + c` into a single
+`fma` — one rounding instead of two — wherever the ISA has it; **x86-64's
+baseline has no FMA, so gcc and MSVC already agreed bit for bit, and only Apple
+arm64 contracted.** 35 of 2049 `spectrumDb` values, each off by exactly ±1
+float32 ULP. `D7` therefore survives as a byte lock over all 198045 bytes on
+**three** operating systems — more than it proved before. `B0c` was a separate
+cause (an allocation clang was allowed to elide). Two memory lessons came with
+it: `a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md` and
+`an-allocation-the-optimiser-removed-reads-as-zero-bytes.md`. Report 008 §8
+records the fix **and** what that report got wrong about the options: all three
+it listed asked what the test should concede, and the answer was to make the two
+platforms compute the same number.
 
 ## Ground truth at time of writing
 

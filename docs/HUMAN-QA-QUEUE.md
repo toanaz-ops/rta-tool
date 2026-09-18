@@ -10,9 +10,27 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Chặn việc ngay bây giờ
 
-- [!] **CI CHẠY LẠI RỒI — và matrix ba OS ĐANG ĐỎ trên macOS (cập nhật
+- [x] **ĐÃ ĐÓNG 2026-09-18 — CI chạy lại VÀ matrix ba OS ĐÃ XANH.**
+  `ci/macos-fixes` merge thành **PR #22 tại `20f3c65`**; `main` xanh trên
+  ubuntu, windows **và** macos. Nên cổng luật 3 vừa kiểm được vừa **đạt**, và
+  mục này không còn chặn gì. **Không cần chủ nhân trả lời nữa** — câu hỏi
+  "có hold merge hay không" ở dưới đã tự tan vì không còn gì để hold.
+
+  **Sửa tại nguyên nhân, không nới assertion**, và đó là phần đáng giữ: bốn test
+  đỏ là **một** câu hỏi portability. `-ffp-contract=off` ngoài MSVC lo `D7` và
+  hai case `test_spl_seam.cpp` — clang mặc định gộp `a * b + c` thành một `fma`
+  (một lần rounding thay vì hai) ở nơi ISA có lệnh, và **baseline x86-64 không
+  có FMA** nên gcc/MSVC vốn đã khớp từng bit; **chỉ Apple arm64 contract**.
+  35/2049 giá trị `spectrumDb`, mỗi cái lệch đúng ±1 ULP float32. `B0c` là
+  nguyên nhân khác: một allocation clang được phép loại bỏ. `D7` **vẫn là byte
+  lock**, giờ trên ba OS.
+
+  ~~**CI CHẠY LẠI RỒI — và matrix ba OS ĐANG ĐỎ trên macOS (cập nhật
   2026-09-18, closeout L-API).** Đây không còn là mục "Actions bị chặn"; nó là
-  mục "gate của luật 3 giờ kiểm được và đang không đạt".
+  mục "gate của luật 3 giờ kiểm được và đang không đạt".~~ Giữ nguyên bên dưới
+  làm hồ sơ của hai ngày đó — **đó mới là bài học**: một blocker được ghi trong
+  queue vẫn được bốn PR body dẫn lại suốt một ngày sau khi nó đã hết hiệu lực
+  (`memory/a-blocker-in-the-queue-has-a-date-too.md`).
 
   ~~**GitHub Actions bị chặn ở mức tài khoản (2026-09-16).** Mọi run từ sau
   merge PR #5 chết sau 3 s: "The job was not started because recent account
@@ -46,15 +64,17 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
   **Billing đã được giải quyết** — đây không còn là mục cần chủ nhân trả tiền.
 
-  **Một fix cho CẢ BỐN test đang chạy trên nhánh `ci/macos-fixes`** (lúc ghi
-  mục này: chưa lên `origin`, chưa có PR). Gộp bốn vào một nhánh là đúng — một
-  câu hỏi portability, bốn triệu chứng.
+  ~~**Một fix cho CẢ BỐN test đang chạy trên nhánh `ci/macos-fixes`** (lúc ghi
+  mục này: chưa lên `origin`, chưa có PR).~~ **Đã merge: PR #22 tại
+  `20f3c65`.** Gộp bốn vào một nhánh là đúng — một câu hỏi portability, bốn
+  triệu chứng.
 
-  **Cần một câu của chủ nhân, và chỉ một:** có hold merge theo
-  `docs/GIT-WORKFLOW.md` luật 3 hay không, cho tới khi matrix xanh. Luật nói
-  có; bốn merge gần nhất nói không. Đây giờ là một **lựa chọn thật** chứ không
-  phải một thứ bị chặn — trước đây cổng không kiểm được, giờ kiểm được và đang
-  không đạt.
+  ~~**Cần một câu của chủ nhân, và chỉ một:** có hold merge theo
+  `docs/GIT-WORKFLOW.md` luật 3 hay không, cho tới khi matrix xanh.~~ **Không
+  cần nữa** — matrix xanh rồi (PR #22, `20f3c65`), nên không còn gì để hold.
+  Câu hỏi này sống đúng vài giờ. Giữ lại để thấy nó đã từng là một câu hỏi
+  thật: luật nói hold, bốn merge gần nhất nói không, và cái giải quyết nó không
+  phải một quyết định mà là một cái flag build.
 - [ ] **Duyệt thay đổi assertion `core/tests/test_weighting.cpp` (PR #5, hoãn
   2026-09-16).** Cũ: `isinf(|H(Nyquist)| dB)`. Mới: zero DC khẳng định trên hệ
   số `b0 − b1 + b2 = 0` (đồng nhất chính xác, Sterbenz) + `> 200 dB` tại

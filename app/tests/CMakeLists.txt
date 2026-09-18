@@ -151,6 +151,13 @@ add_executable(rtatool_analysis_tests
     # group.cpp, test_spl_meter.cpp and every later measuring file share this
     # one rather than each carrying a copy that would not link.
     AllocationProbe.cpp
+    # test_allocation_probe.cpp: the probe's OWN cases (B0b, B0c), split out of
+    # test_average_group.cpp during the macOS CI fix (run 35306075307). "Does
+    # the counting allocator work" is a different subject from "is publish
+    # churn O(1) in N", and B0c grew a defence against clang eliding the
+    # allocation it measures -- libc++ reaches the heap through
+    # __builtin_operator_new, which the optimiser is permitted to remove.
+    test_allocation_probe.cpp
     # test_spl_meter.cpp + SplMeter.cpp: task W0-B -- the per-channel SPL
     # chain (weighting, two detectors, C-peak, an overload run that survives a
     # block boundary), JUCE-free so it is proven OFF on all three CI

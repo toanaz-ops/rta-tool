@@ -3,7 +3,8 @@
 // THE ONE AND ONLY definition of the replaced global allocation functions in
 // `rtatool_analysis_tests`. Moved here verbatim from test_average_group.cpp
 // (L6a task W0-B0) so that test file, test_spl_meter.cpp and every later
-// measuring file share one counter instead of failing to link.
+// measuring file share one counter instead of failing to link. The probe's
+// own cases live in test_allocation_probe.cpp.
 //
 // Inert outside an armed window: one relaxed atomic load per allocation.
 #include "AllocationProbe.h"
