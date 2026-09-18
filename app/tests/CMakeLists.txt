@@ -290,6 +290,33 @@ target_link_libraries(rtatool_analysis_tests PRIVATE
 # exactly that reason.
 catch_discover_tests(rtatool_analysis_tests)
 
+# --- The one-process run, which catch_discover_tests does not give us ------
+# `catch_discover_tests` registers one ctest test per Catch2 case and
+# re-invokes the binary once per case with that case's name as a filter. Every
+# case therefore gets a FRESH process, which is usually a feature and was here
+# a blindfold: `rta::test`'s byte counter is a program-global, so an order
+# dependence between the [allocationprobe] cases is invisible to ctest by
+# construction. Measured on PR #22 -- `rtatool_analysis_tests
+# "[allocationprobe]" --order decl` failed `8192 == 0` while all three ctest
+# entries for the same three cases were green.
+#
+# So the tag gets run the way a developer and every mutation check run it: one
+# process, all three cases, sharing one counter. BOTH orders, because they
+# expose opposite things -- under `decl` the anchor case runs before the reset
+# case and leaves residue in the counter; under `lex` the reset case runs
+# first and the residue travels the other way. One of the two would have
+# stayed green on its own.
+#
+# `--order rand` is deliberately NOT registered: Catch2 seeds it afresh each
+# run, so it would be a test whose subject changes between invocations. It is
+# worth running by hand (`--order rand --rng-seed <n>`) and a failing seed
+# belongs here as a third entry, named.
+foreach(RTA_AP_ORDER decl lex)
+    add_test(NAME allocation_probe_one_process_order_${RTA_AP_ORDER}
+             COMMAND rtatool_analysis_tests "[allocationprobe]"
+                     --order ${RTA_AP_ORDER})
+endforeach()
+
 # --- Which AtomicSharedPtr branch did this toolchain take? -----------------
 # AtomicSharedPtr.h compiles one of two implementations and only one runs on a
 # given machine, so "the tests pass" is silent about WHICH one was exercised.
