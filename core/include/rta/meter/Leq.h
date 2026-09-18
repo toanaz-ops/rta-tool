@@ -96,6 +96,19 @@ public:
     [[nodiscard]] double elapsedSeconds() const noexcept;
     [[nodiscard]] std::size_t sampleCount() const noexcept;
 
+    /// The accumulated energy, sum(p^2), UNSCALED and with no offset applied:
+    /// leqDb() is 10*log10(sumSquares()/sampleCount()) + referenceOffsetDb,
+    /// bitwise (test_window_energy.cpp B1).
+    ///
+    /// It sits beside leqDb() for the reason record
+    /// docs/dsp/2026-09-16-spl-pro-l6a.md section 10 puts sumSquares in the
+    /// log file beside the rounded dB: a caller holding only a logarithm has
+    /// to invert it before it can combine two measurements, and a reader
+    /// holding only the rounded dB cannot reproduce the report's own numbers
+    /// at all. Nothing is derived from this that leqDb() does not already
+    /// carry -- it is the same accumulator, readable.
+    [[nodiscard]] double sumSquares() const noexcept;
+
     /// The raw time-weighted level history, in chronological order (dB,
     /// already includes referenceOffsetDb). One entry every
     /// historyIntervalSamples() samples.

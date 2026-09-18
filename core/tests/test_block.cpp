@@ -6,6 +6,8 @@
 // in this lane and none may be added.
 #include "rta/meter/Block.h"
 
+#include "BlockFixtures.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -18,22 +20,10 @@
 using Catch::Matchers::WithinAbs;
 using namespace rta::meter;
 
-namespace {
-
-/// A block at a stated mean-square level, with a stated sample count. Built
-/// from the closed form (`sumSquares = n * 10^(L/10)`), never from anything an
-/// accumulator produced -- CLAUDE.md's verification standard.
-Block blockAtLevel(std::uint64_t index, std::uint32_t samples, double levelDb) {
-    Block b;
-    b.blockIndex = index;
-    b.blockSamples = samples;
-    b.sumSquares = static_cast<double>(samples) * std::pow(10.0, levelDb / 10.0);
-    return b;
-}
-
-constexpr std::uint32_t mask(BlockFlag f) { return static_cast<std::uint32_t>(f); }
-
-}  // namespace
+// blockAtLevel and mask live in BlockFixtures.h so test_window_energy.cpp
+// builds its blocks from the SAME closed form; see that header's comment.
+using rta::testing::blockAtLevel;
+using rta::testing::mask;
 
 // --- A1: the layout §4's ring table is sized on -------------------------
 

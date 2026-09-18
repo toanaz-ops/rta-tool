@@ -115,6 +115,8 @@ double Leq::elapsedSeconds() const noexcept {
 
 std::size_t Leq::sampleCount() const noexcept { return count_; }
 
+double Leq::sumSquares() const noexcept { return sumSquares_; }
+
 std::span<const double> Leq::levelHistory() const noexcept { return history_; }
 
 std::size_t Leq::historyIntervalSamples() const noexcept { return historyIntervalSamples_; }
