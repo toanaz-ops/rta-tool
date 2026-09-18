@@ -6,9 +6,11 @@
 // average's publish churn O(1) in N", and the first one is what every later
 // measuring file (test_spl_meter.cpp, test_spl_session.cpp) depends on.
 //
-// What the two cases here are for:
+// What the three cases here are for:
 //   B0b  the replaced global operator new is ONE DEFINITION PER PROGRAM, and
 //        the linker succeeding is only half that proof.
+//   B0c  the ANCHOR: a direct `::operator new` call no optimiser may remove,
+//        so a reading of zero cannot be confused with an elided allocation.
 //   B0c  the probe RESETS on construction, so one TEST_CASE cannot read
 //        another's bytes -- Catch2 runs every file in this binary in one
 //        process, and the counter is program-global.
@@ -95,6 +97,7 @@ TEST_CASE("B0c the replaced operator new is the one this binary calls", "[alloca
     // Without it, "the probe read zero" and "the allocation did not happen"
     // are indistinguishable, which is exactly the ambiguity the macos-latest
     // log of run 35306075307 left behind.
+    //
     // No Catch2 macro runs inside the armed scope: an assertion's own
     // bookkeeping is an allocation this counter would charge to the
     // measurement, which is why `counted` is read before anything is checked.
@@ -122,7 +125,10 @@ TEST_CASE("B0c AllocationProbe resets on construction so one case cannot read an
     // `g_sink` and is sized from `g_opaqueCount`; see that variable's comment
     // for the elision this defends against and the run that found it.
     const std::size_t count = g_opaqueCount;
-    REQUIRE(count >= 16);
+    // `small` has to be at least one element: `b.back()` on an empty vector
+    // is undefined, and the count comes from a mutable global.
+    const std::size_t small = count / 64;
+    REQUIRE(small >= 1);
 
     // Allocate OUTSIDE any probe: the counter must not be running at all.
     {
@@ -149,13 +155,13 @@ TEST_CASE("B0c AllocationProbe resets on construction so one case cannot read an
     std::size_t second = 0;
     {
         const rta::test::AllocationProbe probe;
-        std::vector<double> b(count / 64);
+        std::vector<double> b(small);
         b[0] = 1.0;
         g_sink = b.front() + b.back();
         second = probe.bytes();
     }
     INFO("first = " << first << ", second = " << second);
-    CHECK(second >= (count / 64) * sizeof(double));
+    CHECK(second >= small * sizeof(double));
     CHECK(second < first);
 
     // Counting is OFF once the guard leaves scope: the reading does not move.
