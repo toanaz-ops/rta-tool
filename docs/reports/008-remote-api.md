@@ -53,9 +53,11 @@ section sign encoded as UTF-8 twice, four bytes where one belongs. The builder
 kept it **byte-identical** through the resolution rather than repairing it
 inside a conflict, on the grounds that silently fixing another lane's line in a
 merge is how the trace of a defect disappears — and flagged it for a commit of
-its own. That commit exists: **PR #19 at `d071269`**, `fix(cmake): repair a
-double-encoded section sign in a comment`. It is the one-line fix CLAUDE.md
-rule 6 exists to make possible.
+its own. That commit exists: **`0f878a2`, `fix(cmake): repair a double-encoded
+section sign in a comment (app/tests/CMakeLists.txt:163)`**, merged as **PR #19
+at `d071269`**. It is the one-line fix CLAUDE.md rule 6 exists to make
+possible, and it closes the only item the Wave 2 handoff left for the
+orchestrator.
 
 ---
 
