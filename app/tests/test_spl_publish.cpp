@@ -440,16 +440,28 @@ TEST_CASE("defect 1: a metric list past the cap never publishes a mislabelled re
         REQUIRE(over.has_value());
         CHECK(refused == 1);
         CHECK(over->refusedMetrics == 1);
-        // Sixteen published, and the C-weighted one is NOT among them --
-        // because it was the seventeenth. No published reading carries a C
-        // label at all, so none can carry a C label over an A number.
-        REQUIRE(over->metrics.size() == SplConfig::kMaxMetrics);
+        // THE MISLABELLING CHECK COMES FIRST, deliberately: a regression must
+        // report the dB error, not a count. Under the original defect this
+        // loop is what reads "LCeq_last = -28.1735" against its own
+        // -9.33053 -- an 18.8 dB lie under a C label -- whereas a size
+        // assertion placed first would only have said `17 == 16` and left the
+        // next reader to work out why that mattered.
         for (const auto& m : over->metrics) {
-            INFO("published metric: " << m.id << " = " << m.valueDb);
-            CHECK(m.id != "LCeq_last");
-            // Every survivor is A-weighted, so every value is the A number.
-            CHECK_THAT(static_cast<double>(m.valueDb), WithinAbs(aValue, 1e-4));
+            INFO("published metric: " << m.id << " = " << m.valueDb << " dB");
+            if (m.id == "LCeq_last") {
+                INFO("a C-labelled reading survived the cap; it must NOT be the A number "
+                     << aValue << " dB. Its own is " << cValue << " dB.");
+                CHECK_THAT(static_cast<double>(m.valueDb), WithinAbs(cValue, 1e-4));
+            } else {
+                // Every A-weighted survivor reads the A number.
+                CHECK_THAT(static_cast<double>(m.valueDb), WithinAbs(aValue, 1e-4));
+            }
         }
+        // Sixteen published, and the C-weighted one is NOT among them, because
+        // it was the seventeenth. So no published reading carries a C label at
+        // all, and the loop above has nothing to catch -- which is the point.
+        CHECK(over->metrics.size() == SplConfig::kMaxMetrics);
+        for (const auto& m : over->metrics) CHECK(m.id != "LCeq_last");
     }
 }
 
