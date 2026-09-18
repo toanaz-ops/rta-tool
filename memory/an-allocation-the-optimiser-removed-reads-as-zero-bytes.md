@@ -110,11 +110,32 @@ Two lessons, and the second is the transferable one:
 
 ## Also written down while here
 
-`AllocationProbe.h` now lists exactly the three functions it replaces and the
-two things it therefore cannot see: an elided allocation, and an
-**over-aligned** one. A type whose alignment exceeds 16 routes to
-`operator new(size_t, align_val_t)`, which is not replaced because a portable
-definition needs `_aligned_malloc` on MSVC and `std::aligned_alloc`
-elsewhere. `rta::dsp::RingBuffer` is such a type (`alignas(64)` members). No
-measured window reaches one today, because every caller arms the probe after
-construction — a gap, not a present defect.
+`AllocationProbe.h` now lists exactly the functions it replaces. The C++17
+**over-aligned** set is among them: `operator new(size_t, align_val_t)`,
+`operator delete(void*, align_val_t)` and
+`operator delete(void*, size_t, align_val_t)`, allocating through
+`_aligned_malloc` on MSVC and `posix_memalign` elsewhere (not
+`std::aligned_alloc`, which requires `size` to be a multiple of `alignment`
+and which Apple's libc enforces). So a type whose alignment exceeds 16 —
+`rta::dsp::RingBuffer` with its `alignas(64)` members — is counted rather than
+invisible. The three `B0d` cases in `test_allocation_probe.cpp` prove it: an
+unelidable direct aligned `::operator new`, a `std::vector` of an over-aligned
+element, and a heap-allocated `RingBuffer<float>` whose measurement read zero
+before this change. One thing is still invisible: an allocation the optimiser
+removed.
+
+One thing B0d turned up on the way. The RingBuffer case's first bound,
+`counted >= sizeof(RingBuffer<float>)`, was **not a gate**: a RingBuffer
+allocates twice and its 4096-byte storage vector goes through the ordinary
+unaligned new, so 192 bytes of aligned object sat buried under it and the case
+stayed green under the mutation that removes the aligned trio (4135 bytes
+counted). The shipped bound is derived — object **plus** storage, 4288 — and
+that turns the 192 into the margin.
+
+B0c's order dependence was found independently the same day, and PR #25 is the
+fix that ships: `resetAllocationProbe()` at the start of each B0c case, plus the
+two one-process ctest entries — the sequel section above is that work. This
+branch's variant, asserting `allocationBytes() == before` rather than `== 0`,
+was dropped at the merge in its favour: zeroing first makes the assertion the
+claim, where asserting the reading does not MOVE only measures around whatever
+residue the previous case left.

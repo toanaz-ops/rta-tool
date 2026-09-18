@@ -19,22 +19,29 @@
 // measurement is local and dead. Measure something whose result escapes --
 // every shipped caller does, since each one asserts on a published value.
 //
-// WHAT IS REPLACED, and therefore what the counter can see. Exactly three
-// functions: `operator new(size_t)`, `operator delete(void*)` and
-// `operator delete(void*, size_t)`. The array forms need no replacement --
-// the default `operator new[]` forwards to the scalar one, so a `new T[n]`
-// and every `std::vector` are counted. TWO THINGS ARE INVISIBLE, and a
-// reading of zero does not distinguish them from "nothing allocated":
+// WHAT IS REPLACED, and therefore what the counter can see. Exactly six
+// functions: the unaligned trio `operator new(size_t)`,
+// `operator delete(void*)`, `operator delete(void*, size_t)`, and the C++17
+// over-aligned trio `operator new(size_t, align_val_t)`,
+// `operator delete(void*, align_val_t)`,
+// `operator delete(void*, size_t, align_val_t)`.
 //
-//   * An OVER-ALIGNED allocation. A type whose alignment exceeds
-//     `__STDCPP_DEFAULT_NEW_ALIGNMENT__` (16 here) routes to
-//     `operator new(size_t, align_val_t)`, which is not replaced because a
-//     portable definition needs `_aligned_malloc` on MSVC and
-//     `std::aligned_alloc` elsewhere. `rta::dsp::RingBuffer` is such a type
-//     (`alignas(64)` members). No measured window reaches one today -- every
-//     caller arms the probe AFTER construction -- so this is a gap, not a
-//     present defect, and it is written down rather than guessed at.
-//   * An allocation the optimiser removed; see the caveat above.
+// The array and nothrow forms need no replacement, because the standard's own
+// defaults FORWARD into the six above: `operator new[]` returns
+// `operator new`, the nothrow news call the throwing news and catch, and
+// `operator delete[]` and the nothrow deletes call the scalar deletes. So a
+// `new T[n]` and every `std::vector` are counted, at either alignment.
+//
+// With the aligned trio replaced, an OVER-ALIGNED allocation is counted too --
+// a type whose alignment exceeds `__STDCPP_DEFAULT_NEW_ALIGNMENT__` (16 here)
+// routes to `operator new(size_t, align_val_t)`, and `rta::dsp::RingBuffer`
+// (`alignas(64)` members) is exactly such a type. test_allocation_probe.cpp's
+// B0d cases prove it: a direct aligned `::operator new`, a `std::vector` of an
+// over-aligned element, and a heap-allocated `RingBuffer<float>`.
+//
+// ONE THING IS STILL INVISIBLE, and a reading of zero does not distinguish it
+// from "nothing allocated": an allocation the optimiser removed; see the
+// caveat above.
 //
 // This header declares no allocation function of its own -- keep it that way.
 #pragma once
