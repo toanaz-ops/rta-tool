@@ -12,6 +12,106 @@ Worktree `.claude\worktrees\agent-ac416b1321ee2ec32`, branched from `main` at
 level, so **every number below was measured on this machine and pasted**; a
 verifier is expected to re-measure from a clean rebuild.
 
+## Round 3 (2026-09-18, after PR #17's SECOND verifier) -- READ THIS FIRST
+
+Round 2's tallies were confirmed (745/818/745), the merge union verified exact,
+items 1 and 3 confirmed. **Two real gaps and three minors**, all fixed. Round
+2's section below is kept because its defect accounts are still the record of
+what was wrong.
+
+| config | build dir | at `c7845d4` |
+|---|---|---|
+| OFF | `build-spl` | **747/747** |
+| ON | `build-spl-on` | **821/821** |
+| forced fallback | `build-spl-fb` | **747/747** |
+
+`0 warning C` in all three.
+
+### Gap 1 -- the ROUTED publish branch had no test at all
+
+`buildPublishedSnapshot` has **two** branches that attach the SPL block, and
+all three of round 2's SECTIONs used an **empty** `RoutingPlan`. Deleting the
+routed branch's `snapshot->spl = std::move(splView)` therefore left the whole
+suite green -- while a **routed session, which is what a dual-FFT measurement
+rig actually runs during a show**, would have published no SPL at all.
+Silently, because every consumer is already required to tolerate the block
+being absent.
+
+Fixed: a case with two routes on one reference and real paired frames, so the
+routed branch genuinely runs `publishAverageGroup` and `mergeRoutePositions`.
+`positions.size() == plan.routes.size()` is asserted **first**, as proof of
+which branch ran, before the block's values. Plus a SECTION for a routed
+session with nothing logging. Mutation: delete that line ->
+`test_spl_publish.cpp:658  REQUIRE( snapshot->spl.has_value() )` red.
+
+### Gap 2 -- my own mutation (e) claim was half wrong
+
+The verifier was right. There are **two** distinct mutations here and I had
+conflated them:
+
+| mutation | site | reds |
+|---|---|---|
+| **(e1)** the ternary returns a placeholder on the nothing-is-logging path | `buildPublishedSnapshot` | `:545` **only** |
+| **(e2)** the early return returns a placeholder | `buildSplBlockView` | `:560` (and C1's `:78`, `:86`) |
+
+`:560` is the "config but no completed block" branch, which returns `nullopt`
+from **`buildSplBlockView`'s own** early return -- so a mutation confined to
+`buildPublishedSnapshot` cannot reach it, exactly as the verifier said. Both
+mutations are now run and pasted separately, and the PR body is corrected.
+
+### Gap 3 -- the array bound is a gate now, and I corrected my own overclaim
+
+`AnalysisThread::kMaxSplMetricWindows = SplConfig::kMaxMetrics` was a
+**convention**: a literal 16 there with `kMaxMetrics` raised to 24 compiles and
+every test stays green, while the eight metrics past the array's end lose their
+windows and publish as ABSENT.
+
+Two guards, both measured red under that mutation:
+
+- **compile**, `AnalysisThread.cpp`'s `static_assert`, in the TU that declares
+  the array: `error C2338: static assertion failed: 'the per-metric window
+  array must be sized by SplConfig::kMaxMetrics ...'`
+- **run time**, `test_spl_drain.cpp` **D5** (ON), which sizes its buffer from
+  `kMaxSplMetricWindows` itself. With **both** `static_assert`s also deleted:
+  `REQUIRE( filled == session.config()->metrics.size() )` with
+  `kMaxSplMetricWindows = 16, SplConfig::kMaxMetrics = 24, metrics = 24,
+  filled = 16`.
+
+**And a self-correction worth reading, because it is the same mistake the
+verifier had just caught me making.** I first wrote that the new OFF-build case
+("every metric the config can express gets a PRESENT reading") catches this
+drift. It does not and cannot: `AnalysisThread.h` includes JUCE, so that file
+cannot name the constant, and it sizes its buffer from `kMaxMetrics` instead.
+**Measured** under the same mutation it reads "metrics = 24, windows filled =
+24" and stays **green**. Both that case's comment and the `static_assert`'s
+comment now say so, with the measurement, because assuming there is a third
+guard would be the next person's mistake. What the OFF case *does* cover is the
+all-present property, which is what makes `buildSplBlockView`'s no-fallback
+rule safe to ship at all -- absence is the right answer for an unfilled row and
+the wrong answer for a configured metric.
+
+The general lesson, and it cost two rounds: **a guard credited with catching
+something it never touches is worse than no guard**, because it stops anyone
+looking for the real one. Both times the giveaway was the same -- the claim was
+made from where the constant is *declared* rather than from where the buffer is
+*sized*.
+
+### Minors
+
+`core/include/rta/meter/Block.h` said "two static_asserts" where there are
+three (`sizeof`, `alignof`, `offsetof`). Corrected. The PR body's mutation line
+numbers are corrected in the round-3 reply: (a) `:454,463,464` 7 assertions,
+(c) `:498,499`.
+
+### Still open for the owner, unchanged
+
+- **Q11** -- which flags exclude a block. Default shipped, five fixtures.
+- **`UnderRange`** -- reserved, no criterion anywhere, cl. 5.12 paywalled.
+- **Truncate vs refuse** on an over-long metric list -- truncation shipped, the
+  flip is one line.
+
+---
+
 ## Round 2 (2026-09-18, after PR #17's verifier) -- READ THIS FIRST
 
 The verifier reproduced 689/762/689, found mutations (a)-(d) red, B0b
