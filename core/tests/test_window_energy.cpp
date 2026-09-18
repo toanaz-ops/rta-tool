@@ -9,6 +9,11 @@
 // that shows round-off is NOT the reason the subtraction was rejected (B2b),
 // the mutable membership that IS the reason (B2c), and SEL (B3).
 //
+// B1 was REWRITTEN after PR #20's verifier showed its gate was hollow: an
+// accessor that returned the logarithm inverted survived it. A guard credited
+// with a property it does not have stops the next reader looking for the real
+// one -- memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md.
+//
 // It is its own file rather than an extension of test_block.cpp and
 // test_leq.cpp because appending it to either would have pushed that file past
 // CLAUDE.md's 400-line hard cap. The plan asked for the extension; the cap is
@@ -69,8 +74,39 @@ TEST_CASE("B1 sumSquares sits beside leqDb, and the two agree bitwise", "[leq]")
         leq.process(x);
 
         REQUIRE(leq.sampleCount() == s.samples);
-        // BITWISE: leqDb() is exactly this expression, so any difference would
-        // mean the accessor is reporting a different accumulator.
+
+        // THE GATE, and it took a verifier to find that the old one was not
+        // one. `sumSquares()` must be THE ACCUMULATOR -- so it is compared,
+        // bitwise, against the same sum accumulated independently here: the
+        // same float samples, cast to double, squared and added in the same
+        // order `Leq::process` adds them (Leq.cpp:51-53). Nothing derived from
+        // a logarithm can reproduce that bit for bit.
+        //
+        // PR #20's verifier made the accessor return
+        // `count_ * pow(10, (leqDb() - offset)/10)` -- the exact inversion the
+        // header says callers should not have to do -- and this case stayed
+        // GREEN, because what it checked was
+        // `leqDb() == 10*log10(sumSquares()/count) + offset`: a ROUND TRIP that
+        // any log-derived value satisfies by construction. The round trip is a
+        // true statement and it is kept below, relabelled as what it is; it is
+        // the line beneath it that does the guarding now.
+        //
+        // NOT EVERY ROW IN THE LIST DISCRIMINATES, and that is why the list is
+        // six rows long. Where the energy is an exact power of two -- a = 1.0,
+        // a = 0.5 -- the log round trip is exact and the mutant survives that
+        // row; the un-log mutant reddens 4 of the 6. Trimming this list to the
+        // "clean" amplitudes would hollow the gate again
+        // (memory/a-fixture-can-be-too-well-behaved-to-fail.md).
+        double independent = 0.0;
+        for (float sample : x) {
+            const double sd = static_cast<double>(sample);
+            independent += sd * sd;
+        }
+        CHECK(leq.sumSquares() == independent);
+
+        // The consistency round trip. NOT a gate on the accessor -- see above
+        // -- but still worth asserting: it pins that leqDb() divides by
+        // sampleCount() and adds the offset, and nothing else.
         const double fromEnergy =
             10.0 * std::log10(leq.sumSquares() / static_cast<double>(leq.sampleCount())) +
             s.offset;

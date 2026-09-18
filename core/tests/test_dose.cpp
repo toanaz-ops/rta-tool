@@ -5,7 +5,9 @@
 // The IDENTITIES, which are exact for every q, and the STRUCTURAL checks. The
 // regulators' printed tables are in test_dose_tables.cpp -- split before
 // either file was written, because one file carrying both would have been past
-// CLAUDE.md's 400-line cap on data alone.
+// CLAUDE.md's 400-line cap on data alone. D1f moved to
+// test_dose_constants.cpp in the same way, when PR #20's verifier turned it
+// from two lines into a measurement over two regulators' full grids.
 #include "rta/meter/Dose.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,6 +15,7 @@
 
 #include "support/SourceScan.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <sstream>
@@ -164,39 +167,6 @@ TEST_CASE("D1e below the threshold contributes exactly zero, and the time is rep
     }
 }
 
-// --- D1f: the constant is COMPUTED, not typed (SPL-R7) -------------------
-
-TEST_CASE("D1f the exchange denominators are computed, and the readable decimals differ",
-          "[dose]") {
-    CHECK(exchangeDenominator(3.0) == 3.0 / std::log10(2.0));
-    CHECK(exchangeDenominator(5.0) == 5.0 / std::log10(2.0));
-
-    // The record prints these as readable decimals. Asserting the computed
-    // value against the printed one FAILS, and this case says so in its own
-    // name rather than leaving a reader to wonder whether they are the same.
-    CHECK_FALSE(exchangeDenominator(3.0) == 9.9657843);
-    CHECK_FALSE(exchangeDenominator(5.0) == 16.6096404);
-
-    std::ostringstream report;
-    report << std::setprecision(17) << "D1f 3/log10(2) = " << exchangeDenominator(3.0)
-           << " vs the printed 9.9657843 (delta "
-           << (9.9657843 - exchangeDenominator(3.0)) << "); 5/log10(2) = "
-           << exchangeDenominator(5.0) << " vs the printed 16.6096404 (delta "
-           << (16.6096404 - exchangeDenominator(5.0)) << ")";
-    WARN(report.str());
-
-    SECTION("and the literal is NOT rejected on accuracy -- that reason was refuted") {
-        // SPL-R7's original justification claimed the literal fails a dose
-        // bound. It does not, by five to eight orders. The reason to compute
-        // it is that 10^(Q/q) is then exactly 2.0 (D1b/D1c above), which the
-        // literal does not give.
-        const double literal = 9.9657843;
-        const double computed = exchangeDenominator(3.0);
-        CHECK(std::abs(literal - computed) / computed < 2e-9);
-        CHECK_FALSE(std::pow(10.0, 3.0 / literal) == 2.0);
-    }
-}
-
 // --- D1g: the gap between the two NIOSH conventions ----------------------
 
 TEST_CASE("D1g q=10 against q=3/log10(2) is a closed form, not a figure", "[dose]") {
@@ -243,13 +213,26 @@ TEST_CASE("D1g q=10 against q=3/log10(2) is a closed form, not a figure", "[dose
 TEST_CASE("D1h exposureLevelDb is Leq + 10log10(T/8h) and has no q", "[dose]") {
     for (double seconds : {kEightHours, kEightHours / 2.0, 3600.0, 60.0, 4.0 * kEightHours}) {
         INFO("T = " << seconds << " s");
-        CHECK_THAT(exposureLevelDb(94.0, seconds),
-                   WithinAbs(94.0 + 10.0 * std::log10(seconds / kEightHours), 1e-12));
+        const auto l = exposureLevelDb(94.0, seconds);
+        REQUIRE(l.has_value());
+        CHECK_THAT(*l, WithinAbs(94.0 + 10.0 * std::log10(seconds / kEightHours), 1e-12));
     }
     // 8 h at the level IS the level; half the time is 3.0103 dB below it.
-    CHECK(exposureLevelDb(85.0, kEightHours) == 85.0);
-    CHECK_THAT(exposureLevelDb(85.0, kEightHours / 2.0),
+    REQUIRE(exposureLevelDb(85.0, kEightHours).has_value());
+    CHECK(*exposureLevelDb(85.0, kEightHours) == 85.0);
+    CHECK_THAT(*exposureLevelDb(85.0, kEightHours / 2.0),
                WithinAbs(85.0 - 10.0 * std::log10(2.0), 1e-12));
+
+    SECTION("no exposure time is an ABSENCE, not the bare Leq") {
+        // It used to return `leqDb` unchanged for T <= 0, which asserts
+        // "L_EX,8h equals the Leq" -- false, and a placeholder for an absent
+        // result in the one wave that made absence-over-placeholder its theme.
+        // Zero seconds of exposure carries zero energy, so the honest answer is
+        // no answer (memory/a-placeholder-for-an-absent-result-erases-its-
+        // state.md). Found by PR #20's verifier, untested until now.
+        CHECK_FALSE(exposureLevelDb(94.0, 0.0).has_value());
+        CHECK_FALSE(exposureLevelDb(94.0, -1.0).has_value());
+    }
 
     // Structural: there is no three-argument form. A q here would silently
     // turn an energy average into an exchange-rate average, and record
@@ -372,6 +355,18 @@ TEST_CASE("D3b no regulator's name appears in core CODE", "[dose]") {
             INFO("must not use " << forbidden << " in CODE");
             CHECK(code.find(forbidden) == std::string::npos);
         }
+        // The plan's D3b names FIVE tokens and this list shipped with four --
+        // an undeclared reduction of a specified check, which is the same
+        // silent-coverage-shrink the read-the-guard-count discipline exists to
+        // prevent. `EU` is restored, and CASE-SENSITIVELY on the
+        // comment-stripped text rather than folded: lowercase "eu" is a
+        // substring of ordinary English and of plenty of identifiers
+        // ("queue", "Euler"), so folding it would make this a false-positive
+        // generator instead of a check.
+        const std::string codeExactCase = rta::testing::stripLineComments(readRepoFile(file));
+        INFO("must not use the framework token EU in CODE");
+        CHECK(codeExactCase.find("EU") == std::string::npos);
+        CHECK(codeExactCase.find("2003/10/EC") == std::string::npos);
     }
 
     SECTION("the clause citations ARE in the prose, which is the other half") {

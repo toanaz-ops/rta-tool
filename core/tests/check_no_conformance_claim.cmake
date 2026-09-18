@@ -70,9 +70,12 @@ file(GLOB sources
     "${CORE_DIR}/tests/test_block.cpp"
     "${CORE_DIR}/tests/test_window_energy.cpp"
     "${CORE_DIR}/tests/test_level_histogram.cpp"
+    "${CORE_DIR}/tests/test_level_histogram_span.cpp"
     "${CORE_DIR}/tests/test_alarm.cpp"
     "${CORE_DIR}/tests/test_dose.cpp"
+    "${CORE_DIR}/tests/test_dose_constants.cpp"
     "${CORE_DIR}/tests/test_dose_tables.cpp"
+    "${CORE_DIR}/tests/test_dose_table12.cpp"
     "${CORE_DIR}/tests/DoseTableFixtures.h"
     "${CORE_DIR}/tests/BlockFixtures.h"
 )

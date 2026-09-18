@@ -52,9 +52,25 @@ struct SplCriterion {
     /// "C", "A", or EMPTY when the source names none. Never guessed.
     std::string_view weighting;
     bool weightingIsUnspecified = false;
+    /// "F", "S", or EMPTY -- and EMPTY means the criterion does not HAVE an
+    /// exponential time weighting (a peak is an instantaneous maximum, so
+    /// neither F nor S applies to it), which is a different fact from "the
+    /// source did not say".
+    ///
+    /// THIS FIELD EXISTS BECAUSE ITS ABSENCE SHIPPED A WRONG READING. The NIOSH
+    /// row's label was `L_AFmax` -- Fast -- until PR #20's verifier checked the
+    /// primary: 98-126 cl. 1.3.3, printed p. 4, is normative and says "If a
+    /// sound level meter is used, the meter response SHALL be set at SLOW", and
+    /// ch. 4, printed p. 25, repeats the recommendation. The detector had been
+    /// encoded only as one character inside a string, where nothing could
+    /// assert it and nothing did. It is data now, with its own citation, and
+    /// E1 checks it.
+    std::string_view timeWeighting;
+    /// Which kinds of noise the ceiling applies to.
     CriterionScope scope = CriterionScope::AllNoise;
-    /// The label a readout must use for this quantity -- `L_Cpeak`, `L_AFmax`
-    /// and so on. Never a bare "peak".
+    /// The label a readout must use for this quantity -- `L_Cpeak`, `L_ASmax`
+    /// and so on. Never a bare "peak". Must contain one of
+    /// `kQuantityTokens`.
     std::string_view readoutLabel;
     std::string_view citation;
 };
@@ -67,6 +83,7 @@ inline constexpr std::array<SplCriterion, 3> kPeakAndCeilingCriteria{{
         CriterionQuantity::PeakSoundPressureLevel,
         "",     ///< the CFR names NO weighting -- see the note above
         true,
+        "",     ///< a peak has no exponential time weighting at all
         CriterionScope::ImpulsiveOrImpactOnly,
         "L_Zpeak",  ///< what this project can actually measure and must label
         "29 CFR 1910.95, Table G-16 note: exposure to impulsive or impact "
@@ -78,6 +95,7 @@ inline constexpr std::array<SplCriterion, 3> kPeakAndCeilingCriteria{{
         CriterionQuantity::PeakSoundPressureLevel,
         "C",
         false,
+        "",     ///< likewise: p_peak is an instantaneous maximum
         CriterionScope::AllNoise,
         "L_Cpeak",
         "Directive 2003/10/EC Art. 3: p_peak in its own column at each of "
@@ -90,11 +108,15 @@ inline constexpr std::array<SplCriterion, 3> kPeakAndCeilingCriteria{{
         CriterionQuantity::TimeWeightedLevel,
         "A",
         false,
+        "S",    ///< SLOW, and it is NORMATIVE -- see the citation
         CriterionScope::AllNoise,
-        "L_AFmax",
+        "L_ASmax",
         "NIOSH 98-126 cl. 1.1.4 Ceiling Limit, printed p. 4, complete: "
         "exposure to continuous, varying, intermittent, or impulsive noise "
-        "shall not exceed 140 dBA",
+        "shall not exceed 140 dBA. The detector is cl. 1.3.3, printed p. 4, "
+        "the very next clause: if a sound level meter is used, the meter "
+        "response SHALL be set at SLOW -- repeated as a recommendation in "
+        "ch. 4, printed p. 25. So this is L_ASmax and never L_AFmax",
     },
 }};
 
@@ -121,12 +143,35 @@ inline constexpr std::string_view kReportablePeakLabel = "L_Cpeak";
 /// to the operator rather than hidden in section 12 of a document.
 inline constexpr std::string_view kSampledPeakLabel = "L_Cpeak (sampled)";
 
+/// THE ONE allow-list of tokens that name a peak-or-max quantity.
+///
+/// `labelNamesItsQuantity` below reads it, and `test_spl_criteria.cpp`'s E2
+/// scan over `app/src/export` and `app/src/view` reads it too. It used to be
+/// two lists -- a predicate here and a parallel set of string comparisons in
+/// the test -- and PR #20's verifier found they had already drifted: the test's
+/// copy carried `l_afmax` and omitted `l_asmax`, so correcting the NIOSH row
+/// to its normative SLOW detector would have made a view file printing the
+/// corrected label read as an UNQUALIFIED offender. Two copies of one rule is
+/// one copy too many.
+///
+/// `L_AFmax` stays in the list: the Fast maximum is a real quantity this
+/// project measures (`Block::maxFastDb`) and a readout may legitimately show
+/// it. What the list is about is whether a label NAMES its quantity -- not
+/// which detector any particular framework demands.
+inline constexpr std::array<std::string_view, 5> kQuantityTokens{
+    "L_Cpeak", "L_Zpeak", "L_Apeak", "L_AFmax", "L_ASmax"};
+
 /// True when a label names its quantity. Guards against a bare "peak"
 /// reaching a readout: a peak without its weighting is exactly the readout
 /// that is silently wrong in two of the three frameworks above.
+///
+/// Substring, not equality, so a qualified label may carry more than the token
+/// -- `kSampledPeakLabel` is `"L_Cpeak (sampled)"` and must pass.
 [[nodiscard]] constexpr bool labelNamesItsQuantity(std::string_view label) noexcept {
-    return label == "L_Cpeak" || label == "L_Zpeak" || label == "L_Apeak" ||
-           label == "L_AFmax" || label == "L_ASmax" || label == kSampledPeakLabel;
+    for (std::string_view token : kQuantityTokens) {
+        if (label.find(token) != std::string_view::npos) return true;
+    }
+    return false;
 }
 
 }  // namespace rta::measure

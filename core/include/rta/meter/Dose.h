@@ -29,13 +29,26 @@ struct DoseSettings {
 /// ALWAYS CALL THIS; never type the decimal. `3/log10(2)` is
 /// 9.965784284662087 and the readable form `9.9657843` is 1.53e-08 above it;
 /// `5/log10(2)` is 16.609640474436812 against a readable 16.6096404, 7.44e-08
-/// below. No numeric acceptance in this lane can distinguish either pair --
-/// the literal clears every dose bound by five to eight orders of margin --
-/// so the reason for computing it is NOT that the literal is inaccurate. It is
-/// that `10^(Q/q)` is then EXACTLY 2.0 bitwise, which makes the one-exchange
-/// identities exact comparisons instead of tolerances, and that a derived
-/// constant documents where it came from. (SPL-R7, whose original
-/// justification was refuted and replaced by exactly this.)
+/// below. TWO independent acceptances reject the typed literals, and both are
+/// MEASURED in this lane rather than asserted about it (W1-D1f):
+///
+///   * ACCURACY. `test_dose_tables.cpp` D2a asserts each regulator's own exact
+///     duration formula gives 100 % to 1e-9 %, at every 1 dB step from 80 to
+///     130. The computed constants clear that bound by 1.0e4x (worst 9.95e-14 %
+///     over both tables). The typed `9.9657843` FAILS it by 1600x -- worst
+///     1.600e-06 % at 130 dBA, red at 50 of the 51 NIOSH levels, 85 dBA being
+///     the only survivor because its exponent is zero. `16.6096404` fails by
+///     2485x, worst 2.485e-06 % at 130 dBA.
+///   * EXACTNESS. `10^(Q/q)` is then exactly 2.0 bitwise, which makes the
+///     one-exchange identities D1b/D1c exact comparisons instead of
+///     tolerances. The literal gives `10^(3/9.9657843) = 1.9999999978664136`.
+///
+/// SPL-R7 ASSERTED that no numeric acceptance in this lane could distinguish
+/// either pair, and an earlier revision of this header repeated it. That was
+/// FALSE and PR #20's verifier refuted it by mutation: D2a was in the same
+/// commit, one file away. The rule stands on two legs now, both run --
+/// see memory/an-unmeasured-negative-claim-is-the-one-no-suite-exercises.md
+/// for why the false version is the kind of sentence to distrust on sight.
 [[nodiscard]] inline double exchangeDenominator(double exchangeRateDb) noexcept {
     return exchangeRateDb / std::log10(2.0);
 }
@@ -120,6 +133,13 @@ private:
 /// beside a 5 dB-exchange dose it will not agree, and that is a property of
 /// two definitions rather than a bug. A structural test asserts there is no
 /// overload taking one.
-[[nodiscard]] double exposureLevelDb(double leqDb, double seconds) noexcept;
+///
+/// ABSENT for `seconds <= 0`. An earlier revision returned `leqDb` unchanged,
+/// which asserts "the 8-hour exposure level equals the Leq" -- false, and a
+/// placeholder for an absent result in the one wave that made
+/// absence-over-placeholder its theme. Zero exposure time carries zero energy,
+/// so the honest answer is no answer. Found by PR #20's verifier, and D1h now
+/// has the case.
+[[nodiscard]] std::optional<double> exposureLevelDb(double leqDb, double seconds) noexcept;
 
 }  // namespace rta::meter

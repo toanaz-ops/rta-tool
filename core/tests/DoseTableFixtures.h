@@ -92,13 +92,39 @@ inline constexpr std::array<Table11Row, 50> kNioshTable11{{
     return h * 3600.0 + m * 60.0 + s;
 }
 
-/// That row's own printed resolution, in seconds: one minute where an Hours
-/// cell carries a number, one second otherwise. The document has NO footnote
-/// and nowhere says the values are rounded, so this rule is read off the
+/// That row's own printed resolution, in seconds: **one minute where an Hours
+/// cell carries a number, one second otherwise.** The document has NO footnote
+/// and nowhere says the values are rounded, so the rule is read off the
 /// printing itself -- which is the whole reason the acceptance bound is
 /// per-row rather than one constant.
+///
+/// WHY THIS KEY AND NOT THE SEconds CELL, because the two differ on two rows
+/// and PR #20's verifier was right to ask. Table 1-1 prints in two FORMATS:
+/// hours-and-minutes above 1 h, minutes-and-seconds below it. An en dash means
+/// "zero of this unit", and on a minutes-and-seconds row that is a true
+/// statement to the second -- rows 97 (`- 30 -`) and 100 (`- 15 -`) are
+/// EXACTLY 1800 s and 900 s, asserted by `test_dose_tables.cpp` D2b3. On an
+/// hours-and-minutes row it is not: 80 dBA prints `25 24 -` where the exact
+/// value carries 54.3 seconds. So the seconds column is informative on one
+/// format and not on the other, and the format is what the Hours cell tells
+/// you.
+///
+/// It also matters, once: the record's own prose says "the row's smallest
+/// printed unit", which read literally gives r = 60 s at 100 dBA and a bound
+/// of 6.6667 % -- contradicting the record's OWN printed 0.1111 % for that row
+/// and making D2e's rejection of `q = 10` at 100 dBA impossible. The plan's
+/// phrasing ("1 min where an Hours cell is printed and 1 s where the row is
+/// printed in seconds") is unambiguous, agrees with both documents' four
+/// quoted bounds, and is what ships. Record amendment A7.
 [[nodiscard]] inline double table11ResolutionSeconds(const Table11Row& row) noexcept {
     return row.hours == kDash ? 1.0 : 60.0;
+}
+
+/// The smallest unit the row actually PRINTS -- a different question, and the
+/// one D2d needs: it asks which unit the value was rounded TO, not how far the
+/// printed value may sit from the exact one.
+[[nodiscard]] inline double table11PrintedUnitSeconds(const Table11Row& row) noexcept {
+    return row.seconds == kDash ? 60.0 : 1.0;
 }
 
 struct G16aRow {

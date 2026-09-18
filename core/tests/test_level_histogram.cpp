@@ -11,6 +11,8 @@
 
 #include "rta/meter/Leq.h"
 
+#include "support/SourceScan.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -53,6 +55,16 @@ constexpr double kBase = -20.0;  ///< A5's stated base; NOT a default (see the h
 
 /// Ten distributions, all inside [kBase, kBase + 200), named so a failure says
 /// which shape broke the bound rather than which index.
+///
+/// PORTABILITY, because this wave's selling point is three-OS provability.
+/// `mt19937` is specified by the standard and produces the same stream
+/// everywhere; the DISTRIBUTION ADAPTERS are not, so libstdc++ and libc++ will
+/// draw different samples from the four random shapes and print a different
+/// `A2 worst observed` line. No assertion depends on that: the bound is a
+/// theorem, and the two shapes that actually REACH it -- "two-valued astride a
+/// bin edge" and "mostly flat with spikes" -- are both deterministic. Raised by
+/// PR #20's verifier as non-blocking; written down because the next reader
+/// comparing WARN lines across two CI jobs deserves to know.
 std::vector<std::pair<std::string, std::vector<double>>> distributions() {
     std::mt19937 rng(20260918u);
     std::vector<std::pair<std::string, std::vector<double>>> out;
@@ -306,73 +318,6 @@ TEST_CASE("A6 merge equals the concatenated stream, bitwise", "[levelhistogram]"
         LevelHistogram other(kBase + 1.0);
         CHECK_THROWS_AS(ha.merge(other), std::invalid_argument);
     }
-}
-
-// --- A7: the DEFAULT span is run through the gate it feeds ---------------
-
-TEST_CASE("A7 an uncalibrated session's own readings land inside the derived span",
-          "[levelhistogram]") {
-    // SplConfig::histogramBaseDb() == measure::kLevelFloorDb + referenceOffsetDb.
-    // Uncalibrated that is -120.0 + 0.0. The constant is restated here rather
-    // than included because app/src/measure/Levels.h is not visible to
-    // rta_core; the scan below is what keeps the restatement honest.
-    constexpr double kUncalibratedBase = -120.0;
-
-    // Real uncalibrated readings in mean-square dBFS, which is what the Q1
-    // scope default publishes: a full-scale sine, and programme material.
-    const std::vector<double> session{0.0, -12.0, -30.0, -60.0};
-
-    LevelHistogram h(kUncalibratedBase);
-    for (double v : session) h.add(v);
-
-    CHECK(h.belowSpan() == 0u);
-    CHECK(h.aboveSpan() == 0u);
-    const LnResult median = h.percentile(50.0);
-    CHECK(median.absence == LnAbsence::None);
-    CHECK(median.db.has_value());
-
-    // The full-scale sine lands at bin 1200 of 2000: (0.0 - (-120.0))/0.1.
-    // 60 % up the span, with 80 dB of headroom above it.
-    CHECK(h.count(1200) == 1u);
-    CHECK(h.count(1080) == 1u);  // -12 dBFS
-    CHECK(h.count(900) == 1u);   // -30 dBFS
-    CHECK(h.count(600) == 1u);   // -60 dBFS
-
-    // Made red by hard-coding base = -20.0, which is what an earlier revision
-    // of the plan shipped: two of these four readings fall below that span and
-    // L50 becomes permanently absent. memory/a-default-must-be-run-through-
-    // the-gate-it-feeds.md is this fixture's whole reason for existing.
-    LevelHistogram wrong(-20.0);
-    for (double v : session) wrong.add(v);
-    CHECK(wrong.belowSpan() == 2u);
-    CHECK(wrong.percentile(50.0).absence == LnAbsence::BelowSpan);
-}
-
-// --- A8: the CALIBRATED span is record 5's own number, recovered ---------
-
-TEST_CASE("A8 with a +100 dB offset the span is [-20, +180) and 140 dB lands at bin 1600",
-          "[levelhistogram]") {
-    constexpr double kFloor = -120.0;    // measure::kLevelFloorDb
-    constexpr double kOffset = 100.0;    // a typical calibration offset
-    const double base = kFloor + kOffset;
-    CHECK(base == -20.0);
-
-    LevelHistogram h(base);
-    CHECK_THAT(h.topDb(), WithinAbs(180.0, 1e-12));
-
-    h.add(140.0);
-    CHECK(h.aboveSpan() == 0u);
-    CHECK(h.count(1600) == 1u);
-
-    // The offset applies to the value AND to the base, where it cancels: the
-    // bin index is offset-invariant, which is why (a) feeding un-offset levels
-    // against the un-offset floor and (b) feeding SPL against the offset base
-    // are the same histogram. SPL-R8 left this implicit; it is asserted here.
-    LevelHistogram unoffset(kFloor);
-    unoffset.add(140.0 - kOffset);
-    CHECK(unoffset.count(1600) == 1u);
-    CHECK_THAT(*unoffset.percentile(50.0).db + kOffset,
-               WithinAbs(*h.percentile(50.0).db, 1e-12));
 }
 
 TEST_CASE("A9 percentile refuses an n outside [0,100] rather than guessing",

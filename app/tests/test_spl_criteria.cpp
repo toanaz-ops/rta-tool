@@ -20,6 +20,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -140,7 +141,7 @@ TEST_CASE("E1 the three 140s are three criteria and cannot be collapsed",
         CHECK_THAT(kEuPeakTiersDb[2], WithinAbs(135.0, 1e-12));
     }
 
-    SECTION("NIOSH: an A-weighted LEVEL ceiling, not a peak at all") {
+    SECTION("NIOSH: an A-weighted SLOW level ceiling, not a peak at all") {
         const SplCriterion& c = kPeakAndCeilingCriteria[2];
         CHECK(c.quantity == CriterionQuantity::TimeWeightedLevel);
         CHECK(c.weighting == "A");
@@ -149,6 +150,31 @@ TEST_CASE("E1 the three 140s are three criteria and cannot be collapsed",
         // noise EXPLICITLY -- which is why its scope is not the OSHA one.
         CHECK(c.scope == CriterionScope::AllNoise);
         CHECK(c.citation.find("1.1.4") != std::string_view::npos);
+
+        // THE DETECTOR, which this row got WRONG until PR #20's verifier read
+        // the primary. 98-126 cl. 1.3.3, printed p. 4, is normative -- "the
+        // meter response shall be set at SLOW" -- and ch. 4, printed p. 25,
+        // repeats it. So S, and the label is L_ASmax and never L_AFmax.
+        CHECK(c.timeWeighting == "S");
+        CHECK(c.readoutLabel == "L_ASmax");
+        CHECK(c.readoutLabel.find("L_AFmax") == std::string_view::npos);
+        CHECK(c.citation.find("SLOW") != std::string_view::npos);
+        CHECK(c.citation.find("1.3.3") != std::string_view::npos);
+    }
+
+    SECTION("a PEAK has no exponential time weighting, and that is not the same "
+            "as unspecified") {
+        // The two peak rows carry an EMPTY timeWeighting because F and S do not
+        // apply to an instantaneous maximum at all -- a different fact from the
+        // OSHA row's empty `weighting`, which means the CFR named none.
+        for (std::size_t i : {std::size_t{0}, std::size_t{1}}) {
+            const SplCriterion& c = kPeakAndCeilingCriteria[i];
+            INFO(c.framework);
+            REQUIRE(c.quantity == CriterionQuantity::PeakSoundPressureLevel);
+            CHECK(c.timeWeighting.empty());
+        }
+        // ...and the one level ceiling is the one row that HAS a detector.
+        CHECK_FALSE(kPeakAndCeilingCriteria[2].timeWeighting.empty());
     }
 
     SECTION("no two rows agree on all three of quantity, weighting and scope") {
@@ -220,14 +246,21 @@ TEST_CASE("E2 no SPL readout label in app/src/export or app/src/view says peak "
                 }
                 if (exempt) continue;
 
-                // An SPL peak label must carry its weighting, or the word
-                // "sampled" -- a bare "peak" is the readout that is silently
-                // wrong in two of E1's three frameworks.
-                const bool qualified = lower.find("l_cpeak") != std::string::npos ||
-                                       lower.find("l_zpeak") != std::string::npos ||
-                                       lower.find("l_apeak") != std::string::npos ||
-                                       lower.find("l_afmax") != std::string::npos ||
-                                       lower.find("sampled") != std::string::npos;
+                // An SPL peak label must name its quantity. THE TOKEN LIST IS
+                // THE HEADER'S, not a copy: this was five hand-written string
+                // comparisons, and PR #20's verifier found they had already
+                // drifted from `labelNamesItsQuantity` -- the copy here carried
+                // `l_afmax` and omitted `l_asmax`, so correcting the NIOSH row
+                // to its normative SLOW detector would have made a view file
+                // printing the corrected label read as an offender. One list,
+                // read twice.
+                bool qualified = lower.find("sampled") != std::string::npos;
+                for (std::string_view token : kQuantityTokens) {
+                    if (lower.find(lowered(std::string(token))) != std::string::npos) {
+                        qualified = true;
+                        break;
+                    }
+                }
                 if (!qualified) {
                     offenders.push_back(path.filename().string() + ": \"" + literal + "\"");
                 }
@@ -256,12 +289,34 @@ TEST_CASE("E2 no SPL readout label in app/src/export or app/src/view says peak "
         CHECK(a.seen > 0);
     }
 
+    // The two halves of the rule cannot drift, because there is one rule: every
+    // token E2 accepts is a token the header's own predicate accepts, and every
+    // criterion's shipped label satisfies both.
+    for (std::string_view token : kQuantityTokens) {
+        INFO("kQuantityTokens entry " << token);
+        CHECK(labelNamesItsQuantity(token));
+    }
+    for (const SplCriterion& c : kPeakAndCeilingCriteria) {
+        INFO(c.framework << " label " << c.readoutLabel);
+        bool acceptedByE2 = false;
+        const std::string lower = lowered(std::string(c.readoutLabel));
+        for (std::string_view token : kQuantityTokens) {
+            if (lower.find(lowered(std::string(token))) != std::string::npos) {
+                acceptedByE2 = true;
+                break;
+            }
+        }
+        CHECK(acceptedByE2);
+        CHECK(labelNamesItsQuantity(c.readoutLabel));
+    }
+
     std::ostringstream report;
     report << "E2 scanned " << filesScanned << " files / " << literalsScanned
            << " string literals under app/src/export and app/src/view; "
            << peakLiterals << " mention peak, " << (sizeof(allowed) / sizeof(allowed[0]))
            << " exempt as EQ/FIR vocabulary, " << offenders.size()
-           << " unqualified SPL peak labels";
+           << " unqualified SPL peak labels; " << kQuantityTokens.size()
+           << " quantity tokens, read from SplCriteria.h rather than copied";
     WARN(report.str());
 }
 

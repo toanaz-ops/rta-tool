@@ -24,6 +24,7 @@
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
+using Catch::Matchers::WithinRel;
 using namespace rta::meter;
 using namespace rta::testing;
 
@@ -237,13 +238,18 @@ TEST_CASE("D2b2 every printed OSHA Table G-16a row lands within its own resoluti
 
 // --- D2d: the truncated rows, and the set is asserted --------------------
 
-TEST_CASE("D2d exactly two Table 1-1 rows truncate rather than round", "[dose][tables]") {
+TEST_CASE("D2d exactly three Table 1-1 rows deviate from round-half-up -- one "
+          "erratum and two truncations",
+          "[dose][tables]") {
     std::vector<int> notRounded;
     for (const Table11Row& row : kNioshTable11) {
         const double exact = nioshExactSeconds(static_cast<double>(row.levelDb));
-        // The smallest unit the row actually prints: seconds if the Seconds
-        // cell carries a number, minutes otherwise.
-        const double unit = row.seconds == kDash ? 60.0 : 1.0;
+        // The smallest unit the row actually prints. NOTE this is a
+        // different key from `table11ResolutionSeconds` and deliberately so --
+        // see that function's comment; D2d asks which unit the value was
+        // rounded TO, D2b asks how far the printing may sit from the exact
+        // value.
+        const double unit = table11PrintedUnitSeconds(row);
         const double nearest = roundHalfUp(exact / unit) * unit;
         if (std::abs(table11PrintedSeconds(row) - nearest) > 1e-9) {
             notRounded.push_back(row.levelDb);
@@ -289,88 +295,57 @@ TEST_CASE("D2d exactly two Table 1-1 rows truncate rather than round", "[dose][t
     }
 }
 
-// --- D2e / D2f: Table 1-2 pins q = 10, in both directions ----------------
-
-TEST_CASE("D2e Table 1-2 pins q = 10 while Table 1-1 rejects it", "[dose][tables]") {
-    // The record's central section 7 finding, asserted rather than
-    // asserted-about: ONE chapter of ONE document contains two tables that
-    // need two different exchange constants.
-    //
-    // Table 1-2's last row is the proof and needs no interpretation:
-    // 32,500,000 % -> 140.1 dBA, and 10*log10(325000) + 85 = 140.1188.
-    const double atQten = 10.0 * std::log10(325000.0) + 85.0;
-    CHECK_THAT(atQten, WithinAbs(140.118834, 1e-6));
-    CHECK_THAT(std::round(atQten * 10.0) / 10.0, WithinAbs(140.1, 1e-12));
-    // At the exchange-rate constant the same row would print 139.9.
-    const double atQexchange = exchangeDenominator(3.0) * std::log10(325000.0) + 85.0;
-    CHECK_THAT(atQexchange, WithinAbs(139.930241, 1e-6));
-    CHECK(std::abs(atQexchange - 140.1) > 0.15);
-
-    SECTION("and Table 1-1's own rows REJECT q = 10") {
-        DoseSettings energy = nioshSettings();
-        energy.q = 10.0;
-        // 80 dBA: 0.4023 % against a 0.0656 % bound. 100 dBA: 1.1788 %
-        // against 0.1111 %. The bound derived from the printing is tight
-        // enough to tell the two constants apart, which is what makes the
-        // inconsistency a measurement and not a reading of the prose.
-        for (int level : {80, 100}) {
-            const Table11Row& row = kNioshTable11[static_cast<std::size_t>(level - 80)];
-            REQUIRE(row.levelDb == level);
-            const double printed = table11PrintedSeconds(row);
-            const double bound =
-                100.0 * table11ResolutionSeconds(row) / nioshExactSeconds(level);
-            const double deviation =
-                std::abs(doseOf(energy, static_cast<double>(level), printed) - 100.0);
-            INFO("L = " << level << ", q = 10 deviation " << deviation << " % vs bound "
-                        << bound << " %");
-            CHECK(deviation > bound);
-        }
-    }
-}
-
-TEST_CASE("D2f Table 1-2's own two errata are named, and every other row is within "
-          "0.05 dB",
+TEST_CASE("D2b3 the resolution key is the Hours cell, and the evidence for that is "
+          "which rows are exact",
           "[dose][tables]") {
-    REQUIRE(kNioshTable12.size() == 121);
+    // The justification for `table11ResolutionSeconds` keying on the Hours cell
+    // rather than on the smallest printed unit. Table 1-1 prints in two
+    // FORMATS, and an en dash means "zero of this unit" only in one of them.
+    //
+    // (a) On a minutes-and-seconds row (no Hours cell), a dash in Seconds is a
+    //     true statement to the second: the value IS a whole number of minutes.
+    int minutesFormatRowsWithDashSeconds = 0;
+    for (const Table11Row& row : kNioshTable11) {
+        if (row.hours != kDash || row.seconds != kDash) continue;
+        ++minutesFormatRowsWithDashSeconds;
+        const double exact = nioshExactSeconds(static_cast<double>(row.levelDb));
+        INFO("L = " << row.levelDb << " dBA, exact " << exact << " s");
+        CHECK_THAT(exact - std::floor(exact), WithinAbs(0.0, 1e-9));
+        CHECK_THAT(exact, WithinAbs(table11PrintedSeconds(row), 1e-9));
+    }
+    CHECK(minutesFormatRowsWithDashSeconds == 2);  // 97 and 100 dBA
 
-    std::vector<long long> beyond;
-    double worst = 0.0;
-    for (const Table12Row& row : kNioshTable12) {
-        // The table's own printed footnote: *TWA = 10 x Log(D/100) + 85.
-        const double exact =
-            10.0 * std::log10(static_cast<double>(row.dosePercent) / 100.0) + 85.0;
-        const double deviation = std::abs(row.printedTwaDb - exact);
-        if (deviation > 0.05) {
-            beyond.push_back(row.dosePercent);
-        } else {
-            worst = std::max(worst, deviation);
+    // (b) On an hours-and-minutes row, it is NOT: the seconds are simply not
+    //     printed, and the exact value has some. 80 dBA is the clearest case.
+    const double exact80 = nioshExactSeconds(80.0);
+    // Cross-checked by MULTIPLYING rather than dividing -- a different route to
+    // the same closed form, agreeing to round-off. A first draft of this line
+    // typed the decimal (91434.300640 against the true 91434.30059336829) and
+    // went red, which is this project's own verification standard catching the
+    // person applying it: assert the formula, never a transcribed value.
+    CHECK_THAT(exact80, WithinRel(60.0 * 480.0 * std::pow(2.0, 5.0 / 3.0), 1e-12));
+    CHECK(exact80 - std::floor(exact80) > 0.2);
+    CHECK_THAT(table11PrintedSeconds(kNioshTable11[0]), WithinAbs(91440.0, 1e-9));
+
+    int hoursFormatRowsNotWholeMinutes = 0;
+    for (const Table11Row& row : kNioshTable11) {
+        if (row.hours == kDash) continue;
+        const double exact = nioshExactSeconds(static_cast<double>(row.levelDb));
+        if (std::abs(exact / 60.0 - std::floor(exact / 60.0 + 0.5)) > 1e-9) {
+            ++hoursFormatRowsNotWholeMinutes;
         }
     }
+    // Ten of the fifteen hours-format rows are not whole minutes, so the dash
+    // in their Seconds column cannot be read as "zero seconds".
+    CHECK(hoursFormatRowsNotWholeMinutes == 10);
 
-    REQUIRE(beyond.size() == 2);
-    CHECK(beyond[0] == 50000);
-    CHECK(beyond[1] == 26000000);
-
-    // 50,000 % prints 102.0 where the formula gives 111.9897 -- a single-digit
-    // substitution in the tens place (112.0 -> 102.0), not a transposition.
-    // The neighbours BRACKET it, so the printed value also breaks the table's
-    // own monotonicity, which is the independent argument that it is an
-    // erratum and not a different convention.
-    CHECK_THAT(10.0 * std::log10(500.0) + 85.0, WithinAbs(111.9897, 1e-4));
-    CHECK_THAT(10.0 * std::log10(450.0) + 85.0, WithinAbs(111.5321, 1e-4));
-    CHECK_THAT(10.0 * std::log10(600.0) + 85.0, WithinAbs(112.7815, 1e-4));
-    CHECK(102.0 < 111.5);  // 45,000 -> 111.5 precedes it
-    CHECK(102.0 < 112.8);  // 60,000 -> 112.8 follows it
-
-    // 26,000,000 % prints 139.0 where the formula gives 139.1497.
-    CHECK_THAT(10.0 * std::log10(260000.0) + 85.0, WithinAbs(139.1497, 1e-4));
-
-    // Every OTHER row of the 121 lands within 0.05 dB, which is what makes the
-    // two above errata rather than a rounding convention.
-    CHECK(worst <= 0.05);
-    std::ostringstream report;
-    report << std::setprecision(17)
-           << "D2f Table 1-2: 119 of 121 rows within " << worst
-           << " dB of 10log10(D/100)+85; 50,000 % and 26,000,000 % excluded by name";
-    WARN(report.str());
+    // And the consequence the record's looser prose would have had: r = 60 s at
+    // 100 dBA gives a bound of 6.6667 %, which is larger than the 1.1788 % gap
+    // D2e uses to reject q = 10 there -- so the rejection would be impossible
+    // at that row. It survives on 80 dBA either way, but the record's own
+    // printed 0.1111 % for 100 dBA is what the shipped key reproduces.
+    CHECK_THAT(100.0 * 60.0 / nioshExactSeconds(100.0), WithinAbs(6.6667, 1e-4));
+    CHECK_THAT(100.0 * 1.0 / nioshExactSeconds(100.0), WithinAbs(0.1111, 1e-4));
+    CHECK(table11ResolutionSeconds(kNioshTable11[20]) == 1.0);
+    CHECK(kNioshTable11[20].levelDb == 100);
 }

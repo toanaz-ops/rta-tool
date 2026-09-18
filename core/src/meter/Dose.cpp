@@ -50,11 +50,12 @@ std::optional<double> Dose::twaDb() const noexcept {
     return settings_.q * std::log10(d / 100.0) + settings_.criterionLevelDb;
 }
 
-double exposureLevelDb(double leqDb, double seconds) noexcept {
+std::optional<double> exposureLevelDb(double leqDb, double seconds) noexcept {
     // The 8 h reference is the definition of L_EX,8h, not a setting: 28800 s.
     // And the 10 is energy, not an exchange rate -- see the header.
     constexpr double kEightHoursSeconds = 8.0 * 3600.0;
-    if (!(seconds > 0.0)) return leqDb;
+    // No exposure time is an absence, never the bare Leq -- see the header.
+    if (!(seconds > 0.0)) return std::nullopt;
     return leqDb + 10.0 * std::log10(seconds / kEightHoursSeconds);
 }
 

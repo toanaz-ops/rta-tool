@@ -35,9 +35,20 @@ namespace rta::testing {
     return buffer.str();
 }
 
-/// Drops `//` comments, which is the whole of what these files use. Block
-/// comments are deliberately NOT handled: no file this scans contains one, and
-/// a half-working stripper would be worse than an absent one.
+/// Drops `//` comments, which is the whole of what these files use.
+///
+/// TWO limitations, both deliberate and both FAIL-SAFE, i.e. they can only ever
+/// produce a false RED:
+///
+///  * block comments are not handled -- no file this scans contains one;
+///  * there is no string-literal state, so a literal containing `//` (a URL,
+///    say) truncates the rest of THAT LINE out of the scan. Found by PR #20's
+///    verifier. It matters only if a forbidden identifier ever shares a line
+///    with such a literal, and it would then hide a violation rather than
+///    invent one -- which is why the callers pair every "the word is absent
+///    from the code" check with a "the word is present in the prose" check and
+///    a vacuity sentinel. A half-working C++ lexer here would be a larger thing
+///    to be wrong than the hole it closes.
 [[nodiscard]] inline std::string stripLineComments(const std::string& text) {
     std::string out;
     out.reserve(text.size());
