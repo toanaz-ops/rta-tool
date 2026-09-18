@@ -20,7 +20,7 @@ TDD từng cái, red dán trước green. **Chỉ Task J là ON**; cả server v
 | forced-fallback OFF | **725/725**, 0 `warning C` |
 | `no_server_library_outside_api` | xanh **393 file** ở CẢ HAI cấu hình, đỏ **6 lần** |
 | `git diff main --stat -- platform/ core/src core/include ui/` | **rỗng** |
-| `rtatool_snapshot` | 8 PNG, exit 0 — `main-live.png` dụng và huỷ `MainComponent` (giờ sở hữu một `ApiServer` tắt) sạch |
+| `rtatool_snapshot` | 8 PNG, exit 0 — `main-live.png` dựng và huỷ `MainComponent` (giờ sở hữu một `ApiServer` tắt) sạch |
 
 Commit: `8318f87` H (vendor cpp-httplib) · `5afb42e` I (`ApiServer`) ·
 `02b5cd0` J (composition root) · `2705b9e` K (guard server-library) ·
@@ -88,7 +88,7 @@ Thay bằng grep **neo vào include directive**, đúng thứ guard thật sự 
    `v0.56.0`, đo trên chính bytes đã commit: sha256
    `1f99e51881c4c9d0649b27c611442c2f4d9bcfec5a22a14d5fcd1f8106f730b4`, 22875
    dòng. `git show HEAD:external/cpp-httplib/httplib.h | sha256sum` ra cùng
-   hash — `.gitattributes` `eol=lf` không đổi gì vì file đã LF sẩn. Bản copy có
+   hash — `.gitattributes` `eol=lf` không đổi gì vì file đã LF sẵn. Bản copy có
    sẵn trên máy khai `CPPHTTPLIB_VERSION "0.56.0"` nhưng là 22885 dòng /
    `a6e65d30…`: **một version string không phải một danh tính.**
 
@@ -99,7 +99,7 @@ Thay bằng grep **neo vào include directive**, đúng thứ guard thật sự 
    ship (cổng cố định 4736) không đổi gì.
 
 3. **Mọi case qua dây đều bind ephemeral — tức nhánh `bind_to_port` mà bản
-   SHIP dùng thì không ai test.** Đã bìt bằng `test_api_server_bind.cpp`: bind
+   SHIP dùng thì không ai test.** Đã bịt bằng `test_api_server_bind.cpp`: bind
    ephemeral để hỏi một cổng đang rỗi, huỷ, rồi bind **cố định** chính số đó.
    Nhánh production đã từng là nhánh duy nhất không được chứng minh.
 
@@ -108,8 +108,8 @@ Thay bằng grep **neo vào include directive**, đúng thứ guard thật sự 
    `Sec-WebSocket-Key` trả **200 với body JSON bình thường** trên path có
    thật, **404** trên path không có; không 405, không 101, không
    `Sec-WebSocket-Accept`. Đúng như R16a dự đoán. Hai ghi chú: comment trong
-   `httplib.h:14487` nói "fall through to 404" là **sai** (PR #18 trích `:14436`, trạm 5 bắt — `:14436` là dòng "Send 101 Switching Protocols") (nó rỡt xuống routing,
-   nên path có thật ra 200); và `pre_routing_handler_` chạy **HAI lần** cho
+   `httplib.h:14487` nói "fall through to 404" là **sai** — nó rớt xuống routing,
+   nên path có thật ra 200; và `pre_routing_handler_` chạy **HAI lần** cho
    một request upgrade (`:14408` rồi `Server::routing` `:13881`), tức một
    request như vậy tiêu **hai** suất rate-limiter. Cả hai đã ghi trong
    `external/cpp-httplib/PROVENANCE.md`.
@@ -117,7 +117,7 @@ Thay bằng grep **neo vào include directive**, đúng thứ guard thật sự 
 5. **413 được chặn Ở HAI tầng và phải thế.** Tầng một đọc `Content-Length`
    trong pre-routing và từ chối **trước khi đọc body** — đó mới là ý của §9
    control 3. Tầng hai là `set_payload_max_length`, cho body **chunked** không
-   khai độ dài, chỉ biết được trong lúc đọc. Bỏ tầng một là mờ đường cho
+   khai độ dài, chỉ biết được trong lúc đọc. Bỏ tầng một là mở đường cho
    một GET khai 2 GB.
 
 6. **Test client là raw socket, và đó không phải sở thích.** `httplib::Client`

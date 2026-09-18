@@ -1266,6 +1266,24 @@ parse. That is the correct trade — the control exists to protect the publish
 slot, the thread pool bounds the concurrency, and the alternative hands that
 same caller a denial of service against the operator.
 
+**`OPTIONS` is exempt from the limiter, and that is this clause carried one step
+further rather than an exception to it.** *(Added 2026-09-18 after the round-2
+verify of PR #18 measured the gap: at a limit of 2, two `OPTIONS` requests then
+a legitimate `GET` answered **429**.)* An `OPTIONS` never reaches the route
+handler — it answers `204` from `R18`'s own handler, reads no snapshot and
+performs no `latest()` — so there is nothing for a bound on **loads** to bound,
+and its whole cost is the accept, the header parse and the `204` that this
+clause already stopped charging for on a `403`. Charging it a slot is the same
+defect as charging one for a forged `Host`, one degree less reachable.
+
+**`HEAD` is NOT exempt, and that half has to be said out loud**, because "no
+body, so no cost" is the plausible and wrong reading. `HEAD` routes to the same
+`Get` handler: one `latest()`, the full document built, and the body stripped by
+the server on the way out **after** the work. Exempting it would put an
+unbounded load path on the publish slot, which is precisely what §4's bound
+exists to prevent. Both directions are asserted over the wire in
+`app/tests/test_api_server_refusals.cpp`.
+
 ### R20 — more than one `Host` field is `400`, and §9 control 1 did not say so
 
 *Filed 2026-09-18 by the same verify pass.*

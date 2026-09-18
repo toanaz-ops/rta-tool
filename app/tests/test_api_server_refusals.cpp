@@ -139,6 +139,40 @@ TEST_CASE("the limiter still bounds what it exists to bound -- SERVED requests")
     CHECK(sendRaw(port, wire("GET", "/api/v1/status", goodHost(port))).status == 429);
 }
 
+TEST_CASE("OPTIONS spends no quota, because it performs no load") {
+    // The round-2 verifier's residual, and it is R19's own argument carried
+    // one step further rather than an exception to it: at a limit of 2, two
+    // OPTIONS requests then a legitimate GET answered 429. An OPTIONS never
+    // reaches serve(), so it performs no latest() and there is nothing for a
+    // bound on LOADS to bound.
+    ApiSettings settings = ephemeral();
+    settings.maxRequestsPerSecond = 2;
+    Fixture fixture(settings);
+    const int port = fixture.port();
+
+    for (int i = 0; i < 6; ++i) {
+        const auto described = sendRaw(port, wire("OPTIONS", "/api/v1/status", goodHost(port)));
+        CHECK(described.status == 204);
+    }
+    CHECK(sendRaw(port, wire("GET", "/api/v1/status", goodHost(port))).status == 200);
+}
+
+TEST_CASE("HEAD is NOT exempt, because it does the whole load and the whole serialisation") {
+    // The other half, and it is the one a "no body, so no cost" reading of
+    // HEAD would get wrong. HEAD routes to the same `Get` handler: one
+    // latest(), the full JSON built, and httplib strips the body on the way
+    // out AFTER the work. Exempting it would put an unbounded load path on the
+    // publish slot, which is the exact thing sec.4's bound exists to prevent.
+    ApiSettings settings = ephemeral();
+    settings.maxRequestsPerSecond = 2;
+    Fixture fixture(settings);
+    const int port = fixture.port();
+
+    CHECK(sendRaw(port, wire("HEAD", "/api/v1/status", goodHost(port))).status == 200);
+    CHECK(sendRaw(port, wire("HEAD", "/api/v1/status", goodHost(port))).status == 200);
+    CHECK(sendRaw(port, wire("GET", "/api/v1/status", goodHost(port))).status == 429);
+}
+
 // --- more than one Host field ---------------------------------------------
 
 TEST_CASE("two Host fields are 400, so a good one cannot carry a forged one") {

@@ -232,7 +232,8 @@ void ApiServer::Impl::installPreRouting() {
             //    #18 advertised OPTIONS here and registered none, so the
             //    method passed this check, found no route and answered 404 --
             //    an API naming a method it does not serve.
-            if (!methodIsAllowed(methodOf(request.method))) {
+            const Method method = methodOf(request.method);
+            if (!methodIsAllowed(method)) {
                 response.status = 405;
                 response.set_header("Allow", kAllowedMethods);
                 return HandlerResponse::Handled;
@@ -258,7 +259,24 @@ void ApiServer::Impl::installPreRouting() {
             // 6. THE RATE LIMIT, last, immediately before routing -- the last
             //    point before a `latest()`. See the paragraph above this
             //    lambda for why it moved here and what that gives up.
-            {
+            //
+            //    OPTIONS IS EXEMPT, and that is R19's own argument carried one
+            //    step further rather than an exception to it. The round-2
+            //    verifier measured the gap: at a limit of 2, two `OPTIONS`
+            //    requests then a legitimate `GET` answered 429 -- and an
+            //    `OPTIONS` never reaches `serve()`, so it performs no
+            //    `latest()` and there is nothing for a bound on LOADS to
+            //    bound. Its whole cost is an accept, a header parse and a
+            //    204, which is the cost of the 403 that R19 already stopped
+            //    charging for.
+            //
+            //    HEAD IS NOT EXEMPT, and that is the half worth stating: it
+            //    routes to the same `Get` handler, so it does the full
+            //    `latest()` AND the full serialisation -- httplib strips the
+            //    body on the way out, after the work. A "no body, so no cost"
+            //    reading of HEAD would be wrong here and would put an
+            //    unbounded load path on the publish slot.
+            if (method != Method::Options) {
                 const std::lock_guard<std::mutex> lock(limiterMutex);
                 if (!limiter.admit(std::chrono::steady_clock::now())) {
                     response.status = 429;
