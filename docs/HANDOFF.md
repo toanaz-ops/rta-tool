@@ -5,6 +5,79 @@
 
 ---
 
+# 2026-09-18 (sau merge PR #22) — **Vòng verify: test probe PHỤ THUỘC THỨ TỰ — nhánh `ci/probe-order-independence`, PR mở, CHƯA merge.**
+
+PR #22 merge tại `20f3c65`. Verifier tìm hai defect **sau** khi CI 3/3 xanh, và
+cả hai đều là loại "xanh nhưng không chứng minh gì".
+
+**Defect 1 — `app/tests/test_allocation_probe.cpp` phụ thuộc thứ tự chạy.**
+
+    $ rtatool_analysis_tests "[allocationprobe]" --order decl
+    test_allocation_probe.cpp(139): FAILED:
+      CHECK( rta::test::allocationBytes() == 0 )
+    with expansion:
+      8192 (0x2000) == 0
+
+Byte counter là **program-global** và `~AllocationProbe` **cố ý** không xoá nó
+(`AllocationProbe.h` khai báo số đọc còn giá trị sau khi guard ra khỏi scope —
+đó là thứ cho `measureGroupPublishBytes` trả về một phép đo lấy bên trong).
+Nên trong một lần chạy **MỘT PROCESS**, tổng của case trước vẫn nằm đó, và
+assertion này chạy TRƯỚC khi có probe nào được dựng — nó đang đọc 8192 byte của
+anchor case. **Có từ trước** `d071269` (dư `17735 == 0` khi chưa có anchor),
+nhưng PR #22 viết tiền đề SAI "Catch2 runs every file in this binary in one
+process" vào file mới **hai lần**.
+
+Tiền đề đó sai, và chính chỗ sai là vấn đề: `catch_discover_tests` đăng ký
+**một ctest test cho mỗi Catch2 case** và gọi lại binary một lần cho từng case
+với tên case làm filter — nên dưới `ctest` mỗi case có **process riêng** và
+counter global không thể truyền qua case. **ctest đang CHE sự phụ thuộc thứ tự,
+không phải chứng minh là không có.**
+
+Sửa: zero counter ở đầu mỗi case (destructor không đụng tới), sửa hai comment
+cho đúng, và đăng ký hai ctest entry chạy tag theo kiểu một process:
+`allocation_probe_one_process_order_decl` và `..._lex`. **CẢ HAI thứ tự**, vì
+chúng bọc lộ dư theo hai chiều ngược nhau — đo được: bỏ reset → `decl` ĐỎ
+(`8192 == 0`), `lex` **XANH**. Một mình `lex` sẽ không bắt được.
+`--order rand` **cố ý không** đăng ký: Catch2 gieo lại seed mỗi lần chạy.
+
+**Defect 2 — comment CMake quy công sai cho MSVC.** Nó nói baseline SSE2 là lý
+do MSVC khớp gcc. Sai lý do cho một kết luận đúng: `/fp:precise` **implies
+`fp_contract(off)` từ Visual Studio 2022 trở đi, ở BẤT KỲ `/arch:`** — tài liệu
+Microsoft nói thế, nên đó là **cam kết**, không phải tai nạn. MSVC trước VS2022
+ĐƯỢC PHÉP contract. GCC trên x86-64 mới là nửa mà ISA là toàn bộ lý do. Ghi lại
+trong `memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md`:
+**khi hai cấu hình khớp nhau, "vì sao" là câu hỏi cho TỪNG cấu hình.**
+
+## Số đo, tại `HEAD_SHA`
+
+| | |
+|---|---|
+| OFF `-DRTA_BUILD_APP=OFF` | **777/777**, 0 `warning C` |
+| ON (`-DRTA_JUCE_PATH=...PROJECT005.../external/JUCE`) | **851/851**, 0 `warning C` |
+| CI ba OS | CI_LINE |
+| một process, `[allocationprobe]`, `--order decl` / `lex` / `rand --rng-seed 1,7,104324450` | **77 assertion / 3 case, xanh cả năm lần** |
+| toàn bộ binary, một process, `--order decl` | **39178 assertion / 378 case, xanh** |
+
+`777`/`851` = `775`/`849` của PR #22 + hai ctest entry mới. Không xoá gì.
+
+## Tech-debt đã file (`docs/HUMAN-QA-QUEUE.md`, mục "Tech-debt từ CI macOS fix")
+
+- **`-ffp-contract=off` gần như không có gì gác.** Chỉ D7 phát hiện nếu nó bị
+  xoá, và D7 chỉ đỏ ở **macos-latest trên CI**. Người phát triển trên Windows
+  xoá flag và không thấy gì. Hai lựa chọn để đóng đều có giá, ghi trong queue,
+  **cần một câu của chủ nhân**.
+- **JUCE chưa bao giờ biên dịch dưới `-ffp-contract=off`.** CI chỉ chạy
+  `RTA_BUILD_APP=OFF`; cấu hình ON duy nhất được đo là MSVC, nơi `if(NOT MSVC)`
+  khiến flag không tồn tại. clang/gcc + JUCE + ON là tổ hợp **zero lần chạy**.
+
+Còn nguyên từ PR #22: gap over-aligned `operator new` của probe (nhánh
+`ci/probe-aligned-new` đã mở ở worktree khác).
+
+Dọn: worktree scratch của verifier `rta-vfy-pr22` dưới `%TEMP%\claude\` đã xoá
+(`git worktree remove --force`, không còn trong `git worktree list`).
+
+---
+
 # 2026-09-18 — **CI: bốn test đỏ RIÊNG trên macos-latest đã xong — nhánh `ci/macos-fixes`, PR #22 mở, CHƯA merge.**
 
 GitHub Actions chạy lại sau khi hết billing block. Lần chạy ba-OS đầu tiên
@@ -68,7 +141,7 @@ Baseline tại `d071269` là 774 OFF / 848 ON. `+1` là anchor case mới; khôn
 
 | mutation | kết quả |
 |---|---|
-| bỏ `resetAllocationProbe()` khỏi constructor | **ĐỎ** — `second < first` → `8359 < 8231`; anchor `counted == bytes` → `16551 == 8192` |
+| bỏ `resetAllocationProbe()` khỏi constructor | **ĐỎ** — `second < first` → `8359 < 8231` tại `:205`. **ĐÃ SỬA 2026-09-18 (xem mục trên đầu file):** dòng này từng ghi thêm "anchor `counted == bytes` → `16551 == 8192`" — **sai quy kết**. Đo lại trên cây cuối: anchor **XANH**, vì nó tự reset counter ở đầu case. `16551` là số của một lần chạy trên cây TRUNG GIAN, khi anchor chưa tự reset và chạy SAU reset case, nên `counted` của nó cọng thêm 8359 dư của case trước |
 | `setAllocationCounting` store `false` vô điều kiện | **ĐỎ** — 4 assertion, có `0 == 8192` và `0 >= 8192`, tái hiện đúng triệu chứng macOS |
 | `kFullScaleSineOffsetDb` → `3.0102999566398000` (header, rebuild dependents) | **ĐỎ** tại `test_spl_seam.cpp:117`, `:143`, `:149`, `:216`, residual −1.19904e-14 dB |
 | restore + rebuild sạch | **XANH** 775/775, working tree khớp commit |
@@ -87,8 +160,9 @@ việc sửa constant. Giá trị của constant được pin bằng literal ở
   cần `_aligned_malloc` trên MSVC và `std::aligned_alloc` ở nơi khác.
   `rta::dsp::RingBuffer` là type như vậy (`alignas(64)`). Không measured window
   nào chạm tới, vì mọi caller arm probe SAU construction.
-- **PR #22 chưa merge.** `docs/GIT-WORKFLOW.md`: "merge" là lời của owner trong
-  cuộc hội thoại hiện tại.
+- ~~**PR #22 chưa merge.**~~ **ĐÃ MERGE** 2026-09-18 tại `20f3c65` (owner chủ
+  động, sau vòng verify). Hai điểm verifier tìm ra sau đó đi ở nhánh
+  `ci/probe-order-independence` — xem mục đầu file.
 
 Memory mới: `memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md`,
 `memory/an-allocation-the-optimiser-removed-reads-as-zero-bytes.md`.
