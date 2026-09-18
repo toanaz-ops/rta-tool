@@ -160,7 +160,7 @@ add_executable(rtatool_analysis_tests
     # (one optional block, no wall clock, absence when nothing is logging).
     test_spl_publish.cpp
     # test_spl_seam.cpp: task W0-E -- the 3.0103 dB seam, closed form. Carries
-    # the record Â§13 Q1 SCOPE DEFAULT: convert once at the meter seam,
+    # the record §13 Q1 SCOPE DEFAULT: convert once at the meter seam,
     # label both, change nothing that exists. No source file changes.
     test_spl_seam.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplMeter.cpp
