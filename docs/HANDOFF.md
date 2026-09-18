@@ -5,6 +5,66 @@
 
 ---
 
+# 2026-09-18 — **Probe: bộ over-aligned `operator new/delete` ĐÃ replace — nhánh `ci/probe-aligned-new`, PR #23, owner đã nói "merge".**
+
+Đóng gap mà PR #22 ghi lại thay vì đóng (`AllocationProbe.h` "WHAT IS
+REPLACED", bullet "Gap over-aligned" ở mục PR #22 bên dưới). Trước đó
+`app/tests/AllocationProbe.cpp` chỉ replace bộ unaligned; mọi allocation của
+type có alignment > `__STDCPP_DEFAULT_NEW_ALIGNMENT__` (16 trên cả ba OS) đi
+qua `operator new(size_t, align_val_t)` chưa replace và **counter không thấy**.
+`rta::dsp::RingBuffer` (`alignas(64)`) là type như vậy: một RingBuffer
+heap-allocate đo được **0 byte**.
+
+## Đã làm (commit `f37e7f9`, merge-up `92e558e`)
+
+- **`AllocationProbe.cpp`**: replace đủ bộ ba aligned — `operator new(size_t,
+  align_val_t)`, `operator delete(void*, align_val_t)`, `operator delete(void*,
+  size_t, align_val_t)`. Một block `#ifdef _MSC_VER` duy nhất:
+  `_aligned_malloc`/`_aligned_free` trên MSVC (CRT không có `std::aligned_alloc`
+  lẫn `posix_memalign`), `posix_memalign`/`free` nơi khác — KHÔNG dùng
+  `std::aligned_alloc` vì libc của Apple enforce `size` phải là bội của
+  `alignment`. Hai delete đi cùng một release path với new. Array/nothrow form
+  không cần replace: default của standard forward vào ba hàm này, cùng lý lẽ
+  bộ unaligned đã dùng.
+- **`test_allocation_probe.cpp`**: ba case B0d — direct aligned `::operator new`
+  (anchor không elide được), `std::vector<alignas(64)>` (count từ `volatile`,
+  escape qua `volatile` sink), và `make_unique<RingBuffer<float>>`.
+- `AllocationProbe.h`, comment CMake, memory note: gap đổi thành "đã đóng".
+
+## Đo được (build-l4b, VS 18 2026, RTA_BUILD_APP=OFF, tại `92e558e`)
+
+```
+ctest --test-dir build-l4b -C Release                     -> 100% passed, 824/824  (main 821 + 3 B0d)
+rtatool_analysis_tests.exe [allocationprobe] --order decl -> 83 assertions in 6 test cases; lex và rand seed 7 cũng xanh
+M1  bộ aligned #if 0 (trạng thái trước PR)               -> 3 B0d ĐỎ: 0 == 8192, 0 >= 65536, 4135 >= 4288; B0b/B0c xanh
+M2  chỉ bỏ nhánh đếm trong aligned new                    -> cùng 3 đỏ
+```
+Verifier độc lập (Sonnet 5, worktree riêng, `--clean-first`): CONFIRMED, có
+mutation M3 riêng — xem comment trên PR #23. CI ba OS xanh tại `f37e7f9`;
+`app/tests` build dưới `RTA_BUILD_APP=OFF` nên nhánh `posix_memalign` được
+gcc/libstdc++ và Apple clang/libc++ biên dịch và chạy thật.
+
+## Hai điều trả giá trên đường
+
+- **Bound `counted >= sizeof(RingBuffer<float>)` KHÔNG phải gate.** RingBuffer
+  allocate HAI lần: object qua aligned new, `storage_` (4096 byte) qua unaligned
+  new mà counter vốn đã thấy. 192 byte aligned chìm dưới 4096, case vẫn xanh
+  dưới M1 (đọc 4135). Bound ship là object **cộng** storage = 4288, M1 đỏ tại
+  4135. Verifier tự tái hiện bằng M3. Mẫu cũ:
+  `memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md`.
+- **Đụng PR #25.** Nhánh này cũng sửa lỗi phụ thuộc thứ tự của B0c
+  (`allocationBytes() == before`); PR #25 sửa cùng lỗi cùng ngày bằng
+  `resetAllocationProbe()` đầu case + hai ctest entry one-process, và đó là bản
+  ship. Merge-up `92e558e` bỏ biến thể của nhánh này. Diff so với `origin/main`
+  giờ đúng năm file: bộ aligned, header, ba B0d, một comment CMake, memory note.
+
+## Chưa làm / chờ
+
+- `gh pr merge 23 --merge` chờ CI ba OS xanh tại commit merge-up. Sau merge:
+  ghi sha merge vào mục này, `git pull --ff-only` ở checkout chính.
+
+---
+
 # 2026-09-18 — **L6a station 4, WAVE 1 BUILT and VERIFIED (round 1).** Branch `l6a/wave1-core-metrics`, PR #20 open, NOT merged.
 
 Worktree `.claude\worktrees\agent-a8081552a1df7d90f`, branched from `main` at
@@ -1274,7 +1334,8 @@ việc sửa constant. Giá trị của constant được pin bằng literal ở
 - **`-ffp-contract=off` là policy lâu dài của project, hay là biện pháp giữ tới
   khi D7 lock đổi hình?** PR lấy default giữ property mạnh, nói rõ giá, và để
   đường quay lại đúng một dòng.
-- **Gap over-aligned của probe: ghi lại, chưa đóng.**
+- ~~**Gap over-aligned của probe: ghi lại, chưa đóng.**~~ **ĐÃ ĐÓNG** bằng
+  PR #23 (`ci/probe-aligned-new`, mục đầu file). Nguyên văn lúc viết:
   `operator new(size_t, align_val_t)` vẫn chưa được replace — định nghĩa portable
   cần `_aligned_malloc` trên MSVC và `std::aligned_alloc` ở nơi khác.
   `rta::dsp::RingBuffer` là type như vậy (`alignas(64)`). Không measured window
