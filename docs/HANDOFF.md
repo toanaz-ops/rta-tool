@@ -22,6 +22,41 @@ TDD từng cái, red dán trước green. **Chỉ Task J là ON**; cả server v
 | `git diff main --stat -- platform/ core/src core/include ui/` | **rỗng** |
 | `rtatool_snapshot` | 8 PNG, exit 0 — `main-live.png` dựng và huỷ `MainComponent` (giờ sở hữu một `ApiServer` tắt) sạch |
 
+**SAU KHI MERGE `origin/main` (`b1e14a9`, PR #17 = L6a Wave 0)** -- do lai tren
+cay da merge, khong phai cong so:
+
+| | |
+|---|---|
+| OFF | **774/774**, 0 `warning C`, guard quet **86** file |
+| ON | **848/848**, 0 `warning C` |
+| `no_server_library_outside_api` | xanh **409 file**, ca hai cau hinh |
+| `git diff origin/main --stat -- platform/ core/src core/include ui/` | **rong** (lane nay van khong cham tang nao duoi `app/` ngoai `core/tests/`) |
+
+Ba conflict, ca ba la **hop** (union) va duoc KHANG DINH bang dem, khong bang doc:
+
+- `app/tests/CMakeLists.txt` GLOBS: base **73**, nhanh nay **77** (+4), main
+  **78** (+5) -> hop phai la **82**, do duoc **82**. Ca hai nhom nguon (L-API
+  va L6a Wave 0) con nguyen, moi nhom van co comment phan cach cua no.
+- `memory/MEMORY.md`: base **36** dong, moi ben **37** -> hop **38**, do duoc
+  **38**; khong mat dong nao, va ban dai hon cua bai hoc "verifier voi Bash"
+  (main them mot cau) la ban duoc giu.
+- `docs/HANDOFF.md`: **ca hai** muc dau file song -- L-API Wave 2 roi L6a
+  Wave 0 -- cong ghi chu merge cua main ve PR #16, dat tren header Wave 1 da
+  de-stale cua nhanh nay.
+
+**MOT KHIEM KHUYET CUA MAIN, KHONG SUA O DAY:** `app/tests/CMakeLists.txt` cua
+`origin/main` co **mojibake** -- mot dau section-sign bi encode UTF-8 **hai
+lan**, tuc bon byte \xc3 \x82 \xc2 \xa7 o cho dang le la mot. Dung cai CLAUDE.md
+luat 6 sinh ra de chong. Giu **nguyen byte** khi giai conflict: day la dong cua
+lane khac, sua lang le trong mot conflict resolution la cach lam mat dau vet.
+**Can mot commit rieng** -- ghi cho dieu phoi vien.
+
+**MOT HOP TAC DA PHIEN DANG BIET:** `C:\Users\id_az\AppData\Local\Temp\claude\` la thu muc **DUNG
+CHUNG** giua cac phien, khong phai scratchpad rieng. Phien nay da doc mot
+`m-on.log` **cu tu 16/9** cua phien khac va tuong la log cua minh. Da xac minh
+lai bang cach grep duong dan worktree trong chinh log -- **luon lam the, hoac
+dat log trong scratchpad theo phien.**
+
 Commit: `8318f87` H (vendor cpp-httplib) · `5afb42e` I (`ApiServer`) ·
 `02b5cd0` J (composition root) · `2705b9e` K (guard server-library) ·
 `ef8d93a` I-bổ-sung (nhánh bind cổng CỐ ĐỊNH + `allowLanBind` từ chối).
@@ -140,6 +175,500 @@ Thay bằng grep **neo vào include directive**, đúng thứ guard thật sự 
   "xong". Đường request thì đã chứng minh qua socket thật trong OFF.
 
 ---
+
+---
+
+# 2026-09-18 — **L6a station 4, WAVE 0 BUILT.** Branch `l6a/wave0-spl-publish`, PR open, NOT merged.
+
+Worktree `.claude\worktrees\agent-ac416b1321ee2ec32`, branched from `main` at
+`00276cb` (where PR #15, the station-3 plan, merged). Eight commits, `24f6f14..HEAD` (see the table below). GitHub Actions is still billing-blocked at the account
+level, so **every number below was measured on this machine and pasted**; a
+verifier is expected to re-measure from a clean rebuild.
+
+## Round 3 (2026-09-18, after PR #17's SECOND verifier) -- READ THIS FIRST
+
+Round 2's tallies were confirmed (745/818/745), the merge union verified exact,
+items 1 and 3 confirmed. **Two real gaps and three minors**, all fixed. Round
+2's section below is kept because its defect accounts are still the record of
+what was wrong.
+
+| config | build dir | at `c7845d4` |
+|---|---|---|
+| OFF | `build-spl` | **747/747** |
+| ON | `build-spl-on` | **821/821** |
+| forced fallback | `build-spl-fb` | **747/747** |
+
+`0 warning C` in all three.
+
+### Gap 1 -- the ROUTED publish branch had no test at all
+
+`buildPublishedSnapshot` has **two** branches that attach the SPL block, and
+all three of round 2's SECTIONs used an **empty** `RoutingPlan`. Deleting the
+routed branch's `snapshot->spl = std::move(splView)` therefore left the whole
+suite green -- while a **routed session, which is what a dual-FFT measurement
+rig actually runs during a show**, would have published no SPL at all.
+Silently, because every consumer is already required to tolerate the block
+being absent.
+
+Fixed: a case with two routes on one reference and real paired frames, so the
+routed branch genuinely runs `publishAverageGroup` and `mergeRoutePositions`.
+`positions.size() == plan.routes.size()` is asserted **first**, as proof of
+which branch ran, before the block's values. Plus a SECTION for a routed
+session with nothing logging. Mutation: delete that line ->
+`test_spl_publish.cpp:658  REQUIRE( snapshot->spl.has_value() )` red.
+
+### Gap 2 -- my own mutation (e) claim was half wrong
+
+The verifier was right. There are **two** distinct mutations here and I had
+conflated them:
+
+| mutation | site | reds |
+|---|---|---|
+| **(e1)** the ternary returns a placeholder on the nothing-is-logging path | `buildPublishedSnapshot` | `:545` **only** |
+| **(e2)** the early return returns a placeholder | `buildSplBlockView` | `:560` (and C1's `:78`, `:86`) |
+
+`:560` is the "config but no completed block" branch, which returns `nullopt`
+from **`buildSplBlockView`'s own** early return -- so a mutation confined to
+`buildPublishedSnapshot` cannot reach it, exactly as the verifier said. Both
+mutations are now run and pasted separately, and the PR body is corrected.
+
+### Gap 3 -- the array bound is a gate now, and I corrected my own overclaim
+
+`AnalysisThread::kMaxSplMetricWindows = SplConfig::kMaxMetrics` was a
+**convention**: a literal 16 there with `kMaxMetrics` raised to 24 compiles and
+every test stays green, while the eight metrics past the array's end lose their
+windows and publish as ABSENT.
+
+Two guards, both measured red under that mutation:
+
+- **compile**, `AnalysisThread.cpp`'s `static_assert`, in the TU that declares
+  the array: `error C2338: static assertion failed: 'the per-metric window
+  array must be sized by SplConfig::kMaxMetrics ...'`
+- **run time**, `test_spl_drain.cpp` **D5** (ON), which sizes its buffer from
+  `kMaxSplMetricWindows` itself. With **both** `static_assert`s also deleted:
+  `REQUIRE( filled == session.config()->metrics.size() )` with
+  `kMaxSplMetricWindows = 16, SplConfig::kMaxMetrics = 24, metrics = 24,
+  filled = 16`.
+
+**And a self-correction worth reading, because it is the same mistake the
+verifier had just caught me making.** I first wrote that the new OFF-build case
+("every metric the config can express gets a PRESENT reading") catches this
+drift. It does not and cannot: `AnalysisThread.h` includes JUCE, so that file
+cannot name the constant, and it sizes its buffer from `kMaxMetrics` instead.
+**Measured** under the same mutation it reads "metrics = 24, windows filled =
+24" and stays **green**. Both that case's comment and the `static_assert`'s
+comment now say so, with the measurement, because assuming there is a third
+guard would be the next person's mistake. What the OFF case *does* cover is the
+all-present property, which is what makes `buildSplBlockView`'s no-fallback
+rule safe to ship at all -- absence is the right answer for an unfilled row and
+the wrong answer for a configured metric.
+
+The general lesson, and it cost two rounds: **a guard credited with catching
+something it never touches is worse than no guard**, because it stops anyone
+looking for the real one. Both times the giveaway was the same -- the claim was
+made from where the constant is *declared* rather than from where the buffer is
+*sized*.
+
+### Minors
+
+`core/include/rta/meter/Block.h` said "two static_asserts" where there are
+three (`sizeof`, `alignof`, `offsetof`). Corrected. The PR body's mutation line
+numbers are corrected in the round-3 reply: (a) `:454,463,464` 7 assertions,
+(c) `:498,499`.
+
+### Still open for the owner, unchanged
+
+- **Q11** -- which flags exclude a block. Default shipped, five fixtures.
+- **`UnderRange`** -- reserved, no criterion anywhere, cl. 5.12 paywalled.
+- **Truncate vs refuse** on an over-long metric list -- truncation shipped, the
+  flip is one line.
+
+---
+
+## Round 2 (2026-09-18, after PR #17's verifier) -- READ THIS FIRST
+
+The verifier reproduced 689/762/689, found mutations (a)-(d) red, B0b
+reachable and item-1's numbers exact, and judged the exact-form tolerance
+replacements stronger than the plan's. It also found **three defects**, all
+now fixed on this branch, and the branch is **merged up to `origin/main`
+`7b4773f`** (PR #16, L-API Wave 1).
+
+**The tallies below this section are the PRE-MERGE ones and are superseded.**
+After the merge, measured on the merged tree:
+
+| config | build dir | at `c53ca0e` | note |
+|---|---|---|---|
+| OFF | `build-spl` | **745/745** | includes L-API Wave 1's own 46 |
+| ON | `build-spl-on` | **818/818** | |
+| forced fallback | `build-spl-fb` | **745/745** | `-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON` |
+
+`0 warning C` in both. Guards: `core_has_no_framework_deps` 164,
+`core_makes_no_class_1_claim` 11, `no_std_atomic_over_shared_ptr` 401,
+`no_json_parser` 329 (1 test witness), `test_names_are_ascii` 133,
+`platform_types` 8, `measure_has_no_framework_deps` **81** -- main's 76 plus
+this lane's 5, which is the arithmetic that proves the GLOBS union kept both
+sides rather than silently shrinking guard coverage.
+
+### Defect 1 -- the metric cap, and the 18.8 dB lie above it
+
+`SplConfig::metrics` was an unbounded vector validated nowhere, while the
+publish path's per-metric window storage is a fixed array of 16. At 17
+metrics `fillMetricWindows` returned 0 (all-or-nothing), which
+`buildSplBlockView` read as "no per-metric windows supplied" and therefore as
+permission to use one shared window for every metric. **Reproduced exactly**
+before fixing, on my own fixture, matching the verifier's figures: the
+C-weighted metric published **`-28.1735 dB`** -- the A chain's number --
+where its own is **`-9.33053 dB`**. **18.843 dB wrong, under a C label.** That
+is `e35f121`'s defect re-opened one index above the array bound, and
+`AnalysisThread.h` even documented the truncation it did not implement.
+
+Closed in **three layers, each sufficient alone**, because the failure was
+silent and 18.8 dB wide:
+
+- **(a)** `SplConfig::kMaxMetrics` -- ONE constant, declared with the data it
+  bounds. `AnalysisThread::kMaxSplMetricWindows` is now `= SplConfig::
+  kMaxMetrics` rather than a second 16; **two independent numbers is how the
+  hole opened**. `SplSession::start` TRUNCATES the list to it.
+- **(b)** `fillMetricWindows` fills `min(out.size(), metrics.size())`, so an
+  undersized buffer gives a SHORT answer instead of a wrong one.
+- **(c)** `buildSplBlockView` no longer falls back per metric. Empty
+  `metricWindows` still means "single weighting, read the shared window";
+  non-empty-and-short now yields an EMPTY span for the uncovered rows, which
+  `combineBlocks` turns into an absent Leq. The reading **floors instead of
+  lying**.
+
+**Truncation, not refusal, and it is named.** Refusing the session would
+silence SPL logging outright on a misconfiguration and lose a show's
+evidence, which is worse than logging the first sixteen -- and that is only
+acceptable **because the count is reported**: `SplSession::refusedMetrics()`,
+carried through `SplPublishInput::refusedMetrics` to
+`SplBlockView::refusedMetrics`, so an operator who configured eighteen
+readouts and got sixteen can see the two. A caller that would rather refuse
+reads `SplConfig::refusedMetricCount()` first. **If the owner prefers
+refusal, that is a one-line flip and this is where it is recorded.**
+
+Mutations, each red then reverted: **(a)** drop the truncation -> red at both
+the session and the publish level; **(b)** restore all-or-nothing -> red;
+**(c)** restore the per-metric fallback -> red; **(a)+(c)** together -> the
+original defect, and the red line now reads
+`-28.17347908020019531 is within 0.0001 of -9.33052539825439453` with
+`published metric: LCeq_last = -28.1735 dB`. The mislabelling assertion was
+deliberately moved ABOVE the size assertion so a regression prints the dB
+error rather than `17 == 16`.
+
+### Defect 2 -- the publish path's absence branch was untested
+
+Publishing `SplBlockView{}` instead of `std::nullopt` inside
+`buildPublishedSnapshot` left 689/689 **green**. Every case in
+`test_spl_publish.cpp` called `buildSplBlockView` DIRECTLY, and nothing called
+`buildPublishedSnapshot` with an `spl` argument -- so the line deciding
+whether `Snapshot::spl` exists at all, and both branches that copy the base
+Snapshot to attach it, were reachable from no test. Three SECTIONs now go
+through the real function with a real `Analyser`: nothing logging -> no spl
+block **but a real snapshot otherwise**; a config with no completed block ->
+still none; logging -> `blockIndex 89`, `blockSamples 48000`,
+`droppedSamples 12000`, the `Gap` flag, the 85.0 dB metric and the surviving
+base-snapshot fields. Mutation **(e)**: red on both absence branches.
+
+### Defect 3 -- the record now carries what Wave 0 measured
+
+`docs/dsp/2026-09-16-spl-pro-l6a.md` gains a dated **§15** with five
+amendments, **every paragraph above left standing**, and inline pointers at
+§2's payload table and §3's "retire a block" paragraph so a reader acting on
+either is sent there rather than silently contradicted. A1 the block's new
+field and flag with measured offsets; A2 the membership rule
+(`CalibrationInvalid` alone excludes, `Overload` includes, with the bias
+argument and the statement that IEC 61672-1 cl. 3.28 and ISO 1996-2 cl. 10.3
+are **paywalled and unread** so no standard basis is claimed for the four
+inclusions); A3 the raw-hop overload finding cited to **Smaart LE v9.1 p. 78
+and engineering grounds, explicitly NOT IEC 61672-1**, whose clauses
+5.11/5.12/5.17/5.18 have not been read by anyone here; A4 the three falsified
+tolerances; A5 the metric cap.
+
+### Still open after round 2
+
+- **`UnderRange` is RESERVED, not implemented** -- the flag exists and is
+  counted, nothing sets it, cl. 5.12 is paywalled. Recorded in §15 A2.
+- **Q11** (which flags exclude) remains an owner question; the default is
+  shipped with five fixtures behind it.
+- Everything in the pre-merge "take to the orchestrator" list below still
+  stands except item 5, which is now fixed.
+
+---
+
+## Baselines and tallies, per config
+
+| config | build dir | main (`00276cb`) | at HEAD | delta |
+|---|---|---|---|---|
+| OFF (`-DRTA_BUILD_APP=OFF`) | `build-spl` | **649/649** | **689/689** | +40 (12 core, 28 app) |
+| ON (`+RTA_BUILD_APP=ON`, JUCE 9.0.1) | `build-spl-on` | **717/717** | **762/762** | +45 (the 40 above plus 5 `routing_live`) |
+| forced fallback (OFF `+RTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON`) | `build-spl-fb` | — | **689/689** | — |
+
+`0 warning C` in all three. The main OFF baseline was measured on the untouched
+tree before W0-A; the main ON baseline is the arithmetic `762 − 45 = 717`, which
+is the figure the L7 close-out already recorded, independently reached.
+
+Guard scanned counts, each read from its own `OK (N files scanned)` line:
+
+| guard | main | now | by |
+|---|---|---|---|
+| `core_has_no_framework_deps` | 161 | **164** | `+3` — `Block.h`, `Block.cpp`, `test_block.cpp` |
+| `core_makes_no_class_1_claim` | 9 | **11** | `+2` — `Block.h`, `Block.cpp` (its globs cover `meter/*`) |
+| `no_std_atomic_over_shared_ptr` | 371 | **387** | every new file under `core/` and `app/` |
+| `measure_has_no_framework_deps` | 67 | **73** | `+1` W0-B0 (automatic, trailing `*.h` glob), `+3` W0-B, `+0` W0-C/E, `+2` W0-D — **exactly the plan's per-wave prediction** |
+| `test_names_are_ascii` | — | 127 files | |
+
+**The 161 figure is a correction to watch.** An early reading said 162; that
+reading already had the uncommitted `test_block.cpp` on disk. Counted from
+`git ls-tree 00276cb`, the tracked set matching the guard's globs is **161**, so
+the rise is +3 and not +2. Do not re-report the +2.
+
+## sizeof(Block), printed
+
+`static_assert`ed in the header (so a disagreeing compiler fails the BUILD) and
+printed by W0-A A1's `INFO`:
+
+```
+offsetof blockIndex     = 0
+offsetof blockSamples   = 8
+offsetof droppedSamples = 12
+offsetof sumSquares     = 16
+offsetof maxFastDb      = 24
+offsetof maxSlowDb      = 28
+offsetof peakDb         = 32
+offsetof flags          = 36
+sizeof(Block)           = 40      alignof = 8
+```
+
+`droppedSamples` occupies exactly the four bytes the `double`'s alignment was
+already wasting, so **record §4's ring-size table does not move** while a gap
+becomes reconstructible from the log text alone. Measured on MSVC 14.51 x64
+only — GCC and Clang are what CI would add, and CI is blocked.
+
+## What is done, per task
+
+| task | commit | what |
+|---|---|---|
+| W0-A | `24f6f14` | `meter::Block`, `BlockAccumulator`, `combineBlocks`, `calibrationOffsetDb`, `excludesFromWindow` (core, OFF). 12 TEST_CASEs, 105 assertions |
+| W0-B0 | `6489e8b` | `app/tests/AllocationProbe.{h,cpp}` — the ONE global `operator new` in the binary; `test_average_group.cpp` rewired to the scope guard |
+| W0-B | `566c666` | `SplConfig`, `SplMeter` (app, OFF). 7 TEST_CASEs |
+| W0-C | `81afef7` | `Snapshot::spl`, `SplPublishInput`, `buildSplBlockView` (app, OFF). 7 TEST_CASEs, 204 assertions |
+| W0-E | `e30a5c0` | the 3.0103 dB seam, closed form (app, OFF). 4 TEST_CASEs. **Carries the §13 Q1 scope default** |
+| W0-D + G2 | `ad4046b` | the drain feed (app, **ON**) + `SplSession` (OFF) + the Table 2 → Table 3 fix |
+| the weighting fix | `e35f121` | one chain per DISTINCT weighting, `metricWindows`, and the master plan / weighting-doc prose |
+| docs | this commit | this HANDOFF section |
+
+## The design finding that changed the plan
+
+**The overload run cannot live in `BlockAccumulator`.** Every sample that
+reaches the accumulator has already been through a weighting filter that
+changed its value, and **measured**, the C-weighted copy of three samples at
+`rta::dsp::kFullScaleThreshold` does not reach that threshold at all — W0-B B3
+was RED against the first implementation for exactly that reason. Overload is a
+fact about what the converter delivered, so the latch now reads the **RAW** hop
+in `SplMeter`, which is where SPL-R4 already put it; core takes the resulting
+flag through `setFlag`, and holds no threshold for `Overload`, `UnderRange` or
+`CalibrationInvalid`.
+
+## Three plan tolerances falsified by measurement
+
+Each widened **with its reason in the test**, and each with the EXACT form of
+the same identity asserted beside it on an exactly representable fixture:
+
+| row | plan said | measured | now |
+|---|---|---|---|
+| W0-A A2, `a = 1/√2` | 8.882e-16, assert tightly | **1.955e-12** | in the 1e-9 group with its residual printed; only `a = 1.0` is exact, and that one is asserted BITWISE (`sumSquares == 48000` exactly) |
+| W0-B B5 | 1e-9 on a full-scale sine | **−8.27e-08 dB** | float-derived 1e-6, plus an alternating ±1 fixture where `blockLevelDb == 94.0` bitwise |
+| W0-E E2/E3 | 1e-9 | **−8.27e-08 dB** | same, plus `levelDbFs(1.0) − meter(0.0) == kFullScaleSineOffsetDb` bitwise |
+
+The cause is **float32 sample quantisation, not summation**: half a float ULP
+near amplitude 1.0 is 2.98e-08 relative, giving about 2.6e-07 dB. A sine cannot
+reach 1e-9 through a `float` buffer on any toolchain, so this is a plan
+arithmetic error rather than a machine difference. Other measured figures worth
+keeping: W0-A A2 residuals `a=0.1 −9.06e-13`, `a=0.3 −2.88e-12`, `a=0.5 0`;
+W0-B B1 digital residual `−5.09e-08 dB` against `responseDb(1 kHz, A) =
+0.00435887` (`analyticDb = 0`, gap 0.00435881, inside the record's 0.05);
+W0-B B2 `t = 50 ms` residual `1.752e-07`, `t = 5τ` residual `−6.89e-09`;
+B2b step `−4.8190745912`, decay `−1.7371779276`, gap `−3.0818966636`;
+T12 after the probe move, unchanged: `bytes(1) 1359, bytes(4) 1575,
+bytes(8) 1863, delta 288` against its own bound of 4352.
+
+The plan's `5τ` deficit figure (`−0.0286 dB`) is also wrong — the closed form
+is `−0.02936` from silence and `−0.029067` from the fixture's own 20 dB-down
+floor. The test asserts the formula, which is why it did not matter.
+
+## Two file-list deviations, both the plan's own escape hatch
+
+1. **`app/src/measure/SplSession.{h,cpp}`** (NEW, JUCE-free). W0-D lists
+   `AnalysisThread.{h,cpp}` only, with the escape hatch "if it breaches, the
+   seam is drain-versus-feed and the feed moves out". It breached: inlining the
+   feed put `AnalysisThread.cpp` at **480** lines against a 400 cap. The
+   session moved here rather than into `AnalysisPublish.cpp` because this is
+   STATE with a lifetime while that file is free functions. The win is bigger
+   than the budget: the block clock, the gap arithmetic and the window are now
+   proven with `RTA_BUILD_APP=OFF` on all three CI operating systems
+   (`app/tests/test_spl_session.cpp`).
+2. **`app/src/measure/AnalysisThreadSpl.cpp`** (NEW) — the same class, a second
+   translation unit, the `AlignmentWizard.cpp`/`AlignmentWizardSignals.cpp`
+   shape. It carries the thread handover and the published counters.
+   `AnalysisThread.cpp` lands at **381**.
+
+Also named: **`SplConfig` does not carry `std::array<DoseSettings, 2> dose`
+yet.** `DoseSettings` ships in W1-D, which is Wave 1; inventing the type here
+would put it in the wrong lane. Nothing in Wave 0 reads a dose.
+
+## Mutations run, every one RED then reverted
+
+W0-A: average per-block dB instead of summing energy → A4 read `L+5.0` against
+`L+7.4036` (and A4b `70.0` against `77.0329`); delete the `CalibrationInvalid`
+filter → A5, A9, A13; make `Overload` exclude → A10–A12, A13; `Gap` bit with
+`droppedSamples == 0` → A8.
+W0-B0: a second `operator new` in a header nothing includes → B0b read
+`count = 2` **while the binary still linked**, which is the whole reason that
+scan exists.
+W0-B: `rta::dsp::hasOverload` per hop with no carried state → B3; sample the
+detector at the block boundary instead of max-holding → B2 read `−25.95 dB`
+against `−10.75` predicted.
+W0-C: return a default-constructed `SplBlockView` instead of `nullopt` → C1.
+W0-E: apply `kFullScaleSineOffsetDb` inside the meter path as well → E2 read
+`+3.0103`, E3 read `97.0103`.
+W0-D: move the tap BELOW the cap check → D1b, and channel 9 (route position 8)
+went **silent with no Gap**, which is the one outcome this lane may never ship;
+remove the `drainRole` feed → D2; `Gap` bit without the count → D3 (ON) and
+three assertions of the OFF session test.
+
+The weighting fix's own mutation (ignore `metricWindows`) made the C metric read
+70.0 against 90.0.
+
+Every mutation deleted the test exe first AND touched the TU holding the
+assertion (`memory/mutation-testing-needs-the-exe-deleted-first.md`). **One
+incident worth carrying forward:** reverting that last mutation with
+`git checkout -- <file>` also reverted the *uncommitted fix underneath it*,
+because HEAD predated both — exactly
+`memory/a-verifier-with-bash-can-git-checkout-your-uncommitted-fix.md`, done to
+myself rather than by a verifier. It cost one rebuild. **Commit the fix before
+mutating it.** The run finished with a full rebuild of all three configs from a
+clean `git status` —
+689/689, 762/762 and 689/689 (forced fallback), `git diff HEAD` empty.
+
+## Guards, red once each in the shape that trips them
+
+- `core_has_no_framework_deps` — `#include <juce_core/juce_core.h>` in `Block.h`
+  → FATAL_ERROR naming the file. Reverted.
+- `measure_has_no_framework_deps` — the same include in `SplSession.h` → red,
+  naming `SplSession.h`. Reverted.
+- `core_makes_no_class_1_claim` — a `Class 1` claim in `Block.h` → red, and its
+  message now reads **"full Table 3 tolerance envelope"**, which is the point of
+  G2. Reverted.
+- `audioio_callback_has_no_rt_hazards`,
+  `audioio_scoped_no_denormals_is_first`, `output_render_has_no_rt_hazards`,
+  `check_callback_shape` — not reached, still green.
+  `git diff 00276cb --stat -- platform/ ui/` is **empty**, and
+  `test_spl_drain.cpp` D4 asserts the same thing structurally on every build.
+
+## What the human can try, and how
+
+Nothing in Wave 0 is reachable from the running app — there is no SPL pane yet
+(that is W2-D) and no composition-root call to `enableSplLogging` (the API is
+declared, the caller is Wave 2). What can be run:
+
+Build and run the OFF suite, which is where the whole wave's proof lives:
+
+```bash
+cmake -S . -B build-spl -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=OFF
+```
+
+Then (one command per block, so the Run button appears):
+
+```bash
+cmake --build build-spl --config Release --parallel
+```
+
+```bash
+ctest --test-dir build-spl -C Release --output-on-failure
+```
+
+Expect **689/689**. To see the block layout printed, and the measured residuals
+this handoff quotes:
+
+```bash
+build-spl/core/tests/Release/rta_core_tests.exe "[block]" -s
+```
+
+```bash
+build-spl/app/tests/Release/rtatool_analysis_tests.exe "[splmeter]" -s
+```
+
+For the ON half (the drain tap, D1b's route past the cap):
+
+```bash
+ctest --test-dir build-spl-on -C Release -R spl_drain --output-on-failure
+```
+
+Expect 5/5. These are PowerShell-safe: one command each, no `&&`, no `$`.
+
+## Take to the orchestrator
+
+1. **Three plan tolerances are wrong** (the table above). They are arithmetic
+   errors in the plan, not machine differences, so the plan wants amending
+   rather than the tests re-widening on another toolchain.
+2. **Record §2's `peakDb` and the overload criterion are different streams.**
+   The record says `peakDb` is C-weighted and sampled; the overload run must be
+   RAW. Both are now true in the code, and the record says only the first. This
+   wants one sentence in §2 and in SPL-R4.
+3. **`UnderRange` has no criterion anywhere.** `BlockFlag::UnderRange` exists
+   and `combineBlocks` counts it, but nothing sets it: IEC 61672-1 cl. 5.12 is
+   paywalled and unread, so core deliberately holds no threshold and the flag
+   is a caller's to set through `setFlag`. Wave 2 will have to decide, or the
+   flag should be documented as reserved.
+4. **`SplSession`'s Wave-0 window is a rolling vector, not the record's ring.**
+   Capped at the longest metric's `windowBlocks` and at 3600; it `std::rotate`s
+   once per block (144 KB/s at the 1 s default). W2-A replaces it with the ring
+   sized once from `logSpanSeconds`. If W2-A slips, this is the thing that is
+   not the record's §4.
+5. **A defect found while writing THIS handoff, and fixed rather than
+   reported** (commit `e35f121`). `SplMeter` runs ONE weighting per instance,
+   but `SplSession` built a single A-weighted meter per channel and read every
+   metric's window from it -- so a config naming `LCeq` would have been
+   published **A-weighted numbers under a C-weighted label**, with
+   `SplConfig::metrics` carrying a `weighting` field the code ignored. Nothing
+   was red, because no fixture had two weightings in it. The session now builds
+   one chain per distinct weighting and `SplPublishInput::metricWindows`
+   carries that into the publish. Two counters needed care in the other
+   direction: `droppedSamplesTotal` reads ONE chain rather than summing (the
+   same loss rides all of them, and summing would make a reconstructed
+   timestamp LATE), and `blockCount` reports the minimum across chains.
+   **The lesson for the orchestrator is the shape of it**: the config could
+   express something the code could not serve, and only writing the handoff
+   surfaced it.
+6. **Q11 (which `BlockFlag`s exclude) is still an owner question**, and the
+   default is now shipped in code with five fixtures behind it:
+   `CalibrationInvalid` alone.
+7. The merge conflict the orchestrator should expect: `app/tests/CMakeLists.txt`
+   `GLOBS`, against `remote-api/wave1-serialise`. This lane's additions are one
+   contiguous run (`SplConfig.h`, `SplMeter.h`, `SplMeter.cpp`, `SplSession.h`,
+   `SplSession.cpp`) inserted immediately before the trailing `*.h`/`*.hpp`
+   patterns, so the resolution is "keep both runs".
+
+## Next phase: Wave 1
+
+Build order from the plan: **W1-A** (`LevelHistogram`) ∥ **W1-C** (`Alarm`) ∥
+**W1-D** (`Dose`, two files), then **W1-B** (which extends
+`core/tests/test_block.cpp`, so it follows W0-A and is already unblocked), then
+**W1-E**. All five are core, all OFF, all closed-form — **no golden vector may
+be added to this lane**. W1-A7/A8 are the two fixtures that pin
+`histogramBaseDb()`, whose arithmetic W0-B already asserts at the default's own
+site (`test_spl_meter.cpp`'s last TEST_CASE): bin 1200 of 2000 uncalibrated,
+bin 1600 for 140 dB(A) at a +100 dB offset.
+
+Known pitfalls carried forward: W1-D's D1b/D1c are BITWISE on purpose and were
+measured to be so on two toolchains — a CI toolchain that refutes it is a
+finding for the PR body, never a tolerance to widen. W1-D2c's 99 dBA row is a
+named, excluded erratum and the bound is not widened for it.
+
+---
+
+> *Note added 2026-09-18 while merging `origin/main` into `l6a/wave0-spl-publish`: the PR this section calls open is **PR #16, and it MERGED at `7b4773f`**. The narrative below is left as L-API's own account of the wave; only this line is new.*
 
 # 2026-09-17 — **L-API station 4, WAVE 1 (tasks A–G) XONG — nhánh `remote-api/wave1-serialise`, đã merge thành PR #16 tại `7b4773f`.** *(Wave 2 đã XONG 2026-09-18 — xem mục phía trên; dòng "việc kế tiếp" cũ đã bị xóa vì nó không còn đúng.)*
 

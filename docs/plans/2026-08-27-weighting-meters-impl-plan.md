@@ -556,9 +556,14 @@ add_test(NAME core_makes_no_class_1_claim
 `core/tests/check_no_conformance_claim.cmake` (new, ~30 lines, modelled on
 `check_no_framework_deps.cmake`) greps `core/` for a case-insensitive
 `class *[01]` and fails with a message pointing at
-`docs/dsp/2026-08-27-weighting-and-meters.md`. The full IEC 61672-1 Table 2
+`docs/dsp/2026-08-27-weighting-and-meters.md`. The full IEC 61672-1 Table 3
 tolerance list is paywalled and only 4 points are corroborated; until it is
 sourced, no such claim may be made.
+
+> *Corrected 2026-09-18 (lane L6a station 4, task G2): this paragraph said
+> "Table 2". Table 2 is directional response; the frequency-weighting
+> tolerances are Table 3. The guard's own comment and `FATAL_ERROR` text
+> carried the same error and were fixed in the same commit.*
 
 ### Track D — detector (`core/tests/test_detector.cpp`, budget 190 lines)
 

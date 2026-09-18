@@ -176,3 +176,55 @@ whole ruling moved.
   recurring shape: a number that is a property of the thing that measured it.
 - `docs/plans/2026-09-15-L7-align-impl-plan.md` rows D6 and I4 carry both
   amendments and the measurements behind them.
+
+---
+
+## The attribution version, paid for twice in one PR (2026-09-18, L6a Wave 0, PR #17)
+
+The file above is about a mutation nobody ran. There is a nastier variant where
+the guard **does** work and the **credit** is wrong — it catches a real
+property, just not the one it is documented as catching. That is worse than no
+guard, because it stops the next person looking for the real one.
+
+Twice in two verifier rounds, and both times the same tell.
+
+**Once in a PR reply.** I wrote that mutation (e) — a placeholder instead of
+`std::nullopt` in `buildPublishedSnapshot` — reddened two assertions, `:545`
+and `:560`. It cannot redden `:560`: that branch gets its `nullopt` from
+`buildSplBlockView`'s **own** early return, one function down, which a mutation
+confined to the caller never touches. Two *different* mutations were needed,
+one per site.
+
+**Once in a test comment, in the fix for the first.** I wrote that a new
+OFF-build case detected drift between `AnalysisThread::kMaxSplMetricWindows`
+and `SplConfig::kMaxMetrics`. It cannot: that header includes JUCE, so the
+OFF file cannot even name the constant, and it sizes its buffer from the other
+one. Measured under the drift it reads `metrics = 24, windows filled = 24` and
+stays green. The real guards were a `static_assert` in the translation unit
+that declares the array, and one ON test that sizes its buffer from the array's
+own constant.
+
+### The tell, both times
+
+The claim was made from where the constant or the value is **declared**, rather
+than from where it is **used**. `:560` and `:545` are both "absence" and read
+as one property until you ask which function *produces* the absence.
+`kMaxSplMetricWindows` and `kMaxMetrics` are spelled as equal at the
+declaration, which is precisely why a literal substituted at the **use** site
+goes unnoticed.
+
+### The check
+
+Do not write "this test catches X". Run the mutation for X and **paste what
+went red, by file and line**. If the paste has two lines, confirm that one
+mutation produced both — a single mutation cannot redden two assertions that
+get their answers from two different functions. And when a guard compares two
+names, ask what happens if someone replaces one of them with its *value*: a
+`static_assert(A == B)` survives that substitution at the site it is written
+and says nothing about any other site.
+
+Cheaper still, and it is the same question this file already asks one level up:
+**for each thing the guard is credited with, what edit would make it red?** If
+the answer is "an edit somewhere this guard cannot see", the credit belongs to
+a different guard, or to none yet.
+

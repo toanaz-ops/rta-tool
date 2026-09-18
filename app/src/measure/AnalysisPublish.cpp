@@ -160,9 +160,83 @@ AverageGroupPublish publishAverageGroup(const AverageGroup& group,
     return group.publish(positions);
 }
 
+std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
+    // Absence, in both of its forms. Nothing is logging (no config), or a
+    // logging session has not closed its first block yet -- and neither may
+    // publish a zeroed block that reads as a measurement
+    // (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+    if (input.config == nullptr || !input.latestBlock.has_value()) {
+        return std::nullopt;
+    }
+    const SplConfig& config = *input.config;
+    const rta::meter::Block& latest = *input.latestBlock;
+
+    SplBlockView view;
+    view.blockIndex = latest.blockIndex;
+    view.blockSamples = latest.blockSamples;
+    view.sampleRate = input.sampleRate;
+    view.referenceOffsetDb = config.referenceOffsetDb;
+    view.calibrated = config.calibrated;
+    view.flags = latest.flags;
+    view.droppedSamples = latest.droppedSamples;
+    // The block stores un-offset dB so a calibration offset discovered later
+    // can be applied to a log without rewriting it; the offset is added here,
+    // at the publish, exactly once.
+    view.maxFastDb = static_cast<float>(latest.maxFastDb + config.referenceOffsetDb);
+    view.maxSlowDb = static_cast<float>(latest.maxSlowDb + config.referenceOffsetDb);
+    view.peakCDb = static_cast<float>(latest.peakDb + config.referenceOffsetDb);
+
+    view.refusedMetrics = static_cast<std::uint32_t>(input.refusedMetrics);
+    view.metrics.reserve(config.metrics.size());
+    for (std::size_t i = 0; i < config.metrics.size(); ++i) {
+        const SplMetricSpec& spec = config.metrics[i];
+        const std::uint64_t windowBlocks = spec.windowBlocks == 0 ? 1 : spec.windowBlocks;
+
+        // THIS METRIC'S OWN window. `SplMeter` runs one weighting per instance
+        // (W0-B), so an A-weighted metric and a C-weighted one are averaged
+        // over different chains and `metricWindows` is what says which.
+        //
+        // NO PER-METRIC FALLBACK once `metricWindows` is non-empty (PR #17
+        // verifier defect 1). An EMPTY `metricWindows` means the caller
+        // supplied none at all -- the single-weighting case W0-C's own
+        // fixtures use -- and then every metric reads the shared `window`. But
+        // a caller that supplied SOME and ran out has said nothing about the
+        // rest, and reading `window` for those was how a C-weighted metric
+        // came to publish A-weighted numbers under a C label, 18.8 dB wrong.
+        // A row nobody filled is an EMPTY span, which `combineBlocks` turns
+        // into an absent Leq: the reading floors instead of lying.
+        const bool perMetric = !input.metricWindows.empty();
+        const auto source =
+            perMetric ? (i < input.metricWindows.size() ? input.metricWindows[i]
+                                                        : std::span<const rta::meter::Block>{})
+                      : input.window;
+
+        // The LAST windowBlocks of the buffer. A window longer than the
+        // buffer takes the whole buffer and says so through bufferFill --
+        // never a shorter answer presented as a full one (record §9).
+        const std::size_t take = std::min(static_cast<std::size_t>(windowBlocks), source.size());
+        const auto tail = source.subspan(source.size() - take, take);
+        const auto result = rta::meter::combineBlocks(tail, input.sampleRate,
+                                                      config.referenceOffsetDb, windowBlocks);
+
+        SplMetricReading reading;
+        reading.id = spec.id;
+        reading.valueDb = static_cast<float>(result.leqDb.value_or(kLevelFloorDb));
+        reading.leqBufferFill = static_cast<float>(result.bufferFill);
+        view.metrics.push_back(std::move(reading));
+    }
+
+    // `alarms`, `dosePercent`, `doseProjected` and `lnDb` stay EMPTY/ABSENT
+    // through Wave 0. The latch is W1-C, the accumulators are W1-D and the
+    // histogram is W1-A; publishing a 0.0 % dose here would read as "measured,
+    // and there was no exposure".
+    return view;
+}
+
 SnapshotPtr buildPublishedSnapshot(std::vector<std::unique_ptr<Analyser>>& analysers,
                                    AverageGroup& group, std::vector<int>& lastTfIndices,
-                                   const RoutingPlan& plan, std::uint64_t droppedSamples) {
+                                   const RoutingPlan& plan, std::uint64_t droppedSamples,
+                                   const SplPublishInput* spl) {
     // analysers[0] always builds the base Snapshot: its own single-channel
     // spectrum engines are fed by the SAME pushPair() call that feeds its
     // dual-FFT engine whether or not any route exists at all
@@ -171,14 +245,28 @@ SnapshotPtr buildPublishedSnapshot(std::vector<std::unique_ptr<Analyser>>& analy
     // curve when routes exist.
     SnapshotPtr base = analysers[0]->publish(droppedSamples);
 
+    // The SPL fold. Built once, before the routing branch below, because it
+    // does not depend on routing at all: a session with no reference and no
+    // route logs SPL (research §C4), which is the whole point of W0-D.
+    auto splView = (spl != nullptr) ? buildSplBlockView(*spl) : std::nullopt;
+
     const auto memberAnalyserIndices = syncAverageGroupMembership(group, lastTfIndices, plan);
     if (plan.routes.empty()) {
-        return base;
+        if (!splView.has_value()) {
+            return base;
+        }
+        // One field to add, so one copy -- the same fixed, bins-sized cost
+        // the routed branch below already pays, and paid only when something
+        // is actually logging.
+        auto plainWithSpl = std::make_shared<Snapshot>(*base);
+        plainWithSpl->spl = std::move(splView);
+        return plainWithSpl;
     }
 
     auto grouped = publishAverageGroup(group, memberAnalyserIndices, analysers);
 
     auto snapshot = std::make_shared<Snapshot>(*base);
+    snapshot->spl = std::move(splView);
     snapshot->average = std::move(grouped.average);
     snapshot->soloTransfer = std::move(grouped.soloTransfer);
     // Every route gets a summary, member or not (station-4 fix F3) -- see
