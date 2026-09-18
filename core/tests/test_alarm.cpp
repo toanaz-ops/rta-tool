@@ -15,10 +15,10 @@
 #include "rta/meter/Block.h"
 
 #include "BlockFixtures.h"
+#include "support/SourceScan.h"
 
 #include <cmath>
 #include <cstddef>
-#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -29,6 +29,9 @@
 using Catch::Matchers::WithinAbs;
 using namespace rta::meter;
 using rta::testing::blockAtLevel;
+using rta::testing::lowered;
+using rta::testing::readRepoFile;
+using rta::testing::stripLineComments;
 
 namespace {
 
@@ -42,38 +45,6 @@ double referenceHeadroom(double windowSeconds, double elapsedSeconds, double ela
     const double budget = windowSeconds * std::pow(10.0, limitDb / 10.0);
     const double spent = elapsedSeconds * std::pow(10.0, elapsedLeqDb / 10.0);
     return 10.0 * std::log10((budget - spent) / (windowSeconds - elapsedSeconds));
-}
-
-std::string readRepoFile(const char* relative) {
-    std::ifstream in(std::string(RTA_REPO_ROOT) + "/" + relative, std::ios::binary);
-    REQUIRE(in.good());
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    return buffer.str();
-}
-
-/// Drops line comments, which is the whole of what these two files use. A
-/// naming check has to look at code, not at prose.
-std::string stripLineComments(const std::string& text) {
-    std::string out;
-    out.reserve(text.size());
-    std::size_t i = 0;
-    while (i < text.size()) {
-        if (text[i] == '/' && i + 1 < text.size() && text[i + 1] == '/') {
-            while (i < text.size() && text[i] != '\n') ++i;
-        } else {
-            out.push_back(text[i]);
-            ++i;
-        }
-    }
-    return out;
-}
-
-std::string lowered(std::string s) {
-    for (char& c : s) {
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-    }
-    return s;
 }
 
 /// A WindowResult carrying EXACTLY the level asked for.
