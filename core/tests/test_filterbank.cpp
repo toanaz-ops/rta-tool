@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <string_view>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -37,8 +38,12 @@ std::vector<float> unitSine(double freqHz, double sampleRate, std::size_t n) {
     return out;
 }
 
+// `name` is a by-value view, not `const std::string&`: gcc's -Wdangling-reference heuristic
+// flags any reference-returning call that binds a temporary to a reference parameter, and the
+// string built from a literal here is compared, never returned. A view has no reference for
+// the heuristic to trip on and skips the allocation.
 const rta::test::GoldenCase& findCase(const std::vector<rta::test::GoldenCase>& cases,
-                                       const std::string& name) {
+                                      std::string_view name) {
     return *std::find_if(cases.begin(), cases.end(), [&](const auto& c) { return c.name == name; });
 }
 
@@ -180,7 +185,7 @@ TEST_CASE("The impulse response matches scipy sosfilt sample by sample", "[filte
     // both indices supplies the band edges, matching gen_filterbank.py.
     const OctaveBands wideBands(3, 10.0, 20000.0);
 
-    for (const std::string& name : { "impulse_fs48000_idx-17", "impulse_fs48000_idx0" }) {
+    for (const std::string_view name : { "impulse_fs48000_idx-17", "impulse_fs48000_idx0" }) {
         CAPTURE(name);
         const auto& tc = findCase(cases, name);
         const int index = name == "impulse_fs48000_idx-17" ? -17 : 0;

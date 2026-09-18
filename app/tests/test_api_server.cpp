@@ -118,6 +118,22 @@ struct Wire {
     return sendRaw(port, compose(wire, port));
 }
 
+/// Parses `text` and drops the result -- the shape every CHECK_NOTHROW below
+/// wants, since the assertion is "does not throw", not the value.
+///
+/// It cannot be spelt `CHECK_NOTHROW(nlohmann::json::parse(text))`, nor
+/// `CHECK_NOTHROW(static_cast<void>(nlohmann::json::parse(text)))`: parse() carries
+/// nlohmann's JSON_HEDLEY_WARN_UNUSED_RESULT, which on gcc is
+/// __attribute__((warn_unused_result)), and gcc deliberately does NOT let a
+/// cast to void satisfy that attribute (unlike [[nodiscard]]). Catch2 already
+/// wraps the macro argument in exactly that cast
+/// (catch_test_macro_impl.hpp:80), so both spellings warn -- measured on
+/// gcc 16.1.0 with -Wall -Wextra -Wpedantic, the flags CMakeLists.txt:52 hands
+/// CI's gcc. Initialising a variable from the result does satisfy it.
+void parseAndDrop(const std::string& text) {
+    [[maybe_unused]] const auto parsed = nlohmann::json::parse(text);
+}
+
 }  // namespace
 
 // --- I1 / I1b: what the constructor did, asserted on the object ------------
@@ -162,7 +178,7 @@ TEST_CASE("I2b every one of the eight routes answers, and an unknown one does no
         wire.target = std::string("/api/v1/") + path;
         const auto response = call(fixture.port(), wire);
         CHECK(response.status == 200);
-        CHECK_NOTHROW(nlohmann::json::parse(response.body));
+        CHECK_NOTHROW(parseAndDrop(response.body));
     }
     Wire unknown;
     unknown.target = "/api/v1/nope";
@@ -335,7 +351,7 @@ TEST_CASE("I11 a WebSocket upgrade offer is answered as an ordinary GET") {
     CHECK(onKnown.status == 200);
     CHECK(onKnown.status != 101);
     CHECK_FALSE(hasHeader(onKnown, "Sec-WebSocket-Accept"));
-    CHECK_NOTHROW(nlohmann::json::parse(onKnown.body));
+    CHECK_NOTHROW(parseAndDrop(onKnown.body));
 
     Wire unknown;
     unknown.target = "/api/v1/nope";

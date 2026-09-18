@@ -10,7 +10,8 @@ Paste the exact commands and tallies. Numbers are a snapshot at the commit named
 commit: <sha>
 ctest --test-dir build-<x> -C Release          (RTA_BUILD_APP=OFF) -> N/N, 0 failed
 ctest --test-dir build-<x>-on -C Release       (RTA_BUILD_APP=ON)  -> N/N, 0 failed
-warning C in both build logs                    -> 0
+CI "Warnings" step (gcc, AppleClang, MSVC)      -> 0 / 0 / 0
+warning C in the RTA_BUILD_APP=ON log (local)   -> 0
 ```
 
 ## Guards still guard

@@ -185,25 +185,41 @@ namespace {
     return {};
 }
 
+/// Parses `text` and drops the result -- the shape every CHECK_NOTHROW below
+/// wants, since the assertion is "does not throw", not the value.
+///
+/// It cannot be spelt `CHECK_NOTHROW(json::parse(text))`, nor
+/// `CHECK_NOTHROW(static_cast<void>(json::parse(text)))`: parse() carries
+/// nlohmann's JSON_HEDLEY_WARN_UNUSED_RESULT, which on gcc is
+/// __attribute__((warn_unused_result)), and gcc deliberately does NOT let a
+/// cast to void satisfy that attribute (unlike [[nodiscard]]). Catch2 already
+/// wraps the macro argument in exactly that cast
+/// (catch_test_macro_impl.hpp:80), so both spellings warn -- measured on
+/// gcc 16.1.0 with -Wall -Wextra -Wpedantic, the flags CMakeLists.txt:52 hands
+/// CI's gcc. Initialising a variable from the result does satisfy it.
+void parseAndDrop(const std::string& text) {
+    [[maybe_unused]] const auto parsed = json::parse(text);
+}
+
 }  // namespace
 
 TEST_CASE("F1 every endpoint emits WELL-FORMED JSON", "[api][schema]") {
     // The assertion the whole task exists for, and it goes first.
     for (const auto& [name, body] : allBodies(makeApiFixture())) {
         INFO("endpoint: " << name);
-        CHECK_NOTHROW(json::parse(body));
+        CHECK_NOTHROW(parseAndDrop(body));
     }
     // The empty-optional variants too: absence is a shape this format has to
     // emit correctly, and it is the shape with the dangling-comma hazard.
     for (const auto& [name, body] : allBodies(makeEmptyApiFixture())) {
         INFO("endpoint (no blocks present): " << name);
-        CHECK_NOTHROW(json::parse(body));
+        CHECK_NOTHROW(parseAndDrop(body));
     }
 }
 
 TEST_CASE("F2 the golden file on disk is well-formed too", "[api][schema]") {
     // A regression lock on a malformed document locks in the malformation.
-    CHECK_NOTHROW(json::parse(readGolden()));
+    CHECK_NOTHROW(parseAndDrop(readGolden()));
 }
 
 TEST_CASE("F3 every number in every document is a finite float32 value", "[api][schema]") {

@@ -32,8 +32,6 @@ namespace {
 constexpr double kPi = std::numbers::pi;
 constexpr double kBinWidthHz = 46.875;
 
-double wrapToPi(double radians) noexcept { return std::remainder(radians, 2.0 * kPi); }
-
 /// How far apart two correctly-written spellings of H(z) may land, in dB,
 /// purely from rounding.
 ///

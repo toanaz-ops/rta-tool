@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <numbers>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace rta::dsp;
@@ -39,12 +40,17 @@ const std::vector<rta::test::GoldenCase>& autoeqGolden() {
     return cases;
 }
 
+// `name` is a by-value view, not `const std::string&`: gcc's -Wdangling-reference
+// heuristic flags any reference-returning call that binds a temporary to a
+// reference parameter, and the string built from a literal here is compared,
+// never returned. A view has no reference for the heuristic to trip on and
+// skips the allocation.
 const rta::test::GoldenCase& findCase(const std::vector<rta::test::GoldenCase>& cases,
-                                       const std::string& name) {
+                                      std::string_view name) {
     for (const auto& c : cases) {
         if (c.name == name) return c;
     }
-    throw std::runtime_error("golden case not found: " + name);
+    throw std::runtime_error("golden case not found: " + std::string(name));
 }
 
 /// Builds a DC..Nyquist half-grid (m = nFft/2 + 1 bins) of a pure delay,

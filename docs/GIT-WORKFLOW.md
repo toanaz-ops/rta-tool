@@ -23,6 +23,13 @@ Remote: `https://github.com/toanaz-ops/rta-tool` (private). Default branch `main
    still framework-free and portable — the property the whole project sells.
    The `RTA_BUILD_APP=ON` configuration is not on CI (it needs JUCE); its tally
    goes in the PR body, measured on this machine, and the verifier re-measures.
+   **Warnings are part of green.** The `Warnings` step greps each OS's build
+   log for `warning:` / `warning C…:` and fails on a non-zero count, so a gcc
+   or AppleClang warning blocks the merge exactly as an MSVC one does. Until
+   2026-09-18 only `warning C` was counted, and gcc sat at 16 unseen. The
+   step's comment in `ci.yml` records why a log count was chosen over
+   `-Werror`; a warning that must be tolerated is excluded there, by pattern,
+   with its reason — never by `-Wno-…` in `CMakeLists.txt`.
 4. **Merge is still the owner's word, in the current conversation.** A PR that
    is green and verified waits. The owner says "merge" (or "merge and push" —
    they are now the same act), the orchestrator runs `gh pr merge`. "Do all of
