@@ -327,6 +327,181 @@ Three things Wave 2 must not undo:
 
 *Heading corrected 2026-09-18 by the Wave 1 builder: this section was written while the PR was still open, and everything below it still reads as if it were. The account of what was built, what two verifier rounds found and every measured number is unchanged and still the record; only "NOT merged" was false, and Wave 1 branched from the merge commit.*
 
+# 2026-09-18 — **L-API station 4, WAVE 2 (tasks H–K) XONG — nhánh `remote-api/wave2-server`, PR mở, CHƯA merge. Lane L-API: BUILT.**
+
+Bốn task, năm commit (Task I tách thêm một commit test đóng một lỗ plan không nêu).
+TDD từng cái, red dán trước green. **Chỉ Task J là ON**; cả server và toàn bộ
+đường request chạy trong `RTA_BUILD_APP=OFF` — cấu hình duy nhất CI dùng.
+
+| | |
+|---|---|
+| baseline OFF tại `7b4773f` (main) | **700/700**, 0 `warning C`, guard quét **75** file |
+| OFF sau vòng sửa trạm 5 | **725/725** (+25), 0 `warning C`, guard quét **80** file |
+| baseline ON tại `7b4773f` | **768/768**, 0 `warning C` |
+| ON sau vòng sửa trạm 5 | **793/793** (+25: 24 case OFF-target + 1 guard), 0 `warning C` |
+| forced-fallback OFF | **725/725**, 0 `warning C` |
+| `no_server_library_outside_api` | xanh **393 file** ở CẢ HAI cấu hình, đỏ **6 lần** |
+| `git diff main --stat -- platform/ core/src core/include ui/` | **rỗng** |
+| `rtatool_snapshot` | 8 PNG, exit 0 — `main-live.png` dựng và huỷ `MainComponent` (giờ sở hữu một `ApiServer` tắt) sạch |
+
+**SAU KHI MERGE `origin/main` (`b1e14a9`, PR #17 = L6a Wave 0)** -- do lai tren
+cay da merge, khong phai cong so:
+
+| | |
+|---|---|
+| OFF | **774/774**, 0 `warning C`, guard quet **86** file |
+| ON | **848/848**, 0 `warning C` |
+| `no_server_library_outside_api` | xanh **409 file**, ca hai cau hinh |
+| `git diff origin/main --stat -- platform/ core/src core/include ui/` | **rong** (lane nay van khong cham tang nao duoi `app/` ngoai `core/tests/`) |
+
+Ba conflict, ca ba la **hop** (union) va duoc KHANG DINH bang dem, khong bang doc:
+
+- `app/tests/CMakeLists.txt` GLOBS: base **73**, nhanh nay **77** (+4), main
+  **78** (+5) -> hop phai la **82**, do duoc **82**. Ca hai nhom nguon (L-API
+  va L6a Wave 0) con nguyen, moi nhom van co comment phan cach cua no.
+- `memory/MEMORY.md`: base **36** dong, moi ben **37** -> hop **38**, do duoc
+  **38**; khong mat dong nao, va ban dai hon cua bai hoc "verifier voi Bash"
+  (main them mot cau) la ban duoc giu.
+- `docs/HANDOFF.md`: **ca hai** muc dau file song -- L-API Wave 2 roi L6a
+  Wave 0 -- cong ghi chu merge cua main ve PR #16, dat tren header Wave 1 da
+  de-stale cua nhanh nay.
+
+**MOT KHIEM KHUYET CUA MAIN, KHONG SUA O DAY:** `app/tests/CMakeLists.txt` cua
+`origin/main` co **mojibake** -- mot dau section-sign bi encode UTF-8 **hai
+lan**, tuc bon byte \xc3 \x82 \xc2 \xa7 o cho dang le la mot. Dung cai CLAUDE.md
+luat 6 sinh ra de chong. Giu **nguyen byte** khi giai conflict: day la dong cua
+lane khac, sua lang le trong mot conflict resolution la cach lam mat dau vet.
+**Can mot commit rieng** -- ghi cho dieu phoi vien.
+
+**MOT HOP TAC DA PHIEN DANG BIET:** `C:\Users\id_az\AppData\Local\Temp\claude\` la thu muc **DUNG
+CHUNG** giua cac phien, khong phai scratchpad rieng. Phien nay da doc mot
+`m-on.log` **cu tu 16/9** cua phien khac va tuong la log cua minh. Da xac minh
+lai bang cach grep duong dan worktree trong chinh log -- **luon lam the, hoac
+dat log trong scratchpad theo phien.**
+
+Commit: `8318f87` H (vendor cpp-httplib) · `5afb42e` I (`ApiServer`) ·
+`02b5cd0` J (composition root) · `2705b9e` K (guard server-library) ·
+`ef8d93a` I-bổ-sung (nhánh bind cổng CỐ ĐỊNH + `allowLanBind` từ chối).
+
+## Vòng verify trạm 5 trên PR #18 — BA DEFECT, đã sửa, record thêm `R18`/`R19`/`R20`
+
+Cả ba **đo được qua socket**, không ai đọc code mà thấy. Commit sửa:
+`d3be858`.
+
+1. **`R19` — rate limiter chạy TRƯỚC các refusal, tức một `Host` giả tiêu
+   quota của client thật.** Đo: limit 3, ba request `Host` giả rồi một request
+   thật → **429**. Một kẻ không đọc được một byte nào của API này, từ ngoài
+   allowlist, không token, vẫn khoá được API của chủ nhà giữa show. Thứ tự
+   mới: **400 (Host trùng) → 403 (Host) → 405 → 401 → 413 → 429 → route**.
+   Lý lẽ "limiter trước công việc" của §4 KHÔNG đòi nó đứng đầu: bound là
+   bound trên số `latest()` **LOAD**, và mọi refusal ở trên không chạm
+   publish slot. **Đánh đổi phải nói ra:** limiter không còn bound lưu lượng
+   *vào*, chỉ bound lưu lượng *được phục vụ*.
+2. **`R18` — `Allow` quảng cáo OPTIONS mà không ai phục vụ nó.**
+   `methodIsAllowed` cho phép OPTIONS, 405 ghi nó vào `Allow`, nhưng
+   `installRoutes` chỉ đăng ký `Get` → OPTIONS qua allowlist, không khớp route,
+   trả **404 không có `Allow`**. Giờ **phục vụ**: `204` + `Allow`, **không đọc
+   snapshot** (OPTIONS mô tả RESOURCE, phải trả lời giống nhau trước publish
+   đầu tiên — chỗ mà GET trả 503), `204` chứ không `200` vì không có
+   representation nào để trả. HEAD không cần đăng ký (httplib đẩy GET và HEAD
+   vào cùng `get_handlers_`) và giờ có test trên cả tám route.
+   `Allow` giờ là **một** hằng — hai chỗ viết danh sách method là hai danh
+   sách có thể lệch nhau, và defect này chính là hình dạng của nó.
+3. **`R20` — hai field `Host` → 400.** `get_header_value("Host")` chỉ đọc field
+   ĐẦU, nên `Host` đúng rồi `Host` giả **qua được allowlist** trong khi proxy /
+   cache / log phía sau có thể đọc cái kia. Chối theo **SỐ LƯỢNG** (RFC 9112
+   §3.2), không theo "khác nhau thì chối": luật là một field line.
+4. **Trích dẫn dòng sai.** `httplib.h:14436` là "Send 101 Switching Protocols";
+   comment "fall through to 404" là **`:14487`**. Đo lại luôn cả các trích dẫn
+   khác: loop handler `:14413` → **`:14414`**; `:2189`, `:5481`, `:13881`,
+   `:14407`, `:14408`, `:14437` đúng.
+
+**Hai quan sát đã gấp vào, không phải defect:**
+
+- **"API thread không bao giờ block analysis thread" là cách nói SAI.** Nói
+  đúng: nó **không giữ lock xuyên qua serialisation** — phần đắt tiền chạy sau
+  khi đã có bản copy. Nhưng `AtomicSharedPtr` **không lock-free trên MSVC**
+  (đo trong class comment của nó), nên bản thân atomic load VẪN có thể tranh
+  chấp với publish. Bound là **số học** (≤ `maxRequestsPerSecond` load/giây),
+  không phải cấu trúc — và đó là lý do limiter là control an toàn thực, và vì
+  sao nó đứng ngay TRƯỚC load chứ không ở đâu sau đó. Đã sửa trong
+  `ApiServer.h`.
+- **"Bẫy khoảng trắng cuối" trong `ApiPolicy.cpp` chỉ đúng Ở MỨC HÀM.** httplib
+  đã trim OWS trước khi `hostIsAllowed` thấy giá trị, nên không client HTTP nào
+  gửi được nó tại đây. Vẫn nên chặt — `hostIsAllowed` là hàm thuần, caller sau
+  có thể không phải header parser — nhưng đừng gọi nó là phòng ngự mức dây.
+
+**Một deviation nữa cần ghi:** acceptance của plan đòi
+`grep -n "httplib" app/src/api/ApiServer.h` **rỗng**. Không thể đúng: class
+comment của file đó **của ý** gọi tên cpp-httplib nhiều lần để giải thích pimpl.
+Thay bằng grep **neo vào include directive**, đúng thứ guard thật sự quét:
+`grep -nE '^[ 	]*#[ 	]*include.*httplib' app/src/api/ApiServer.h` — rỗng.
+
+---
+
+**Sáu điều một phiên sau phải biết:**
+
+1. **Header vendored đúng bản, và bẫy 22885-dòng là thật.** Lấy từ tag
+   `v0.56.0`, đo trên chính bytes đã commit: sha256
+   `1f99e51881c4c9d0649b27c611442c2f4d9bcfec5a22a14d5fcd1f8106f730b4`, 22875
+   dòng. `git show HEAD:external/cpp-httplib/httplib.h | sha256sum` ra cùng
+   hash — `.gitattributes` `eol=lf` không đổi gì vì file đã LF sẵn. Bản copy có
+   sẵn trên máy khai `CPPHTTPLIB_VERSION "0.56.0"` nhưng là 22885 dòng /
+   `a6e65d30…`: **một version string không phải một danh tính.**
+
+2. **`Host` check so với cổng ĐÃ BIND, không phải `settings.port` — plan viết
+   sai chỗ này.** Với bind ephemeral, `settings.port == 0`; header `Host` mang
+   cổng client thật sự nối tới, nên so với 0 sẽ từ chối **mọi** request. So
+   với `boundPort`, bằng `settings.port` bất cứ khi nào nó khác 0 — cấu hình
+   ship (cổng cố định 4736) không đổi gì.
+
+3. **Mọi case qua dây đều bind ephemeral — tức nhánh `bind_to_port` mà bản
+   SHIP dùng thì không ai test.** Đã bịt bằng `test_api_server_bind.cpp`: bind
+   ephemeral để hỏi một cổng đang rỗi, huỷ, rồi bind **cố định** chính số đó.
+   Nhánh production đã từng là nhánh duy nhất không được chứng minh.
+
+4. **I11 đo được, không phải khẳng định — và hai sự thật máy móc về httplib
+   đi kèm.** `GET` mang `Upgrade: websocket` + `Connection: Upgrade` +
+   `Sec-WebSocket-Key` trả **200 với body JSON bình thường** trên path có
+   thật, **404** trên path không có; không 405, không 101, không
+   `Sec-WebSocket-Accept`. Đúng như R16a dự đoán. Hai ghi chú: comment trong
+   `httplib.h:14487` nói "fall through to 404" là **sai** — nó rớt xuống routing,
+   nên path có thật ra 200; và `pre_routing_handler_` chạy **HAI lần** cho
+   một request upgrade (`:14408` rồi `Server::routing` `:13881`), tức một
+   request như vậy tiêu **hai** suất rate-limiter. Cả hai đã ghi trong
+   `external/cpp-httplib/PROVENANCE.md`.
+
+5. **413 được chặn Ở HAI tầng và phải thế.** Tầng một đọc `Content-Length`
+   trong pre-routing và từ chối **trước khi đọc body** — đó mới là ý của §9
+   control 3. Tầng hai là `set_payload_max_length`, cho body **chunked** không
+   khai độ dài, chỉ biết được trong lúc đọc. Bỏ tầng một là mở đường cho
+   một GET khai 2 GB.
+
+6. **Test client là raw socket, và đó không phải sở thích.** `httplib::Client`
+   sẽ là **file thứ hai** include `<httplib.h>`, mà guard chỉ cho đúng một.
+   `RawHttpClient.h` gửi string cố định, đọc đến khi peer đóng — không parse,
+   không keep-alive, không timeout. Nó **có** ghi nhận `reset`: ở case 413
+   server đóng khi body chưa đọc hết nên TCP trả RST; bytes đã nhận vẫn
+   được giữ và là thứ assertion đọc.
+
+**Quyết định đang chờ người (không chặn build):**
+
+- **§14 q.1, cố định hay ephemeral.** Số **4736** đã chốt (4737 là IANA
+  `ipdr-sp`). Hình dạng thì chưa: cổng cố định dễ tìm nhưng có thể đụng; cổng
+  ephemeral ghi ra file không bao giờ đụng nhưng cần một rendezvous. Code ship
+  hôm nay **cố định**, và cả hai nhánh bind giờ đều có test.
+- **§14 q.3, `/traces` + `/session`.** Vẫn là "chưa". Nếu đổi thành "có" thì là
+  thêm một task và một đường publish thứ hai.
+- **`api.enabled` vẫn `false` khi ship.** Kiểm tra tay (plan Task J) đói một
+  GUI đang chạy, **phiên này không chạy** — đọc là "chưa verify", không phải
+  "xong". Đường request thì đã chứng minh qua socket thật trong OFF.
+
+---
+
+---
+
+# 2026-09-18 — **L6a station 4, WAVE 0 BUILT.** Branch `l6a/wave0-spl-publish`, PR open, NOT merged.
+
 Worktree `.claude\worktrees\agent-ac416b1321ee2ec32`, branched from `main` at
 `00276cb` (where PR #15, the station-3 plan, merged). Eight commits, `24f6f14..HEAD` (see the table below). GitHub Actions is still billing-blocked at the account
 level, so **every number below was measured on this machine and pasted**; a
@@ -817,7 +992,7 @@ named, excluded erratum and the bound is not widened for it.
 
 > *Note added 2026-09-18 while merging `origin/main` into `l6a/wave0-spl-publish`: the PR this section calls open is **PR #16, and it MERGED at `7b4773f`**. The narrative below is left as L-API's own account of the wave; only this line is new.*
 
-# 2026-09-17 — **L-API station 4, WAVE 1 (tasks A–G) XONG — nhánh `remote-api/wave1-serialise`, PR mở, CHƯA merge. Wave 2 (tasks H–K: vendor cpp-httplib, `ApiServer`, wiring, guard server-library) là việc kế tiếp.**
+# 2026-09-17 — **L-API station 4, WAVE 1 (tasks A–G) XONG — nhánh `remote-api/wave1-serialise`, đã merge thành PR #16 tại `7b4773f`.** *(Wave 2 đã XONG 2026-09-18 — xem mục phía trên; dòng "việc kế tiếp" cũ đã bị xóa vì nó không còn đúng.)*
 
 Bảy task, bảy commit, TDD từng cái (red dán trước green). **Toàn bộ OFF** —
 không có JUCE ở đâu trong wave này, nên cả bảy chạy trên ba OS của CI.
