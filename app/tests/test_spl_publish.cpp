@@ -683,20 +683,28 @@ TEST_CASE("round 2: a ROUTED session publishes spl too -- the branch a live show
 
 TEST_CASE("round 2: every metric the config can express gets a PRESENT reading",
           "[splpublish]") {
-    // ROUND-2 VERIFIER GAP. `AnalysisThread::kMaxSplMetricWindows =
-    // SplConfig::kMaxMetrics` is a convention: a literal 16 there with
-    // kMaxMetrics raised to 24 compiles and every test stays green, because
-    // nothing measured the relationship. A `static_assert` in the TU that owns
-    // the array is the compile-time half (see AnalysisThread.cpp); this is the
-    // BEHAVIOURAL half, and it is the one that runs in the OFF build CI
-    // actually executes.
-    //
     // The property: a session started with as many metrics as the config can
-    // express must publish a PRESENT value for every one of them. If the
-    // window array is smaller than the metric list, the metrics past its end
-    // get no window, `buildSplBlockView`'s no-fallback rule makes them ABSENT,
-    // and this goes red. That catches drift in the direction that matters --
-    // an array too small for the list it is filled from.
+    // express must publish a PRESENT, non-floored value for EVERY one of them.
+    // That is what makes `buildSplBlockView`'s no-fallback rule safe to ship --
+    // absence is the right answer for an unfilled row and the wrong answer for
+    // a configured metric, so something has to assert that no configured
+    // metric ends up in the first category.
+    //
+    // WHAT THIS CASE DOES *NOT* DO, stated because an earlier draft of this
+    // comment claimed it did: it does **not** detect drift between
+    // `AnalysisThread::kMaxSplMetricWindows` and `SplConfig::kMaxMetrics`. It
+    // cannot -- `AnalysisThread.h` includes JUCE, so this OFF-build file
+    // cannot name that constant, and sizing the buffer below from
+    // `kMaxMetrics` means a production array stuck at a literal 16 while
+    // `kMaxMetrics` rose to 24 leaves this case green. MEASURED: under exactly
+    // that mutation this reads "metrics = 24, windows filled = 24" and passes.
+    //
+    // Drift is caught by the other two guards instead, and both were shown red
+    // under that mutation: the `static_assert` at the top of
+    // `AnalysisThread.cpp`, in the TU that declares the array (compile time),
+    // and `app/tests_juce/test_spl_drain.cpp`'s D5, which sizes its buffer from
+    // `kMaxSplMetricWindows` itself and read
+    // "kMaxSplMetricWindows = 16, kMaxMetrics = 24, metrics = 24, filled = 16".
     SplConfig config;
     config.blockSeconds = 0.1;
     for (std::size_t i = 0; i < SplConfig::kMaxMetrics; ++i) {
@@ -714,10 +722,10 @@ TEST_CASE("round 2: every metric the config can express gets a PRESENT reading",
     std::vector<float> hop(4800, 0.2f);
     for (int i = 0; i < 6; ++i) session.feedHop(0, hop);
 
-    // SIZED FROM THE SAME CONSTANT THE PRODUCTION ARRAY IS SIZED FROM.
-    // AnalysisThread's own buffer is `kMaxSplMetricWindows`, which the
-    // static_assert there pins to this; sizing from `kMaxMetrics` here and
-    // from a literal there is exactly the drift this case exists to detect.
+    // Sized from `kMaxMetrics`, which is the cap the CONFIG enforces. The
+    // production array is sized from `kMaxSplMetricWindows`, and keeping those
+    // two equal is the static_assert's job and D5's, not this one's (see the
+    // comment above).
     std::array<std::span<const Block>, SplConfig::kMaxMetrics> windows{};
     const std::size_t filled = session.fillMetricWindows(0, windows);
     INFO("metrics = " << SplConfig::kMaxMetrics << ", windows filled = " << filled);
