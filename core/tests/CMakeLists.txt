@@ -76,6 +76,7 @@ add_executable(rta_core_tests
     # 2026-09-16-spl-pro-l6a.md 5, 6, 7, 7a). All closed-form: no golden
     # vector, no sound card, no socket.
     test_level_histogram.cpp
+    test_window_energy.cpp
 )
 
 # Golden vectors are committed, so the C++ suite needs neither Python nor
