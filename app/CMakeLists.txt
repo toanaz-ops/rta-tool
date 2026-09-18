@@ -130,6 +130,16 @@ target_sources(rtatool PRIVATE
     # calls into -- JUCE-free, but the same one-static-library caveat above
     # applies, so it is named explicitly in both GUI binaries' source lists.
     src/measure/PhaseUnwrap.cpp
+    # --- lane L-API Task J --------------------------------------------------
+    # The composition root owns an ApiServer, so both GUI binaries that
+    # construct MainComponent need its definitions linked -- the same
+    # one-static-library caveat as Analyser.cpp above. ApiPolicy.cpp and the
+    # two serialiser TUs come with it: ApiServer.cpp calls straight into them.
+    src/api/ApiServer.cpp
+    src/api/ApiRoutes.cpp
+    src/api/ApiPolicy.cpp
+    src/api/ApiSerialise.cpp
+    src/api/ApiSerialiseSpatial.cpp
 )
 
 # app/src as an include root: app/src/measure and app/src/view headers
@@ -155,6 +165,10 @@ target_link_libraries(rtatool PRIVATE
     az_ui
     rta::core
     rta::platform
+    # rta_httplib: lane L-API Task J. The vendored server header's INTERFACE
+    # target, carrying ws2_32 on WIN32 -- ApiServer.cpp is compiled into this
+    # binary now, and it is the one TU that includes <httplib.h>.
+    rta_httplib
     juce::juce_audio_utils
     juce::juce_gui_extra
     juce::juce_opengl
@@ -265,6 +279,16 @@ target_sources(rtatool_snapshot PRIVATE
     src/measure/AnalysisPublish.cpp
     src/measure/AverageGroup.cpp
     src/measure/SyntheticInput.cpp
+    # Lane L-API Task J: this target constructs MainComponent too (see the
+    # main-live.png comment above), so it needs the ApiServer definitions for
+    # the same reason rtatool does. This target names every source one by one
+    # with no glob, so all four have to be here or preview renders fail to
+    # link with undefined symbols.
+    src/api/ApiServer.cpp
+    src/api/ApiRoutes.cpp
+    src/api/ApiPolicy.cpp
+    src/api/ApiSerialise.cpp
+    src/api/ApiSerialiseSpatial.cpp
 )
 
 target_include_directories(rtatool_snapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -285,6 +309,9 @@ target_link_libraries(rtatool_snapshot PRIVATE
     az_ui
     rta::core
     rta::platform
+    # rta_httplib: lane L-API Task J, for the same reason as rtatool above --
+    # this target constructs MainComponent, which owns an ApiServer.
+    rta_httplib
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags

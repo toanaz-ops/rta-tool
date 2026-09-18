@@ -6,7 +6,12 @@
 > **AMENDED 2026-09-17 — read [§15](#15-amendment-2026-09-17--the-reconciliations-station-3-filed) before acting on any section below.**
 > Station 3 (`docs/plans/2026-09-17-remote-api-impl-plan.md`) and the adversarial
 > verify of it on PR #14 — two rounds — filed **eighteen** corrections against
-> this record (`R1`..`R17`, plus `R16a`).
+> this record (`R1`..`R17`, plus `R16a`). The station-5 verify of **PR #18**
+> (station 4, Wave 2) then filed **three more** — `R18` (OPTIONS was advertised
+> and served by nothing), `R19` (the rate limiter ran before the refusals, so a
+> forged `Host` spent the legitimate client's quota) and `R20` (nothing bounded
+> how many `Host` fields a request may carry) — all three measured over a real
+> socket, none of them visible by reading.
 > The wrong sentences are left in place on purpose — a record whose errors are
 > erased teaches the next session nothing — and each one now carries an inline
 > pointer. The five that most change what a builder does: **§2**'s `split.py`
@@ -525,6 +530,8 @@ load this API does not have.
 ## 9. Decision: the security posture, and what it is actually defending against
 
 *Amended by §15 **R17**: control 3's **406 and 415 are dropped** as machinery with no buyer for a GET-only API with one representation; **413 is kept and tested**, and refusing an oversized body before routing is what makes 415 unreachable.*
+
+*Amended by §15 **R18**, **R19** and **R20**, all three MEASURED by the station-5 verify of PR #18 and none of them visible by reading: control 2's `Allow` named **OPTIONS** while nothing served it (now served, `204` + `Allow`); the **rate limit runs LAST**, after every refusal above, because a refusal touches no publish slot and must not spend a legitimate client's quota; and **more than one `Host` field is `400`** (RFC 9112 §3.2), since control 1 never said how many a request may carry and the first one was the only one read.*
 
 **Decision, in order of value:**
 
@@ -1189,6 +1196,117 @@ what makes 415 unreachable. **406 and 415 are dropped**, and §13 gains "content
 negotiation" as something this record no longer decides. Naming the drop is the
 point: a control listed in a record and absent from the code is a control
 everyone assumes someone else built.
+
+
+### R18 — §8's method allowlist named OPTIONS and nothing served it; OPTIONS is now SERVED
+
+*Filed 2026-09-18 by the station-5 adversarial verify of **PR #18** (Wave 2,
+tasks H–K), which measured it over the wire rather than reading it.*
+
+§9 control 2 allows **GET, HEAD, OPTIONS** and refuses everything else with
+`405` plus an `Allow` header naming those three. `ApiPolicy::methodIsAllowed`
+implements exactly that, and PR #18's `ApiServer` advertised exactly that
+string — while `installRoutes` registered `Server::Get` only. So an
+`OPTIONS /api/v1/status` passed the allowlist, reached routing, matched no
+`options_handlers_` entry and answered **`404` with no `Allow` at all**. The
+API named a method it did not serve, which is worse than naming fewer.
+
+Two resolutions were available and they are not equivalent:
+
+1. **Serve it.** Register `Server::Options` on each of the eight resources,
+   answering `204` with `Allow`. HEAD needs nothing — httplib dispatches GET
+   and HEAD to the same `get_handlers_`, so the eight `Get` routes already
+   serve it, `ETag` intact.
+2. **Delete it.** Drop `Method::Options` from `methodIsAllowed` and shorten the
+   `Allow` string to `GET, HEAD`, making OPTIONS a `405` like any other verb.
+
+**Decided: serve it (1).** It is the smaller diff — one registration in a loop
+that already existed — and it is the more useful surface: `OPTIONS` on a
+resource is how a client asks what it may do without doing it, and a read-only
+API that answers has nothing to lose by answering. Deleting it would also have
+made §9 control 2's own list wrong in the other direction.
+
+**Two properties of the OPTIONS handler are load-bearing, not incidental.** It
+reads **no snapshot**, because OPTIONS describes the *resource* and must answer
+identically before the first publish — where a GET correctly answers `503`.
+And it answers **`204`**, not `200`: there is no representation to return (RFC
+9110 §9.3.7 leaves the body optional) and a `200` with an empty body would
+claim one exists. An unknown path is still `404` for OPTIONS; the method is
+served on the eight resources that exist, never as a wildcard.
+
+The `Allow` value is now one constant in `ApiServer.cpp` read by both the 405
+path and every OPTIONS response. **Two spellings of a method list is two lists
+that can disagree, and this defect is what that looks like.**
+
+### R19 — the rate limiter must run AFTER the refusals, not before them
+
+*Filed 2026-09-18 by the same verify pass, which measured it: at
+`maxRequestsPerSecond = 3`, three forged-`Host` requests then one legitimate
+request → **429**.*
+
+§4's argument that the limiter "runs before the work" was implemented as
+"first in the chain", and that is a denial of service. Every refusal in §9 —
+`400` on a duplicated `Host`, `403` on a forged one, `405`, `401`, `413` —
+returns **without touching the publish slot**. Admitting a refused request into
+the sliding window therefore spends a legitimate client's quota on work that
+never happened, and a caller who cannot read one byte of this API, from outside
+the allowlist, with no token, can lock the operator out during a show.
+
+**Amended order, and it is §9's controls in §9's numbering with the limiter
+moved to the end:** duplicate-`Host` `400` → `Host` allowlist `403` → method
+`405` → Bearer `401` → body cap `413` → **rate limit `429`** → route → clamp →
+one `latest()`. The limiter still sits immediately before the load, which is
+all §4's accounting ever required: the bound is on **loads per second**, and
+the last point before a load is where a bound on loads belongs.
+
+**What this gives up, stated rather than glossed:** the limiter no longer bounds
+total *inbound* traffic, only *served* traffic. A hostile caller can send
+forged-`Host` requests as fast as it likes, each costing an accept and a header
+parse. That is the correct trade — the control exists to protect the publish
+slot, the thread pool bounds the concurrency, and the alternative hands that
+same caller a denial of service against the operator.
+
+**`OPTIONS` is exempt from the limiter, and that is this clause carried one step
+further rather than an exception to it.** *(Added 2026-09-18 after the round-2
+verify of PR #18 measured the gap: at a limit of 2, two `OPTIONS` requests then
+a legitimate `GET` answered **429**.)* An `OPTIONS` never reaches the route
+handler — it answers `204` from `R18`'s own handler, reads no snapshot and
+performs no `latest()` — so there is nothing for a bound on **loads** to bound,
+and its whole cost is the accept, the header parse and the `204` that this
+clause already stopped charging for on a `403`. Charging it a slot is the same
+defect as charging one for a forged `Host`, one degree less reachable.
+
+**`HEAD` is NOT exempt, and that half has to be said out loud**, because "no
+body, so no cost" is the plausible and wrong reading. `HEAD` routes to the same
+`Get` handler: one `latest()`, the full document built, and the body stripped by
+the server on the way out **after** the work. Exempting it would put an
+unbounded load path on the publish slot, which is precisely what §4's bound
+exists to prevent. Both directions are asserted over the wire in
+`app/tests/test_api_server_refusals.cpp`.
+
+### R20 — more than one `Host` field is `400`, and §9 control 1 did not say so
+
+*Filed 2026-09-18 by the same verify pass.*
+
+§9 control 1 says the `Host` header must match `127.0.0.1:<port>` or
+`localhost:<port>` and never a substring. It does not say how many `Host`
+fields a request may carry, and the implementation read only the first
+(`get_header_value("Host")` returns index 0). So
+`Host: 127.0.0.1:<port>` followed by `Host: attacker.example:<port>` **passed
+the allowlist**, while every proxy, cache and log downstream may read the other
+one.
+
+**Amended:** more than one `Host` field line is **`400`**, which is what RFC
+9112 §3.2 requires of an HTTP/1.1 server. Refused on **count**, not on
+disagreement: the rule is one field line, and "reject only when they differ"
+leaves the parser-disagreement class open for the price of the same comparison.
+Two identical `Host` fields are refused too, deliberately.
+
+A *missing* `Host` stays **`403`** rather than `400`, and that is a choice:
+`hostIsAllowed("")` refuses it as not-an-allowed-host, which is true and is the
+same answer as any other name this API does not serve. The narrower reading of
+RFC 9112 §3.2 would make it `400`; nothing here depends on the difference and
+changing it would alter a case already asserted over the wire.
 
 
 ## Sources

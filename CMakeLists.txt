@@ -52,6 +52,41 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# --- Vendored server library -------------------------------------------
+# cpp-httplib v0.56.0, the amalgamated header, MIT. See
+# external/cpp-httplib/PROVENANCE.md for the tag, the SHA-256 and why the
+# amalgamated file rather than split.py output (record
+# docs/dsp/2026-09-16-remote-api.md sec.15 R2).
+#
+# OUTSIDE the if(RTA_BUILD_APP) block, and that placement is the whole of
+# sec.15 R15: `ApiServer` runs on a std::thread rather than a juce::Thread, so
+# the server and its Host check are built and tested in the RTA_BUILD_APP=OFF
+# configuration -- the only one CI runs, on three operating systems. Inside the
+# guard, the network layer would be proven on zero CI machines.
+#
+# An INTERFACE target rather than a bare include directory: app/src/api/
+# ApiServer.cpp is the ONE permitted includer (core/tests/
+# check_no_server_library.cmake), and it includes `<httplib.h>` -- so
+# external/cpp-httplib itself has to be on the include path, not external/.
+# The vendored header is NOT marked SYSTEM: with `#pragma warning(push, 0)`
+# around the include in ApiServer.cpp the /W4 count stays at zero, measured
+# before and after (sec.15 R7). SYSTEM + /external:W0 is the fallback if a
+# later upstream version needs it; it was not needed at v0.56.0.
+#
+# Every CPPHTTPLIB_* backend macro is left undefined -- no TLS, no zlib, no
+# brotli, no zstd, no NO_EXCEPTIONS. Deliberately NOT restated as
+# target_compile_definitions: a list of macros we do not define is prose, and
+# it lives in PROVENANCE.md where the reasons are.
+add_library(rta_httplib INTERFACE)
+target_include_directories(rta_httplib INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/cpp-httplib)
+if(WIN32)
+    # cpp-httplib is the first thing in this repository to open a socket, and
+    # Winsock is not linked by default. rtatool_analysis_tests (RTA_BUILD_APP
+    # =OFF) had never needed ws2_32 before, so this is where it arrives.
+    target_link_libraries(rta_httplib INTERFACE ws2_32)
+endif()
+
 # --- Layers, bottom up -------------------------------------------------
 # core      pure DSP, no framework          (portable)
 # platform  audio device I/O behind an interface
