@@ -40,6 +40,25 @@ compatible with the GNU GPL; it flows into this AGPL-3.0-or-later work imposing
 only notice retention, which is why `LICENSE.MIT` is vendored beside the header
 and is never deleted.
 
-**One TU.** `app/tests/test_api_schema.cpp` is the only translation unit in the
-repository that includes this header — the same one-TU discipline record §2
-applies to the server header, and what keeps the compile cost paid once.
+**Two test TUs, both under `app/tests`.** Corrected 2026-09-18 at the L-API
+closeout: this paragraph said "One TU" and named only
+`app/tests/test_api_schema.cpp`. Measured, the includers are
+`app/tests/test_api_schema.cpp:25` **and** `app/tests/test_api_server.cpp:23`,
+the second of which uses the parser at `:149`, `:165` and `:338`. That is
+deliberate rather than drift — a body proven well-formed inside the
+serialiser's own test says nothing about what the **server** wrote to the
+socket, so the over-the-wire cases parse what they received — but the count in
+this file was wrong, and the count is the whole point of a provenance file.
+
+**The guard is the authority on that number, not this prose.**
+`no_json_parser_in_shipped_code` prints its witness count, and it reports
+**2 witnesses**. If a third TU ever includes this header, that number moves and
+this paragraph does not; read the guard's output first.
+
+Both includers are under `app/tests`, so the **test-only** property this file
+exists to record is unaffected: no file under `core/`, `platform/`, `ui/`,
+`tools/` or `app/src` includes it, and the guard fails the build if one does.
+Note that the one-TU compile-cost discipline record §2 applies to the *server*
+header is therefore **not** claimed here: two TUs pay for this header, and at
+25526 lines of mostly-templates that is a cost worth knowing before a third
+joins them.

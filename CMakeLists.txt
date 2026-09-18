@@ -52,6 +52,78 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# --- The floating-point contract: NO FMA CONTRACTION -------------------
+#
+# `a * b + c` must be two roundings, not one. Clang and GCC are free to fuse
+# the pair into a single `fma` instruction (`-ffp-contract=on` is clang's C++
+# default) wherever the target ISA has one, and that changes the last bits of
+# every multiply-add in the DSP path: `std::norm` on a complex<float>, the FFT
+# butterflies, `acc += alpha * (psd - acc)` in SpectrumEngine, and
+# `10*log10(p) + kFullScaleSineOffsetDb` in app/src/measure/Levels.h.
+#
+# MEASURED, run 35306075307 on d071269: ubuntu-latest and windows-latest agreed
+# on all 198045 bytes of app/tests/golden/api-v1-snapshot.json; macos-latest
+# differed on 35 of the 2049 `spectrum.spectrumDb` values, every one of them by
+# exactly +-1 float32 ULP, and three closed-form dB identities read 2^-53 dB
+# instead of zero.
+#
+# THE TWO HALVES OF WHY x86-64 AGREED, which are not the same guarantee:
+#
+#   * MSVC. `/fp:precise` -- the default, and what this project builds with --
+#     implies `fp_contract(off)` from Visual Studio 2022 onward, AT ANY
+#     `/arch:`. Microsoft's own documentation states it, so on the current
+#     toolchain no-contraction is a CONTRACT and not a side effect of SSE2
+#     lacking an FMA instruction. It has not always been: pre-VS2022 MSVC was
+#     permitted to contract under `/fp:precise`, so an older compiler could
+#     produce the Apple-arm64 numbers on Windows. An earlier revision of this
+#     comment credited the SSE2 baseline for the agreement; that was the wrong
+#     reason for a right answer.
+#   * GCC on x86-64. `-ffp-contract=fast` IS its default, and here the ISA
+#     really is the whole of it: the baseline has no FMA to contract into, so
+#     no fusion happens without `-mfma` or an `-march` that implies it. This
+#     half is an accident, and `-ffp-contract=off` is what makes it a decision
+#     -- add `-march=native` tomorrow and, without this flag, ubuntu joins
+#     macOS.
+#
+# Only Apple arm64, where FMA is in the baseline, contracted. And since the two
+# agreeing compilers reach the golden's values through two DIFFERENT libms,
+# that agreement is also what rules libm out as the source. One flag covers the
+# whole observed divergence -- confirmed on run 35311592135, where macos-latest
+# reproduced all 198045 bytes.
+#
+# This is therefore NOT a new numeric regime. It is the regime every golden
+# vector and every bitwise identity in this repository was written and
+# validated under; the flag says so out loud, for the compilers where it is
+# only a default and for the one where it is only an accident. Bit-identical
+# numbers across the three CI operating systems are what let a golden file be
+# a lock rather than a record of one runner's mood, and CLAUDE.md's whole
+# verification standard rests on a claim proving the same thing wherever it
+# runs.
+#
+# The cost is throughput, not latency: contraction speeds up inner loops, and
+# real-time safety in this app is about allocation and locks (the audio
+# callback only copies into a ring buffer). If a hot loop ever measurably
+# needs FMA, re-enable it AT THAT SITE with `#pragma clang fp contract(fast)`
+# and a comment -- an explicit local decision beats a silent global one.
+#
+# WHAT GUARDS THIS FLAG, and the gap in it -- named because it is the kind of
+# thing that rots silently. The only thing that notices its removal is the D7
+# regression lock in app/tests/test_api_serialise.cpp, and D7 only goes red
+# where contraction actually happens, i.e. on macos-latest CI. Nobody
+# developing on Windows can break this and see it; the flag is unguarded on
+# two of the three platforms and on every local machine. Tracked in
+# docs/HUMAN-QA-QUEUE.md.
+#
+# `if(NOT MSVC)` because MSVC has no `-ffp-contract` spelling. Its equivalent
+# is the `/fp:precise` default described above, which is NOT restated as a
+# flag here: adding `/fp:precise` would assert the default without changing
+# anything, and the pre-VS2022 case it would not fix anyway (that needs
+# `/fp:contract-` or a documented minimum toolchain, and this project's
+# toolchain is already VS2022+ -- CLAUDE.md pins MSVC 14.51).
+if(NOT MSVC)
+    add_compile_options(-ffp-contract=off)
+endif()
+
 # --- Vendored server library -------------------------------------------
 # cpp-httplib v0.56.0, the amalgamated header, MIT. See
 # external/cpp-httplib/PROVENANCE.md for the tag, the SHA-256 and why the

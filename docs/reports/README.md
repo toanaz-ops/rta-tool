@@ -36,3 +36,4 @@ what the verifier refuted, and the exact commands + output that prove the state.
 | 005 | Lane L3: the multi-time-window engine | [005-mtw-engine.md](005-mtw-engine.md) |
 | 006 | Lane L6b: multichannel workflows — spatial average, coherence weighting, routing, sequencing, presets | [006-multichannel.md](006-multichannel.md) |
 | 007 | Lane L7: solvers — output path, FIR export, auto-delay, auto-EQ, the alignment wizard and the crossover surface | [007-solvers.md](007-solvers.md) |
+| 008 | Lane L-API: the read-only remote API — HTTP/JSON on loopback, eight endpoints, the `Host` allowlist, and the transport L6a's SPL web viewer rides | [008-remote-api.md](008-remote-api.md) |

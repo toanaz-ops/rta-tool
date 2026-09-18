@@ -9,6 +9,7 @@
 
 #include "rta/dsp/Weighting.h"
 #include "rta/meter/Detector.h"
+#include "rta/meter/Dose.h"
 
 #include <array>
 #include <cstdint>
@@ -41,6 +42,60 @@ struct SplAlarmSpec {
 /// being written. None of these are persisted in v1: there is no preferences
 /// store anywhere under `app/src` (SPL-R11), so the composition root
 /// constructs them from these defaults.
+/// NIOSH REL, accumulator A's default.
+///
+/// NIOSH 98-126 cl. 1.1.1, printed p. 1: `T(min) = 480/2^((L-85)/3)`, followed
+/// by the words "where 3 = the exchange rate" -- so the denominator is
+/// `3/log10(2)` and NOT 10. cl. 1.3.3, printed p. 4, requires all levels
+/// "from 80 to 140 dBA" to be integrated, which is where the 80 dB(A)
+/// threshold comes from and why the document's own Table 1-1 starts at 80
+/// rather than at the 85 dB(A) REL.
+///
+/// A FUNCTION rather than a constant, and that is the point: `q` has to be
+/// COMPUTED by `rta::meter::exchangeDenominator`, which calls `std::log10` and
+/// is therefore not usable in a constant expression. Typing the readable
+/// 9.9657843 instead would be 1.53e-08 high -- undetectable by any dose
+/// acceptance in this project -- but `10^(3/q)` would then no longer be
+/// EXACTLY 2.0, which is what core's test_dose.cpp D1b/D1c/D1f rest on
+/// (SPL-R7). A `constexpr` preset would have forced the literal.
+///
+/// OWNER DECISION NOT MADE, recorded rather than resolved: 98-126 contains
+/// TWO tables needing two different exchange constants. Table 1-1 agrees with
+/// the formula above; Table 1-2's own printed footnote is
+/// `TWA = 10 x Log(D/100) + 85`, i.e. `q = 10` exactly, and its last row
+/// (32,500,000 % -> 140.1 dBA) proves it. The gap reaches 4.2549 % of dose at
+/// 140 dB(A). This preset ships the value that reproduces Table 1-1, because
+/// Table 1-1 is the artefact an inspector reads. Record section 13 Q4.
+[[nodiscard]] inline rta::meter::DoseSettings nioshRelDose() noexcept {
+    rta::meter::DoseSettings s;
+    s.criterionLevelDb = 85.0;
+    s.criterionSeconds = 8.0 * 3600.0;
+    s.q = rta::meter::exchangeDenominator(3.0);
+    s.thresholdDb = 80.0;
+    return s;
+}
+
+/// OSHA PEL, accumulator B's default.
+///
+/// 29 CFR 1910.95(a) requires A weighting and SLOW. The dose is computed
+/// against Table G-16a per Appendix A (mandatory) I(1)(i) -- NOT against
+/// Table G-16, which is the body's permissible-exposure table -- and that
+/// table's footnote formula is `T = 8/2^((L-90)/5)`, so the denominator is
+/// `5/log10(2)`. Appendix A I(2) gives `TWA = 16.61 log10(D/100) + 90`, the
+/// same denominator rounded for print.
+///
+/// The 90 dB(A) threshold is the PEL dose. The hearing-conservation dose uses
+/// 80 dB(A); that is a second CONFIGURATION of the same accumulator, not a
+/// third accumulator, and which one an operator wants is their setting.
+[[nodiscard]] inline rta::meter::DoseSettings oshaPelDose() noexcept {
+    rta::meter::DoseSettings s;
+    s.criterionLevelDb = 90.0;
+    s.criterionSeconds = 8.0 * 3600.0;
+    s.q = rta::meter::exchangeDenominator(5.0);
+    s.thresholdDb = 90.0;
+    return s;
+}
+
 struct SplConfig {
     /// THE ONE CAP ON `metrics`, and it is here rather than in the publish
     /// path on purpose (PR #17 verifier defect 1).
@@ -106,12 +161,19 @@ struct SplConfig {
     std::vector<SplMetricSpec> metrics;
     std::vector<SplAlarmSpec> alarms;
 
-    // DEVIATION FROM THE PLAN'S API SKETCH, NAMED: the plan lists
-    // `std::array<rta::meter::DoseSettings, 2> dose` here. `DoseSettings`
-    // ships in W1-D (core/include/rta/meter/Dose.h), which is Wave 1, so the
-    // field cannot exist yet without inventing the type in the wrong lane.
-    // It is added by W1-D's own task, where the two accumulators it names are
-    // also built. Nothing in Wave 0 reads a dose.
+    /// TWO dose accumulators, always, each with its own four settings
+    /// (record section 7). Not a convenience: the Larson Davis 831/LxT
+    /// defines `NUM_SLM_DOSES = 2` with a per-dose {threshold, exchange rate,
+    /// criterion time, criterion level}, and it is what makes Smaart SPL's
+    /// `Exposure O` and `Exposure N` columns exist side by side in one log. A
+    /// single dose setting cannot produce that log, and it forces a wrong
+    /// threshold onto whichever preset loses.
+    ///
+    /// The presets are DATA here and named nowhere in core (record
+    /// section 11): core holds the formula and four numbers, app holds which
+    /// four. `core/tests/test_dose.cpp` D3b greps core for these names; this
+    /// file is where they are allowed to be.
+    std::array<rta::meter::DoseSettings, 2> dose{{nioshRelDose(), oshaPelDose()}};
 
     /// How many of `metrics` a session can actually serve, and how many it
     /// cannot. A caller that wants to refuse rather than truncate checks

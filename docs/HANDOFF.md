@@ -5,6 +5,1289 @@
 
 ---
 
+# 2026-09-18 — **L6a station 4, WAVE 1 BUILT and VERIFIED (round 1).** Branch `l6a/wave1-core-metrics`, PR #20 open, NOT merged.
+
+Worktree `.claude\worktrees\agent-a8081552a1df7d90f`, branched from `main` at
+**`b1e14a9`** (where PR #17, Wave 0, merged), then **merged up to `origin/main`
+`d071269`**. Eight commits, `9a36c24..HEAD`. **Read the round-1 section first**:
+the verification found three real defects, and the tallies below the first table
+are the pre-merge ones.
+
+Actions was billing-blocked while this wave was built, so every number here was
+measured on this machine and pasted. **The block is now lifted and PR #20 has a
+real three-OS matrix** — see the last round-1 subsection for what that does and
+does not tell us.
+
+Wave 1 is the lane's **core pure-math layer**: the Ln histogram, the windowed
+energy recompute, the headroom identity and alarm latch, and dose. All of it is
+closed-form or clause-derived — **no golden vector, no sound card, no socket** —
+so the whole wave is provable on three operating systems.
+
+## Round 1 of verification (2026-09-18) — three confirmed defects, eight lesser, all fixed
+
+PR #20's verifier rebuilt both configurations clean, diffed all 222 table rows
+against the primaries, re-ran every guard at both commits and ran seven
+mutations including a positive control. Verdict **SOUND-WITH-FIXES**. Fixes are
+`9e4b264`, then merged up to `origin/main` `d071269` at `590cdeb`.
+
+**Tallies after the fixes and the merge**, measured here:
+
+| config | build dir | `main` at `d071269` | at `HEAD` |
+|---|---|---|---|
+| OFF | `build-spl1` | 774 (derived — see below) | **818/818** |
+| ON | `build-spl1-on` | 848 (derived) | **892/892** |
+
+`0 warning C` in both build logs. `892 − 818 = 74`, the same JUCE-only
+constant as before the merge, which is the cross-check that the merge added no
+JUCE-side tests of its own.
+
+**The two `main` figures are derived, not rebuilt, and that is a real gap.**
+Wave 1's own contribution is 44 ctest entries, measured pre-merge as
+`791 − 747` on a tree whose only difference was this branch. `818 − 44 = 774`
+and `892 − 44 = 848`. I tried to rebuild `main` properly from a `git archive`
+export and **MSVC refuses to configure a build tree under `%TEMP%`** — "The
+CXX compiler identification is unknown", the same family of problem
+`memory/mutation-testing-needs-the-exe-deleted-first.md` records about
+`MSB8029`. A verifier with a second checkout re-measures it; the last one did.
+
+**Guard counts, read from each guard's own line:**
+
+| guard | `main` `d071269` | `HEAD` |
+|---|---|---|
+| `core_has_no_framework_deps` | 164 at `b1e14a9` | **181** |
+| `filter_design_has_no_polynomial_form` | 186 at `b1e14a9` | **200** |
+| `core_makes_no_class_1_claim` | 11 at `b1e14a9` | **28** |
+| `app_measure_has_no_framework_deps` | **86** (measured on main's own tree) | **87** |
+| `no_server_library_outside_api` | (L-API's, arrived in the merge) | 428 |
+
+`app_measure_has_no_framework_deps` is the one I could measure on both sides
+without building: main's GLOBS expands to 86 files, `HEAD`'s to 87, and the +1
+is `SplCriteria.h`. The three `core` guards moved again because round 1's fixes
+split three files (below).
+
+### The three confirmed defects
+
+1. **`Dose.h` claimed a negative that nothing had measured.** "No numeric
+   acceptance in this lane can distinguish either pair" — FALSE. `D2a` bounds
+   each regulator's exact duration formula at `1e-9 %`, and the typed
+   `9.9657843` misses it by **1600x** (worst `1.600e-06 %` at 130 dBA, red at
+   **50 of 51** rows; 85 dBA survives only because its exponent is zero).
+   `16.6096404` fails by **2485x**. The computed constants clear the same bound
+   by `1.0e4x`. Reproduced here, digit for digit with the verifier's numbers.
+
+   Where it came from: SPL-R7 argues against `D2b`'s printed-row bounds and
+   then assumes `D2a` uses a *float* tolerance. Shipped, `D2a` is an absolute
+   `1e-9 %` — four orders tighter. So the rule stands on **two** legs, accuracy
+   and bitwise exactness, and D1f's bitwise check is the weaker one.
+
+   Fixed in the header, the test, the plan's SPL-R7 note (dated) and its D1f
+   row. **The claim is now arithmetic in the suite**, not prose: D1f computes
+   the worst deviation for computed and typed constants over D2a's own grid for
+   both regulators. New memory:
+   `an-unmeasured-negative-claim-is-the-one-no-suite-exercises.md` — the second
+   time in three days a correction retiring an unmeasured claim shipped a new
+   one, and both were negatives.
+
+2. **The NIOSH row's label asserted FAST; the primary says SLOW.** Verified
+   myself in the archived PDF: cl. 1.3.3, printed p. 4 (PDF p. 22) is
+   **normative** — "If a sound level meter is used, the meter response shall be
+   set at SLOW" — and ch. 4, printed p. 25 (PDF p. 52) repeats it. So
+   `L_ASmax`. That is exactly the substituted-convention error `SplCriteria.h`
+   exists to prevent, shipped inside the fixture written to prevent it.
+
+   The root cause is fixed too: the detector had been one character inside a
+   label string, where nothing could assert it. `SplCriterion::timeWeighting`
+   is data now, with its own citation, and E1 asserts it. A new SECTION pins
+   that the two peak rows carry an EMPTY detector because a peak has no
+   exponential time weighting — a different fact from the OSHA row's empty
+   `weighting`, which means the CFR named none. Record §7a amended (A6, dated).
+
+   And the two allow-lists that had already drifted are now one,
+   `kQuantityTokens`, read by both the header predicate and E2's scan — the
+   test's copy carried `l_afmax` and omitted `l_asmax`, so this very correction
+   would have made a view file printing the corrected label read as an
+   offender.
+
+3. **B1's gate was hollow.** `sumSquares()` returning
+   `count_ * pow(10, (leqDb() − offset)/10)` — the inversion the header says
+   callers should not have to do — left B1 **green**, because what B1 checked
+   was a round trip any log-derived value satisfies. B1 now compares
+   `sumSquares()` **bitwise** against the same sum accumulated independently in
+   the test. Written with the mutant still in place: 4 assertions red, green
+   after revert. 4 of the 6 rows discriminate — the exact-power-of-two
+   amplitudes cannot — and the file says so, because trimming the list to the
+   clean amplitudes would hollow it again.
+
+### The eight lesser findings
+
+All fixed; the interesting one is **finding 4**, the per-row resolution rule.
+`table11ResolutionSeconds` keys on the **Hours** cell while the record's prose
+says "the row's smallest printed unit", and they differ on rows 97 and 100.
+**Resolved in favour of the code, with the justification written down and
+asserted** (new `D2b3`): Table 1-1 prints in two FORMATS, and an en dash means
+"zero of this unit" only in the minutes-and-seconds one — rows 97 and 100 are
+exactly 1800 s and 900 s, while 80 dBA prints `25 24 –` over an exact value
+carrying 54.3 seconds. The record's looser prose would give `r = 60 s` at
+100 dBA, a `6.6667 %` bound, which contradicts the record's **own** printed
+`0.1111 %` for that row and would make D2e's rejection of `q = 10` impossible
+there. D2d keeps a separate helper, `table11PrintedUnitSeconds`, because it
+asks a different question — which unit the value was rounded TO.
+
+The others: D2d retitled to name its three-row set (one erratum, two
+truncations); D3b's fifth forbidden token `EU` restored, case-sensitively on
+the stripped text because lowercase "eu" is a substring of ordinary English;
+`stripLineComments`' string-literal blind spot documented as fail-safe;
+`test_level_histogram.cpp`'s dangling "the scan below" now HAS a scan, reading
+`Levels.h` and `SplConfig.h` through `RTA_REPO_ROOT`; `exposureLevelDb` returns
+`std::optional` and is absent for `seconds <= 0` instead of returning the bare
+Leq; and A2's distribution-adapter portability written down (no assertion
+depends on it — the bound is a theorem and both shapes that reach it are
+deterministic).
+
+### Three files split, and the complete over-budget list
+
+Round 1's fixes grew three files past the 400-line hard cap, so three subjects
+moved out. None of this is new scope:
+
+| new file | what moved | was |
+|---|---|---|
+| `core/tests/test_dose_constants.cpp` | D1f, once it became a measurement over both regulators' full grids | 457 in `test_dose.cpp` |
+| `core/tests/test_level_histogram_span.cpp` | A7 + A8, the DERIVED span — and where finding 8's scan lives | 418 |
+| `core/tests/test_dose_table12.cpp` | D2e + D2f; Table 1-2 is a different table asking a different question | 431 |
+
+All three are registered in `core/tests/CMakeLists.txt` and all three are in
+the class-1 honesty guard by name.
+
+**Finding 9 was right and the PR's deviation 9 was incomplete.** The complete
+list of files over their plan budget, every one under CLAUDE.md's 400 hard cap:
+
+| file | plan cap | now |
+|---|---|---|
+| `app/tests/test_spl_criteria.cpp` | ≤200 | **387** |
+| `core/tests/test_dose.cpp` | ≤340 | **378** |
+| `core/tests/test_dose_tables.cpp` | ≤340 | **351** |
+| `core/tests/test_alarm.cpp` | ≤240 | **350** |
+| `core/tests/test_level_histogram.cpp` | ≤300 | **331** |
+| `app/src/measure/SplCriteria.h` | ≤120 | **177** |
+| `core/include/rta/meter/Leq.h` | ≤130 | **134** |
+
+Seven, not two. The longest file this wave touches is 387 lines.
+
+### One error of my own, caught by the suite
+
+D2b3's first draft asserted the 80 dBA exact duration against a typed
+`91434.300640` and went red against the true `91434.30059336829`. It
+cross-checks by MULTIPLYING (`60·480·2^(5/3)`) now rather than dividing — a
+different route to the same closed form. This project's verification standard
+catching the person applying it, in the commit that exists to fix two other
+instances of the same mistake.
+
+### CI came back, and found a real defect in this wave within minutes
+
+The account's Actions billing block is lifted, so PR #20 got the first
+three-OS matrix this wave has ever had — which is what rule 3 of
+`docs/GIT-WORKFLOW.md` wants. It immediately paid for itself.
+
+**B1's bitwise round trip was non-portable.** GCC and MSVC green, clang red at
+`test_window_energy.cpp:113`. The test recomputed `Leq::leqDb()`'s arithmetic
+in ONE expression where the implementation uses two statements, and Apple
+clang defaults to `-ffp-contract=on`: `10.0 * log10(m) + offset` contracts to
+a single `fma`, one rounding instead of two. Same mathematics, different
+expression SHAPE, last-bit disagreement — and a bitwise check is exactly what
+notices. Only the non-zero-offset rows could fail, because `db + 0.0` is exact
+either way.
+
+Fixed **structurally, not by widening**: every product and logarithm the
+implementation names before adding is now named in the test too. The
+verifier's un-log mutant still reddens the rewritten gate (4 assertions at
+`:137`). New memory:
+`a-bitwise-check-must-copy-the-expression-not-the-arithmetic.md`, which also
+audits the wave's other bitwise checks and says why each is safe (B2's offset
+is 0.0 and `fma(10, log10, 0.0)` rounds once to the same value; `percent() ==
+100.0` has no addition to contract into; A6's merge is integer arithmetic).
+
+Confirmed fixed by CI at `5337d46`: macOS went from 5 failures to **4**, and
+the four that remain are the pre-existing set.
+
+**Two of those four were L6a Wave 0's own with the SAME root cause. Handed
+over, and now RESOLVED upstream — by the other branch of the choice.** The
+diagnosis handed over was that `test_spl_seam.cpp` asserted
+`levelDbFs(0.5) == 0.0` bitwise while `Levels.h:46` computes
+`10.0 * std::log10(power) + kFullScaleSineOffsetDb` in one expression, which
+contracts to an `fma`. `ci/macos-fixes` (PR #22, merged as `20f3c65` and in
+this branch's merge) took the **second** option rather than the first: the
+implementation is unchanged and the TEST's bitwise claim is retired for a
+derived `1e-15` bound, on the grounds that the equality was never an identity
+— it was a coincidence of the product being rounded BEFORE the add that lands
+it on `-kFullScaleSineOffsetDb`. Their analysis is sharper than the hand-over:
+on arm64 FMA is in the **baseline ISA**, not merely a clang default.
+
+It also set **`-ffp-contract=off` repo-wide** (`CMakeLists.txt:91`), which
+means B1's one-expression form would now pass too. **B1 stays structural
+anyway**, and their own sentence is the reason: an assertion whose truth is a
+compiler flag records the flag, not the arithmetic. The two lessons are
+cross-referenced in `memory/`.
+
+The other two, `B0c` (AllocationProbe, an allocation the optimiser removed)
+and `D7` (the golden `/snapshot` body), were never this lane's and are fixed
+there too. **macOS is green on `main` at `20f3c65`.**
+
+The remaining single-toolchain risk is now smaller but not zero: every bitwise
+assertion in the wave has GCC and MSVC evidence, and macOS evidence for all of
+them except whatever the four pre-existing failures mask. The note at
+`test_dose_constants.cpp` stands: a disagreeing toolchain is a named libm on a
+named OS in the PR thread, not a widened tolerance.
+
+---
+
+## Tallies (as built, before round 1)
+
+| config | build dir | at `b1e14a9` (baseline) | at `1357948` |
+|---|---|---|---|
+| OFF | `build-spl1` | **747/747** (measured here on the untouched tree) | **790/790** |
+| ON | `build-spl1-on` | 821/821 (inherited — see the note) | **864/864** |
+
+`0 warning C` in both build logs, both configurations.
+
+```
+cmake -S . -B build-spl1 -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=OFF
+cmake --build build-spl1 --config Release --parallel
+ctest --test-dir build-spl1 -C Release                 -> 790/790, 0 failed
+
+cmake -S . -B build-spl1-on -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=ON \
+      -DRTA_JUCE_PATH="D:/DEV CAVE EP3/PROJECT005-AZ-handsfree/external/JUCE"
+cmake --build build-spl1-on --config Release --parallel
+ctest --test-dir build-spl1-on -C Release              -> 864/864, 0 failed
+```
+
+**The ON baseline is inherited and cross-checked, not rebuilt** — flagged
+honestly because it is the one number on this page that is not a fresh
+measurement. 821/821 is what PR #17's verifier measured at `c7845d4`, which is
+in `main`. The cross-check is arithmetic and it is exact: `864 − 790 = 74` and
+`821 − 747 = 74`. Wave 1 adds nothing to `ui/tests`, `app/tests_juce` or
+`platform/tests_juce`, so the JUCE-only count is a constant, and it is the same
+constant on both sides. A verifier rebuilding `main` from clean should get 821.
+
+## Guard counts — read from the guard's own line, never predicted
+
+| guard | at `b1e14a9` | at `1357948` | why it moved |
+|---|---|---|---|
+| `core_has_no_framework_deps` | 164 | **178** | +14: 3 meter headers, 3 meter sources, 5 test files, 3 fixture/support headers |
+| `filter_design_has_no_polynomial_form` | 186 | **197** | same files, its own extension set |
+| `core_makes_no_class_1_claim` | 11 | **25** | +6 automatic (`meter/*.h`, `meter/*.cpp` globs) and **+8 by name** — SPL-R9's inward hole, below |
+| `app_measure_has_no_framework_deps` | 81 | **82** | +1, `SplCriteria.h`. (81 = 76 explicit GLOBS entries + 5 `app/tests/*.h`) |
+
+All four shown **RED by a probe and green again after revert**, on this branch:
+
+| guard | probe | result |
+|---|---|---|
+| `core_makes_no_class_1_claim` | `"Class 1"` appended to `test_dose_tables.cpp` — one of the newly named files | Failed, then Passed at 25 |
+| `core_has_no_framework_deps` | `#include <juce_core/juce_core.h>` appended to `core/include/rta/meter/Dose.h` | Failed, then Passed at 178 |
+| `filter_design_has_no_polynomial_form` | `tf2sos` appended to `core/src/meter/Dose.cpp` | Failed, then Passed at 197 |
+| `measure_has_no_framework_deps` | `#include <juce_gui_basics/...>` appended to `app/src/measure/SplCriteria.h` | Failed, then Passed at 82 |
+
+The last one is the load-bearing one: it is what proves the new GLOBS entry is
+real rather than a line in a list.
+
+## What each commit is
+
+| commit | task | what |
+|---|---|---|
+| `9a36c24` | **W1-A** | `meter::LevelHistogram` — 2000 bins of 0.1 dB + two out-of-span counters, Ln over bin CENTRES, absence with a reason instead of clamping, and a `w/2` bound that is a theorem |
+| `257eb20` | **W1-B** | `Leq::sumSquares()`, and record §3's windowed recompute asserted BITWISE over 3600 steps — plus the two cases that show WHY the running subtraction was rejected |
+| `ad0a361` | **W1-C** | `headroomDb` closed form, `AlarmLatch` with no hysteresis / debounce / margin, `update` taking a `WindowResult` with the bare-double overload `= delete` |
+| `31274a7` | **W1-D** | `meter::Dose` — one formula, `q` computed per preset, two accumulators; the two-part table fixture over 222 transcribed primary rows |
+| `1497667` | **W1-E** | `SplCriteria.h` — the three 140s as three named criteria; plus `SplConfig::dose`, which Wave 0 explicitly deferred to this task |
+| `1357948` | SPL-R9 | the honesty guard now covers the files that quote the standards |
+
+## Mutations run, every one red
+
+| # | mutation | file | red |
+|---|---|---|---|
+| M1 | a percentile outside the span returns `baseDb` instead of absent | `LevelHistogram.cpp` | A5 + A7, 14 assertions |
+| M2 | drop the `+ 0.5` — bin edge instead of bin centre | `LevelHistogram.h` | A3 + A4, 82 assertions |
+| M3 | hard-code `baseDb = -20.0` (what an earlier plan revision shipped) | `LevelHistogram.h` | A7 + A8, 8 assertions |
+| M4 | `sumSquares()` returns the MEAN square | `Leq.cpp` | B1, 26 assertions |
+| M5 | an excluded block is counted but its energy still summed | `Block.cpp` | B2c — "0 dB out" where the fixture wants > 10 |
+| M6 | a 0.005 dB hysteresis on the clear side | `Alarm.cpp` | C4a's **one-ULP** case only; the 0.01 dB case stayed GREEN |
+| M7 | a lost window returns `kLevelFloorDb` instead of absent | `Alarm.cpp` | C3, 10 assertions |
+| M8 | the NIOSH preset's `q` typed as `10.0` | `test_dose_tables.cpp` | D2b + D2e, 74 assertions — including at 100 dBA, bound 0.111 %, gap 1.179 % |
+| M9 | fold below-threshold time into the dose | `Dose.cpp` | D1e + D2g, 6 assertions |
+
+**M6's asymmetry is the point, and it is why both amplitudes ship.** A ±3 dB
+fixture would have passed with a 1 dB hysteresis quietly in place. The plan
+predicted exactly this split and it held.
+
+## Provenance of the transcribed tables
+
+`core/tests/DoseTableFixtures.h` carries 222 rows of primary-source data with
+its provenance in the header comment. Summarised:
+
+- **NIOSH Table 1-1 (50 single-level rows) and Table 1-2 (121 rows)** — DHHS
+  (NIOSH) 98-126, printed pages 2 and 3 = PDF pages 20 and 21. Read 2026-09-18
+  from `web.archive.org/web/2020/https://www.cdc.gov/niosh/docs/98-126/pdfs/98-126.pdf`.
+  126 pages, **born digital** (`/Author NIOSH`, `/Creator Adobe InDesign CC
+  2014`, `/Producer Adobe PDF Library 11.0`), so this is the document's own text
+  layer and not an image extraction — which settles a doubt station 1 raised and
+  then retracted. **Every `cdc.gov` path for the PDF now returns 404** and the
+  DOI redirects to a landing page with no text; the archive copy is the only
+  reachable primary. Ten rows cross-check against the independently verified
+  spot values in `docs/research/2026-09-16-l6a-spl-pro-station1-research.md`
+  §A4.2 — all ten agree.
+- **OSHA Table G-16a (51 rows)** — 29 CFR 1910.95 Appendix A, read 2026-09-18
+  from `law.cornell.edu/cfr/text/29/1910.95`. `osha.gov` returned HTTP 403 and
+  `ecfr.gov` bot-blocked. Three rows cross-check against research §A4.1 — all
+  three agree.
+
+Durations are stored **exactly as printed**, including the CFR's inconsistent
+significant figures (`32` and `16` with no decimal, `27.9` and `3.0` with one,
+`0.125` with three while its neighbours `0.14` and `0.11` have two). That is
+load-bearing: each row's acceptance bound is one unit in **that row's** last
+printed place, so normalising the strings would change the bound.
+
+## Findings — things that were wrong, or wrong in the plan
+
+### 1. D2d's rounding convention had to be round-half-UP, not banker's
+
+The plan's D2d asserts the set of Table 1-1 rows that truncate rather than round
+is exactly `{124, 127}`. Recomputed with round-half-to-even — which is what
+Python's `round()` gives, and what a careless C++ implementation gives — the set
+is `{99, 109, 124, 127}`. **109 dBA is an exact half**: `480/2^8` min is
+`1.875 min = 112.5 s` precisely, and the document prints `1 min 53 sec`. Under
+half-up that is correct rounding; under banker's it looks like a fourth
+truncation. The shipped fixture uses `floor(x + 0.5)` and 109 has its own
+SECTION saying why, so the next reader cannot re-derive the wrong set.
+
+### 2. `headroomDb` loses precision as the window fills, by `T/(T−t)`
+
+`budget − spent` is a subtraction of nearly equal numbers once the window is
+nearly full, so the relative error is amplified by `T/(T−t)` — a factor of 1000
+at `t = 0.999·T`. C1's first bound was a flat "five roundings" `2.41e-15 dB`
+and the measured worst over 252 `(T, t, L_lim)` triples is **`6.25e-13 dB`, 260
+times larger**. The shipped bound is per-triple and derived from the
+amplification factor itself; the worst triple uses **32.4 %** of its own bound.
+Eleven orders under the 0.1 dB the display shows, so nothing is done about it —
+but it is now in `Alarm.h`, because a reader who assumed the identity was exact
+to the last bit near the end of a window would have been wrong.
+
+### 3. B1's first tolerance was the wrong SHAPE, not the wrong size
+
+An absolute `1e-9` on `sumSquares` went red at `a = 0.1` over 2 s:
+`960.00002861256689` summed against a closed form of `960.00002861022972`, a
+relative `2.4e-12`. The six B1 signals span energies from 960 down to `1.2e-5`,
+so no absolute bound can be right for all of them. Shipped bound is the derived
+`N·2^-53` relative one.
+
+### 4. W1-E's E2 grep fires on EQ and FIR vocabulary
+
+"Peak" is an overloaded word here. The grep the plan specifies reports **five**
+offenders over `app/src/export` and `app/src/view`, and not one is a sound
+pressure: `"peaking"` (twice) is an EQ filter TYPE, and `"peak_0dbfs"`,
+`"peak_gain_db"` and `"coefficient_peak"` are FIR normalisation and coefficient
+quantities. E2 ships as an SPL-peak check with four **named** exemptions, each
+carrying its reason, and **every exemption must still be found** or the case
+goes red — so a renamed literal cannot leave a hole. Measured now: 46 files, 202
+string literals, 5 mentioning peak, 4 exempt, 0 unqualified.
+
+### 5. Four "this code deliberately lacks X" greps went red against our own headers
+
+C4b, D3a and D3b all failed on first run — because `Alarm.h` has to say
+"hysteresis" to record why there is none, and `Dose.h` has to say "OSHA" to cite
+App. A I(2). A check that forbids a decision from being documented trains the
+next author to delete the documentation. All three now scan **code with line
+comments stripped** (`core/tests/support/SourceScan.h`) **and separately REQUIRE
+the word in the prose**, so neither half can be satisfied by deleting the other.
+D3b's own vacuity sentinel also went red first. New memory file:
+`memory/a-naming-grep-that-bans-a-word-bans-its-own-justification.md`.
+
+### 6. SPL-R7's stated reason is refuted in the fixture, and the rule survives anyway
+
+The literal `9.9657843` clears every dose bound in this lane by five to eight
+orders, so "the literal fails a dose bound" is false and `test_dose.cpp` D1f
+says so. What the computed `3/log10(2)` actually buys is that `10^(3/q)` is
+**exactly 2.0 bitwise** — measured on MSVC 14.51 ucrt, for `Q ∈ {3,4,5,6}`, in
+both directions — which turns D1b and D1c from tolerances into exact
+comparisons. **If a CI toolchain makes any of those bitwise comparisons fail,
+that is a finding to report (a named libm on a named OS), not a tolerance to
+widen.**
+
+### 7. A `cp`/`mv` mutation backup regresses the mtime, and "rebuild everything" does not fix it
+
+Reverting two mutated `.cpp` files with `mv -f <file>.mutbak <file>` left them
+**older** than their own object files, so an incremental rebuild relinked the
+mutated objects: **4 test cases red on a tree where `git status --short` and
+`git diff --stat HEAD` were both empty.** `memory/mutation-testing-needs-the-exe-deleted-first.md`
+already names the "green for the wrong build" failure; it now also names this
+door into it, and the fix (`touch` every reverted file, or `--clean-first`).
+
+## Deviations from the plan, all named
+
+1. **`core/tests/test_window_energy.cpp` is a new file**, not the extension of
+   `test_block.cpp` and `test_leq.cpp` the plan asks for. Appending would have
+   left them at **450** and **412** lines against CLAUDE.md's 400-line hard cap.
+   The seam is clean: the new file is record §3, those two are record §2 and the
+   2026-08-27 meter track. `blockAtLevel`/`mask` moved to
+   `core/tests/BlockFixtures.h` so both build blocks from ONE closed form.
+2. **`core/tests/DoseTableFixtures.h` holds the transcribed rows.** 222 data
+   rows plus logic cannot fit one 400-line file. Precedent:
+   `CrossoverBandFixture.h`, `DelayFilterFixtures.h`.
+3. **`LevelHistogram`'s constructor has NO default base.** The plan's API sketch
+   defaults it to `-20.0`, which is the exact value SPL-R8 identifies as the
+   trap. Nothing constructs one yet, so the cost is zero.
+4. **`LnResult { optional<double> db; LnAbsence absence; }` replaces
+   `percentileDb()` + `lastAbsence()`.** A "last absence" member would be
+   mutable state written from a `const` method on a class the analysis thread
+   publishes — a data race for the sake of one enum.
+5. **`Dose::projectedPercent()` and `Dose::twaDb()` return `std::optional`**
+   where the plan sketches `double`. "Nothing elapsed, so nothing can be
+   projected" and "the dose is zero, so the logarithm is −inf" are absences, and
+   `0.0` for either reads as a measurement.
+6. **`AlarmLatch::update` takes a `WindowResult`**, per C5, not the
+   `(double windowedDb, double limitDb)` of the API sketch — and the
+   bare-double overload is `= delete`, which makes C5 a compile error rather
+   than a convention.
+7. **W1-E touched `app/`**, which the station-4 brief's SCOPE line said not to.
+   The plan's own W1-E row places `SplCriteria.h` in `app/src/measure/` and its
+   test in `app/tests/`, and record §7a/§11 require it: `core` may not name a
+   regulator. Both are framework-free and build with `RTA_BUILD_APP=OFF`, so
+   nothing moved out of the OFF matrix. `SplConfig::dose` is the same call —
+   Wave 0 left an explicit comment deferring that field to W1-D.
+8. **SPL-R9's inward half is closed in this wave, not in Task G.** The
+   unguarded files are the ones this wave creates.
+9. **`test_alarm.cpp` is 350 lines and `test_dose.cpp` 378** against the plan's
+   ≤240 and ≤340. Both under the 400 hard cap. The overrun is the
+   negative-proof machinery in findings 4 and 5.
+
+## Owner decisions this wave does NOT make
+
+Nothing new was added to `docs/HUMAN-QA-QUEUE.md`; two existing items are now
+load-bearing in shipped code and are recorded where the code is:
+
+1. **Record §13 Q4 — NIOSH's two exchange constants.** 98-126 Table 1-1 needs
+   `q = 3/log10(2)`; Table 1-2's own printed footnote is `q = 10` exactly, and
+   its last row (32,500,000 % → 140.1 dBA) proves it. The gap reaches **4.2549 %
+   of dose at 140 dB(A)**. `kNioshRelDose` ships the value that reproduces
+   Table 1-1, because Table 1-1 is the artefact an inspector reads, and the
+   preset's own comment says so. **Flipping it is one line.**
+2. **Record §13 Q4, second half — tables or formulas?** The default taken is
+   **formulas**: the 99 dBA erratum is excluded by name and the bound is not
+   widened. Flipping it inverts D2c — the fixture would assert 1139 s and the
+   formula becomes the thing under tolerance.
+
+## What a human can run, and what they should see
+
+Wave 1 is `core/` pure math with no UI, so there is nothing to look at — but
+everything is runnable and the numbers are the deliverable.
+
+Both configurations, whole suites:
+
+```bash
+cmake -S . -B build-spl1 -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=OFF && cmake --build build-spl1 --config Release --parallel && ctest --test-dir build-spl1 -C Release
+```
+
+Expect `100% tests passed, 0 tests failed out of 790`.
+
+Just this wave's cases, with every measured margin printed beside its bound
+(the `WARN` lines are deliberate — they put the margins in the log rather than
+only on a failure):
+
+```bash
+build-spl1/core/tests/Release/rta_core_tests.exe "[levelhistogram],[alarm],[dose]" 2>&1 | grep -A2 warning
+```
+
+Expect, among others:
+
+```
+A2 worst observed Ln residual: 0.050000000000011369 dB, against the w/2 bound
+  0.050000000000000003 dB, at mostly flat with spikes n=1.000000
+C1 worst |headroom - L_lim| = 6.2527760746888816e-13 dB over 252 (T, t, L_lim)
+  triples; worst fraction of its own derived bound = 0.32420398109355347
+D2b Table 1-1: 49 rows within their own printed resolution, worst using
+  75.7813 % of its own bound; 99 dBA excluded as a named erratum
+D2b2 Table G-16a: all 51 rows hold; tightest at 125 dBA using 50 % of its own bound
+D2f Table 1-2: 119 of 121 rows within 0.049733479708180539 dB of
+  10log10(D/100)+85; 50,000 % and 26,000,000 % excluded by name
+```
+
+**A2's worst residual EXCEEDS the w/2 bound by 1.1e-14** and that is the
+interesting number on the page: the theorem's bound is *reached*, not merely
+respected, which is why the comparison carries `1e-12` of round-off slack and
+says why.
+
+The full per-row table for both regulators, 101 lines:
+
+```bash
+build-spl1/core/tests/Release/rta_core_tests.exe "D2b*" -s 2>&1 | grep "dBA printed"
+```
+
+## Wave 2 is next, and what it needs from here
+
+`docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md` Wave 2 — `SplHistory` (the
+declared-span ring, record §4), alarms wired with the proxy window (§6), the
+`#key=value` log with rotation and a tolerant reader (§10), then settings, the
+`Spl` pane model and the ON specimen (§11).
+
+Wave 1 hands it: `LevelHistogram` (feed it `Detector::levelDb`, base from
+`SplConfig::histogramBaseDb()`), `combineBlocks` → `WindowResult` → `AlarmLatch`
+(which will not accept anything else), `headroomDb` for the number the alarm
+publishes beside its state, and `SplConfig::dose[0..1]` already populated with
+the two presets.
+
+Three things Wave 2 must not undo:
+
+- **The histogram base is derived, never typed.** A7 is the fixture; the
+  hard-coded `-20.0` makes every uncalibrated session's Ln permanently
+  `BelowSpan`.
+- **The peak label is `kSampledPeakLabel`, not "Peak".** E2's scan counts rise
+  when Wave 2 lands its view files, and that is when the check starts working.
+- **`AlarmLatch` has no margin.** An operator's amber is a setting applied *to*
+  `headroomDb`, not a constant added to the latch.
+
+---
+
+# 2026-09-18 — **L6a station 4, WAVE 0 BUILT and MERGED** as PR #17 at `b1e14a9`. Branch `l6a/wave0-spl-publish`.
+
+*Heading corrected 2026-09-18 by the Wave 1 builder: this section was written while the PR was still open, and everything below it still reads as if it were. The account of what was built, what two verifier rounds found and every measured number is unchanged and still the record; only "NOT merged" was false, and Wave 1 branched from the merge commit.*
+
+# 2026-09-18 — **L-API (Remote API) CLOSED OUT. PR #18 merged at `91367a8`. Lane report: [`docs/reports/008-remote-api.md`](reports/008-remote-api.md).**
+
+**Read this section first.** The whole of lane L-API is BUILT and on
+`origin/main`: stations 1+2 as PR #11 (`a39a02e`), station 3 as PR #14
+(`a02fb29`), station 4 Wave 1 (tasks A–G) as **PR #16 at `7b4773f`** and
+Wave 2 (tasks H–K) as **PR #18 at `91367a8`**. Eleven tasks, ten of them proven
+in `RTA_BUILD_APP=OFF` — the only configuration CI runs — including the whole
+request path over a real loopback socket. Report 008 carries what shipped, the
+twenty-one record amendments, what each verifier refuted, and what is open.
+
+`docs/plans/MASTER-EXECUTION-PLAN.md` now has **"Status snapshot —
+2026-09-18"**: the **L-API** row reads **BUILT 2026-09-18, merged (PRs #11 #14
+#16 #18)**. The next lane, by that plan's own opening order, is
+**L6a (SPL-pro) Waves 1–4**.
+
+## THE ONE THING THAT CHANGED SINCE EVERY PR BODY IN THIS LANE
+
+**GitHub Actions is LIVE again — billing resolved — and the three-OS matrix is
+RED on macOS.** Every PR body and handoff entry in this lane says Actions is
+billing-blocked and the numbers are therefore local-only. That stopped being
+true at **2026-09-17T17:31Z**, when a push to `main` ran the matrix and passed.
+Measured with `gh run list`: every run since has executed. So **PRs #16, #17,
+#18 and #19 merged with a live, visibly failing matrix rather than with none**
+— a worse position than the PR bodies describe, and nobody looked.
+
+**Hệ quả quy trình:** cổng CI của `docs/GIT-WORKFLOW.md` **luật 3 giờ kiểm
+được**, nên nó không còn là "không thể đạt" mà là "đang không đạt" — hai câu
+khác nhau, và câu thứ hai buộc phiên phải làm gì đó.
+
+> **CẬP NHẬT — ĐÃ XANH.** `ci/macos-fixes` **merge thành PR #22 tại `20f3c65`**,
+> và `main` giờ xanh **cả ba OS**. Nên "đang không đạt" ở trên đúng trong đúng
+> hai ngày; giờ cổng luật 3 vừa kiểm được vừa **đạt**. Bốn test đỏ được sửa
+> **tại NGUYÊN NHÂN**, không phải bằng cách nới assertion:
+>
+> - **`-ffp-contract=off` ngoài MSVC** (root `CMakeLists.txt`) lo `D7` và hai
+>   case `test_spl_seam.cpp`. Clang mặc định `-ffp-contract=on`, nên
+>   `a * b + c` thành **một** `fma` — một lần rounding thay vì hai — ở mọi nơi
+>   ISA có sẵn lệnh đó. **Baseline x86-64 KHÔNG có FMA**, nên gcc và MSVC vốn
+>   đã khớp từng bit (và đó cũng là điều loại libm ra khỏi danh sách nghi vấn);
+>   **chỉ Apple arm64, nơi FMA nằm trong baseline, mới contract.** Đo được: 35
+>   trong 2049 giá trị `spectrum.spectrumDb`, mỗi cái lệch đúng **±1 ULP
+>   float32**, cộng ba closed-form dB identity đọc ra `2^-53 dB` thay vì 0.
+> - **`B0c` là nguyên nhân KHÁC**: một allocation mà clang được phép loại bỏ.
+>
+> Nên `D7` **vẫn là byte lock** trên cả 198045 byte, và giờ trên **ba** OS —
+> nhiều hơn điều nó từng chứng minh. Comment của flag chỉ đúng `D7` làm canary
+> nếu flag bị mất. Hai memory mới:
+> `memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md` và
+> `memory/an-allocation-the-optimiser-removed-reads-as-zero-bytes.md`.
+>
+> **Và một chỗ report 008 sai, đã ghi vào §8 của chính nó:** ba phương án nó
+> liệt kê đều hỏi *test nên nhượng bộ cái gì*. Câu trả lời đúng là phương án
+> thứ tư không ai liệt kê — **làm cho hai nền tảng tính ra cùng một số**. Dấu
+> hiệu để nhận ra lần sau: lệch **±1 ULP tập trung ở multiply-add, trên MỘT
+> kiến trúc, hai cái còn lại khớp nhau** là dấu vết FP-contraction, không phải
+> vấn đề tolerance.
+
+At `main` `d071269`:
+
+```
+rta_core (ubuntu-latest)   100% tests passed, 0 tests failed out of 774
+rta_core (windows-latest)  100% tests passed out of 774
+rta_core (macos-latest)     99% tests passed, 4 tests failed out of 774
+```
+
+**Bản đầu của mục này viết "giống nhau qua bốn run liên tiếp". SAI, và lịch sử
+thật thì nặng hơn chứ không nhẹ hơn.** Đo từng run, job macOS:
+
+| run | cây | macOS |
+|---|---|---|
+| 35260003002 | PR #16 (`remote-api/wave1-serialise`) | **1 đỏ / 700** — chỉ `D7` |
+| 35303640976 | PR #17 (`l6a/wave0-spl-publish`) | 4 đỏ / 747 |
+| 35305764296 | PR #18 (`remote-api/wave2-server`) | 4 đỏ / 774 |
+| 35305862353 | `main` sau PR #18 | 4 đỏ / 774 |
+| 35306020025 | PR #19 (`fix/cmake-comment-mojibake`) | 4 đỏ / 774 |
+| 35306075307 | `main` `d071269` | 4 đỏ / 774 |
+
+Tức bộ **bốn** test đỏ xuất hiện ở năm run, và ở mức 774 thì bốn run; run sớm
+nhất chỉ có **một** đỏ trên 700 vì ba test của L6a Wave 0 chưa tồn tại. Chỗ
+đáng kể: **`D7` đỏ trên macOS ở MỌI run CI kể từ run đầu tiên chứa nó.** Nó
+chưa bao giờ xanh trên nền tảng đó. Một phép so byte trên float do DSP tính ra
+đã phụ thuộc máy ngay từ commit sinh ra nó, và lane này merge hai lần đè lên
+nó trong khi PR body của chính nó nói "không có CI để đọc".
+
+Ubuntu and windows are the **first confirmation of OFF 774 by anything other
+than this machine**. The four macOS failures:
+
+| test | file | whose |
+|---|---|---|
+| `D7 REGRESSION LOCK: the golden /snapshot body has not drifted` | `app/tests/test_api_serialise.cpp:193` | **L-API** |
+| `E1 the two conventions differ by kFullScaleSineOffsetDb and nothing else` | `app/tests/test_spl_seam.cpp:85` | L6a Wave 0 |
+| `E3 with a calibration offset the metric reads 94 dB and the band still reads 0 dBFS` | `app/tests/test_spl_seam.cpp:164` | L6a Wave 0 |
+| `B0c AllocationProbe resets on construction so one case cannot read another's bytes` | `app/tests/test_average_group.cpp:376,389` | L6a Wave 0 |
+
+**L-API's one is diagnosed and it is a test-portability defect, not a
+wire-format defect.** `D7` byte-compares a 198 KB `/snapshot` body against the
+committed golden; the first divergence, at character 5084, is `-49.341915`
+emitted against `-49.34192` committed — **adjacent float32 values, about one
+ULP apart**. Both are correct shortest-round-trip decimals of **two different
+floats**, so the DSP's own number differs in the last bit between MSVC/x64 and
+Apple clang/arm64. `F1`–`F7`, the third-party-parser checks, **pass on all
+three OSes**, so the document is well-formed and correctly typed everywhere.
+Report 008 §8 has the three options and argues for regenerating the golden from
+an exactly-representable fixture. **This closeout did not fix it** — it is a
+code change and this was a docs-only pass.
+
+## Số đo — **VERIFIER-MEASURED**, lượt dựng lại độc lập tại `d071269` đã XONG
+
+```
+INDEPENDENT REBUILD AT d071269  (= cây merge của PR #18, cộng fix comment PR #19)
+  RTA_BUILD_APP=OFF                                            -> 774/774, 0 failed
+  RTA_BUILD_APP=ON                                             -> 848/848, 0 failed
+  forced fallback (-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON)   -> 774/774, 0 failed
+  "warning C" trong mọi build log                              -> 0
+  guard xanh                                                   -> 13/13 (ON) / 11/11 (OFF)
+  rtatool_snapshot                                             -> 8 PNG, exit 0
+  git diff origin/main --stat -- platform/ core/src core/include ui/  -> RỖNG
+```
+
+Số file quét khi xanh: `no_server_library_outside_api` **409** (cả hai config),
+`no_json_parser_in_shipped_code` **333** (2 witness),
+`measure_has_no_framework_deps` **86**, `no_std_atomic_over_shared_ptr` **409**,
+`core_has_no_framework_deps` **164**.
+
+Đây **không còn là số của builder**. `d071269` là `91367a8` cộng đúng một dòng
+comment của PR #19 (`git diff --stat` giữa hai cái là một dòng
+`app/tests/CMakeLists.txt`). Cấu hình **forced fallback** đáng giá hơn ở lane
+này so với phần lớn lane khác: đó là nhánh `AtomicSharedPtr` **có lấy lock**, và
+lane này thêm một người thứ **ba** vào publish slot. 774/774 ở đó nói một
+`latest()` mỗi request cũng ổn trên nhánh lock.
+
+Verifier cũng đã dựng lại độc lập hai mốc trước và xác nhận: Wave 1 tại
+`e2fc4b3` (OFF 698 / ON 766 / fallback 698) và Wave 2 tại `4a65c2d`
+(**725 / 793 / 725**, ba số 0 warning). **Một mốc duy nhất chưa ai dựng lại:**
+sau-fix của Wave 1 (`f95436f`: 700/768/700) — nó bị kẹp giữa hai cây đã đo nên
+không có gì tựa lên nó.
+
+Con số 774/848 vượt dự đoán 772/846 của verifier đúng **2**, và 2 đó có giải
+trình: hai case limiter thêm cho residual OPTIONS landed *sau* khi lấy số
+725/793 — `727 + (747−700) = 774` và `793 + 2 + (821−768) = 848`. Lượt dựng lại
+độc lập sau đó đọc đúng 774 và 848 trên `d071269`.
+
+**Một PNG không làm đúng điều tham số của nó nói.** `main-live.png` ra
+**39853 byte ở 1280×800** và **bỏ qua kích thước được yêu cầu**; bảy cái còn
+lại tôn trọng nó (`preview-phase.png` 45851 byte ở đúng 1100×760). Đó là
+`MainComponent` tự khẳng định kích thước của nó, không phải lỗi snapshot — biết
+trước để đừng đọc một sai lệch kích thước thành một render hỏng.
+
+**Một khoảng trống CI không thể lấp, và chính lập luận `API-R15` của lane này
+làm nó thành vấn đề:** hai guard RT-hazard của audio callback —
+`audioio_callback_has_no_rt_hazards` và `audioio_scoped_no_denormals_is_first`
+— chỉ được register ở cấu hình **ON**, mà **CI chỉ chạy OFF**. Nên phép grep
+khẳng định audio callback vẫn là `ScopedNoDenormals` rồi đúng hai call **không
+bao giờ chạy trên một máy CI nào**. Lane này không chạm vào hàm đó và
+`git diff origin/main --stat -- platform/` **rỗng**, nên tính chất ấy hôm nay
+đúng do cấu tạo. Nhưng toàn bộ sức nặng của `API-R15` là "một control được
+chứng minh trên zero máy thì chưa được chứng minh", và theo đúng tiêu chuẩn đó
+hai guard này đang ở vị trí server từng ở trước khi plan được sửa. **Không phải
+việc của L-API để dời** — ghi ra đây để đừng phải phát hiện lại.
+
+---
+
+## Rule 12 vế 2 — người có thể tự chạy cái gì, và trông đợi THẤY gì
+
+Mọi lệnh dưới đây viết cho **PowerShell 7** trong terminal của chủ nhân: **một
+lệnh một block**, không `&&`, không prompt, không output dán trong fence — nếu
+không thì nút Run không hiện (CLAUDE.md luật 13). Chạy từ gốc checkout.
+`[verified]` = đã chạy thật trong phiên closeout này; `[not run here]` = chưa
+chạy (phiên này docs-only, không có build dir).
+
+### 0. ĐỌC TRƯỚC: mở `rtatool.exe` lên thì thấy được gì của L-API?
+
+**Không gì cả, và đó là mặc định đang làm đúng việc của nó.**
+
+- `api.enabled` ship **`false`** (`app/src/api/ApiSettings.h:27`). Ở bản dựng
+  ship: không bind, không thread nào start, **không có gì quan sát được thay
+  đổi** với một operator không hỏi tới API.
+- **Không có preferences store nào trong `app/`** (record §15 `API-R5`), nên
+  `ApiSettings` là một struct thuần dựng bằng tay ở composition root
+  (`app/src/MainComponent.cpp:120-121`). **Các tên `api.enabled`, `api.port`…
+  là TÊN TRONG TÀI LIỆU, không phải key người dùng đặt được** — hai chuỗi
+  `api.*` duy nhất trong shipped code là thông điệp từ chối ở
+  `app/src/api/ApiPolicy.cpp:160` và `:166`.
+- Nên **bật API = sửa source rồi dựng lại**, không phải tick một ô. Xem mục 3.
+
+Nói cách khác: bằng chứng của L-API là **ctest qua socket loopback thật**,
+không phải một pane mở lên nhìn. Đừng để ai đọc thành "operator bật API trong
+preferences".
+
+### 1. Hai cấu hình test — cái gì cũng bắt đầu từ đây
+
+`[not run here]` Configure OFF (core-only, không cần JUCE):
+
+```bash
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+```
+
+`[not run here]` Build OFF:
+
+```bash
+cmake --build build --config Release --parallel
+```
+
+`[not run here]` Chạy test OFF. **Sẽ thấy:** `100% tests passed, 0 tests failed
+out of 774`.
+
+```bash
+ctest --test-dir build -C Release --output-on-failure
+```
+
+`[not run here]` Configure ON (cần JUCE 9.0.1):
+
+```bash
+cmake -S . -B build-on -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=ON -DRTA_JUCE_PATH="D:\DEV CAVE EP3\PROJECT005-AZ-handsfree\external\JUCE"
+```
+
+`[not run here]` Build ON:
+
+```bash
+cmake --build build-on --config Release --parallel
+```
+
+`[not run here]` Chạy test ON. **Sẽ thấy:** `100% tests passed, 0 tests failed
+out of 848`.
+
+```bash
+ctest --test-dir build-on -C Release --output-on-failure
+```
+
+### 2. Lọc test của lane này — và cái bẫy phải nói trước
+
+**`ctest -R "api"` KHÔNG chạy một test API nào.** Nó khớp đúng **một** test, và
+đó là *guard* `no_server_library_outside_api` — cái tên tình cờ kết thúc bằng
+`api`.
+
+`[verified: 1]` — `ctest -R` là regex **phân biệt hoa thường** trên **tên test
+của ctest**; `catch_discover_tests` gọi **không** `TEST_PREFIX`
+(`app/tests/CMakeLists.txt:284`), nên tên ctest chính là chuỗi `TEST_CASE` thô;
+và **không một trong 837 tên `TEST_CASE` của repo này chứa `api` chữ thường**
+(0/837 tên `TEST_CASE`, 1/13 tên `add_test`). Bỏ qua hoa thường thì được sáu
+tên, mà chỉ hai thuộc lane này — một trong hai là chính con regenerator bị ẩn —
+còn ba nằm ở `test_readouts.cpp`, `core/tests/test_detector.cpp`,
+`ui/tests/test_grid_panel.cpp`, thuộc **ba executable khác nhau**.
+
+`[not run here]` Nên nếu muốn xem nó khớp gì, chạy đúng lệnh này và **sẽ thấy
+`Total Tests: 1`** cùng tên guard:
+
+```bash
+ctest --test-dir build -C Release -R "api" -N
+```
+
+`[not run here]` Lệnh **thật sự** chạy nửa thuần của lane (tag `[api]`).
+**Sẽ thấy `49 test cases` pass**:
+
+```bash
+build/app/tests/Release/rtatool_analysis_tests.exe "[api]"
+```
+
+`[verified: 49]` — 49 trong 76 `TEST_CASE` của `app/tests/test_api_*.cpp` mang
+tag `[api]` (json 6, policy 10, limits 8, serialise 10, spatial 8, schema 7).
+
+**26 case socket không mang tag NÀO CẢ** (cộng con regenerator ẩn là 27 case
+không có `[api]`): `test_api_server.cpp` (14), `test_api_server_bind.cpp` (3),
+`test_api_server_refusals.cpp` (9) — tức **toàn bộ các case chạy qua socket
+thật, chính là thứ `API-R15` sinh ra để chạy được trên CI**. Không tag filter
+nào chạm tới chúng, và **`-f <specfile>` của Catch2 cũng không dùng được**: **9
+trong 26 tên có dấu phẩy**, mà dấu phẩy là ký tự phân cách test-spec của Catch2.
+
+Nên phải gọi chúng bằng **tên**, qua một alternation neo `^` của `ctest -R`.
+`[verified: 26]` — pattern dưới đây khớp **đúng 26 tên đó trong toàn bộ 837 tên
+`TEST_CASE` của repo**, không thừa không thiếu (kiểm bằng cách so pattern với
+mọi tên đã trích từ source), và lượt dựng lại độc lập đã chạy nó ở cấu hình
+OFF: **26 ran, 26 passed, 1.24 s**.
+
+`[not run here]` Đếm trước cho chắc — **sẽ thấy `Total Tests: 26`**:
+
+```bash
+ctest --test-dir build -C Release -N -R "^(I1 |I1b |I2 |I2b |I3 |I4 |I5 |I6 |I7 |I8 |I9 |I10 |I11 |the rate limit is a hard bound|the fixed-port bind branch|allowLanBind exists|a bind address that is not a loopback|a forged Host does not spend|a refused method and a refused token|the limiter still bounds|OPTIONS spends no quota|HEAD is NOT exempt|two Host fields are 400|OPTIONS answers on every route|the route table names eight|HEAD answers on every route)"
+```
+
+`[not run here]` Rồi chạy thật — **sẽ thấy `100% tests passed, 0 tests failed
+out of 26`**:
+
+```bash
+ctest --test-dir build -C Release --output-on-failure -R "^(I1 |I1b |I2 |I2b |I3 |I4 |I5 |I6 |I7 |I8 |I9 |I10 |I11 |the rate limit is a hard bound|the fixed-port bind branch|allowLanBind exists|a bind address that is not a loopback|a forged Host does not spend|a refused method and a refused token|the limiter still bounds|OPTIONS spends no quota|HEAD is NOT exempt|two Host fields are 400|OPTIONS answers on every route|the route table names eight|HEAD answers on every route)"
+```
+
+Lưu ý `I1 ` và `I1b ` là **hai** nhánh: `I1 ` có khoảng trắng nên không khớp
+`I1b…`. Bỏ một trong hai là mất một case và `-N` sẽ nói ngay.
+
+`[not run here]` Hoặc đơn giản hơn, chạy **cả binary** — **sẽ thấy** toàn bộ
+suite `app/tests` pass:
+
+```bash
+build/app/tests/Release/rtatool_analysis_tests.exe
+```
+
+**Đây là một khoảng trống nên đóng, và nó rẻ:** thêm `"[api][server]"` vào 26
+`TEST_CASE` đó là xong, và cái alternation dài ở trên biến mất.
+`test_names_are_ascii` canh bộ ký tự của tên test, nhưng **không guard nào canh
+việc test của một lane có mang tag của lane đó**. Report 008 §7 ghi nó.
+
+### 3. Bật API lên, và kiểm tay bằng `curl` — **CHƯA AI CHẠY**
+
+**`[not run here — needs a running GUI]`** cho cả mục này. Đây là acceptance
+"manual check" của Task J và nó **đói một GUI đang chạy với `enabled = true`**;
+không phiên nào đã dựng một cái. Đọc là **chưa verify**, không phải "xong".
+Cái *đã* được chứng minh là toàn bộ đường request qua socket thật ở OFF, trên
+ba OS, cộng **cả hai** nhánh bind.
+
+Bước 1 — thêm **đúng một dòng** vào `app/src/MainComponent.cpp`, ngay sau dòng
+`120` (`rta::api::ApiSettings apiSettings;`) và trước dòng dựng `apiServer_`:
+
+```
+apiSettings.enabled = true;
+```
+
+Bước 2 — dựng lại ON (mục 1) rồi chạy app:
+
+```bash
+build-on/app/rtatool_artefacts/Release/rtatool.exe
+```
+
+Bước 3 — trong một terminal khác, bốn lệnh, mỗi lệnh một block.
+
+**(a) Đường bình thường.** `Host` khớp allowlist. **Sẽ thấy** một body JSON có
+`"schemaVersion":1`, một `"sequence"` tăng dần giữa hai lần gọi, và
+`"available"` gồm **sáu** tên (`transfer`, `mtw`, `bands`, `spectrum`,
+`average`, `positions` — sáu là độ dài danh sách NÀY, không phải số endpoint,
+vốn là tám). Nếu app vừa mở và chưa publish snapshot nào thì **503**:
+
+```bash
+curl -s -H "Host: 127.0.0.1:4736" http://127.0.0.1:4736/api/v1/status
+```
+
+**(b) `Host` giả trên một path KHÔNG tồn tại → 403, không phải 404.** Đây là
+control giá trị nhất của cả API và **thứ tự** chính là nội dung của nó: check
+`Host` chạy **trước routing**. **Sẽ thấy đúng `403`**:
+
+```bash
+curl -s -o NUL -w "%{http_code}" -H "Host: attacker.example:4736" http://127.0.0.1:4736/api/v1/nope
+```
+
+**(c) `OPTIONS` → 204 kèm `Allow`.** Không đọc snapshot, nên nó trả lời giống
+nhau cả trước lần publish đầu (chỗ mà `GET` đúng đắn trả 503). **Sẽ thấy**
+`HTTP/1.1 204 No Content` và `Allow: GET, HEAD, OPTIONS`, body rỗng:
+
+```bash
+curl -s -i -X OPTIONS -H "Host: 127.0.0.1:4736" http://127.0.0.1:4736/api/v1/status
+```
+
+**(d) `If-None-Match` với ETag vừa nhận → 304, không body.** ETag là
+`Snapshot::sequence` **kèm dấu ngoặc kép**. Lấy ETag từ (a) bằng `-i` trước, rồi
+thay `"12345"` bên dưới bằng đúng giá trị đó. **Sẽ thấy `304`** nếu chưa có
+publish mới, `200` nếu đã có:
+
+```bash
+curl -s -o NUL -w "%{http_code}" -H "Host: 127.0.0.1:4736" -H "If-None-Match: \"12345\"" http://127.0.0.1:4736/api/v1/status
+```
+
+Bước 4 — **bỏ lại dòng đã thêm ở bước 1.** Một `enabled = true` lọt vào commit
+là một listener mạng không ai xin.
+
+### 4. Ba guard, và tại sao chúng là thứ giữ ranh giới
+
+`[not run here]` Cả ba, một lệnh:
+
+```bash
+ctest --test-dir build -C Release -R "no_server_library_outside_api|no_json_parser_in_shipped_code|measure_has_no_framework_deps" --output-on-failure
+```
+
+**Sẽ thấy** `100% tests passed, 0 tests failed out of 3`. Số file quét khi xanh:
+**409**, **333** (2 witness), **86**.
+
+Khác biệt giữa hai guard mới là bài học, không phải chi tiết.
+`no_server_library_outside_api` **có** `ALLOW`
+(`app/src/api/ApiServer.cpp`) nên có **hai sentinel**: file được ALLOW phải nằm
+**trong** tập quét (nếu không, một `DIRS` sai chính tả in OK khi chỉ canh bốn
+thư mục trong năm), **và** file đó phải **vẫn còn chứa** thứ đang bị guard (nếu
+không, ngoại lệ sống lâu hơn lý do của nó). `no_json_parser_in_shipped_code`
+**không có `ALLOW` nào** — shipped code không bao giờ được include một parser —
+nên sentinel thứ nhất không có bản tương ứng, và một **witness** thay chỗ: phải
+có ít nhất một file dưới `app/tests` include parser, không thì script
+`FATAL_ERROR`. Nó quét `app/src`, **không phải `app`**, nên `app/tests` ở ngoài
+tầm **do cấu tạo** — đó chính là lý do witness tồn tại.
+
+`[not run here]` Đếm cả bộ guard, để thấy 11 (OFF) hay 13 (ON):
+
+```bash
+ctest --test-dir build -C Release -N -R "has_no|no_server|no_json|no_std_atomic|makes_no|test_names_are_ascii|is_not_bypassed|is_first"
+```
+
+### 4b. Snapshot offscreen — cách DUY NHẤT để nhìn GUI
+
+L-API **không thêm pixel nào**, nhưng `main-live.png` giờ dựng và huỷ một
+`MainComponent` **có sở hữu một `ApiServer` đang tắt**, nên nó là bằng chứng
+duy nhất rằng Task J không làm hỏng khởi tạo/huỷ của app.
+
+`[not run here]` Dựng target:
+
+```bash
+cmake --build build-on --config Release --target rtatool_snapshot --parallel
+```
+
+`[not run here]` Render. **Sẽ thấy** `wrote … 8 files` và `exit=0`:
+
+```bash
+build-on/app/rtatool_snapshot_artefacts/Release/rtatool_snapshot.exe shots 1100 760
+```
+
+**Bẫy về kích thước, đã đo:** `main-live.png` ra **39853 byte ở 1280×800** và
+**bỏ qua 1100 760**; bảy PNG còn lại tôn trọng tham số (`preview-phase.png`
+45851 byte ở 1100×760). `MainComponent` tự khẳng định kích thước của nó. Đừng
+đọc sai lệch đó thành render hỏng. `shots/` bị gitignore.
+
+Gọi exe qua `cmd //c` nếu chạy từ Git Bash; gọi trực tiếp trả 127 (CLAUDE.md
+"Seeing the GUI").
+
+### 5. Golden `/snapshot` — và cái cổng không filter nào cấp được
+
+`[not run here]` Regenerate **cần biến môi trường**, không chỉ tag:
+
+```bash
+$env:RTA_API_GOLDEN_WRITE = "1"
+```
+
+```bash
+build/app/tests/Release/rtatool_analysis_tests.exe "regenerate the API golden"
+```
+
+```bash
+Remove-Item Env:\RTA_API_GOLDEN_WRITE
+```
+
+**Sẽ thấy** golden 198045 byte và `git diff` **RỖNG** nếu format không đổi.
+Không có biến đó thì case `SKIP` kèm thông điệp, và `D9` assert đúng điều ấy —
+chạy **dưới chính filter `[api]` từng làm hỏng chuyện**. Lý do cổng là biến môi
+trường chứ không phải tag: thứ bị tấn công CHÍNH LÀ bộ khớp tag (report 008
+§4.5).
+
+### 6. Provenance của hai thư viện vendored
+
+`[not run here]` Băm lại file đã commit, đừng tin con số trong doc:
+
+```bash
+Get-FileHash -Algorithm SHA256 external/cpp-httplib/httplib.h
+```
+
+**Sẽ thấy** `1F99E51881C4C9D0649B27C611442C2F4D9BCFEC5A22A14D5FCD1F8106F730B4`
+(22875 dòng, tag `v0.56.0`, MIT).
+
+```bash
+Get-FileHash -Algorithm SHA256 external/nlohmann/json.hpp
+```
+
+**Sẽ thấy** `AAF127C04CB31C406E5B04A63F1AE89369FCCDE6D8FA7CDDA1ED4F32DFC5DE63`
+(25526 dòng, tag `v3.12.0`, MIT, **test-only**).
+
+**Bẫy đã trả học phí:** một bản `httplib.h` sẵn trên máy khai đúng
+`CPPHTTPLIB_VERSION "0.56.0"` nhưng là **22885 dòng / `a6e65d30…`**. Nó
+**không** được dùng. *Một version string không phải một danh tính.*
+
+### 7. CI — giờ đọc được, và phải đọc
+
+`[verified]` Trạng thái matrix ba OS:
+
+```bash
+gh run list --limit 6
+```
+
+`[verified]` Chi tiết một run, kể cả job nào đỏ:
+
+```bash
+gh run view 35306075307
+```
+
+`[verified]` Test nào đỏ trên macOS:
+
+```bash
+gh run view 35306075307 --log-failed
+```
+
+---
+
+## Rule 12 vế 3 — HANDOFF cho lane kế: **L6a (SPL-pro), Waves 1–4**
+
+Lane kế **không do closeout này chọn** — nó là thứ "Suggested opening order"
+của `docs/plans/MASTER-EXECUTION-PLAN.md` đã ghi: L6a. Stations 1+2+3 của nó
+XONG, **station 4 Wave 0 BUILT và ĐÃ MERGE (PR #17 tại `b1e14a9`)**, và
+**Waves 1–4 là việc kế tiếp**. **L8** (research) read-only, bắn lúc nào cũng
+được; **L9** cuối; **L5b** và **L4d** vẫn chặn vì hai khoản mua.
+
+**Đọc trước, theo thứ tự:**
+
+1. `docs/GIT-WORKFLOW.md` — luật hiện hành. **Luật 3 (CI là cổng merge) giờ
+   kiểm được và đang KHÔNG đạt** — xem mục đầu file này.
+2. `docs/plans/MASTER-EXECUTION-PLAN.md` — "Status snapshot — 2026-09-18",
+   hàng **L6a**, và cột PARALLEL-SAFE.
+3. Mục **L6a Wave 0** ngay dưới section này: bảng per-commit, hai vòng verifier,
+   mọi residual đo được, và mục "Next phase: Wave 1" của chính nó (thứ tự build
+   **W1-A ∥ W1-C ∥ W1-D → W1-B → W1-E**, tất cả core, tất cả OFF, **không
+   golden vector nào được thêm vào lane này**).
+4. `docs/reports/008-remote-api.md` — **Wave 4b là một CLIENT của bề mặt
+   L-API**. §2 là hợp đồng transport đã đóng băng; §7 nói cái gì còn thiếu ở đó.
+5. `docs/HUMAN-QA-QUEUE.md` — mục `[!]` đầu tiên (Actions: **đã mở lại, và
+   matrix đỏ**) và mục `test_weighting.cpp` chờ duyệt: **cả hai nằm đúng trên
+   đường của L6a**.
+
+**Ba việc L-API bàn giao trực tiếp cho L6a:**
+
+1. **Ba trong bốn test đỏ trên macOS là của L6a Wave 0**, không phải của
+   L-API: `test_spl_seam.cpp` E1 và E3, và `test_average_group.cpp` B0c. Hai
+   cái ở `test_spl_seam.cpp` trông giống **cùng một hạng lỗi** với `D7` của
+   L-API — một tolerance hoặc một float identity đúng trên MSVC/x64 và không
+   đúng trên Apple clang/arm64. Đọc
+   `memory/two-builds-disagreeing-is-not-evidence-one-is-wrong.md` **trước khi**
+   giả định bên nào sai. **Cả bốn đang được sửa chung trên `ci/macos-fixes`**,
+   nên việc của Wave 1 là *review* nhánh đó chứ không phải mở lại từ đầu — và
+   review nó theo luật 1: một job macOS xanh là **cần**, không **đủ**. Nới một
+   tolerance cho tới khi hết đỏ là cách một lock thôi khoá
+   (`memory/a-threshold-read-off-a-grid-is-that-grids-floor.md`).
+2. **Gate 1 của G7 (viewer) ĐÃ ĐẠT; gate 2 thì CHƯA CHẠY.** Transport tồn
+   tại, đã đóng băng, một port một `Host` check một rate limit. Gate 2 là
+   record `2026-09-16-remote-api.md` §12 constraint 4: **một trang được serve
+   TỪ `127.0.0.1` fetch `127.0.0.1` có được miễn prompt Local Network Access
+   của Chrome hay không**. Nó suy ra được từ mô hình same-address-space của
+   LNA nhưng **không tìm thấy phát biểu verbatim** (station-1 UNVERIFIED mục
+   7). Một buổi chiều với Chrome 142+. **Đó là test của L6a, không phải của
+   L-API**, và Wave 4b là chỗ nó cắn.
+3. **`"spl"` trong `available`: cổng đã mở, danh sách chưa theo.**
+   `app/src/api/ApiSerialise.cpp:74-75` vẫn ghi `"spl" joins it the day the Meters
+   track puts SPL in the Snapshot and not a day earlier`, và `:77` vẫn phát
+   literal sáu tên. Ngày đó là **PR #17**, merge **trước** PR #18 của chính
+   lane L-API. Trên dây không có gì sai — không endpoint nào serialise SPL, nên
+   thêm `"spl"` là quảng cáo một representation không ai trả — nhưng **cái
+   trigger được viết trong comment thì đã nổ**. Việc còn lại: một comment, một
+   string literal, và **một quyết định** — `"spl"` nghĩa là một field trên
+   `/snapshot`, hay một endpoint riêng? Nếu là endpoint riêng thì nó là task
+   thứ chín và `available` lên bảy.
+
+**Còn chờ người, không chờ agent:**
+
+- **§14 q.1: port cố định hay ephemeral.** Số **4736** đã chốt (4737 là IANA
+  `ipdr-sp`). Hình dạng chưa. **Giá đổi giờ đã biết và nhỏ**: code ship cố
+  định, **cả hai nhánh bind đều có test**, nên đổi là một hằng trong
+  `ApiSettings.h` cộng một chỗ hẹn. Một câu là chốt được.
+- **Xin Smaart API SDK hay không.** Miễn phí, không NDA theo terms công bố, và
+  là đường **duy nhất** tới mảnh prior art trạm 1 không đọc được: đối thủ
+  encode **coherence** trên dây ra sao. REW không dạy được gì — REW là
+  swept-sine một kênh, API của nó không có coherence ở đâu cả. Terms cấm phát
+  tán lại, nên **không bao giờ được trích nội dung nó vào repo này**. Mất vài
+  ngày.
+- **GitHub Actions: giờ chạy, và đỏ.** Có hold merge theo luật 3 hay không là
+  lời của chủ nhân — luật nói có, bốn merge gần nhất nói không — và giờ đó là
+  một lựa chọn thật chứ không phải một thứ bị chặn.
+
+**Món nợ doc mà L7 để lại và vẫn chưa trả:** ALIGN-R1's `1e-12` chưa được
+amend trong §5 của `docs/dsp/2026-09-06-l7-alignment-wizard.md` và trong Wave 0
+plan. Chi tiết ở `docs/reports/007-solvers.md` §5 mục 6.
+
+---
+
+---
+
+> *Ghi chú thêm 2026-09-18 lúc closeout: mục dưới đây viết khi PR #18 còn mở.
+> **Nó đã merge tại `91367a8`.** Và câu "GitHub Actions vẫn bị chặn billing"
+> trong đó là **SAI** kể từ 2026-09-17T17:31Z — xem mục closeout ở trên. Ngoài
+> ra, khiếm khuyết mojibake mà mục này ghi "cần một commit riêng" **đã được
+> trả**: PR #19 tại `d071269`. Phần còn lại giữ nguyên làm hồ sơ của wave.*
+
+> *Ghi chú thêm 2026-09-18, lúc merge `origin/main` vào `docs/l-api-closeout`:
+> mục dưới đây viết khi PR #22 còn mở. **Nó đã MERGE tại `20f3c65`, và
+> `main` giờ XANH cả ba OS.** Chỉ dòng này là mới; phần còn lại giữ nguyên làm
+> hồ sơ của vòng sửa.*
+
+# 2026-09-18 (sau merge PR #22) — **Vòng verify: test probe PHỤ THUỘC THỨ TỰ — nhánh `ci/probe-order-independence`, PR mở, CHƯA merge.**
+
+PR #22 merge tại `20f3c65`. Verifier tìm hai defect **sau** khi CI 3/3 xanh, và
+cả hai đều là loại "xanh nhưng không chứng minh gì".
+
+**Defect 1 — `app/tests/test_allocation_probe.cpp` phụ thuộc thứ tự chạy.**
+
+    $ rtatool_analysis_tests "[allocationprobe]" --order decl
+    test_allocation_probe.cpp(139): FAILED:
+      CHECK( rta::test::allocationBytes() == 0 )
+    with expansion:
+      8192 (0x2000) == 0
+
+Byte counter là **program-global** và `~AllocationProbe` **cố ý** không xoá nó
+(`AllocationProbe.h` khai báo số đọc còn giá trị sau khi guard ra khỏi scope —
+đó là thứ cho `measureGroupPublishBytes` trả về một phép đo lấy bên trong).
+Nên trong một lần chạy **MỘT PROCESS**, tổng của case trước vẫn nằm đó, và
+assertion này chạy TRƯỚC khi có probe nào được dựng — nó đang đọc 8192 byte của
+anchor case. **Có từ trước** `d071269` (dư `17735 == 0` khi chưa có anchor),
+nhưng PR #22 viết tiền đề SAI "Catch2 runs every file in this binary in one
+process" vào file mới **hai lần**.
+
+Tiền đề đó sai, và chính chỗ sai là vấn đề: `catch_discover_tests` đăng ký
+**một ctest test cho mỗi Catch2 case** và gọi lại binary một lần cho từng case
+với tên case làm filter — nên dưới `ctest` mỗi case có **process riêng** và
+counter global không thể truyền qua case. **ctest đang CHE sự phụ thuộc thứ tự,
+không phải chứng minh là không có.**
+
+Sửa: zero counter ở đầu mỗi case (destructor không đụng tới), sửa hai comment
+cho đúng, và đăng ký hai ctest entry chạy tag theo kiểu một process:
+`allocation_probe_one_process_order_decl` và `..._lex`. **CẢ HAI thứ tự**, vì
+chúng bọc lộ dư theo hai chiều ngược nhau — đo được: bỏ reset → `decl` ĐỎ
+(`8192 == 0`), `lex` **XANH**. Một mình `lex` sẽ không bắt được.
+`--order rand` **cố ý không** đăng ký: Catch2 gieo lại seed mỗi lần chạy.
+
+**Defect 2 — comment CMake quy công sai cho MSVC.** Nó nói baseline SSE2 là lý
+do MSVC khớp gcc. Sai lý do cho một kết luận đúng: `/fp:precise` **implies
+`fp_contract(off)` từ Visual Studio 2022 trở đi, ở BẤT KỲ `/arch:`** — tài liệu
+Microsoft nói thế, nên đó là **cam kết**, không phải tai nạn. MSVC trước VS2022
+ĐƯỢC PHÉP contract. GCC trên x86-64 mới là nửa mà ISA là toàn bộ lý do. Ghi lại
+trong `memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md`:
+**khi hai cấu hình khớp nhau, "vì sao" là câu hỏi cho TỪNG cấu hình.**
+
+## Số đo, tại `HEAD_SHA`
+
+| | |
+|---|---|
+| OFF `-DRTA_BUILD_APP=OFF` | **777/777**, 0 `warning C` |
+| ON (`-DRTA_JUCE_PATH=...PROJECT005.../external/JUCE`) | **851/851**, 0 `warning C` |
+| CI ba OS | CI_LINE |
+| một process, `[allocationprobe]`, `--order decl` / `lex` / `rand --rng-seed 1,7,104324450` | **77 assertion / 3 case, xanh cả năm lần** |
+| toàn bộ binary, một process, `--order decl` | **39178 assertion / 378 case, xanh** |
+
+`777`/`851` = `775`/`849` của PR #22 + hai ctest entry mới. Không xoá gì.
+
+## Tech-debt đã file (`docs/HUMAN-QA-QUEUE.md`, mục "Tech-debt từ CI macOS fix")
+
+- **`-ffp-contract=off` gần như không có gì gác.** Chỉ D7 phát hiện nếu nó bị
+  xoá, và D7 chỉ đỏ ở **macos-latest trên CI**. Người phát triển trên Windows
+  xoá flag và không thấy gì. Hai lựa chọn để đóng đều có giá, ghi trong queue,
+  **cần một câu của chủ nhân**.
+- **JUCE chưa bao giờ biên dịch dưới `-ffp-contract=off`.** CI chỉ chạy
+  `RTA_BUILD_APP=OFF`; cấu hình ON duy nhất được đo là MSVC, nơi `if(NOT MSVC)`
+  khiến flag không tồn tại. clang/gcc + JUCE + ON là tổ hợp **zero lần chạy**.
+
+Còn nguyên từ PR #22: gap over-aligned `operator new` của probe (nhánh
+`ci/probe-aligned-new` đã mở ở worktree khác).
+
+Dọn: worktree scratch của verifier `rta-vfy-pr22` dưới `%TEMP%\claude\` đã xoá
+(`git worktree remove --force`, không còn trong `git worktree list`).
+
+---
+
+# 2026-09-18 — **CI: bốn test đỏ RIÊNG trên macos-latest đã xong — nhánh `ci/macos-fixes`, PR #22 mở, CHƯA merge.**
+
+GitHub Actions chạy lại sau khi hết billing block. Lần chạy ba-OS đầu tiên
+([35306075307](https://github.com/toanaz-ops/rta-tool/actions/runs/35306075307),
+`main` tại `d071269`): ubuntu và windows **774/774**, macos-latest **4 đỏ**.
+Không commit nào gây ra chúng — đó là hai platform property chưa từng bị chạm.
+
+| test đỏ | root cause, một câu |
+|---|---|
+| `B0c AllocationProbe resets on construction…` (`0 >= 8192`) | libc++ vào heap qua `__builtin_operator_new`, mà clang được phép **elide** cặp new/delete có pointer không escape — ở `-O3` cái `std::vector<double>(1024)` local bị xoá hẳn, probe đếm đúng zero byte của một allocation chưa từng xảy ra |
+| `D7 REGRESSION LOCK: the golden /snapshot body has not drifted` | Apple clang trên arm64 **contract** `a*b + c` thành một `fma` (FMA nằm trong baseline ISA), làm lệch bit cuối của `std::norm` trên `complex<float>`, các butterfly FFT và `acc += alpha * (psd - acc)` trong `SpectrumEngine` → 35 trong 2049 giá trị `spectrum.spectrumDb` lệch đúng ±1 float32 ULP |
+| `E1 the two conventions differ by kFullScaleSineOffsetDb…` | cùng contraction đó: `levelDbFs(0.5) == 0.0` bitwise là **trùng hợp của HAI lần rounding**, không phải identity — chính việc round `10*log10(0.5)` về double TRƯỚC phép cộng mới đưa nó về đúng `-kFullScaleSineOffsetDb`; một `fma` giữ product ở full width nên tổng đọc `2^-53` = 1.11e-16 dB |
+| `E3 with a calibration offset…` | cùng assertion, cùng giá trị, ở case kia |
+
+**Cách khoanh vùng mà không có máy Mac:** ubuntu-latest và windows-latest khớp
+**cả 198045 byte** của golden. Hai compiler khác nhau, hai libm khác nhau, bit
+giống hệt. Baseline ISA của x86-64 không có FMA nên không bên nào contract —
+điều đó loại libm khỏi danh sách nghi vấn và chỉ còn đúng một thứ macOS không
+chia sẻ. **Hai trên ba khớp nhau là bằng chứng về thứ chúng chia sẻ**, và nó đã
+nằm sẵn trong log.
+
+## Đã làm, ba sửa cho hai defect
+
+1. **`-ffp-contract=off`** (non-MSVC, root `CMakeLists.txt`, comment dẫn số run).
+   KHÔNG phải regime numeric mới: MSVC dưới `/fp:precise` trên baseline SSE2 chưa
+   bao giờ contract, nên mọi golden vector và mọi bitwise identity trong repo này
+   vốn đã được viết và verify dưới no-contraction. Flag chỉ nói ra điều đó thay
+   vì dựa vào việc một instruction không tồn tại. Giá phải trả là throughput
+   trong inner loop, không phải latency — audio callback chỉ copy vào ring
+   buffer. D7 chính là canary nếu flag này bị mất.
+2. **`app/tests/test_allocation_probe.cpp`** (mới): B0b + B0c tách khỏi
+   `test_average_group.cpp` (đang 397/400 dòng). B0c lấy element count từ một
+   `volatile` và cho một element escape qua `volatile` sink, nên subject của
+   phép đo sống sót qua optimiser. **Thêm một anchor case** gọi trực tiếp
+   `::operator new(n)` — không phải new-expression, không phải builtin, không
+   optimiser nào được xoá — vì suite cũ không phân biệt được "probe bị mù" với
+   "allocation bị xoá": mọi case khác assert count bằng zero hoặc một bound, và
+   cả hai loại đều pass trong cả hai trường hợp.
+3. **`app/tests/test_spl_seam.cpp`**: bitwise claim chuyển sang `p = 1.0`, nơi
+   `log10` đúng bằng `+0.0` nên không có lần rounding nào, và `10*0.0 + k` lẫn
+   `fma(10.0, 0.0, k)` đều đúng bằng `k` trên mọi platform. Ở `p = 0.5` dùng
+   bound **được dẫn ra** trong comment (1 ulp libm error của `log10(0.5)` nhân
+   10, cộng tối đa `2^-52` cho việc round product, phép cộng cuối exact theo
+   Sterbenz: 7.8e-16 dB) và INFO in residual. Sửa cả assertion LẪN flag là cố ý:
+   một assertion mà tính đúng của nó là một compiler flag thì nó ghi lại flag,
+   không ghi lại arithmetic (PR #5 bỏ `std::isinf` ở Nyquist vì đúng lý do này).
+
+Không test nào bị skip, tag out hay quarantine.
+
+## Số đo, tại ``9a48e08``
+
+| | |
+|---|---|
+| OFF `cmake -S . -B build-mac -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=OFF` | **775/775**, 0 `warning C` |
+| ON `-DRTA_BUILD_APP=ON -DRTA_JUCE_PATH=...PROJECT005.../external/JUCE` | **849/849**, 0 `warning C` |
+| CI, ba OS ở head này | **775/775 cả ba** — run [35311058336](https://github.com/toanaz-ops/rta-tool/actions/runs/35311058336): ubuntu 3m23s, macos 2m4s, windows 5m49s. Build warning ubuntu 16 / macos 3 / windows 0, **giống hệt** baseline run 35306075307 → nhánh này không thêm warning nào |
+
+Baseline tại `d071269` là 774 OFF / 848 ON. `+1` là anchor case mới; không xoá gì.
+
+## Mutation, exe xoá trước và TU force mỗi lần (build-mac, MSVC 14.51, Release)
+
+| mutation | kết quả |
+|---|---|
+| bỏ `resetAllocationProbe()` khỏi constructor | **ĐỎ** — `second < first` → `8359 < 8231` tại `:205`. **ĐÃ SỬA 2026-09-18 (xem mục `ci/probe-order-independence`):** dòng này từng ghi thêm "anchor `counted == bytes` → `16551 == 8192`" — **sai quy kết**. Đo lại trên cây cuối: anchor **XANH**, vì nó tự reset counter ở đầu case. `16551` là số của một lần chạy trên cây TRUNG GIAN, khi anchor chưa tự reset và chạy SAU reset case, nên `counted` của nó cọng thêm 8359 dư của case trước |
+| `setAllocationCounting` store `false` vô điều kiện | **ĐỎ** — 4 assertion, có `0 == 8192` và `0 >= 8192`, tái hiện đúng triệu chứng macOS |
+| `kFullScaleSineOffsetDb` → `3.0102999566398000` (header, rebuild dependents) | **ĐỎ** tại `test_spl_seam.cpp:117`, `:143`, `:149`, `:216`, residual −1.19904e-14 dB |
+| restore + rebuild sạch | **XANH** 775/775, working tree khớp commit |
+
+Mutation thứ ba để **XANH** `levelDbFs(1.0) == kFullScaleSineOffsetDb`, vì hai
+vế dịch cùng nhau — comment giờ nói đúng điều đó thay vì nhận là nó bắt được
+việc sửa constant. Giá trị của constant được pin bằng literal ở `:149`.
+
+## Còn chờ người quyết
+
+- **`-ffp-contract=off` là policy lâu dài của project, hay là biện pháp giữ tới
+  khi D7 lock đổi hình?** PR lấy default giữ property mạnh, nói rõ giá, và để
+  đường quay lại đúng một dòng.
+- **Gap over-aligned của probe: ghi lại, chưa đóng.**
+  `operator new(size_t, align_val_t)` vẫn chưa được replace — định nghĩa portable
+  cần `_aligned_malloc` trên MSVC và `std::aligned_alloc` ở nơi khác.
+  `rta::dsp::RingBuffer` là type như vậy (`alignas(64)`). Không measured window
+  nào chạm tới, vì mọi caller arm probe SAU construction.
+- ~~**PR #22 chưa merge.**~~ **ĐÃ MERGE** 2026-09-18 tại `20f3c65` (owner chủ
+  động, sau vòng verify). Hai điểm verifier tìm ra sau đó đi ở nhánh
+  `ci/probe-order-independence` (PR #25) — xem mục ngay trên mục này.
+
+Memory mới: `memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md`,
+`memory/an-allocation-the-optimiser-removed-reads-as-zero-bytes.md`.
+
+---
+
 # 2026-09-18 — **L-API station 4, WAVE 2 (tasks H–K) XONG — nhánh `remote-api/wave2-server`, PR mở, CHƯA merge. Lane L-API: BUILT.**
 
 Bốn task, năm commit (Task I tách thêm một commit test đóng một lỗ plan không nêu).

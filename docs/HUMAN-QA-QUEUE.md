@@ -10,13 +10,71 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ## Chặn việc ngay bây giờ
 
-- [!] **GitHub Actions bị chặn ở mức tài khoản (2026-09-16).** Mọi run từ sau
+- [x] **ĐÃ ĐÓNG 2026-09-18 — CI chạy lại VÀ matrix ba OS ĐÃ XANH.**
+  `ci/macos-fixes` merge thành **PR #22 tại `20f3c65`**; `main` xanh trên
+  ubuntu, windows **và** macos. Nên cổng luật 3 vừa kiểm được vừa **đạt**, và
+  mục này không còn chặn gì. **Không cần chủ nhân trả lời nữa** — câu hỏi
+  "có hold merge hay không" ở dưới đã tự tan vì không còn gì để hold.
+
+  **Sửa tại nguyên nhân, không nới assertion**, và đó là phần đáng giữ: bốn test
+  đỏ là **một** câu hỏi portability. `-ffp-contract=off` ngoài MSVC lo `D7` và
+  hai case `test_spl_seam.cpp` — clang mặc định gộp `a * b + c` thành một `fma`
+  (một lần rounding thay vì hai) ở nơi ISA có lệnh, và **baseline x86-64 không
+  có FMA** nên gcc/MSVC vốn đã khớp từng bit; **chỉ Apple arm64 contract**.
+  35/2049 giá trị `spectrumDb`, mỗi cái lệch đúng ±1 ULP float32. `B0c` là
+  nguyên nhân khác: một allocation clang được phép loại bỏ. `D7` **vẫn là byte
+  lock**, giờ trên ba OS.
+
+  ~~**CI CHẠY LẠI RỒI — và matrix ba OS ĐANG ĐỎ trên macOS (cập nhật
+  2026-09-18, closeout L-API).** Đây không còn là mục "Actions bị chặn"; nó là
+  mục "gate của luật 3 giờ kiểm được và đang không đạt".~~ Giữ nguyên bên dưới
+  làm hồ sơ của hai ngày đó — **đó mới là bài học**: một blocker được ghi trong
+  queue vẫn được bốn PR body dẫn lại suốt một ngày sau khi nó đã hết hiệu lực
+  (`memory/a-blocker-in-the-queue-has-a-date-too.md`).
+
+  ~~**GitHub Actions bị chặn ở mức tài khoản (2026-09-16).** Mọi run từ sau
   merge PR #5 chết sau 3 s: "The job was not started because recent account
   payments have failed or your spending limit needs to be increased" → Settings
-  → Billing & plans. Repo private gói free có 2000 phút/tháng; macOS tính ×10,
-  phiên 2026-09-15 chạy ~12 run ba OS. Cho tới khi mở lại, gate CI của
-  `docs/GIT-WORKFLOW.md` không kiểm được; PR merge trên bằng chứng local hai
-  cấu hình và ghi rõ trong PR body.
+  → Billing & plans.~~ **Đã mở lại.** Đo bằng `gh run list`: một push lên
+  `main` chạy đủ ba OS và **PASS** lúc **2026-09-17T17:31Z**, và mọi run từ đó
+  đều thực thi. Nên **PR #16, #17, #18 và #19 đã merge với một matrix đang
+  chạy và đang ĐỎ**, không phải với "không có CI" như PR body của chúng viết.
+  Không ai nhìn, vì mọi người đang tin câu cũ.
+
+  Tại `main` `d071269`: **ubuntu-latest 774/774**, **windows-latest 774/774**
+  (lần đầu tiên OFF 774 được xác nhận bởi cái gì khác máy này), **macos-latest
+  770/774 — 4 đỏ**. Bộ bốn test này đỏ ở **năm** run (PR #17, PR #18, `main`
+  sau #18, PR #19, `main` `d071269`); run sớm hơn nữa — PR #16 — chỉ **1 đỏ
+  trên 700**, và đó là `D7` một mình, vì ba test của L6a Wave 0 chưa tồn tại.
+  **`D7` chưa bao giờ xanh trên macOS**, kể từ run đầu tiên chứa nó:
+
+  | test | file | lane |
+  |---|---|---|
+  | `D7 REGRESSION LOCK: the golden /snapshot body has not drifted` | `app/tests/test_api_serialise.cpp:193` | L-API |
+  | `E1 the two conventions differ by kFullScaleSineOffsetDb and nothing else` | `app/tests/test_spl_seam.cpp:85` | L6a Wave 0 |
+  | `E3 with a calibration offset the metric reads 94 dB and the band still reads 0 dBFS` | `app/tests/test_spl_seam.cpp:164` | L6a Wave 0 |
+  | `B0c AllocationProbe resets on construction so one case cannot read another's bytes` | `app/tests/test_average_group.cpp:376,389` | L6a Wave 0 |
+
+  **Cái của L-API đã chẩn ra và là lỗi PORTABILITY của test, không phải lỗi
+  format trên dây:** `-49.341915` phát ra so với `-49.34192` trong golden —
+  **hai float32 kề nhau, lệch khoảng một ULP**. `F1`–`F7` (kiểm qua parser thứ
+  ba) **xanh trên cả ba OS**, nên document đúng ở mọi nơi; chỉ phép so byte là
+  phụ thuộc máy. `docs/reports/008-remote-api.md` §8 có ba phương án và lập
+  luận cho phương án 1 (sinh lại golden từ fixture biểu diễn chính xác được).
+
+  **Billing đã được giải quyết** — đây không còn là mục cần chủ nhân trả tiền.
+
+  ~~**Một fix cho CẢ BỐN test đang chạy trên nhánh `ci/macos-fixes`** (lúc ghi
+  mục này: chưa lên `origin`, chưa có PR).~~ **Đã merge: PR #22 tại
+  `20f3c65`.** Gộp bốn vào một nhánh là đúng — một câu hỏi portability, bốn
+  triệu chứng.
+
+  ~~**Cần một câu của chủ nhân, và chỉ một:** có hold merge theo
+  `docs/GIT-WORKFLOW.md` luật 3 hay không, cho tới khi matrix xanh.~~ **Không
+  cần nữa** — matrix xanh rồi (PR #22, `20f3c65`), nên không còn gì để hold.
+  Câu hỏi này sống đúng vài giờ. Giữ lại để thấy nó đã từng là một câu hỏi
+  thật: luật nói hold, bốn merge gần nhất nói không, và cái giải quyết nó không
+  phải một quyết định mà là một cái flag build.
 - [ ] **Duyệt thay đổi assertion `core/tests/test_weighting.cpp` (PR #5, hoãn
   2026-09-16).** Cũ: `isinf(|H(Nyquist)| dB)`. Mới: zero DC khẳng định trên hệ
   số `b0 − b1 + b2 = 0` (đồng nhất chính xác, Sterbenz) + `> 200 dB` tại
@@ -93,11 +151,47 @@ ephemeral là sửa một hằng cộng một chỗ hẹn, không phải sửa s
 nó nên được trả lời **trước wave 2**, vì `ApiServer` là chỗ `bind_to_any_port`
 so với `bind_to_port` được quyết.*
 
-- [ ] **Số port mặc định — chọn cố định hay ephemeral?** **Con số đã chốt:
-  4736.** Câu hỏi còn lại chỉ là *hình dạng*: **port cố định** thì client dò
-  được nhưng có thể đụng port máy khác, còn **ephemeral port ghi ra một file
-  cho client đọc** thì không bao giờ đụng nhưng phải có chỗ hẹn. Một câu là
-  chốt được. Nguồn: record §8, §14 q.1, và **§15 R14**.
+**Cập nhật 2026-09-18 — LANE ĐÃ ĐÓNG, và bốn trong năm mục dưới đây đã được
+CHÍNH BẢN DỰNG trả lời.** L-API BUILT và merged (PR #16 tại `7b4773f`, PR #18
+tại `91367a8`); report [`docs/reports/008-remote-api.md`](reports/008-remote-api.md).
+Mỗi mục đã chốt đều ship **default có TÊN** kèm giá đổi, không phải im lặng
+quyết. **Còn mở đúng hai mục**: nửa *hình dạng* của q.1, và Smaart SDK. Cả hai
+đánh dấu `[ ]` bên dưới; ba mục kia đánh `[x]`.
+
+**Ba thứ không phải câu hỏi của chủ nhân nhưng từng là chỗ mơ hồ, giờ đã chốt
+TRONG CODE** (record §15 `R18`/`R19`/`R20`, cả ba do verifier trạm 5 **đo qua
+socket**, không ai đọc code mà thấy): **`OPTIONS` giờ ĐƯỢC PHỤC VỤ** — `204` +
+`Allow`, không đọc snapshot, và `Allow` là **một** hằng
+(`app/src/api/ApiServer.cpp:61`) thay vì hai chỗ viết hai danh sách; **`HEAD`
+được phục vụ trên cả tám route** và **KHÔNG được miễn rate limit**, vì nó làm
+đủ một `latest()` và đủ phần serialise — httplib bỏ body **sau** khi làm việc,
+nên "không body nên không tốn" là cách đọc hợp lý và sai; và **hơn một field
+`Host` là `400`** (RFC 9112 §3.2, chối theo **số lượng**, không theo "khác nhau
+thì chối"). Không cần chủ nhân trả lời gì ở đây — ghi để đừng ai mở lại.
+
+**Và một mục tech-debt nhỏ phát hiện lúc closeout, không chặn gì:**
+`juce_add_console_app(rtatool_snapshot …)` ở `app/CMakeLists.txt:188` cảnh báo
+lúc configure vì bundle identifier JUCE suy ra từ
+`PRODUCT_NAME "RTA Tool Snapshot"` / `COMPANY_NAME "AZ Soundtech"` **có dấu
+cách**. Chỉ ảnh hưởng một console tool dev-only, không phải `rtatool`. Fix là
+một `BUNDLE_ID` tường minh. Agent làm được; chờ lúc rảnh, đừng xếp cạnh mục
+`[!]` ở đầu file.
+
+- [ ] **Số port mặc định — chọn cố định hay ephemeral?** **VẪN MỞ, và vẫn là
+  một câu.** **Con số đã chốt: 4736** (đã ship, `app/src/api/ApiSettings.h:43`).
+  Câu hỏi còn lại chỉ là *hình dạng*: **port cố định** thì client dò được nhưng
+  có thể đụng port máy khác, còn **ephemeral port ghi ra một file cho client
+  đọc** thì không bao giờ đụng nhưng phải có chỗ hẹn.
+
+  **Cập nhật 2026-09-18: giá đổi giờ đã ĐO được, và nó nhỏ.** Code ship **cố
+  định**, và **cả hai nhánh bind đều có test** — `test_api_server_bind.cpp`
+  bind ephemeral để hỏi một port đang rỗi, huỷ, rồi bind **cố định** chính số
+  đó. Nên đổi sang ephemeral là **một hằng trong `ApiSettings.h` cộng một chỗ
+  hẹn**, không phải sửa schema đã ship và không phải viết test mới cho nhánh
+  bind. Một chi tiết đi kèm nếu chọn ephemeral: check `Host` đã so với
+  **cổng ĐÃ BIND**, không phải `settings.port`, đúng vì lý do này — với
+  `settings.port == 0` mà so với 0 thì mọi request đều bị từ chối.
+  Nguồn: record §8, §14 q.1, **§15 R14**; report 008 §9 mục 1.
 
   **Đính chính bản trước của mục này** (nếu chủ nhân đã đọc nó): bản cũ đề xuất
   **4737** với lý do "chưa thấy tool nào chiếm". Câu đó đúng với các tool **âm
@@ -110,13 +204,32 @@ so với `bind_to_port` được quyết.*
   chặn. Trạm 3 đổi default sang **4736**; câu hỏi cố-định-hay-ephemeral thì y
   nguyên, chỉ tiền đề được sửa.
 
-- [ ] **`api.allowLanBind` có ship ở v1 dạng setting TẮT sẵn, hay KHÔNG tồn
-  tại?** `docs/UPGRADE-BACKLOG.md` hoãn cái *tính năng* LAN bind, nhưng không
+- [x] **ĐÃ ĐÓNG bởi bản dựng 2026-09-18 — `api.allowLanBind` SHIP, và nó TỪ
+  CHỐI.** Default có tên, giá đổi đã nói ra: `bool allowLanBind = false` ở
+  `app/src/api/ApiSettings.h:79`; bật lên thì `startRefusal` trả một thông điệp
+  tường minh (`app/src/api/ApiPolicy.cpp:160`) và **không bind gì**, và
+  `ApiServer::refusal()` đọc được nó từ bên ngoài — một từ chối không ai đọc
+  được là đúng cái lỗi "im lặng không làm gì" mà nó sinh ra để chặn. Ba test
+  giữ: `B5`, `B6`, và case `allowLanBind exists and REFUSES` trong
+  `test_api_server_bind.cpp`. Chủ nhân vẫn phủ quyết được — bỏ setting là xoá
+  một field và ba case.
+
+  ~~**`api.allowLanBind` có ship ở v1 dạng setting TẮT sẵn, hay KHÔNG tồn
+  tại?**~~ `docs/UPGRADE-BACKLOG.md` hoãn cái *tính năng* LAN bind, nhưng không
   nói cái *setting* có hiện ra hay không. Hai bên đều bảo vệ được: setting có
   mà từ chối thì **thành thật về roadmap**; setting không có thì **không ai bật
   nhầm được**, kể cả theo một post trên forum. Nguồn: record §8, §14 q.2.
 
-- [ ] **`/traces` và `/session` có nằm trong v1 không?** Hai endpoint này cần
+- [x] **ĐÃ ĐÓNG bởi bản dựng 2026-09-18 — `/traces` và `/session` KHÔNG trong
+  v1, nên KHÔNG có publish path thứ hai nào được xây.** v1 ship đúng **TÁM**
+  endpoint (`app/src/api/ApiRoutes.cpp:53-62`, một `std::array<RouteEntry, 8>`)
+  và `/status`'s `available` có **sáu** tên — hai con số khác nhau của hai thứ
+  khác nhau, và `ApiRoutes.h:36-37` giờ nói thẳng chỗ người đọc sẽ đụng
+  (§15 **R12**). Đổi thành "có" thì là một task nữa cộng một
+  `AtomicSharedPtr<const ApiSideState>` thứ hai — và record §5 thành mô tả của
+  một version sau, đúng như nó dự phòng.
+
+  ~~**`/traces` và `/session` có nằm trong v1 không?**~~ Hai endpoint này cần
   một **publish mới trên message thread** mà hiện không có gì khác trong app
   cần: `TraceLibrary` do `MainComponent` sở hữu, mutable, xoá cả copy lẫn move,
   có `revision()` nhưng **không có atomic publish** — đọc thẳng từ API thread
@@ -128,7 +241,22 @@ so với `bind_to_port` được quyết.*
   danh sách đó không kể `/status` và `/snapshot`. Xem §15 **R12**.) Nguồn:
   record §5, §6, §14 q.3.
 
-- [ ] **Token: ship setting rỗng, hay sinh token ngay lần bật đầu tiên?** Token
+- [x] **ĐÃ ĐÓNG bởi bản dựng 2026-09-18 — token ship RỖNG, tức control Bearer
+  TẮT ở default, và test `B7` khẳng định đúng điều đó** ("at the shipped default
+  the token control is OFF, deliberately"). `std::string token{}` ở
+  `app/src/api/ApiSettings.h:53`. Khi có token thì control là thật: `B8`, `B9`
+  ("the forbidden carriers are forbidden by construction") và `I6` — case server
+  duy nhất chạy ở cấu hình **khác** default. Scheme so **không phân biệt hoa
+  thường**, credential so **từng byte** (`ApiPolicy.cpp:135`). Không sinh token
+  tự động, và không cookie ở bất kỳ đâu.
+
+  **Và phần đính chính bên dưới giờ là MOOT, nhưng đừng xoá nó.** Tiền đề
+  cookie đã được sửa **trước khi** quyết định được ship, nên câu hỏi được trả
+  lời trên tiền đề đúng. Lý do giữ đoạn đính chính: nó là hồ sơ của một lập
+  luận bị đảo ngược ở **bốn** chỗ mà kết luận vẫn đúng — chính là hình dạng
+  nguy hiểm nhất, vì không có gì đỏ để báo. Xem report 008 §4 mục 1.
+
+  ~~**Token: ship setting rỗng, hay sinh token ngay lần bật đầu tiên?**~~ Token
   sinh sẵn để operator copy ra khỏi panel preferences thì an toàn hơn hẳn, và
   cũng là thêm một thứ để mất giữa show. Trên loopback đã có `Host`-header
   allowlist thì phần lợi biên là nhỏ; nhưng **ngày nào có LAN bind thì token là
@@ -151,7 +279,13 @@ so với `bind_to_port` được quyết.*
   biên của token trên loopback là nhỏ **vì đã có `Host` check**, không phải vì
   cookie hay Bearer gì. Nguồn: record §8, §9, §14 q.4.
 
-- [ ] **Có xin **Smaart API SDK** không?** Free, theo terms công bố thì không
+- [ ] **VẪN MỞ — có xin **Smaart API SDK** không?** Lane đã đóng mà **không**
+  xin (default có tên: "không xin"), nên nó không chặn gì nữa — nhưng nó cũng
+  chưa được trả lời, và nếu câu trả lời là "có" thì nó vẫn còn giá trị: schema
+  v1 đã đóng băng, và cái duy nhất SDK dạy được là **encode coherence trên dây
+  thế nào**, tức nó sẽ ảnh hưởng schema **v2** chứ không phải v1. Nói cách
+  khác: cửa sổ "trước khi freeze" đã đóng, cửa sổ "trước khi freeze lần sau"
+  thì chưa. Free, theo terms công bố thì không
   NDA. Đây là đường duy nhất tới **một mảnh prior art trạm 1 không đọc được**:
   đối thủ encode **coherence** trên dây ra sao. REW không dạy được gì về
   coherence vì REW là swept-sine một kênh, **API của nó không có coherence ở
@@ -242,6 +376,38 @@ so với `bind_to_port` được quyết.*
   giữ nguyên 8 (`platform/types` không có `tests/`). **Lỗ còn lại, chưa đóng:**
   `platform/tests` nằm ngoài mọi framework guard — ghi ở
   `memory/core-must-not-include-frameworks.md`, hôm nay JUCE-free.
+
+## Tech-debt từ CI macOS fix (2026-09-18, PR #22, nhánh `ci/macos-fixes`)
+
+Hai lỗ được ĐẶT TÊN trong PR #22 thay vì đóng, vì đóng chúng nằm ngoài việc
+"làm bốn test đỏ macOS xanh lại". Cả hai đều là loại mục rữa im lặng.
+
+- [ ] **`-ffp-contract=off` gần như KHÔNG CÓ GÌ gác.** Flag ở
+  `CMakeLists.txt` (block "The floating-point contract") là thứ giữ cho ba OS
+  ra **cùng bit**. Thứ duy nhất phát hiện nếu nó bị xoá là **D7 regression
+  lock** (`app/tests/test_api_serialise.cpp`), và D7 chỉ đỏ ở nơi contraction
+  thật sự xảy ra — tức **chỉ macos-latest trên CI**. Hệ quả: người phát triển
+  trên Windows xoá flag và **không thấy gì**; local ON/OFF đều xanh; ubuntu
+  xanh (baseline x86-64 không có FMA để fuse). Flag không được gác trên 2/3
+  platform và trên mọi máy local.
+  **Cần một câu của chủ nhân**, vì cả hai lối đều có giá: (a) một ctest
+  đọc `CMAKE_CXX_FLAGS`/`COMPILE_OPTIONS` và đỏ nếu thiếu flag — rẻ, nhưng là
+  guard kiểm *chuỗi ký tự* chứ không kiểm *hành vi*, đúng loại thứ
+  `memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md` cảnh báo;
+  (b) một test tính `10.0*std::log10(0.5) + 3.0102999566398120` và đòi bitwise
+  0.0 — kiểm hành vi thật, nhưng **chỉ đỏ trên arm64**, nên vẫn là guard một
+  platform, chỉ là rẻ hơn D7. Không tự chọn.
+
+- [ ] **JUCE chưa bao giờ biên dịch dưới `-ffp-contract=off`.** Flag là
+  `add_compile_options` ở root nên áp cho MỌI target, JUCE gồm cả nguồn C của
+  nó. Nhưng: CI chỉ chạy `RTA_BUILD_APP=OFF`, và cấu hình ON duy nhất được đo
+  là trên **MSVC**, nơi `if(NOT MSVC)` khiến flag không tồn tại. Nghĩa là
+  **không máy nào từng biên dịch JUCE với flag này** — clang/gcc + JUCE + ON là
+  tổ hợp zero lần chạy. Rủi ro thấp (`-ffp-contract` là flag chuẩn, JUCE không
+  đòi FMA) nhưng **chưa đo**, và CLAUDE.md không cho gọi cái chưa đo là "ổn".
+  Rẻ nhất để đóng: một job CI `RTA_BUILD_APP=ON` trên ubuntu, hoặc một lần
+  build ON tay trên macOS/Linux. Ghi ở đây vì nó là **quyết định về phạm vi
+  CI**, không phải một dòng code.
 
 ## Từ lane L7-ALIGN (2026-09-16, record `docs/dsp/2026-09-06-l7-alignment-wizard.md`)
 

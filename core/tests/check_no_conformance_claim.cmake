@@ -52,6 +52,32 @@ file(GLOB sources
     "${CORE_DIR}/tests/test_weighting.cpp"
     "${CORE_DIR}/tests/test_detector.cpp"
     "${CORE_DIR}/tests/test_leq.cpp"
+    # Lane L6a (record docs/dsp/2026-09-16-spl-pro-l6a.md; SPL-R9 defect 8).
+    # These are the DENSEST quotations of IEC 61672-1, IEC 61252, ISO 1996-1,
+    # NIOSH 98-126 and 29 CFR 1910.95 anywhere in this repository -- Wave 1
+    # alone transcribes 222 rows of two regulators' tables -- and until they
+    # were named here they were entirely UNGUARDED while the three files above
+    # were policed. A file that quotes a standard is exactly the file most
+    # likely to acquire a conformance claim beside the quotation.
+    #
+    # Added BY NAME, not by a glob over tests/, because a glob would also pull
+    # in the filter-bank track's test_butterworth.cpp and test_filterbank.cpp,
+    # which carry a legitimate and separately sourced ANSI S1.11 Class 1 claim
+    # this guard has no business policing. And because a misspelled name in
+    # such a list shrinks coverage SILENTLY, the risen `OK (N files scanned)`
+    # count is the only proof the addition took effect -- read it, never
+    # predict it (memory/core-must-not-include-frameworks.md).
+    "${CORE_DIR}/tests/test_block.cpp"
+    "${CORE_DIR}/tests/test_window_energy.cpp"
+    "${CORE_DIR}/tests/test_level_histogram.cpp"
+    "${CORE_DIR}/tests/test_level_histogram_span.cpp"
+    "${CORE_DIR}/tests/test_alarm.cpp"
+    "${CORE_DIR}/tests/test_dose.cpp"
+    "${CORE_DIR}/tests/test_dose_constants.cpp"
+    "${CORE_DIR}/tests/test_dose_tables.cpp"
+    "${CORE_DIR}/tests/test_dose_table12.cpp"
+    "${CORE_DIR}/tests/DoseTableFixtures.h"
+    "${CORE_DIR}/tests/BlockFixtures.h"
 )
 
 set(violations "")
