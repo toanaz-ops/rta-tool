@@ -131,6 +131,12 @@ add_executable(rtatool_analysis_tests
     # an httplib::Client would be a SECOND includer of <httplib.h> and
     # no_server_library_outside_api permits exactly one.
     test_api_server.cpp
+    # test_api_server_bind.cpp: the same task, split along the seam that made
+    # the file above long -- HOW it binds and WHEN it refuses, rather than
+    # what it answers. It carries the FIXED-port case, which is the branch the
+    # shipped configuration takes and which every case in the other file
+    # (settings.port == 0) leaves untouched.
+    test_api_server_bind.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0, docs/plans/2026-09-06-L6b-impl-plan.md) -- Analyser.cpp calls
