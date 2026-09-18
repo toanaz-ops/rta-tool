@@ -549,6 +549,581 @@ Three things Wave 2 must not undo:
 
 *Heading corrected 2026-09-18 by the Wave 1 builder: this section was written while the PR was still open, and everything below it still reads as if it were. The account of what was built, what two verifier rounds found and every measured number is unchanged and still the record; only "NOT merged" was false, and Wave 1 branched from the merge commit.*
 
+# 2026-09-18 — **L-API (Remote API) CLOSED OUT. PR #18 merged at `91367a8`. Lane report: [`docs/reports/008-remote-api.md`](reports/008-remote-api.md).**
+
+**Read this section first.** The whole of lane L-API is BUILT and on
+`origin/main`: stations 1+2 as PR #11 (`a39a02e`), station 3 as PR #14
+(`a02fb29`), station 4 Wave 1 (tasks A–G) as **PR #16 at `7b4773f`** and
+Wave 2 (tasks H–K) as **PR #18 at `91367a8`**. Eleven tasks, ten of them proven
+in `RTA_BUILD_APP=OFF` — the only configuration CI runs — including the whole
+request path over a real loopback socket. Report 008 carries what shipped, the
+twenty-one record amendments, what each verifier refuted, and what is open.
+
+`docs/plans/MASTER-EXECUTION-PLAN.md` now has **"Status snapshot —
+2026-09-18"**: the **L-API** row reads **BUILT 2026-09-18, merged (PRs #11 #14
+#16 #18)**. The next lane, by that plan's own opening order, is
+**L6a (SPL-pro) Waves 1–4**.
+
+## THE ONE THING THAT CHANGED SINCE EVERY PR BODY IN THIS LANE
+
+**GitHub Actions is LIVE again — billing resolved — and the three-OS matrix is
+RED on macOS.** Every PR body and handoff entry in this lane says Actions is
+billing-blocked and the numbers are therefore local-only. That stopped being
+true at **2026-09-17T17:31Z**, when a push to `main` ran the matrix and passed.
+Measured with `gh run list`: every run since has executed. So **PRs #16, #17,
+#18 and #19 merged with a live, visibly failing matrix rather than with none**
+— a worse position than the PR bodies describe, and nobody looked.
+
+**Hệ quả quy trình:** cổng CI của `docs/GIT-WORKFLOW.md` **luật 3 giờ kiểm
+được**, nên nó không còn là "không thể đạt" mà là "đang không đạt" — hai câu
+khác nhau, và câu thứ hai buộc phiên phải làm gì đó.
+
+> **CẬP NHẬT — ĐÃ XANH.** `ci/macos-fixes` **merge thành PR #22 tại `20f3c65`**,
+> và `main` giờ xanh **cả ba OS**. Nên "đang không đạt" ở trên đúng trong đúng
+> hai ngày; giờ cổng luật 3 vừa kiểm được vừa **đạt**. Bốn test đỏ được sửa
+> **tại NGUYÊN NHÂN**, không phải bằng cách nới assertion:
+>
+> - **`-ffp-contract=off` ngoài MSVC** (root `CMakeLists.txt`) lo `D7` và hai
+>   case `test_spl_seam.cpp`. Clang mặc định `-ffp-contract=on`, nên
+>   `a * b + c` thành **một** `fma` — một lần rounding thay vì hai — ở mọi nơi
+>   ISA có sẵn lệnh đó. **Baseline x86-64 KHÔNG có FMA**, nên gcc và MSVC vốn
+>   đã khớp từng bit (và đó cũng là điều loại libm ra khỏi danh sách nghi vấn);
+>   **chỉ Apple arm64, nơi FMA nằm trong baseline, mới contract.** Đo được: 35
+>   trong 2049 giá trị `spectrum.spectrumDb`, mỗi cái lệch đúng **±1 ULP
+>   float32**, cộng ba closed-form dB identity đọc ra `2^-53 dB` thay vì 0.
+> - **`B0c` là nguyên nhân KHÁC**: một allocation mà clang được phép loại bỏ.
+>
+> Nên `D7` **vẫn là byte lock** trên cả 198045 byte, và giờ trên **ba** OS —
+> nhiều hơn điều nó từng chứng minh. Comment của flag chỉ đúng `D7` làm canary
+> nếu flag bị mất. Hai memory mới:
+> `memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md` và
+> `memory/an-allocation-the-optimiser-removed-reads-as-zero-bytes.md`.
+>
+> **Và một chỗ report 008 sai, đã ghi vào §8 của chính nó:** ba phương án nó
+> liệt kê đều hỏi *test nên nhượng bộ cái gì*. Câu trả lời đúng là phương án
+> thứ tư không ai liệt kê — **làm cho hai nền tảng tính ra cùng một số**. Dấu
+> hiệu để nhận ra lần sau: lệch **±1 ULP tập trung ở multiply-add, trên MỘT
+> kiến trúc, hai cái còn lại khớp nhau** là dấu vết FP-contraction, không phải
+> vấn đề tolerance.
+
+At `main` `d071269`:
+
+```
+rta_core (ubuntu-latest)   100% tests passed, 0 tests failed out of 774
+rta_core (windows-latest)  100% tests passed out of 774
+rta_core (macos-latest)     99% tests passed, 4 tests failed out of 774
+```
+
+**Bản đầu của mục này viết "giống nhau qua bốn run liên tiếp". SAI, và lịch sử
+thật thì nặng hơn chứ không nhẹ hơn.** Đo từng run, job macOS:
+
+| run | cây | macOS |
+|---|---|---|
+| 35260003002 | PR #16 (`remote-api/wave1-serialise`) | **1 đỏ / 700** — chỉ `D7` |
+| 35303640976 | PR #17 (`l6a/wave0-spl-publish`) | 4 đỏ / 747 |
+| 35305764296 | PR #18 (`remote-api/wave2-server`) | 4 đỏ / 774 |
+| 35305862353 | `main` sau PR #18 | 4 đỏ / 774 |
+| 35306020025 | PR #19 (`fix/cmake-comment-mojibake`) | 4 đỏ / 774 |
+| 35306075307 | `main` `d071269` | 4 đỏ / 774 |
+
+Tức bộ **bốn** test đỏ xuất hiện ở năm run, và ở mức 774 thì bốn run; run sớm
+nhất chỉ có **một** đỏ trên 700 vì ba test của L6a Wave 0 chưa tồn tại. Chỗ
+đáng kể: **`D7` đỏ trên macOS ở MỌI run CI kể từ run đầu tiên chứa nó.** Nó
+chưa bao giờ xanh trên nền tảng đó. Một phép so byte trên float do DSP tính ra
+đã phụ thuộc máy ngay từ commit sinh ra nó, và lane này merge hai lần đè lên
+nó trong khi PR body của chính nó nói "không có CI để đọc".
+
+Ubuntu and windows are the **first confirmation of OFF 774 by anything other
+than this machine**. The four macOS failures:
+
+| test | file | whose |
+|---|---|---|
+| `D7 REGRESSION LOCK: the golden /snapshot body has not drifted` | `app/tests/test_api_serialise.cpp:193` | **L-API** |
+| `E1 the two conventions differ by kFullScaleSineOffsetDb and nothing else` | `app/tests/test_spl_seam.cpp:85` | L6a Wave 0 |
+| `E3 with a calibration offset the metric reads 94 dB and the band still reads 0 dBFS` | `app/tests/test_spl_seam.cpp:164` | L6a Wave 0 |
+| `B0c AllocationProbe resets on construction so one case cannot read another's bytes` | `app/tests/test_average_group.cpp:376,389` | L6a Wave 0 |
+
+**L-API's one is diagnosed and it is a test-portability defect, not a
+wire-format defect.** `D7` byte-compares a 198 KB `/snapshot` body against the
+committed golden; the first divergence, at character 5084, is `-49.341915`
+emitted against `-49.34192` committed — **adjacent float32 values, about one
+ULP apart**. Both are correct shortest-round-trip decimals of **two different
+floats**, so the DSP's own number differs in the last bit between MSVC/x64 and
+Apple clang/arm64. `F1`–`F7`, the third-party-parser checks, **pass on all
+three OSes**, so the document is well-formed and correctly typed everywhere.
+Report 008 §8 has the three options and argues for regenerating the golden from
+an exactly-representable fixture. **This closeout did not fix it** — it is a
+code change and this was a docs-only pass.
+
+## Số đo — **VERIFIER-MEASURED**, lượt dựng lại độc lập tại `d071269` đã XONG
+
+```
+INDEPENDENT REBUILD AT d071269  (= cây merge của PR #18, cộng fix comment PR #19)
+  RTA_BUILD_APP=OFF                                            -> 774/774, 0 failed
+  RTA_BUILD_APP=ON                                             -> 848/848, 0 failed
+  forced fallback (-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON)   -> 774/774, 0 failed
+  "warning C" trong mọi build log                              -> 0
+  guard xanh                                                   -> 13/13 (ON) / 11/11 (OFF)
+  rtatool_snapshot                                             -> 8 PNG, exit 0
+  git diff origin/main --stat -- platform/ core/src core/include ui/  -> RỖNG
+```
+
+Số file quét khi xanh: `no_server_library_outside_api` **409** (cả hai config),
+`no_json_parser_in_shipped_code` **333** (2 witness),
+`measure_has_no_framework_deps` **86**, `no_std_atomic_over_shared_ptr` **409**,
+`core_has_no_framework_deps` **164**.
+
+Đây **không còn là số của builder**. `d071269` là `91367a8` cộng đúng một dòng
+comment của PR #19 (`git diff --stat` giữa hai cái là một dòng
+`app/tests/CMakeLists.txt`). Cấu hình **forced fallback** đáng giá hơn ở lane
+này so với phần lớn lane khác: đó là nhánh `AtomicSharedPtr` **có lấy lock**, và
+lane này thêm một người thứ **ba** vào publish slot. 774/774 ở đó nói một
+`latest()` mỗi request cũng ổn trên nhánh lock.
+
+Verifier cũng đã dựng lại độc lập hai mốc trước và xác nhận: Wave 1 tại
+`e2fc4b3` (OFF 698 / ON 766 / fallback 698) và Wave 2 tại `4a65c2d`
+(**725 / 793 / 725**, ba số 0 warning). **Một mốc duy nhất chưa ai dựng lại:**
+sau-fix của Wave 1 (`f95436f`: 700/768/700) — nó bị kẹp giữa hai cây đã đo nên
+không có gì tựa lên nó.
+
+Con số 774/848 vượt dự đoán 772/846 của verifier đúng **2**, và 2 đó có giải
+trình: hai case limiter thêm cho residual OPTIONS landed *sau* khi lấy số
+725/793 — `727 + (747−700) = 774` và `793 + 2 + (821−768) = 848`. Lượt dựng lại
+độc lập sau đó đọc đúng 774 và 848 trên `d071269`.
+
+**Một PNG không làm đúng điều tham số của nó nói.** `main-live.png` ra
+**39853 byte ở 1280×800** và **bỏ qua kích thước được yêu cầu**; bảy cái còn
+lại tôn trọng nó (`preview-phase.png` 45851 byte ở đúng 1100×760). Đó là
+`MainComponent` tự khẳng định kích thước của nó, không phải lỗi snapshot — biết
+trước để đừng đọc một sai lệch kích thước thành một render hỏng.
+
+**Một khoảng trống CI không thể lấp, và chính lập luận `API-R15` của lane này
+làm nó thành vấn đề:** hai guard RT-hazard của audio callback —
+`audioio_callback_has_no_rt_hazards` và `audioio_scoped_no_denormals_is_first`
+— chỉ được register ở cấu hình **ON**, mà **CI chỉ chạy OFF**. Nên phép grep
+khẳng định audio callback vẫn là `ScopedNoDenormals` rồi đúng hai call **không
+bao giờ chạy trên một máy CI nào**. Lane này không chạm vào hàm đó và
+`git diff origin/main --stat -- platform/` **rỗng**, nên tính chất ấy hôm nay
+đúng do cấu tạo. Nhưng toàn bộ sức nặng của `API-R15` là "một control được
+chứng minh trên zero máy thì chưa được chứng minh", và theo đúng tiêu chuẩn đó
+hai guard này đang ở vị trí server từng ở trước khi plan được sửa. **Không phải
+việc của L-API để dời** — ghi ra đây để đừng phải phát hiện lại.
+
+---
+
+## Rule 12 vế 2 — người có thể tự chạy cái gì, và trông đợi THẤY gì
+
+Mọi lệnh dưới đây viết cho **PowerShell 7** trong terminal của chủ nhân: **một
+lệnh một block**, không `&&`, không prompt, không output dán trong fence — nếu
+không thì nút Run không hiện (CLAUDE.md luật 13). Chạy từ gốc checkout.
+`[verified]` = đã chạy thật trong phiên closeout này; `[not run here]` = chưa
+chạy (phiên này docs-only, không có build dir).
+
+### 0. ĐỌC TRƯỚC: mở `rtatool.exe` lên thì thấy được gì của L-API?
+
+**Không gì cả, và đó là mặc định đang làm đúng việc của nó.**
+
+- `api.enabled` ship **`false`** (`app/src/api/ApiSettings.h:27`). Ở bản dựng
+  ship: không bind, không thread nào start, **không có gì quan sát được thay
+  đổi** với một operator không hỏi tới API.
+- **Không có preferences store nào trong `app/`** (record §15 `API-R5`), nên
+  `ApiSettings` là một struct thuần dựng bằng tay ở composition root
+  (`app/src/MainComponent.cpp:120-121`). **Các tên `api.enabled`, `api.port`…
+  là TÊN TRONG TÀI LIỆU, không phải key người dùng đặt được** — hai chuỗi
+  `api.*` duy nhất trong shipped code là thông điệp từ chối ở
+  `app/src/api/ApiPolicy.cpp:160` và `:166`.
+- Nên **bật API = sửa source rồi dựng lại**, không phải tick một ô. Xem mục 3.
+
+Nói cách khác: bằng chứng của L-API là **ctest qua socket loopback thật**,
+không phải một pane mở lên nhìn. Đừng để ai đọc thành "operator bật API trong
+preferences".
+
+### 1. Hai cấu hình test — cái gì cũng bắt đầu từ đây
+
+`[not run here]` Configure OFF (core-only, không cần JUCE):
+
+```bash
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+```
+
+`[not run here]` Build OFF:
+
+```bash
+cmake --build build --config Release --parallel
+```
+
+`[not run here]` Chạy test OFF. **Sẽ thấy:** `100% tests passed, 0 tests failed
+out of 774`.
+
+```bash
+ctest --test-dir build -C Release --output-on-failure
+```
+
+`[not run here]` Configure ON (cần JUCE 9.0.1):
+
+```bash
+cmake -S . -B build-on -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=ON -DRTA_JUCE_PATH="D:\DEV CAVE EP3\PROJECT005-AZ-handsfree\external\JUCE"
+```
+
+`[not run here]` Build ON:
+
+```bash
+cmake --build build-on --config Release --parallel
+```
+
+`[not run here]` Chạy test ON. **Sẽ thấy:** `100% tests passed, 0 tests failed
+out of 848`.
+
+```bash
+ctest --test-dir build-on -C Release --output-on-failure
+```
+
+### 2. Lọc test của lane này — và cái bẫy phải nói trước
+
+**`ctest -R "api"` KHÔNG chạy một test API nào.** Nó khớp đúng **một** test, và
+đó là *guard* `no_server_library_outside_api` — cái tên tình cờ kết thúc bằng
+`api`.
+
+`[verified: 1]` — `ctest -R` là regex **phân biệt hoa thường** trên **tên test
+của ctest**; `catch_discover_tests` gọi **không** `TEST_PREFIX`
+(`app/tests/CMakeLists.txt:284`), nên tên ctest chính là chuỗi `TEST_CASE` thô;
+và **không một trong 837 tên `TEST_CASE` của repo này chứa `api` chữ thường**
+(0/837 tên `TEST_CASE`, 1/13 tên `add_test`). Bỏ qua hoa thường thì được sáu
+tên, mà chỉ hai thuộc lane này — một trong hai là chính con regenerator bị ẩn —
+còn ba nằm ở `test_readouts.cpp`, `core/tests/test_detector.cpp`,
+`ui/tests/test_grid_panel.cpp`, thuộc **ba executable khác nhau**.
+
+`[not run here]` Nên nếu muốn xem nó khớp gì, chạy đúng lệnh này và **sẽ thấy
+`Total Tests: 1`** cùng tên guard:
+
+```bash
+ctest --test-dir build -C Release -R "api" -N
+```
+
+`[not run here]` Lệnh **thật sự** chạy nửa thuần của lane (tag `[api]`).
+**Sẽ thấy `49 test cases` pass**:
+
+```bash
+build/app/tests/Release/rtatool_analysis_tests.exe "[api]"
+```
+
+`[verified: 49]` — 49 trong 76 `TEST_CASE` của `app/tests/test_api_*.cpp` mang
+tag `[api]` (json 6, policy 10, limits 8, serialise 10, spatial 8, schema 7).
+
+**26 case socket không mang tag NÀO CẢ** (cộng con regenerator ẩn là 27 case
+không có `[api]`): `test_api_server.cpp` (14), `test_api_server_bind.cpp` (3),
+`test_api_server_refusals.cpp` (9) — tức **toàn bộ các case chạy qua socket
+thật, chính là thứ `API-R15` sinh ra để chạy được trên CI**. Không tag filter
+nào chạm tới chúng, và **`-f <specfile>` của Catch2 cũng không dùng được**: **9
+trong 26 tên có dấu phẩy**, mà dấu phẩy là ký tự phân cách test-spec của Catch2.
+
+Nên phải gọi chúng bằng **tên**, qua một alternation neo `^` của `ctest -R`.
+`[verified: 26]` — pattern dưới đây khớp **đúng 26 tên đó trong toàn bộ 837 tên
+`TEST_CASE` của repo**, không thừa không thiếu (kiểm bằng cách so pattern với
+mọi tên đã trích từ source), và lượt dựng lại độc lập đã chạy nó ở cấu hình
+OFF: **26 ran, 26 passed, 1.24 s**.
+
+`[not run here]` Đếm trước cho chắc — **sẽ thấy `Total Tests: 26`**:
+
+```bash
+ctest --test-dir build -C Release -N -R "^(I1 |I1b |I2 |I2b |I3 |I4 |I5 |I6 |I7 |I8 |I9 |I10 |I11 |the rate limit is a hard bound|the fixed-port bind branch|allowLanBind exists|a bind address that is not a loopback|a forged Host does not spend|a refused method and a refused token|the limiter still bounds|OPTIONS spends no quota|HEAD is NOT exempt|two Host fields are 400|OPTIONS answers on every route|the route table names eight|HEAD answers on every route)"
+```
+
+`[not run here]` Rồi chạy thật — **sẽ thấy `100% tests passed, 0 tests failed
+out of 26`**:
+
+```bash
+ctest --test-dir build -C Release --output-on-failure -R "^(I1 |I1b |I2 |I2b |I3 |I4 |I5 |I6 |I7 |I8 |I9 |I10 |I11 |the rate limit is a hard bound|the fixed-port bind branch|allowLanBind exists|a bind address that is not a loopback|a forged Host does not spend|a refused method and a refused token|the limiter still bounds|OPTIONS spends no quota|HEAD is NOT exempt|two Host fields are 400|OPTIONS answers on every route|the route table names eight|HEAD answers on every route)"
+```
+
+Lưu ý `I1 ` và `I1b ` là **hai** nhánh: `I1 ` có khoảng trắng nên không khớp
+`I1b…`. Bỏ một trong hai là mất một case và `-N` sẽ nói ngay.
+
+`[not run here]` Hoặc đơn giản hơn, chạy **cả binary** — **sẽ thấy** toàn bộ
+suite `app/tests` pass:
+
+```bash
+build/app/tests/Release/rtatool_analysis_tests.exe
+```
+
+**Đây là một khoảng trống nên đóng, và nó rẻ:** thêm `"[api][server]"` vào 26
+`TEST_CASE` đó là xong, và cái alternation dài ở trên biến mất.
+`test_names_are_ascii` canh bộ ký tự của tên test, nhưng **không guard nào canh
+việc test của một lane có mang tag của lane đó**. Report 008 §7 ghi nó.
+
+### 3. Bật API lên, và kiểm tay bằng `curl` — **CHƯA AI CHẠY**
+
+**`[not run here — needs a running GUI]`** cho cả mục này. Đây là acceptance
+"manual check" của Task J và nó **đói một GUI đang chạy với `enabled = true`**;
+không phiên nào đã dựng một cái. Đọc là **chưa verify**, không phải "xong".
+Cái *đã* được chứng minh là toàn bộ đường request qua socket thật ở OFF, trên
+ba OS, cộng **cả hai** nhánh bind.
+
+Bước 1 — thêm **đúng một dòng** vào `app/src/MainComponent.cpp`, ngay sau dòng
+`120` (`rta::api::ApiSettings apiSettings;`) và trước dòng dựng `apiServer_`:
+
+```
+apiSettings.enabled = true;
+```
+
+Bước 2 — dựng lại ON (mục 1) rồi chạy app:
+
+```bash
+build-on/app/rtatool_artefacts/Release/rtatool.exe
+```
+
+Bước 3 — trong một terminal khác, bốn lệnh, mỗi lệnh một block.
+
+**(a) Đường bình thường.** `Host` khớp allowlist. **Sẽ thấy** một body JSON có
+`"schemaVersion":1`, một `"sequence"` tăng dần giữa hai lần gọi, và
+`"available"` gồm **sáu** tên (`transfer`, `mtw`, `bands`, `spectrum`,
+`average`, `positions` — sáu là độ dài danh sách NÀY, không phải số endpoint,
+vốn là tám). Nếu app vừa mở và chưa publish snapshot nào thì **503**:
+
+```bash
+curl -s -H "Host: 127.0.0.1:4736" http://127.0.0.1:4736/api/v1/status
+```
+
+**(b) `Host` giả trên một path KHÔNG tồn tại → 403, không phải 404.** Đây là
+control giá trị nhất của cả API và **thứ tự** chính là nội dung của nó: check
+`Host` chạy **trước routing**. **Sẽ thấy đúng `403`**:
+
+```bash
+curl -s -o NUL -w "%{http_code}" -H "Host: attacker.example:4736" http://127.0.0.1:4736/api/v1/nope
+```
+
+**(c) `OPTIONS` → 204 kèm `Allow`.** Không đọc snapshot, nên nó trả lời giống
+nhau cả trước lần publish đầu (chỗ mà `GET` đúng đắn trả 503). **Sẽ thấy**
+`HTTP/1.1 204 No Content` và `Allow: GET, HEAD, OPTIONS`, body rỗng:
+
+```bash
+curl -s -i -X OPTIONS -H "Host: 127.0.0.1:4736" http://127.0.0.1:4736/api/v1/status
+```
+
+**(d) `If-None-Match` với ETag vừa nhận → 304, không body.** ETag là
+`Snapshot::sequence` **kèm dấu ngoặc kép**. Lấy ETag từ (a) bằng `-i` trước, rồi
+thay `"12345"` bên dưới bằng đúng giá trị đó. **Sẽ thấy `304`** nếu chưa có
+publish mới, `200` nếu đã có:
+
+```bash
+curl -s -o NUL -w "%{http_code}" -H "Host: 127.0.0.1:4736" -H "If-None-Match: \"12345\"" http://127.0.0.1:4736/api/v1/status
+```
+
+Bước 4 — **bỏ lại dòng đã thêm ở bước 1.** Một `enabled = true` lọt vào commit
+là một listener mạng không ai xin.
+
+### 4. Ba guard, và tại sao chúng là thứ giữ ranh giới
+
+`[not run here]` Cả ba, một lệnh:
+
+```bash
+ctest --test-dir build -C Release -R "no_server_library_outside_api|no_json_parser_in_shipped_code|measure_has_no_framework_deps" --output-on-failure
+```
+
+**Sẽ thấy** `100% tests passed, 0 tests failed out of 3`. Số file quét khi xanh:
+**409**, **333** (2 witness), **86**.
+
+Khác biệt giữa hai guard mới là bài học, không phải chi tiết.
+`no_server_library_outside_api` **có** `ALLOW`
+(`app/src/api/ApiServer.cpp`) nên có **hai sentinel**: file được ALLOW phải nằm
+**trong** tập quét (nếu không, một `DIRS` sai chính tả in OK khi chỉ canh bốn
+thư mục trong năm), **và** file đó phải **vẫn còn chứa** thứ đang bị guard (nếu
+không, ngoại lệ sống lâu hơn lý do của nó). `no_json_parser_in_shipped_code`
+**không có `ALLOW` nào** — shipped code không bao giờ được include một parser —
+nên sentinel thứ nhất không có bản tương ứng, và một **witness** thay chỗ: phải
+có ít nhất một file dưới `app/tests` include parser, không thì script
+`FATAL_ERROR`. Nó quét `app/src`, **không phải `app`**, nên `app/tests` ở ngoài
+tầm **do cấu tạo** — đó chính là lý do witness tồn tại.
+
+`[not run here]` Đếm cả bộ guard, để thấy 11 (OFF) hay 13 (ON):
+
+```bash
+ctest --test-dir build -C Release -N -R "has_no|no_server|no_json|no_std_atomic|makes_no|test_names_are_ascii|is_not_bypassed|is_first"
+```
+
+### 4b. Snapshot offscreen — cách DUY NHẤT để nhìn GUI
+
+L-API **không thêm pixel nào**, nhưng `main-live.png` giờ dựng và huỷ một
+`MainComponent` **có sở hữu một `ApiServer` đang tắt**, nên nó là bằng chứng
+duy nhất rằng Task J không làm hỏng khởi tạo/huỷ của app.
+
+`[not run here]` Dựng target:
+
+```bash
+cmake --build build-on --config Release --target rtatool_snapshot --parallel
+```
+
+`[not run here]` Render. **Sẽ thấy** `wrote … 8 files` và `exit=0`:
+
+```bash
+build-on/app/rtatool_snapshot_artefacts/Release/rtatool_snapshot.exe shots 1100 760
+```
+
+**Bẫy về kích thước, đã đo:** `main-live.png` ra **39853 byte ở 1280×800** và
+**bỏ qua 1100 760**; bảy PNG còn lại tôn trọng tham số (`preview-phase.png`
+45851 byte ở 1100×760). `MainComponent` tự khẳng định kích thước của nó. Đừng
+đọc sai lệch đó thành render hỏng. `shots/` bị gitignore.
+
+Gọi exe qua `cmd //c` nếu chạy từ Git Bash; gọi trực tiếp trả 127 (CLAUDE.md
+"Seeing the GUI").
+
+### 5. Golden `/snapshot` — và cái cổng không filter nào cấp được
+
+`[not run here]` Regenerate **cần biến môi trường**, không chỉ tag:
+
+```bash
+$env:RTA_API_GOLDEN_WRITE = "1"
+```
+
+```bash
+build/app/tests/Release/rtatool_analysis_tests.exe "regenerate the API golden"
+```
+
+```bash
+Remove-Item Env:\RTA_API_GOLDEN_WRITE
+```
+
+**Sẽ thấy** golden 198045 byte và `git diff` **RỖNG** nếu format không đổi.
+Không có biến đó thì case `SKIP` kèm thông điệp, và `D9` assert đúng điều ấy —
+chạy **dưới chính filter `[api]` từng làm hỏng chuyện**. Lý do cổng là biến môi
+trường chứ không phải tag: thứ bị tấn công CHÍNH LÀ bộ khớp tag (report 008
+§4.5).
+
+### 6. Provenance của hai thư viện vendored
+
+`[not run here]` Băm lại file đã commit, đừng tin con số trong doc:
+
+```bash
+Get-FileHash -Algorithm SHA256 external/cpp-httplib/httplib.h
+```
+
+**Sẽ thấy** `1F99E51881C4C9D0649B27C611442C2F4D9BCFEC5A22A14D5FCD1F8106F730B4`
+(22875 dòng, tag `v0.56.0`, MIT).
+
+```bash
+Get-FileHash -Algorithm SHA256 external/nlohmann/json.hpp
+```
+
+**Sẽ thấy** `AAF127C04CB31C406E5B04A63F1AE89369FCCDE6D8FA7CDDA1ED4F32DFC5DE63`
+(25526 dòng, tag `v3.12.0`, MIT, **test-only**).
+
+**Bẫy đã trả học phí:** một bản `httplib.h` sẵn trên máy khai đúng
+`CPPHTTPLIB_VERSION "0.56.0"` nhưng là **22885 dòng / `a6e65d30…`**. Nó
+**không** được dùng. *Một version string không phải một danh tính.*
+
+### 7. CI — giờ đọc được, và phải đọc
+
+`[verified]` Trạng thái matrix ba OS:
+
+```bash
+gh run list --limit 6
+```
+
+`[verified]` Chi tiết một run, kể cả job nào đỏ:
+
+```bash
+gh run view 35306075307
+```
+
+`[verified]` Test nào đỏ trên macOS:
+
+```bash
+gh run view 35306075307 --log-failed
+```
+
+---
+
+## Rule 12 vế 3 — HANDOFF cho lane kế: **L6a (SPL-pro), Waves 1–4**
+
+Lane kế **không do closeout này chọn** — nó là thứ "Suggested opening order"
+của `docs/plans/MASTER-EXECUTION-PLAN.md` đã ghi: L6a. Stations 1+2+3 của nó
+XONG, **station 4 Wave 0 BUILT và ĐÃ MERGE (PR #17 tại `b1e14a9`)**, và
+**Waves 1–4 là việc kế tiếp**. **L8** (research) read-only, bắn lúc nào cũng
+được; **L9** cuối; **L5b** và **L4d** vẫn chặn vì hai khoản mua.
+
+**Đọc trước, theo thứ tự:**
+
+1. `docs/GIT-WORKFLOW.md` — luật hiện hành. **Luật 3 (CI là cổng merge) giờ
+   kiểm được và đang KHÔNG đạt** — xem mục đầu file này.
+2. `docs/plans/MASTER-EXECUTION-PLAN.md` — "Status snapshot — 2026-09-18",
+   hàng **L6a**, và cột PARALLEL-SAFE.
+3. Mục **L6a Wave 0** ngay dưới section này: bảng per-commit, hai vòng verifier,
+   mọi residual đo được, và mục "Next phase: Wave 1" của chính nó (thứ tự build
+   **W1-A ∥ W1-C ∥ W1-D → W1-B → W1-E**, tất cả core, tất cả OFF, **không
+   golden vector nào được thêm vào lane này**).
+4. `docs/reports/008-remote-api.md` — **Wave 4b là một CLIENT của bề mặt
+   L-API**. §2 là hợp đồng transport đã đóng băng; §7 nói cái gì còn thiếu ở đó.
+5. `docs/HUMAN-QA-QUEUE.md` — mục `[!]` đầu tiên (Actions: **đã mở lại, và
+   matrix đỏ**) và mục `test_weighting.cpp` chờ duyệt: **cả hai nằm đúng trên
+   đường của L6a**.
+
+**Ba việc L-API bàn giao trực tiếp cho L6a:**
+
+1. **Ba trong bốn test đỏ trên macOS là của L6a Wave 0**, không phải của
+   L-API: `test_spl_seam.cpp` E1 và E3, và `test_average_group.cpp` B0c. Hai
+   cái ở `test_spl_seam.cpp` trông giống **cùng một hạng lỗi** với `D7` của
+   L-API — một tolerance hoặc một float identity đúng trên MSVC/x64 và không
+   đúng trên Apple clang/arm64. Đọc
+   `memory/two-builds-disagreeing-is-not-evidence-one-is-wrong.md` **trước khi**
+   giả định bên nào sai. **Cả bốn đang được sửa chung trên `ci/macos-fixes`**,
+   nên việc của Wave 1 là *review* nhánh đó chứ không phải mở lại từ đầu — và
+   review nó theo luật 1: một job macOS xanh là **cần**, không **đủ**. Nới một
+   tolerance cho tới khi hết đỏ là cách một lock thôi khoá
+   (`memory/a-threshold-read-off-a-grid-is-that-grids-floor.md`).
+2. **Gate 1 của G7 (viewer) ĐÃ ĐẠT; gate 2 thì CHƯA CHẠY.** Transport tồn
+   tại, đã đóng băng, một port một `Host` check một rate limit. Gate 2 là
+   record `2026-09-16-remote-api.md` §12 constraint 4: **một trang được serve
+   TỪ `127.0.0.1` fetch `127.0.0.1` có được miễn prompt Local Network Access
+   của Chrome hay không**. Nó suy ra được từ mô hình same-address-space của
+   LNA nhưng **không tìm thấy phát biểu verbatim** (station-1 UNVERIFIED mục
+   7). Một buổi chiều với Chrome 142+. **Đó là test của L6a, không phải của
+   L-API**, và Wave 4b là chỗ nó cắn.
+3. **`"spl"` trong `available`: cổng đã mở, danh sách chưa theo.**
+   `app/src/api/ApiSerialise.cpp:74-75` vẫn ghi `"spl" joins it the day the Meters
+   track puts SPL in the Snapshot and not a day earlier`, và `:77` vẫn phát
+   literal sáu tên. Ngày đó là **PR #17**, merge **trước** PR #18 của chính
+   lane L-API. Trên dây không có gì sai — không endpoint nào serialise SPL, nên
+   thêm `"spl"` là quảng cáo một representation không ai trả — nhưng **cái
+   trigger được viết trong comment thì đã nổ**. Việc còn lại: một comment, một
+   string literal, và **một quyết định** — `"spl"` nghĩa là một field trên
+   `/snapshot`, hay một endpoint riêng? Nếu là endpoint riêng thì nó là task
+   thứ chín và `available` lên bảy.
+
+**Còn chờ người, không chờ agent:**
+
+- **§14 q.1: port cố định hay ephemeral.** Số **4736** đã chốt (4737 là IANA
+  `ipdr-sp`). Hình dạng chưa. **Giá đổi giờ đã biết và nhỏ**: code ship cố
+  định, **cả hai nhánh bind đều có test**, nên đổi là một hằng trong
+  `ApiSettings.h` cộng một chỗ hẹn. Một câu là chốt được.
+- **Xin Smaart API SDK hay không.** Miễn phí, không NDA theo terms công bố, và
+  là đường **duy nhất** tới mảnh prior art trạm 1 không đọc được: đối thủ
+  encode **coherence** trên dây ra sao. REW không dạy được gì — REW là
+  swept-sine một kênh, API của nó không có coherence ở đâu cả. Terms cấm phát
+  tán lại, nên **không bao giờ được trích nội dung nó vào repo này**. Mất vài
+  ngày.
+- **GitHub Actions: giờ chạy, và đỏ.** Có hold merge theo luật 3 hay không là
+  lời của chủ nhân — luật nói có, bốn merge gần nhất nói không — và giờ đó là
+  một lựa chọn thật chứ không phải một thứ bị chặn.
+
+**Món nợ doc mà L7 để lại và vẫn chưa trả:** ALIGN-R1's `1e-12` chưa được
+amend trong §5 của `docs/dsp/2026-09-06-l7-alignment-wizard.md` và trong Wave 0
+plan. Chi tiết ở `docs/reports/007-solvers.md` §5 mục 6.
+
+---
+
+---
+
+> *Ghi chú thêm 2026-09-18 lúc closeout: mục dưới đây viết khi PR #18 còn mở.
+> **Nó đã merge tại `91367a8`.** Và câu "GitHub Actions vẫn bị chặn billing"
+> trong đó là **SAI** kể từ 2026-09-17T17:31Z — xem mục closeout ở trên. Ngoài
+> ra, khiếm khuyết mojibake mà mục này ghi "cần một commit riêng" **đã được
+> trả**: PR #19 tại `d071269`. Phần còn lại giữ nguyên làm hồ sơ của wave.*
+
+> *Ghi chú thêm 2026-09-18, lúc merge `origin/main` vào `docs/l-api-closeout`:
+> mục dưới đây viết khi PR #22 còn mở. **Nó đã MERGE tại `20f3c65`, và
+> `main` giờ XANH cả ba OS.** Chỉ dòng này là mới; phần còn lại giữ nguyên làm
+> hồ sơ của vòng sửa.*
+
 # 2026-09-18 — **CI: bốn test đỏ RIÊNG trên macos-latest đã xong — nhánh `ci/macos-fixes`, PR #22 mở, CHƯA merge.**
 
 GitHub Actions chạy lại sau khi hết billing block. Lần chạy ba-OS đầu tiên
