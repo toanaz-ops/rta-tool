@@ -16,7 +16,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "AllocationProbe.h"
-#include "CodeLines.h"
 
 #include "measure/AnalysisPublish.h"
 #include "measure/AverageGroup.h"
@@ -26,7 +25,6 @@
 #include <array>
 #include <atomic>
 #include <cmath>
-#include <filesystem>
 #include <string>
 #include <complex>
 #include <cstdlib>
@@ -326,72 +324,8 @@ TEST_CASE("Publish churn is O(1) in N: bytes(8) - bytes(4) is bounded (record se
     CHECK(fullBytes8 >= fullBytes4);
 }
 
-// --- W0-B0: the probe is one definition, and the linker is not the only
-// --- thing that says so ------------------------------------------------
-
-TEST_CASE("B0b the replaced global operator new is defined in exactly one file under app tests",
-          "[allocationprobe]") {
-    // A replaceable global allocation function is ONE DEFINITION PER PROGRAM.
-    // The link succeeding is half the proof; this is the other half, because
-    // a second definition added to a file not yet in this binary would link
-    // fine today and break the day that file is added to the source list.
-    const std::filesystem::path testsDir = std::filesystem::path(RTA_REPO_ROOT) / "app" / "tests";
-    REQUIRE(std::filesystem::is_directory(testsDir));
-
-    std::vector<std::string> definers;
-    for (const auto& entry : std::filesystem::directory_iterator(testsDir)) {
-        if (!entry.is_regular_file()) continue;
-        const auto ext = entry.path().extension().string();
-        if (ext != ".cpp" && ext != ".h" && ext != ".hpp") continue;
-        // codeText() lowercases, strips comments and empties literals, so a
-        // sentence in a doc comment about operator new cannot match here.
-        const std::string text = rta::test::codeText(entry.path());
-        if (text.find("void* operator new(") != std::string::npos
-            && text.find("void* operator new(std::size_t size);") == std::string::npos) {
-            definers.push_back(entry.path().filename().string());
-        }
-    }
-    for (const auto& f : definers) INFO("  defines operator new: " << f);
-    INFO("count = " << definers.size());
-    REQUIRE(definers.size() == 1);
-    CHECK(definers.front() == "AllocationProbe.cpp");
-}
-
-TEST_CASE("B0c AllocationProbe resets on construction so one case cannot read another's bytes",
-          "[allocationprobe]") {
-    // Allocate OUTSIDE any probe: the counter must not be running at all.
-    {
-        std::vector<double> noise(4096, 1.0);
-        CHECK(noise.size() == 4096);
-    }
-    CHECK(rta::test::allocationBytes() == 0);
-
-    std::size_t first = 0;
-    {
-        const rta::test::AllocationProbe probe;
-        std::vector<double> a(1024);
-        a[0] = 1.0;
-        first = probe.bytes();
-    }
-    CHECK(first >= 1024 * sizeof(double));
-
-    // A second probe sees its OWN allocations only: it resets on
-    // construction, so `first` cannot leak into it. Catch2 runs every file in
-    // this binary in one process, so this is not hypothetical.
-    std::size_t second = 0;
-    {
-        const rta::test::AllocationProbe probe;
-        std::vector<double> b(16);
-        b[0] = 1.0;
-        second = probe.bytes();
-    }
-    INFO("first = " << first << ", second = " << second);
-    CHECK(second < first);
-
-    // Counting is OFF once the guard leaves scope: the reading does not move.
-    {
-        std::vector<double> after(4096, 2.0);
-        CHECK(after.size() == 4096);
-    }
-    CHECK(rta::test::allocationBytes() == second);
-}
+// B0b and B0c -- the probe's OWN tests -- moved to test_allocation_probe.cpp
+// (macOS CI fix, run 35306075307). Two reasons, and the file-length cap is
+// only the second: "does the counting allocator work" is a different subject
+// from "is publish churn O(1) in N", and B0c had to grow a defence against
+// clang eliding the allocation it measures.

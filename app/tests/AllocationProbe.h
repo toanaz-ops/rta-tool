@@ -8,8 +8,33 @@
 // file that copies the pair is a duplicate-symbol link error, and a file that
 // declares its own counters instead cannot see the bytes another translation
 // unit's allocations went through. The definitions therefore live in
-// AllocationProbe.cpp and nowhere else; test_average_group.cpp's own B0b case
-// scans this directory and fails if a second one appears.
+// AllocationProbe.cpp and nowhere else; test_allocation_probe.cpp's own B0b
+// case scans this directory and fails if a second one appears.
+//
+// ONE CAVEAT A CALLER MUST KNOW, measured on macos-latest in run 35306075307:
+// libc++ reaches the heap through `__builtin_operator_new`, which clang is
+// permitted to ELIDE for a matched new/delete pair whose pointer never
+// escapes. So a reading of zero means "nothing was allocated", which is not
+// the same statement as "the path allocates nothing" if the buffer under
+// measurement is local and dead. Measure something whose result escapes --
+// every shipped caller does, since each one asserts on a published value.
+//
+// WHAT IS REPLACED, and therefore what the counter can see. Exactly three
+// functions: `operator new(size_t)`, `operator delete(void*)` and
+// `operator delete(void*, size_t)`. The array forms need no replacement --
+// the default `operator new[]` forwards to the scalar one, so a `new T[n]`
+// and every `std::vector` are counted. TWO THINGS ARE INVISIBLE, and a
+// reading of zero does not distinguish them from "nothing allocated":
+//
+//   * An OVER-ALIGNED allocation. A type whose alignment exceeds
+//     `__STDCPP_DEFAULT_NEW_ALIGNMENT__` (16 here) routes to
+//     `operator new(size_t, align_val_t)`, which is not replaced because a
+//     portable definition needs `_aligned_malloc` on MSVC and
+//     `std::aligned_alloc` elsewhere. `rta::dsp::RingBuffer` is such a type
+//     (`alignas(64)` members). No measured window reaches one today -- every
+//     caller arms the probe AFTER construction -- so this is a gap, not a
+//     present defect, and it is written down rather than guessed at.
+//   * An allocation the optimiser removed; see the caveat above.
 //
 // This header declares no allocation function of its own -- keep it that way.
 #pragma once

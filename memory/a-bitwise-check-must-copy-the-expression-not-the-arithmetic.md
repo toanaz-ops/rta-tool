@@ -27,12 +27,34 @@ windows-latest (MSVC)   72/818 B1 ... Passed
 macos-latest   (clang)  72/818 B1 ... ***Failed   test_window_energy.cpp:113
 ```
 
-**Apple clang defaults to `-ffp-contract=on`.** Within a single expression it may
-contract `a * b + c` into `fma(a, b, c)` — one rounding instead of two. Across
-statement boundaries it may not, because the named intermediate is an observable
-value. So the implementation got two roundings and the test got one, the results
-differed in the last bit, and a bitwise comparison is exactly the kind of check
-that notices.
+**Apple clang defaults to `-ffp-contract=on`, and on arm64 FMA is in the baseline
+ISA.** Within a single expression it may contract `a * b + c` into `fma(a, b, c)` —
+one rounding instead of two. Across statement boundaries it may not, because the
+named intermediate is an observable value. So the implementation got two roundings
+and the test got one, the results differed in the last bit, and a bitwise
+comparison is exactly the kind of check that notices.
+
+## Read this beside [[a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic]]
+
+The `ci/macos-fixes` lane (PR #22, `20f3c65`) hit the same contraction on the same
+day, in `app/src/measure/Levels.h`, and wrote the other half of the lesson. **Read
+both; they are complementary, not competing.**
+
+- **That file** is about the *claim*: `levelDbFs(0.5) == 0.0` was never an identity,
+  it was a coincidence of two roundings, so the bitwise assertion was retired for a
+  derived `1e-15` bound. Its rule: an exactness that exists only because a product
+  was rounded before an add is not exactness.
+- **This file** is about the *fixture*: where the invariant IS real, the test has to
+  reproduce the implementation's expression shape to see it.
+
+**And PR #22 set `-ffp-contract=off` repo-wide** (`CMakeLists.txt:91`), so
+contraction no longer happens on any of the three platforms. That does not retire
+either lesson, and it is important to understand why: the flag makes the
+*one-expression* form pass again, and it still must not be written that way,
+because — in that file's words — *an assertion whose truth is a compiler flag
+records the flag, not the arithmetic.* The structural form below is correct with the
+flag, without it, and on a toolchain that has not been thought about yet. Treat the
+flag as a belt beside the braces, never as the reason.
 
 ## The rule
 
@@ -70,6 +92,12 @@ worth internalising rather than re-deriving:
 | `exchangeDenominator(3) == 3.0/log10(2)` | division only | no product |
 | `10^(Q/q) == 2.0` | `pow` of a quotient | no product |
 | A6's merge equality | integer counts | no floating-point arithmetic at all |
+
+One of them, B2, is safe for a reason worth spelling out because it looks unsafe:
+its comparison is `10*log10(s/n)` against `10*log10(s/n) + referenceOffsetDb` where
+the offset is `0.0`. Even fully contracted, `fma(10, log10(x), 0.0)` rounds the
+product exactly once and equals the plain product, so the two agree bitwise either
+way. Change that fixture's offset to a non-zero value and it acquires this bug.
 
 ## What NOT to do about it
 
