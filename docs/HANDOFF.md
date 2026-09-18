@@ -12,6 +12,117 @@ Worktree `.claude\worktrees\agent-ac416b1321ee2ec32`, branched from `main` at
 level, so **every number below was measured on this machine and pasted**; a
 verifier is expected to re-measure from a clean rebuild.
 
+## Round 2 (2026-09-18, after PR #17's verifier) -- READ THIS FIRST
+
+The verifier reproduced 689/762/689, found mutations (a)-(d) red, B0b
+reachable and item-1's numbers exact, and judged the exact-form tolerance
+replacements stronger than the plan's. It also found **three defects**, all
+now fixed on this branch, and the branch is **merged up to `origin/main`
+`7b4773f`** (PR #16, L-API Wave 1).
+
+**The tallies below this section are the PRE-MERGE ones and are superseded.**
+After the merge, measured on the merged tree:
+
+| config | build dir | at `c53ca0e` | note |
+|---|---|---|---|
+| OFF | `build-spl` | **745/745** | includes L-API Wave 1's own 46 |
+| ON | `build-spl-on` | **818/818** | |
+| forced fallback | `build-spl-fb` | **745/745** | `-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON` |
+
+`0 warning C` in both. Guards: `core_has_no_framework_deps` 164,
+`core_makes_no_class_1_claim` 11, `no_std_atomic_over_shared_ptr` 401,
+`no_json_parser` 329 (1 test witness), `test_names_are_ascii` 133,
+`platform_types` 8, `measure_has_no_framework_deps` **81** -- main's 76 plus
+this lane's 5, which is the arithmetic that proves the GLOBS union kept both
+sides rather than silently shrinking guard coverage.
+
+### Defect 1 -- the metric cap, and the 18.8 dB lie above it
+
+`SplConfig::metrics` was an unbounded vector validated nowhere, while the
+publish path's per-metric window storage is a fixed array of 16. At 17
+metrics `fillMetricWindows` returned 0 (all-or-nothing), which
+`buildSplBlockView` read as "no per-metric windows supplied" and therefore as
+permission to use one shared window for every metric. **Reproduced exactly**
+before fixing, on my own fixture, matching the verifier's figures: the
+C-weighted metric published **`-28.1735 dB`** -- the A chain's number --
+where its own is **`-9.33053 dB`**. **18.843 dB wrong, under a C label.** That
+is `e35f121`'s defect re-opened one index above the array bound, and
+`AnalysisThread.h` even documented the truncation it did not implement.
+
+Closed in **three layers, each sufficient alone**, because the failure was
+silent and 18.8 dB wide:
+
+- **(a)** `SplConfig::kMaxMetrics` -- ONE constant, declared with the data it
+  bounds. `AnalysisThread::kMaxSplMetricWindows` is now `= SplConfig::
+  kMaxMetrics` rather than a second 16; **two independent numbers is how the
+  hole opened**. `SplSession::start` TRUNCATES the list to it.
+- **(b)** `fillMetricWindows` fills `min(out.size(), metrics.size())`, so an
+  undersized buffer gives a SHORT answer instead of a wrong one.
+- **(c)** `buildSplBlockView` no longer falls back per metric. Empty
+  `metricWindows` still means "single weighting, read the shared window";
+  non-empty-and-short now yields an EMPTY span for the uncovered rows, which
+  `combineBlocks` turns into an absent Leq. The reading **floors instead of
+  lying**.
+
+**Truncation, not refusal, and it is named.** Refusing the session would
+silence SPL logging outright on a misconfiguration and lose a show's
+evidence, which is worse than logging the first sixteen -- and that is only
+acceptable **because the count is reported**: `SplSession::refusedMetrics()`,
+carried through `SplPublishInput::refusedMetrics` to
+`SplBlockView::refusedMetrics`, so an operator who configured eighteen
+readouts and got sixteen can see the two. A caller that would rather refuse
+reads `SplConfig::refusedMetricCount()` first. **If the owner prefers
+refusal, that is a one-line flip and this is where it is recorded.**
+
+Mutations, each red then reverted: **(a)** drop the truncation -> red at both
+the session and the publish level; **(b)** restore all-or-nothing -> red;
+**(c)** restore the per-metric fallback -> red; **(a)+(c)** together -> the
+original defect, and the red line now reads
+`-28.17347908020019531 is within 0.0001 of -9.33052539825439453` with
+`published metric: LCeq_last = -28.1735 dB`. The mislabelling assertion was
+deliberately moved ABOVE the size assertion so a regression prints the dB
+error rather than `17 == 16`.
+
+### Defect 2 -- the publish path's absence branch was untested
+
+Publishing `SplBlockView{}` instead of `std::nullopt` inside
+`buildPublishedSnapshot` left 689/689 **green**. Every case in
+`test_spl_publish.cpp` called `buildSplBlockView` DIRECTLY, and nothing called
+`buildPublishedSnapshot` with an `spl` argument -- so the line deciding
+whether `Snapshot::spl` exists at all, and both branches that copy the base
+Snapshot to attach it, were reachable from no test. Three SECTIONs now go
+through the real function with a real `Analyser`: nothing logging -> no spl
+block **but a real snapshot otherwise**; a config with no completed block ->
+still none; logging -> `blockIndex 89`, `blockSamples 48000`,
+`droppedSamples 12000`, the `Gap` flag, the 85.0 dB metric and the surviving
+base-snapshot fields. Mutation **(e)**: red on both absence branches.
+
+### Defect 3 -- the record now carries what Wave 0 measured
+
+`docs/dsp/2026-09-16-spl-pro-l6a.md` gains a dated **§15** with five
+amendments, **every paragraph above left standing**, and inline pointers at
+§2's payload table and §3's "retire a block" paragraph so a reader acting on
+either is sent there rather than silently contradicted. A1 the block's new
+field and flag with measured offsets; A2 the membership rule
+(`CalibrationInvalid` alone excludes, `Overload` includes, with the bias
+argument and the statement that IEC 61672-1 cl. 3.28 and ISO 1996-2 cl. 10.3
+are **paywalled and unread** so no standard basis is claimed for the four
+inclusions); A3 the raw-hop overload finding cited to **Smaart LE v9.1 p. 78
+and engineering grounds, explicitly NOT IEC 61672-1**, whose clauses
+5.11/5.12/5.17/5.18 have not been read by anyone here; A4 the three falsified
+tolerances; A5 the metric cap.
+
+### Still open after round 2
+
+- **`UnderRange` is RESERVED, not implemented** -- the flag exists and is
+  counted, nothing sets it, cl. 5.12 is paywalled. Recorded in §15 A2.
+- **Q11** (which flags exclude) remains an owner question; the default is
+  shipped with five fixtures behind it.
+- Everything in the pre-merge "take to the orchestrator" list below still
+  stands except item 5, which is now fixed.
+
+---
+
 ## Baselines and tallies, per config
 
 | config | build dir | main (`00276cb`) | at HEAD | delta |
