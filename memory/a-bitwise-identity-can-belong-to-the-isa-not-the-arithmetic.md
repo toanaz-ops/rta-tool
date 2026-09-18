@@ -40,9 +40,27 @@ multiply-adds too.
 
 **ubuntu-latest and windows-latest agreed on all 198045 bytes.** Different
 libm (glibc vs UCRT), different compiler, same bits. That rules out libm as the
-source and leaves the one thing the two share and macOS does not: an ISA with
-no baseline FMA. One flag — `-ffp-contract=off`, non-MSVC, in the root
-`CMakeLists.txt` — therefore covers the whole observed divergence.
+source. One flag — `-ffp-contract=off`, non-MSVC, in the root `CMakeLists.txt`
+— therefore covers the whole observed divergence, and run 35311592135 confirmed
+it: macos-latest then reproduced all 198045 bytes.
+
+**But the two agreed for two different reasons, and only one of them was an
+ISA.** The first version of this note said "an ISA with no baseline FMA" for
+both, and a verifier corrected it:
+
+- **MSVC**: `/fp:precise` implies `fp_contract(off)` from Visual Studio 2022
+  onward **at any `/arch:`** — documented, so on the current toolchain it is a
+  guarantee, not a side effect of SSE2 having no FMA instruction. Pre-VS2022
+  MSVC *was* permitted to contract under `/fp:precise`, so an older compiler
+  could have produced the Apple numbers on Windows.
+- **GCC on x86-64**: here the ISA really is the whole of it. `-ffp-contract=fast`
+  is the default and the baseline simply has nothing to fuse into. Add
+  `-march=native` and ubuntu joins macOS.
+
+So of the two platforms that agreed, one was contractually safe and one was
+accidentally safe — and the same observation supported both conclusions. **When
+two configurations agree, "why" is per-configuration; a single explanation that
+covers both is a guess until each is checked separately.**
 
 Read the pattern before reaching for a tolerance. Two-of-three agreeing is
 evidence about *what they share*, and it is available from the log.

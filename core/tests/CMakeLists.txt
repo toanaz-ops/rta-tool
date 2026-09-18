@@ -72,6 +72,17 @@ add_executable(rta_core_tests
     # l6a.md §2, §3, §8) -- the SPL block, its sample-count clock, and the
     # energy sum every longer window is recomputed from.
     test_block.cpp
+    # Lane L6a Wave 1 -- the core pure math (record docs/dsp/
+    # 2026-09-16-spl-pro-l6a.md 5, 6, 7, 7a). All closed-form: no golden
+    # vector, no sound card, no socket.
+    test_level_histogram.cpp
+    test_level_histogram_span.cpp
+    test_window_energy.cpp
+    test_alarm.cpp
+    test_dose.cpp
+    test_dose_constants.cpp
+    test_dose_tables.cpp
+    test_dose_table12.cpp
 )
 
 # Golden vectors are committed, so the C++ suite needs neither Python nor

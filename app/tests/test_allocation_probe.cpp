@@ -12,11 +12,27 @@
 //   B0c  the ANCHOR: a direct `::operator new` call no optimiser may remove,
 //        so a reading of zero cannot be confused with an elided allocation.
 //   B0c  the probe RESETS on construction, so one TEST_CASE cannot read
-//        another's bytes -- one process, one program-global counter.
+//        another's bytes.
 //   B0d  the OVER-ALIGNED path, added when the C++17 aligned trio was
 //        replaced: an aligned anchor, a `std::vector` of an over-aligned
 //        element, and a heap-allocated `rta::dsp::RingBuffer`, the type that
 //        motivated it all.
+//
+// WHICH PROCESS RUNS WHICH CASE, stated correctly because an earlier revision
+// of this file stated it wrongly. `catch_discover_tests` registers ONE ctest
+// test per Catch2 case and re-invokes the binary once per case with that
+// case's name as a filter -- so under `ctest` every case gets a FRESH process
+// and the program-global byte counter cannot carry across cases at all. The
+// counter is shared only when the binary is run DIRECTLY, which is what a
+// developer does (`rtatool_analysis_tests --order decl`, or a tag filter
+// like `[allocationprobe]`), what every mutation check in this repo does, and
+// what the two `allocation_probe_one_process_order_*` ctest entries in
+// app/tests/CMakeLists.txt now do deliberately.
+//
+// That mattered: the pre-probe assertion below read the counter's RESIDUE
+// from whichever case ran before it, so `--order decl` in one process failed
+// `8192 == 0` while ctest stayed green. ctest was hiding an order dependence,
+// not proving its absence.
 #include <catch2/catch_test_macros.hpp>
 
 #include "AllocationProbe.h"
@@ -134,6 +150,12 @@ TEST_CASE("B0c the replaced operator new is the one this binary calls", "[alloca
     // No Catch2 macro runs inside the armed scope: an assertion's own
     // bookkeeping is an allocation this counter would charge to the
     // measurement, which is why `counted` is read before anything is checked.
+    // Zero the PROGRAM-GLOBAL counter before reading it. `AllocationProbe`'s
+    // constructor already does this, so the anchor does not need it -- it is
+    // here so the two cases in this file establish their baseline the same
+    // way and neither depends on which one Catch2 ran first.
+    rta::test::resetAllocationProbe();
+
     const std::size_t bytes = g_opaqueCount * sizeof(double);
     std::size_t counted = 0;
     void* raw = nullptr;
@@ -163,22 +185,30 @@ TEST_CASE("B0c AllocationProbe resets on construction so one case cannot read an
     const std::size_t small = count / 64;
     REQUIRE(small >= 1);
 
-    // Allocate OUTSIDE any probe: the counter must not be running at all.
+    // ZERO THE COUNTER FIRST, and this line is the fix for a real order
+    // dependence rather than defensive noise. The byte counter is
+    // program-global and `~AllocationProbe` deliberately does NOT clear it --
+    // `AllocationProbe.h` documents the reading as valid after the guard
+    // leaves scope, which is what lets a helper return a measurement it took
+    // inside one (`measureGroupPublishBytes` in test_average_group.cpp does
+    // exactly that). So in a ONE-PROCESS run the previous case's total is
+    // still sitting there, and the assertion below -- which runs before any
+    // probe is constructed in this case -- was reading it: `--order decl`
+    // failed `8192 == 0`, the anchor case's bytes.
     //
-    // The property is that the reading DOES NOT MOVE, not that it reads zero.
-    // Zero was never guaranteed: the counter is program-global and only a
-    // probe's constructor resets it, so what the previous TEST_CASE measured
-    // still stands -- the anchor leaves 8192. `catch_discover_tests` hides it
-    // by giving each case its own process; the exe run directly does not.
-    // Found 2026-09-18 while adding B0d; the zero was wrong before B0d too.
-    const std::size_t before = rta::test::allocationBytes();
+    // The claim being made is "counting is OFF outside a probe". Asserting it
+    // against a KNOWN-ZERO baseline is that claim; asserting it against
+    // whatever the last case left behind is a different, weaker one that also
+    // happens to be false.
+    rta::test::resetAllocationProbe();
+
+    // Allocate OUTSIDE any probe: the counter must not be running at all.
     {
         std::vector<double> noise(count * 4, 1.0);
         g_sink = noise.back();
         CHECK(noise.size() == count * 4);
     }
-    INFO("outside any probe: " << before << " -> " << rta::test::allocationBytes());
-    CHECK(rta::test::allocationBytes() == before);
+    CHECK(rta::test::allocationBytes() == 0);
 
     std::size_t first = 0;
     {
@@ -192,8 +222,10 @@ TEST_CASE("B0c AllocationProbe resets on construction so one case cannot read an
     CHECK(first >= count * sizeof(double));
 
     // A second probe sees its OWN allocations only: it resets on
-    // construction, so `first` cannot leak into it. Catch2 runs every file in
-    // this binary in one process, so this is not hypothetical.
+    // construction, so `first` cannot leak into it. Not hypothetical -- a
+    // direct one-process run puts three cases through this one counter, and
+    // dropping the constructor's reset turns the assertion below red (the
+    // mutation is in PR #22's body).
     std::size_t second = 0;
     {
         const rta::test::AllocationProbe probe;
@@ -249,10 +281,9 @@ TEST_CASE("B0d a std::vector of an over-aligned type is counted", "[allocationpr
     // `__libcpp_allocate`, libstdc++ through `__new_allocator`, the MSVC STL
     // through `_Allocate` with `_New_alignof` -- so this is the route a
     // heap-allocated RingBuffer travels. Count from `g_opaqueCount`, one
-    // element out through `g_sink`, for the elision reason documented at those
-    // two variables: a local vector written once and never read is what clang
-    // deletes at -O3, and a deleted subject makes the probe read zero of
-    // nothing.
+    // element out through `g_sink`: those two variables document the -O3
+    // elision this defends against, and a deleted subject makes the probe
+    // read zero of nothing.
     const std::size_t count = g_opaqueCount;
     std::size_t counted = 0;
     {
@@ -272,18 +303,17 @@ TEST_CASE("B0d a heap-allocated RingBuffer is counted", "[allocationprobe]") {
     // consumer indices on separate cache lines (`alignas(64)`), so every
     // heap-allocated one goes through the aligned new -- invisible to the
     // counter before the aligned trio was replaced, and so indistinguishable
-    // from "allocates nothing", the claim the probe exists to check.
+    // from "allocates nothing", the claim the probe exists to check. Capacity
+    // escapes through `g_sink` so the object cannot be elided.
     //
-    // Capacity escapes through `g_sink` so the object cannot be elided.
-    //
-    // The floor is the object PLUS its storage, and the sum is the point. A
-    // RingBuffer allocates TWICE: the object through the aligned new, and
-    // `storage_` through the ordinary unaligned one the counter could already
-    // see. So `counted >= sizeof(object)` proves NOTHING -- 192 bytes buried
-    // under 4096 of storage; under the mutation that removes the aligned trio
-    // that form still read 4135 and stayed GREEN. The storage term is what
-    // makes the remaining 192 the margin, and `bit_ceil` only rounds capacity
-    // UP, so it is a floor for any count, not just a power of two.
+    // The floor is the object PLUS its storage. A RingBuffer allocates TWICE:
+    // the object through the aligned new, and `storage_` through the ordinary
+    // unaligned one the counter could already see. So a floor of the object
+    // alone proves NOTHING -- 192 bytes buried under 4096 of storage; under
+    // the mutation that removes the aligned trio that form still read 4135 and
+    // stayed GREEN. The storage term is what makes the remaining 192 the
+    // margin, and `bit_ceil` only rounds capacity UP, so it is a floor for any
+    // count, not just a power of two.
     const std::size_t count = g_opaqueCount;
     const std::size_t floorBytes = sizeof(rta::dsp::RingBuffer<float>) + count * sizeof(float);
     std::size_t counted = 0;

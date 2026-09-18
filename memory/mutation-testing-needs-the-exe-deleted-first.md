@@ -126,3 +126,45 @@ Two habits close it, and they cost seconds:
    what you think, and a full rebuild then proves the binary matches the source.
 
 Write the mutation down, revert it, rebuild everything, hash-check, *then* claim.
+
+### A `cp`/`mv` backup restores the BYTES and regresses the MTIME, so "rebuild everything" does not help
+
+Measured 2026-09-18 during L6a Wave 1, and it sharpens the rule directly above rather
+than adding a new one. The section says to finish a mutation cycle with a full rebuild.
+That is not sufficient when the revert was done the obvious way:
+
+```
+cp core/src/meter/Leq.cpp core/src/meter/Leq.cpp.mutbak   # BEFORE the mutation
+...mutate, build, run...
+mv -f core/src/meter/Leq.cpp.mutbak core/src/meter/Leq.cpp # revert
+cmake --build build-spl1 --config Release --parallel        # "full" rebuild
+```
+
+`cp` stamps the backup when the backup is made, i.e. **before** the mutated object was
+compiled, and `mv` preserves that timestamp. So the restored `.cpp` is now OLDER than
+its own `.obj`, and an incremental build — however full its target list — considers it
+up to date and relinks the mutated object. Two files reverted this way produced
+
+```
+test cases:    369 |    365 passed |  4 failed
+```
+
+on a working tree where `git status --short` and `git diff --stat HEAD` were both
+**empty**. Four red tests, no source difference: precisely the "green for the wrong
+build" failure this file already names, arriving through the one door the stated fix
+leaves open, because the mtime went backwards instead of forwards.
+
+`touch` on every reverted file (or `--clean-first`) fixed it and the suite came back
+800 470 assertions green.
+
+So the closing step is **not** "rebuild everything" but:
+
+```
+mv -f <file>.mutbak <file>
+touch <file>                # or: cmake --build ... --clean-first
+git status --short           # must be empty
+cmake --build ...            # the run you intend to believe
+```
+
+and the `git status` check has to be understood for what it is: proof about the SOURCE
+only. It says nothing about the binary, and it is silent in exactly the case that hurts.

@@ -67,6 +67,47 @@ compiler optimisation rather than in fixture design: ask what wrong
 implementation the fixture would catch, and if the answer depends on `-O0`,
 the fixture is a demonstration.
 
+## The sequel, found by a verifier on the same PR
+
+The new file asserted, twice, that "Catch2 runs every file in this binary in one
+process". **It does not, under ctest.** `catch_discover_tests` registers one
+ctest test per Catch2 case and re-invokes the binary once per case with that
+case's name as a filter, so every case gets a fresh process and the
+program-global counter cannot carry between cases at all.
+
+Which made the file's first assertion order-dependent and green anyway:
+
+```
+$ rtatool_analysis_tests "[allocationprobe]" --order decl
+test_allocation_probe.cpp(139): FAILED:
+  CHECK( rta::test::allocationBytes() == 0 )
+with expansion:
+  8192 (0x2000) == 0
+```
+
+`~AllocationProbe` deliberately does **not** clear the byte counter — the
+header documents the reading as valid after the guard leaves scope, which is
+what lets `measureGroupPublishBytes` return a measurement it took inside one.
+So in a one-process run the previous case's total is still sitting in the
+global, and an assertion placed *before* any probe is constructed reads it.
+Pre-existing at `d071269` (residue `17735 == 0`), invisible to ctest by
+construction.
+
+Two lessons, and the second is the transferable one:
+
+1. The claim was "counting is OFF outside a probe". Asserting that against
+   **whatever the last case left behind** is a different and weaker claim. Zero
+   the global first; then the assertion is the claim.
+2. **A per-case process is a test isolation you did not ask for and cannot
+   see.** ctest with `catch_discover_tests` gives it for free, so any shared
+   mutable state between cases is untested rather than proven absent. The fix
+   was not only the reset but two extra ctest entries —
+   `allocation_probe_one_process_order_decl` and `..._lex` — that run the tag
+   the way a developer and every mutation check run it: one process, one
+   counter. Both orders, because they expose opposite residues and under `lex`
+   alone the bug stays hidden. Proven by mutation: removing the reset turns
+   `decl` red with `8192 == 0` and leaves `lex` green.
+
 ## Also written down while here
 
 `AllocationProbe.h` now lists exactly the functions it replaces. The C++17
@@ -83,15 +124,18 @@ element, and a heap-allocated `RingBuffer<float>` whose measurement read zero
 before this change. One thing is still invisible: an allocation the optimiser
 removed.
 
-Two things B0d turned up on the way. The RingBuffer case's first bound,
+One thing B0d turned up on the way. The RingBuffer case's first bound,
 `counted >= sizeof(RingBuffer<float>)`, was **not a gate**: a RingBuffer
 allocates twice and its 4096-byte storage vector goes through the ordinary
 unaligned new, so 192 bytes of aligned object sat buried under it and the case
 stayed green under the mutation that removes the aligned trio (4135 bytes
 counted). The shipped bound is derived — object **plus** storage, 4288 — and
-that turns the 192 into the margin. And B0c's `allocationBytes() == 0` before
-arming was never true in-process: only a probe's constructor resets the
-program-global counter, so the anchor's 8192 was still standing.
-`catch_discover_tests` hid it by giving every case its own process; running the
-exe directly with `[allocationprobe]` does not. It now asserts that the reading
-does not MOVE, which is the property it meant.
+that turns the 192 into the margin.
+
+B0c's order dependence was found independently the same day, and PR #25 is the
+fix that ships: `resetAllocationProbe()` at the start of each B0c case, plus the
+two one-process ctest entries — the sequel section above is that work. This
+branch's variant, asserting `allocationBytes() == before` rather than `== 0`,
+was dropped at the merge in its favour: zeroing first makes the assertion the
+claim, where asserting the reading does not MOVE only measures around whatever
+residue the previous case left.
