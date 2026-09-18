@@ -284,6 +284,93 @@ named, excluded erratum and the bound is not widened for it.
 
 ---
 
+> *Note added 2026-09-18 while merging `origin/main` into `l6a/wave0-spl-publish`: the PR this section calls open is **PR #16, and it MERGED at `7b4773f`**. The narrative below is left as L-API's own account of the wave; only this line is new.*
+
+# 2026-09-17 — **L-API station 4, WAVE 1 (tasks A–G) XONG — nhánh `remote-api/wave1-serialise`, PR mở, CHƯA merge. Wave 2 (tasks H–K: vendor cpp-httplib, `ApiServer`, wiring, guard server-library) là việc kế tiếp.**
+
+Bảy task, bảy commit, TDD từng cái (red dán trước green). **Toàn bộ OFF** —
+không có JUCE ở đâu trong wave này, nên cả bảy chạy trên ba OS của CI.
+
+| | |
+|---|---|
+| baseline OFF tại `a02fb29` | **649/649**, 0 `warning C`, guard quét **67** file |
+| OFF tại `73148a9` | **698/698** (+49), 0 `warning C`, guard quét **75** file |
+| OFF sau fix verifier PR #16 | **700/700**, 0 `warning C` (thêm `D6b` cap mặc định, `D9` cổng golden) |
+| baseline ON tại `a02fb29` | **717/717**, 0 `warning C` |
+| ON tại `73148a9` | **766/766** (+49), 0 `warning C` |
+| forced-fallback OFF | **698/698**, 0 `warning C` |
+| `git diff main --stat -- platform/ core/src core/include ui/` | **rỗng** |
+
+Commit: `ecbb83a` A (ApiJson) · `3f4f370` B (ApiPolicy/ApiSettings) ·
+`c1bd509` C (RateLimiter + ETag/304) · `97fb86b` D (serialiser cố định +
+golden) · `6c2901b` E (serialiser spatial + union) · `73148a9` F+G
+(nlohmann/json test-only + guard + readouts).
+
+**Bốn điều một phiên sau phải biết:**
+
+1. **F3 trong plan SAI và đã sửa — cần orchestrator xác nhận.** Plan bảo
+   assert `static_cast<float>(v)` round-trip về chính nó trên mọi numeric
+   leaf. **Assertion đó không thể đúng với code đúng** và đỏ ở 6/8 endpoint:
+   shortest-round-trip decimal của `25.118864f` là `"25.118864"`, đọc lại
+   thành double là 25.118864 chẵn, còn `(double)(float)25.118864` là
+   25.118864059448242 — lệch 6e-8 **do cấu tạo**, vì Task A phát ra decimal
+   ngắn nhất chứ không phải giá trị double chính xác của float. Plan còn sai
+   lần hai: `effectiveAverages` và `frequencyHz` là double thật trên
+   `Snapshot`, không phải float32. F3 ship ra assert cái ĐÚNG: finite khắp
+   nơi, và — với các key mà nguồn thật sự là `float` (liệt kê tên tường minh)
+   — narrow về float32, phát lại decimal ngắn nhất, phải trùng byte với token
+   trên dây. Chứng minh có răng bằng mutation: widen float32 → double trước
+   khi in (đúng lỗi của OSM, `server.cpp:386-390`) làm **F3 đỏ một mình**.
+2. **Guard `no_json_parser_in_shipped_code` ĐÃ DỰNG ở wave này**, sớm hơn
+   plan (plan xếp nó vào Task K). Lý do: README và `PROVENANCE.md` đều
+   **tuyên bố** guard đó enforce test-only-ness, và một tuyên bố trong doc mà
+   không có gì đứng sau là đúng thứ dự án này từ chối. Green: 320 file quét,
+   1 witness. **Bốn red đã dán**: offender ở `app/src`, ở `core/`, ở
+   `platform/`, và witness bị gỡ include. Red thứ tư kiêm luôn bằng chứng
+   witness chạy trên source đã strip comment — một dòng `//` không được tính.
+   **Guard `no_server_library_outside_api` thì CHƯA dựng** — nó cần
+   `ApiServer.cpp` tồn tại làm `ALLOW`, tức là wave 2.
+3. **`stringValue`, không phải `quoted`.** Tên `quoted` trong `ApiJson.h` va
+   với `std::quoted`: ADL tìm thấy nó khi đối số là `std::string` và thắng
+   overload resolution. Đo được, không đoán — build đầu đỏ với C2678 trên
+   `std::_Quote_out`. Đừng đổi lại.
+4. **Golden regenerate cần BIẾN MÔI TRƯỜNG `RTA_API_GOLDEN_WRITE=1`**, không
+   chỉ tag `[.]`:
+
+   ```
+   RTA_API_GOLDEN_WRITE=1 rtatool_analysis_tests.exe "regenerate the API golden"
+   ```
+
+   **Bản đầu của mục này SAI và verifier PR #16 bắt được.** Nó viết rằng `[.]`
+   khiến "không filter wildcard nào chạm tới". `[.]` chỉ ẩn case khỏi lần chạy
+   MẶC ĐỊNH, không ẩn khỏi lần chạy có filter. Đo trên đúng binary đó: thay
+   golden bằng sentinel 8 byte rồi chạy `rtatool_analysis_tests.exe "[api]"` →
+   nó **chạy regenerator, ghi lại golden thành 198045 byte**, và lần chạy thứ
+   hai y hệt thì **PASS**. Một format regression thật sẽ tự báo một lần rồi tự
+   xoá bằng chứng — regression lock tự mở khoá, tệ hơn không có lock, vì màu
+   xanh ở lần hai trông như bằng chứng.
+
+   Tag không sửa được lỗi này vì chỗ bị tấn công CHÍNH LÀ bộ khớp tag. Nên cổng
+   phải là thứ filter không cấp được: một biến môi trường. Case cũng đã bỏ tag
+   `[api]` (tag của chính lane là thứ chạm tới nó), và `SKIP` kèm thông điệp khi
+   cổng chưa mở. Test `D9` assert cổng đóng, và nó chạy DƯỚI đúng filter `[api]`
+   từng gây lỗi. Nó ghi ở chế độ `std::ios::binary` để golden giữ LF trên
+   Windows (D8 assert điều đó).
+
+**Cho wave 2, theo thứ tự plan: H (vendor cpp-httplib) → I (`ApiServer`) →
+J (composition root, ON) → K (guard server-library + chín red).** Ba bẫy đã
+biết, đều từ vòng verify PR #14 và chưa bị chạm tới ở wave này: dùng
+`bind_to_any_port` chứ không `bind_to_port` (cái sau trả `bool` và `Server`
+không có `port()`); `ApiServer.h` **phải** là pimpl với destructor out-of-line,
+nếu không một bản dựng ĐÚNG sẽ làm guard K đỏ; và WebSocket upgrade **là một
+`GET`** nên method allowlist không chặn — thứ chặn là không handler nào đăng ký.
+
+**GitHub Actions vẫn bị chặn ở mức tài khoản (billing)**, nên mọi con số ở
+trên là đo tại chỗ trên máy này (MSVC 14.51, Visual Studio 18 2026, Release),
+không phải từ CI. Verifier phải đo lại.
+
+---
+
 # 2026-09-17 — **L6a station 3 plan written: `docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md`; station 4 next.**
 
 Nhánh `l6a/station-3-plan` từ `main` (`af8a9d0`, nơi PR #12 đã merge), **docs-only,

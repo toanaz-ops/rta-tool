@@ -85,6 +85,14 @@ phần quyết được: cái nào thật sự chặn việc, và cái nào khô
 `docs/dsp/2026-09-16-remote-api.md`. **Không câu nào dưới đây chặn trạm 3 viết
 impl plan** — chúng quyết bề mặt v1, không quyết kiến trúc.*
 
+*Cập nhật 2026-09-17: **trạm 4 wave 1 (task A–G) đã ship** trên nhánh
+`remote-api/wave1-serialise` (chưa merge). `port = 4736` giờ là một hằng trong
+`app/src/api/ApiSettings.h`, và `ApiSettings{}` là đối tượng mọi test của wave
+này chạy qua. **Câu hỏi cố-định-hay-ephemeral vẫn mở và vẫn rẻ** — đổi sang
+ephemeral là sửa một hằng cộng một chỗ hẹn, không phải sửa schema đã ship. Nhưng
+nó nên được trả lời **trước wave 2**, vì `ApiServer` là chỗ `bind_to_any_port`
+so với `bind_to_port` được quyết.*
+
 - [ ] **Số port mặc định — chọn cố định hay ephemeral?** **Con số đã chốt:
   4736.** Câu hỏi còn lại chỉ là *hình dạng*: **port cố định** thì client dò
   được nhưng có thể đụng port máy khác, còn **ephemeral port ghi ra một file

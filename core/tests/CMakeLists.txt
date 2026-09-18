@@ -157,6 +157,19 @@ add_test(NAME no_std_atomic_over_shared_ptr
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_std_atomic_shared_ptr.cmake
 )
 
+# Lane L-API Task F / record docs/dsp/2026-09-16-remote-api.md sec.15 R16: the
+# vendored JSON parser is a TEST tool. Note `app/src`, NOT `app` -- app/tests
+# is outside the scan by construction, so this guard needs no ALLOW file at
+# all and its claim is the strong one: shipped code never includes a JSON
+# parser. external/ is at the repo root, outside every DIRS entry, which is
+# sec.15 R3's reason for putting it there.
+add_test(NAME no_json_parser_in_shipped_code
+    COMMAND ${CMAKE_COMMAND}
+            "-DDIRS=${CMAKE_SOURCE_DIR}/core;${CMAKE_SOURCE_DIR}/platform;${CMAKE_SOURCE_DIR}/ui;${CMAKE_SOURCE_DIR}/tools;${CMAKE_SOURCE_DIR}/app/src"
+            -DWITNESS_DIR=${CMAKE_SOURCE_DIR}/app/tests
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_json_parser.cmake
+)
+
 add_test(NAME test_names_are_ascii
     COMMAND ${CMAKE_COMMAND}
             "-DDIRS=${CMAKE_SOURCE_DIR}/core/tests;${CMAKE_SOURCE_DIR}/app/tests;${CMAKE_SOURCE_DIR}/app/tests_juce;${CMAKE_SOURCE_DIR}/platform/tests;${CMAKE_SOURCE_DIR}/platform/tests_juce;${CMAKE_SOURCE_DIR}/ui/tests"
