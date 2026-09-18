@@ -55,6 +55,7 @@ add_library(rta_core STATIC
     src/ir/IrSpectrum.cpp
     src/ir/Polarity.cpp
     src/ir/RelativePolarity.cpp
+    src/meter/Block.cpp
     src/meter/Detector.cpp
     src/meter/Leq.cpp
 )

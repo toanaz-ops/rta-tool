@@ -178,7 +178,20 @@ add_executable(rtatool_routing_live_tests
     # against the SAME real AnalysisThread/CaptureBus shape
     # test_routing_live.cpp uses, so it lives in this target too.
     test_delay_locate.cpp
+    # test_spl_drain.cpp: lane L6a task W0-D (research sec.C4, SPL-R1) -- the
+    # SPL feed above the kMaxTransferFunctions cap, the unrouted drain, and
+    # the Gap the paired drain cannot avoid. Against the same real
+    # AnalysisThread/CaptureBus shape test_routing_live.cpp uses.
+    test_spl_drain.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
+    # --- L6a Wave 0 task W0-D ---------------------------------------------
+    # The SPL feed AnalysisThread.cpp now calls: its own split-off half, the
+    # session that owns the meters, and the per-channel chain. D1b/D2/D3 in
+    # test_spl_drain.cpp exercise all three through a REAL AnalysisThread.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThreadSpl.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplSession.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplMeter.cpp
+    # --- end L6a Wave 0 ---------------------------------------------------
     # DelayLocator.cpp is NOT needed here: this target's tests exercise
     # AnalysisThread's own armLocateCapture/applyReferenceDelay directly,
     # not the JUCE-free DelayLocator state machine (that lives entirely in
@@ -196,7 +209,17 @@ add_executable(rtatool_routing_live_tests
 )
 
 target_include_directories(rtatool_routing_live_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    # L6a W0-D: test_spl_drain.cpp's structural scans share app/tests's one
+    # comment-stripping reader (CodeLines.h) rather than carrying a second
+    # copy -- PR #9's verifier is why that file exists at all.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../tests)
+
+# RTA_REPO_ROOT: test_spl_drain.cpp's D1 and D4 scans read the real source
+# files, so the "no second ring reader" and "platform/ untouched" rules run on
+# every build instead of living in a grep somebody has to remember to type.
+target_compile_definitions(rtatool_routing_live_tests PRIVATE
+    RTA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 target_link_libraries(rtatool_routing_live_tests PRIVATE
     rta::core

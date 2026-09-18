@@ -95,6 +95,16 @@ target_sources(rtatool PRIVATE
     # makeSyntheticSnapshot() instead (see its own target_sources below) and
     # must not link juce_audio_devices.
     src/measure/AnalysisThread.cpp
+    # --- L6a Wave 0 task W0-D ---------------------------------------------
+    # AnalysisThreadSpl.cpp: AnalysisThread.cpp's SPL half, split off at the
+    # 400-line hard cap -- same class, second translation unit, the shape
+    # AlignmentWizard.cpp/AlignmentWizardSignals.cpp already ships.
+    # SplSession.cpp / SplMeter.cpp: the session and the per-channel chain,
+    # both JUCE-free and both also compiled into rtatool_analysis_tests.
+    src/measure/AnalysisThreadSpl.cpp
+    src/measure/SplSession.cpp
+    src/measure/SplMeter.cpp
+    # --- end L6a Wave 0 ---------------------------------------------------
     # AnalysisPublish.cpp is AnalysisThread's own wiring of AverageGroup
     # into its publish path (task F2, record §6) -- JUCE-free, same
     # one-static-library reason as Analyser.cpp below, so it is named
@@ -242,6 +252,16 @@ target_sources(rtatool_snapshot PRIVATE
     src/view/ChannelRoleTable.cpp
     src/view/RoutingMatrix.cpp
     src/measure/AnalysisThread.cpp
+    # --- L6a Wave 0 task W0-D ---------------------------------------------
+    # AnalysisThreadSpl.cpp: AnalysisThread.cpp's SPL half, split off at the
+    # 400-line hard cap -- same class, second translation unit, the shape
+    # AlignmentWizard.cpp/AlignmentWizardSignals.cpp already ships.
+    # SplSession.cpp / SplMeter.cpp: the session and the per-channel chain,
+    # both JUCE-free and both also compiled into rtatool_analysis_tests.
+    src/measure/AnalysisThreadSpl.cpp
+    src/measure/SplSession.cpp
+    src/measure/SplMeter.cpp
+    # --- end L6a Wave 0 ---------------------------------------------------
     src/measure/AnalysisPublish.cpp
     src/measure/AverageGroup.cpp
     src/measure/SyntheticInput.cpp

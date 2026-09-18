@@ -15,7 +15,19 @@ cmake_minimum_required(VERSION 3.22)
 # Why this exists: docs/dsp/2026-08-27-weighting-and-meters.md records that
 # the analytic weighting curve is verified within 0.05 dB of IEC 61672-1
 # Table 3, and the digital filter's approximation error is published there --
-# but the full Table 2 tolerance envelope is paywalled and only four points
+# but the full Table 3 tolerance envelope is paywalled and only four points
+#
+# TABLE 3, NOT TABLE 2 (record §13 Q10, lane L6a task G2). Both the comment
+# below and the FATAL_ERROR text at the bottom of this file used to say
+# "Table 2". In IEC 61672-1:2013, Table 2 is "Acceptance limits for deviations
+# of directional response from the design goal"; the frequency-weighting
+# tolerances -- design goal and acceptance limits together -- are Table 3,
+# "Frequency weightings and acceptance limits". Verified from the IEC official
+# preview of Ed 2.0 2013-09 (complete Contents with every clause and table
+# title), read 2026-09-16; provenance in
+# docs/research/2026-09-16-l6a-spl-pro-station1-research.md §A1.8. This is not
+# cosmetic: a purchaser acting on the guard's own wording would buy against
+# the wrong reference.
 # (20 Hz / 1 kHz / 10 kHz / 16 kHz) are corroborated. Until that table is
 # sourced, no "Class 1" claim may appear in this track's files -- not as an
 # identifier, a comment, a doc string, or a test name -- because it would be
@@ -58,7 +70,7 @@ endif()
 if(violations)
     message(FATAL_ERROR
         "core/ must not claim IEC 61672-1 Class 1/Class 0 conformance -- the "
-        "full Table 2 tolerance envelope is not sourced yet. See "
+        "full Table 3 tolerance envelope is not sourced yet. See "
         "docs/dsp/2026-08-27-weighting-and-meters.md. Offending files:\n"
         "  ${violations}")
 endif()

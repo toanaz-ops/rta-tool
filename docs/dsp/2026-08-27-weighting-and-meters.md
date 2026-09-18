@@ -38,11 +38,17 @@ published in this table". Superiority here is provability, not an unverifiable
 conformance badge.
 
 **Open item (blocks a conformance CI test, nothing else):** the full IEC 61672-1
-Table 2 tolerance list is paywalled; only 20/1k/10k/16k Hz points are
+Table 3 tolerance list is paywalled; only 20/1k/10k/16k Hz points are
 corroborated. Buy or source the table before writing any test that says
 "Class 1".
 
-> **Amendment 2026-09-16 (lane L6a station 1): the table number above is wrong.**
+> **Amendment 2026-09-16 (lane L6a station 1): the table number above was wrong
+> and is CORRECTED IN PLACE as of L6a station 4 (task G2).** The paragraph above
+> said "Table 2" until then; the amendment below is kept because it carries the
+> provenance, and because a reader who remembers the old number needs to find
+> out why it changed rather than wonder whether the correction is the error.
+> `core/tests/check_no_conformance_claim.cmake` carried the same wrong number in
+> its comment and in its `FATAL_ERROR` text, and was fixed in the same commit.
 > In IEC 61672-1:2013, **Table 2 is "Acceptance limits for deviations of
 > directional response from the design goal"**. The frequency-weighting
 > tolerances — design goal *and* acceptance limits together — are in **Table 3,

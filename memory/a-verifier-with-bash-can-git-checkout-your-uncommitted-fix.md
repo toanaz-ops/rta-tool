@@ -33,3 +33,22 @@ never touch the live tree. Either way, after any agent reports done, re-run the
 build from the CURRENT tree yourself before trusting a "GREEN" — a pass reported
 against a file the agent just git-touched proves nothing. Related to rule 7
 (one session per shared resource) and [[reverify-what-the-change-could-have-changed]].
+
+---
+
+**It is not only a verifier (2026-09-18, lane L6a Wave 0).** The same loss
+happened with no second agent anywhere: one builder mutating its OWN code to
+show a test red, and reverting with
+`git checkout -- app/src/measure/AnalysisPublish.cpp`. HEAD was the previous
+task's commit, so that checkout reverted the mutation **and the uncommitted fix
+underneath it** in one step. The next ctest read 689 with a single failure — the
+fix's own new test, failing against code that no longer contained the fix. Cost:
+one rebuild, plus a minute spent reading a correct failure as a flaky test.
+
+So the rule is not "watch the verifier". It is: **a mutation probe assumes HEAD
+holds the thing you want back.** Commit the fix first and the assumption is
+true. Mutation testing is a git operation whether or not anyone thinks of it as
+one, and the single-agent case is easier to get wrong precisely because there is
+nobody else to suspect. Pairs with
+[[mutation-testing-needs-the-exe-deleted-first]], which is the other half of
+doing this correctly: commit, then delete the exe, then mutate.

@@ -2,16 +2,21 @@
 //
 // Task B3 (record §6): the spatial average is the published trace, plus one
 // soloed position; every other member publishes a summary and nothing else.
-// T12's counting allocator (the last TEST_CASE here) overrides global
-// operator new/delete for this whole test BINARY -- standard practice for
-// this kind of measurement, and inert (a relaxed atomic load) everywhere
-// outside the one window it is armed for. Station-4 fix pass (task F2):
+// T12's counting allocator lives in AllocationProbe.{h,cpp} now (L6a task
+// W0-B0): a replaceable global operator new is ONE DEFINITION PER PROGRAM,
+// and test_average_group.cpp, test_spl_meter.cpp and test_spl_history.cpp
+// all link into rtatool_analysis_tests -- copying the pair per file is a
+// duplicate-symbol link error, and not copying it leaves counters another
+// translation unit cannot reach. Station-4 fix pass (task F2):
 // T12 now measures publishAverageGroup() (measure/AnalysisPublish.h) --
 // the EXACT function AnalysisThread::publishIfDue() calls -- rather than
 // AverageGroup::publish() called directly, so the property is asserted on
 // the real wiring, not a stand-in for it.
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "AllocationProbe.h"
+#include "CodeLines.h"
 
 #include "measure/AnalysisPublish.h"
 #include "measure/AverageGroup.h"
@@ -21,6 +26,8 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <filesystem>
+#include <string>
 #include <complex>
 #include <cstdlib>
 #include <memory>
@@ -157,23 +164,6 @@ TEST_CASE("Publish carries the average, exactly one soloed position's full block
 // --- T12: publish churn is O(1) in N -----------------------------------
 
 namespace {
-std::atomic<bool> g_countingActive{false};
-std::atomic<std::size_t> g_bytesAllocated{0};
-}  // namespace
-
-void* operator new(std::size_t size) {
-    void* p = std::malloc(size);
-    if (p == nullptr) throw std::bad_alloc();
-    if (g_countingActive.load(std::memory_order_relaxed)) {
-        g_bytesAllocated.fetch_add(size, std::memory_order_relaxed);
-    }
-    return p;
-}
-
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-
-namespace {
 
 /// A fast, real dual-FFT Analyser config -- same shape fastConfig() above,
 /// repeated here rather than shared: this anonymous namespace and that one
@@ -248,13 +238,18 @@ std::size_t measureGroupPublishBytes(int memberCount) {
         positions.push_back(analysers[index]->transferSnapshotForAverage());
     }
 
-    g_bytesAllocated.store(0, std::memory_order_relaxed);
-    g_countingActive.store(true, std::memory_order_relaxed);
-    const auto result = group.publish(positions);
-    g_countingActive.store(false, std::memory_order_relaxed);
-
-    REQUIRE(result.positions.size() == static_cast<std::size_t>(memberCount));
-    return g_bytesAllocated.load(std::memory_order_relaxed);
+    // W0-B0 B0c: the counter is PROGRAM-global, so every measuring case
+    // arms it through a scope guard that resets on construction. Catch2 runs
+    // every file in this binary in one process; a measurement without one
+    // reads another TEST_CASE's allocations.
+    std::size_t bytes = 0;
+    {
+        const rta::test::AllocationProbe probe;
+        const auto result = group.publish(positions);
+        bytes = probe.bytes();
+        REQUIRE(result.positions.size() == static_cast<std::size_t>(memberCount));
+    }
+    return bytes;
 }
 
 /// INFORMATIONAL count: the FULL real path (`publishAverageGroup()`,
@@ -269,13 +264,14 @@ std::size_t measureRoutedPublishBytes(int memberCount) {
     std::vector<std::size_t> indices;
     const auto analysers = makeRoutedAnalysers(memberCount, group, lastTfIndices, indices);
 
-    g_bytesAllocated.store(0, std::memory_order_relaxed);
-    g_countingActive.store(true, std::memory_order_relaxed);
-    const auto result = rta::measure::publishAverageGroup(group, indices, analysers);
-    g_countingActive.store(false, std::memory_order_relaxed);
-
-    REQUIRE(result.positions.size() == static_cast<std::size_t>(memberCount));
-    return g_bytesAllocated.load(std::memory_order_relaxed);
+    std::size_t bytes = 0;
+    {
+        const rta::test::AllocationProbe probe;
+        const auto result = rta::measure::publishAverageGroup(group, indices, analysers);
+        bytes = probe.bytes();
+        REQUIRE(result.positions.size() == static_cast<std::size_t>(memberCount));
+    }
+    return bytes;
 }
 
 }  // namespace
@@ -328,4 +324,74 @@ TEST_CASE("Publish churn is O(1) in N: bytes(8) - bytes(4) is bounded (record se
     INFO("Full real path (publishAverageGroup, gather included) -- bytes(1) = "
          << fullBytes1 << ", bytes(4) = " << fullBytes4 << ", bytes(8) = " << fullBytes8);
     CHECK(fullBytes8 >= fullBytes4);
+}
+
+// --- W0-B0: the probe is one definition, and the linker is not the only
+// --- thing that says so ------------------------------------------------
+
+TEST_CASE("B0b the replaced global operator new is defined in exactly one file under app tests",
+          "[allocationprobe]") {
+    // A replaceable global allocation function is ONE DEFINITION PER PROGRAM.
+    // The link succeeding is half the proof; this is the other half, because
+    // a second definition added to a file not yet in this binary would link
+    // fine today and break the day that file is added to the source list.
+    const std::filesystem::path testsDir = std::filesystem::path(RTA_REPO_ROOT) / "app" / "tests";
+    REQUIRE(std::filesystem::is_directory(testsDir));
+
+    std::vector<std::string> definers;
+    for (const auto& entry : std::filesystem::directory_iterator(testsDir)) {
+        if (!entry.is_regular_file()) continue;
+        const auto ext = entry.path().extension().string();
+        if (ext != ".cpp" && ext != ".h" && ext != ".hpp") continue;
+        // codeText() lowercases, strips comments and empties literals, so a
+        // sentence in a doc comment about operator new cannot match here.
+        const std::string text = rta::test::codeText(entry.path());
+        if (text.find("void* operator new(") != std::string::npos
+            && text.find("void* operator new(std::size_t size);") == std::string::npos) {
+            definers.push_back(entry.path().filename().string());
+        }
+    }
+    for (const auto& f : definers) INFO("  defines operator new: " << f);
+    INFO("count = " << definers.size());
+    REQUIRE(definers.size() == 1);
+    CHECK(definers.front() == "AllocationProbe.cpp");
+}
+
+TEST_CASE("B0c AllocationProbe resets on construction so one case cannot read another's bytes",
+          "[allocationprobe]") {
+    // Allocate OUTSIDE any probe: the counter must not be running at all.
+    {
+        std::vector<double> noise(4096, 1.0);
+        CHECK(noise.size() == 4096);
+    }
+    CHECK(rta::test::allocationBytes() == 0);
+
+    std::size_t first = 0;
+    {
+        const rta::test::AllocationProbe probe;
+        std::vector<double> a(1024);
+        a[0] = 1.0;
+        first = probe.bytes();
+    }
+    CHECK(first >= 1024 * sizeof(double));
+
+    // A second probe sees its OWN allocations only: it resets on
+    // construction, so `first` cannot leak into it. Catch2 runs every file in
+    // this binary in one process, so this is not hypothetical.
+    std::size_t second = 0;
+    {
+        const rta::test::AllocationProbe probe;
+        std::vector<double> b(16);
+        b[0] = 1.0;
+        second = probe.bytes();
+    }
+    INFO("first = " << first << ", second = " << second);
+    CHECK(second < first);
+
+    // Counting is OFF once the guard leaves scope: the reading does not move.
+    {
+        std::vector<double> after(4096, 2.0);
+        CHECK(after.size() == 4096);
+    }
+    CHECK(rta::test::allocationBytes() == second);
 }

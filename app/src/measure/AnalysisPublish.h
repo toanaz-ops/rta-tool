@@ -13,14 +13,64 @@
 #include "measure/Analyser.h"
 #include "measure/AverageGroup.h"
 #include "measure/RoutingPlan.h"
+#include "measure/SplConfig.h"
+
+#include "rta/meter/Block.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
 namespace rta::measure {
+
+// --- Lane L6a Wave 0, task W0-C: the SPL half of a publish ---------------
+
+/// Everything the publish path needs to build a `SplBlockView`, and nothing
+/// more: no meter, no ring, no thread.
+///
+/// `config == nullptr` means NOTHING IS LOGGING, and that is the only way to
+/// say it -- a default-constructed config with an empty metric list would
+/// publish an SPL block carrying no readings, which reads as "the meter is
+/// running and measured nothing".
+struct SplPublishInput {
+    const SplConfig* config = nullptr;
+    double sampleRate = 0.0;
+    /// The most recently COMPLETED block. Absent before the first one closes,
+    /// which is also absence of the whole view: a block is what a reading is,
+    /// and part of one is not a smaller reading.
+    std::optional<rta::meter::Block> latestBlock;
+    /// The blocks every metric's window is recomputed over, oldest first.
+    /// Each metric reads the LAST `windowBlocks` of it; a window longer than
+    /// the buffer reports `leqBufferFill < 1` rather than a shorter answer
+    /// pretending to be a full one.
+    std::span<const rta::meter::Block> window;
+    /// PER-METRIC windows, parallel to `config->metrics`, when the metrics do
+    /// not all share one weighting.
+    ///
+    /// Required, not decorative: `SplMeter` runs ONE weighting per instance
+    /// (W0-B), so an A-weighted metric and a C-weighted one are averaged over
+    /// DIFFERENT chains. `SplSession::fillMetricWindows` fills this.
+    /// When it is empty every metric reads `window` above, which is the
+    /// single-weighting case; when its entry for a metric is empty, that
+    /// metric's value is ABSENT -- never another weighting's numbers.
+    std::span<const std::span<const rta::meter::Block>> metricWindows;
+    /// How many configured metrics the session could not serve -- carried
+    /// straight to `SplBlockView::refusedMetrics` so the drop is visible
+    /// rather than inferred from a short list (PR #17 verifier defect 1).
+    std::size_t refusedMetrics = 0;
+};
+
+/// Builds the published SPL view, or `std::nullopt` when nothing is logging.
+///
+/// Every metric's value is `rta::meter::combineBlocks` over that metric's own
+/// window -- a RECOMPUTE over current membership, never a running
+/// subtraction, because a block can be retired by a later calibration check
+/// (record §3). Pure: no clock, no I/O, no allocation beyond the two vectors
+/// it returns.
+[[nodiscard]] std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input);
 
 /// Keeps `group`'s membership in step with `plan.routes`. Record §6: "two
 /// systems measured against two references are two groups, not one
@@ -80,6 +130,38 @@ namespace rta::measure {
 /// own allocation is sized by bin count, never by position count) -- the
 /// design answer record §6 gives to the 2.21 MB-per-position-per-publish
 /// churn a naive N-Analyser publish would otherwise cost.
+// THE THREE PUBLISH COSTS, MEASURED. Moved here from
+// AnalysisThread::publishIfDue by lane L6a task W0-D: the numbers
+// describe THIS function and the two around it, not the drain loop, and
+// that file was at its 400-line cap. Nothing about them changed.
+//
+// Corrected AGAIN (task F2, record §6): app/tests/test_average_group.cpp
+// now measures AverageGroup::publish() alone, fed REAL TransferSnapshots
+// from REAL Analysers routed through a REAL RoutingPlan (not the
+// hand-built snapshots B3's own version of this comment cited) --
+// bytes(1) = 1359, bytes(4) = 1575, bytes(8) = 1863 in that test's own
+// small fixture (bin count is fixture-specific, so the ABSOLUTE figures
+// move with fftSize; what does not move is bytes(8) - bytes(4) = 288,
+// against a bound of 4*sizeof(PositionSummary) + 4096 = 4352, because
+// that delta comes from N additional small structs, never from bin
+// count. That property holds because AverageGroup::publish() reads its
+// TransferSnapshot span straight into rta::dsp::spatialAverage, which
+// allocates only 5 vectors sized by BIN COUNT, never by member count
+// (SpatialAverage.cpp) -- the design answer record §6 gives to the
+// 2.21 MB-per-position-per-publish churn a naive N-Analyser publish
+// (a FULL app-level TransferBlock+MtwBlock per position) would
+// otherwise cost.
+//
+// What that bound deliberately does NOT cover: publishAverageGroup()
+// below also gathers each member's OWN TransferSnapshot every publish
+// (transferSnapshotForAverage(), a raw core-level read -- a few KB at
+// realistic bin counts, nothing like the app-level duplication above) --
+// an unavoidable, N-scaling, but much smaller cost every design pays,
+// measured and reported (not bounded) in the same test: bytes(1) =
+// 3343, bytes(4) = 9511, bytes(8) = 17735 in that same small fixture.
+// buildPublishedSnapshot()'s own base-Snapshot copy is a THIRD, separate
+// cost -- FIXED, sized by bins, the same every
+// publish regardless of N -- not the quantity T12 bounds.
 [[nodiscard]] AverageGroupPublish publishAverageGroup(
     const AverageGroup& group, std::span<const std::size_t> memberAnalyserIndices,
     const std::vector<std::unique_ptr<Analyser>>& analysers);
@@ -110,6 +192,7 @@ namespace rta::measure {
                                                  AverageGroup& group,
                                                  std::vector<int>& lastTfIndices,
                                                  const RoutingPlan& plan,
-                                                 std::uint64_t droppedSamples);
+                                                 std::uint64_t droppedSamples,
+                                                 const SplPublishInput* spl = nullptr);
 
 }  // namespace rta::measure
