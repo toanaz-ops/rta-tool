@@ -79,10 +79,59 @@ TEST_CASE("E1 the two conventions differ by kFullScaleSineOffsetDb and nothing e
     const double meanSquare = 0.5;
 
     // Through the APP's path: sine-referenced dBFS. Levels.h:44 adds
-    // kFullScaleSineOffsetDb so a full-scale SINE reads exactly 0.0 dBFS --
-    // the reference this whole app reads levels against, matching every
-    // analyser on a rack.
-    CHECK(rta::measure::levelDbFs(meanSquare) == 0.0);  // EXACTLY, bitwise
+    // kFullScaleSineOffsetDb so a full-scale SINE reads 0.0 dBFS -- the
+    // reference this whole app reads levels against, matching every analyser
+    // on a rack.
+    //
+    // NOT ASSERTED BITWISE, and the reason is a measured CI failure rather
+    // than a preference. An earlier revision of this line read
+    // `CHECK(levelDbFs(meanSquare) == 0.0);  // EXACTLY, bitwise`, and that
+    // equality is a coincidence of TWO ROUNDINGS, not an identity:
+    // `log10(0.5)` is irrational, and it is rounding the product
+    // `10 * log10(0.5)` to a double BEFORE the add that lands it on exactly
+    // -kFullScaleSineOffsetDb. Fuse the multiply and the add into one `fma`
+    // -- which Apple clang does on arm64, where FMA is in the baseline ISA --
+    // and the product keeps its full width, so the sum reads 2^-53 =
+    // 1.1102230246251565e-16 dB. Run 35306075307, macos-latest: this case and
+    // E3 went red on exactly that, on arithmetic nobody had changed.
+    // CMakeLists.txt now compiles with `-ffp-contract=off`, so the bitwise
+    // form would pass again -- and it still must not be written that way,
+    // because an assertion whose truth is a compiler flag records the flag,
+    // not the arithmetic. PR #5 retired a `std::isinf` claim at Nyquist for
+    // the same reason: "the exactness given up there was never real".
+    //
+    // THE BOUND IS DERIVED, not read off the failing run:
+    //   * log10(0.5) = -0.30102999566398120 lies in [0.25, 0.5), so its ulp
+    //     is 2^-54; libm is accurate to <= 1 ulp there, and the factor of 10
+    //     carries that to 10 * 2^-54 = 5.6e-16 dB.
+    //   * |10 * log10(0.5)| = 3.0103 lies in [2, 4), so its ulp is 2^-51 and
+    //     rounding the product -- or NOT rounding it, under contraction --
+    //     moves the result by at most 2^-52 = 2.2e-16 dB.
+    //   * the final add is a subtraction of two nearly equal quantities, so
+    //     it is exact (Sterbenz) and contributes nothing.
+    // Total <= 7.8e-16 dB. 1e-15 is the tolerance the three sibling
+    // assertions in this very case already use, it is 9x the largest residual
+    // any of the three CI platforms has produced, and it is 1e-14 times the
+    // 0.1 dB the readout can show (CLAUDE.md, "Reading out numbers").
+    INFO("levelDbFs(0.5) residual from 0.0 = " << rta::measure::levelDbFs(meanSquare));
+    CHECK_THAT(rta::measure::levelDbFs(meanSquare), WithinAbs(0.0, 1e-15));
+
+    // The BITWISE half of the same claim, moved to the fixture where it is
+    // exact BY ARITHMETIC rather than by luck. log10(1.0) is exactly +0.0, so
+    // `10 * 0.0 + k` and `fma(10.0, 0.0, k)` are both exactly k: no rounding
+    // happens anywhere, on any platform, under any contraction setting.
+    //
+    // WHAT IT DOES AND DOES NOT CATCH, measured by mutation rather than
+    // assumed: editing kFullScaleSineOffsetDb leaves it GREEN, because both
+    // sides move together -- the constant's VALUE is pinned against a literal
+    // by the last assertion in this case, which is the one that went red when
+    // the constant was moved to 3.0102999566398000 (residual -1.2e-14 dB).
+    // What this pair catches is `levelDbFs` losing the offset, applying it
+    // twice, or clamping a level it should have passed through. The log10
+    // line is here so a libm returning a non-zero log10(1.0) would say which
+    // of the two failed.
+    CHECK(std::log10(1.0) == 0.0);
+    CHECK(rta::measure::levelDbFs(1.0) == kFullScaleSineOffsetDb);
 
     // Through the METER's path with no offset: mean-square referenced, IEC
     // 61672-1 cl. 3.9's own definition, what rta::meter::Leq already
@@ -160,8 +209,12 @@ TEST_CASE("E3 with a calibration offset the metric reads 94 dB and the band stil
     CHECK_THAT(published, WithinAbs(94.0, 1e-6));  // float-derived, see E2
 
     // The band is untouched: nothing in this lane moved kFullScaleSineOffsetDb
-    // and nothing may.
-    CHECK(rta::measure::levelDbFs(0.5) == 0.0);
+    // and nothing may. Within the derived bound rather than bitwise, and
+    // bitwise on the fixture where log10 is exact -- E1 carries the
+    // derivation and the FMA-contraction measurement behind both forms.
+    INFO("levelDbFs(0.5) residual from 0.0 = " << rta::measure::levelDbFs(0.5));
+    CHECK_THAT(rta::measure::levelDbFs(0.5), WithinAbs(0.0, 1e-15));
+    CHECK(rta::measure::levelDbFs(1.0) == kFullScaleSineOffsetDb);
 }
 
 // --- E4: the label carries the convention, and no fourth formatter -------
