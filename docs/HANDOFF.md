@@ -5,6 +5,96 @@
 
 ---
 
+# 2026-09-18 — **CI: bốn test đỏ RIÊNG trên macos-latest đã xong — nhánh `ci/macos-fixes`, PR #22 mở, CHƯA merge.**
+
+GitHub Actions chạy lại sau khi hết billing block. Lần chạy ba-OS đầu tiên
+([35306075307](https://github.com/toanaz-ops/rta-tool/actions/runs/35306075307),
+`main` tại `d071269`): ubuntu và windows **774/774**, macos-latest **4 đỏ**.
+Không commit nào gây ra chúng — đó là hai platform property chưa từng bị chạm.
+
+| test đỏ | root cause, một câu |
+|---|---|
+| `B0c AllocationProbe resets on construction…` (`0 >= 8192`) | libc++ vào heap qua `__builtin_operator_new`, mà clang được phép **elide** cặp new/delete có pointer không escape — ở `-O3` cái `std::vector<double>(1024)` local bị xoá hẳn, probe đếm đúng zero byte của một allocation chưa từng xảy ra |
+| `D7 REGRESSION LOCK: the golden /snapshot body has not drifted` | Apple clang trên arm64 **contract** `a*b + c` thành một `fma` (FMA nằm trong baseline ISA), làm lệch bit cuối của `std::norm` trên `complex<float>`, các butterfly FFT và `acc += alpha * (psd - acc)` trong `SpectrumEngine` → 35 trong 2049 giá trị `spectrum.spectrumDb` lệch đúng ±1 float32 ULP |
+| `E1 the two conventions differ by kFullScaleSineOffsetDb…` | cùng contraction đó: `levelDbFs(0.5) == 0.0` bitwise là **trùng hợp của HAI lần rounding**, không phải identity — chính việc round `10*log10(0.5)` về double TRƯỚC phép cộng mới đưa nó về đúng `-kFullScaleSineOffsetDb`; một `fma` giữ product ở full width nên tổng đọc `2^-53` = 1.11e-16 dB |
+| `E3 with a calibration offset…` | cùng assertion, cùng giá trị, ở case kia |
+
+**Cách khoanh vùng mà không có máy Mac:** ubuntu-latest và windows-latest khớp
+**cả 198045 byte** của golden. Hai compiler khác nhau, hai libm khác nhau, bit
+giống hệt. Baseline ISA của x86-64 không có FMA nên không bên nào contract —
+điều đó loại libm khỏi danh sách nghi vấn và chỉ còn đúng một thứ macOS không
+chia sẻ. **Hai trên ba khớp nhau là bằng chứng về thứ chúng chia sẻ**, và nó đã
+nằm sẵn trong log.
+
+## Đã làm, ba sửa cho hai defect
+
+1. **`-ffp-contract=off`** (non-MSVC, root `CMakeLists.txt`, comment dẫn số run).
+   KHÔNG phải regime numeric mới: MSVC dưới `/fp:precise` trên baseline SSE2 chưa
+   bao giờ contract, nên mọi golden vector và mọi bitwise identity trong repo này
+   vốn đã được viết và verify dưới no-contraction. Flag chỉ nói ra điều đó thay
+   vì dựa vào việc một instruction không tồn tại. Giá phải trả là throughput
+   trong inner loop, không phải latency — audio callback chỉ copy vào ring
+   buffer. D7 chính là canary nếu flag này bị mất.
+2. **`app/tests/test_allocation_probe.cpp`** (mới): B0b + B0c tách khỏi
+   `test_average_group.cpp` (đang 397/400 dòng). B0c lấy element count từ một
+   `volatile` và cho một element escape qua `volatile` sink, nên subject của
+   phép đo sống sót qua optimiser. **Thêm một anchor case** gọi trực tiếp
+   `::operator new(n)` — không phải new-expression, không phải builtin, không
+   optimiser nào được xoá — vì suite cũ không phân biệt được "probe bị mù" với
+   "allocation bị xoá": mọi case khác assert count bằng zero hoặc một bound, và
+   cả hai loại đều pass trong cả hai trường hợp.
+3. **`app/tests/test_spl_seam.cpp`**: bitwise claim chuyển sang `p = 1.0`, nơi
+   `log10` đúng bằng `+0.0` nên không có lần rounding nào, và `10*0.0 + k` lẫn
+   `fma(10.0, 0.0, k)` đều đúng bằng `k` trên mọi platform. Ở `p = 0.5` dùng
+   bound **được dẫn ra** trong comment (1 ulp libm error của `log10(0.5)` nhân
+   10, cộng tối đa `2^-52` cho việc round product, phép cộng cuối exact theo
+   Sterbenz: 7.8e-16 dB) và INFO in residual. Sửa cả assertion LẪN flag là cố ý:
+   một assertion mà tính đúng của nó là một compiler flag thì nó ghi lại flag,
+   không ghi lại arithmetic (PR #5 bỏ `std::isinf` ở Nyquist vì đúng lý do này).
+
+Không test nào bị skip, tag out hay quarantine.
+
+## Số đo, tại ``9a48e08``
+
+| | |
+|---|---|
+| OFF `cmake -S . -B build-mac -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=OFF` | **775/775**, 0 `warning C` |
+| ON `-DRTA_BUILD_APP=ON -DRTA_JUCE_PATH=...PROJECT005.../external/JUCE` | **849/849**, 0 `warning C` |
+| CI, ba OS ở head này | **775/775 cả ba** — run [35311058336](https://github.com/toanaz-ops/rta-tool/actions/runs/35311058336): ubuntu 3m23s, macos 2m4s, windows 5m49s. Build warning ubuntu 16 / macos 3 / windows 0, **giống hệt** baseline run 35306075307 → nhánh này không thêm warning nào |
+
+Baseline tại `d071269` là 774 OFF / 848 ON. `+1` là anchor case mới; không xoá gì.
+
+## Mutation, exe xoá trước và TU force mỗi lần (build-mac, MSVC 14.51, Release)
+
+| mutation | kết quả |
+|---|---|
+| bỏ `resetAllocationProbe()` khỏi constructor | **ĐỎ** — `second < first` → `8359 < 8231`; anchor `counted == bytes` → `16551 == 8192` |
+| `setAllocationCounting` store `false` vô điều kiện | **ĐỎ** — 4 assertion, có `0 == 8192` và `0 >= 8192`, tái hiện đúng triệu chứng macOS |
+| `kFullScaleSineOffsetDb` → `3.0102999566398000` (header, rebuild dependents) | **ĐỎ** tại `test_spl_seam.cpp:117`, `:143`, `:149`, `:216`, residual −1.19904e-14 dB |
+| restore + rebuild sạch | **XANH** 775/775, working tree khớp commit |
+
+Mutation thứ ba để **XANH** `levelDbFs(1.0) == kFullScaleSineOffsetDb`, vì hai
+vế dịch cùng nhau — comment giờ nói đúng điều đó thay vì nhận là nó bắt được
+việc sửa constant. Giá trị của constant được pin bằng literal ở `:149`.
+
+## Còn chờ người quyết
+
+- **`-ffp-contract=off` là policy lâu dài của project, hay là biện pháp giữ tới
+  khi D7 lock đổi hình?** PR lấy default giữ property mạnh, nói rõ giá, và để
+  đường quay lại đúng một dòng.
+- **Gap over-aligned của probe: ghi lại, chưa đóng.**
+  `operator new(size_t, align_val_t)` vẫn chưa được replace — định nghĩa portable
+  cần `_aligned_malloc` trên MSVC và `std::aligned_alloc` ở nơi khác.
+  `rta::dsp::RingBuffer` là type như vậy (`alignas(64)`). Không measured window
+  nào chạm tới, vì mọi caller arm probe SAU construction.
+- **PR #22 chưa merge.** `docs/GIT-WORKFLOW.md`: "merge" là lời của owner trong
+  cuộc hội thoại hiện tại.
+
+Memory mới: `memory/a-bitwise-identity-can-belong-to-the-isa-not-the-arithmetic.md`,
+`memory/an-allocation-the-optimiser-removed-reads-as-zero-bytes.md`.
+
+---
+
 # 2026-09-18 — **L-API station 4, WAVE 2 (tasks H–K) XONG — nhánh `remote-api/wave2-server`, PR mở, CHƯA merge. Lane L-API: BUILT.**
 
 Bốn task, năm commit (Task I tách thêm một commit test đóng một lỗ plan không nêu).
