@@ -12,8 +12,23 @@
 //   B0c  the ANCHOR: a direct `::operator new` call no optimiser may remove,
 //        so a reading of zero cannot be confused with an elided allocation.
 //   B0c  the probe RESETS on construction, so one TEST_CASE cannot read
-//        another's bytes -- Catch2 runs every file in this binary in one
-//        process, and the counter is program-global.
+//        another's bytes.
+//
+// WHICH PROCESS RUNS WHICH CASE, stated correctly because an earlier revision
+// of this file stated it wrongly. `catch_discover_tests` registers ONE ctest
+// test per Catch2 case and re-invokes the binary once per case with that
+// case's name as a filter -- so under `ctest` every case gets a FRESH process
+// and the program-global byte counter cannot carry across cases at all. The
+// counter is shared only when the binary is run DIRECTLY, which is what a
+// developer does (`rtatool_analysis_tests --order decl`, or a tag filter
+// like `[allocationprobe]`), what every mutation check in this repo does, and
+// what the two `allocation_probe_one_process_order_*` ctest entries in
+// app/tests/CMakeLists.txt now do deliberately.
+//
+// That mattered: the pre-probe assertion below read the counter's RESIDUE
+// from whichever case ran before it, so `--order decl` in one process failed
+// `8192 == 0` while ctest stayed green. ctest was hiding an order dependence,
+// not proving its absence.
 #include <catch2/catch_test_macros.hpp>
 
 #include "AllocationProbe.h"
@@ -101,6 +116,12 @@ TEST_CASE("B0c the replaced operator new is the one this binary calls", "[alloca
     // No Catch2 macro runs inside the armed scope: an assertion's own
     // bookkeeping is an allocation this counter would charge to the
     // measurement, which is why `counted` is read before anything is checked.
+    // Zero the PROGRAM-GLOBAL counter before reading it. `AllocationProbe`'s
+    // constructor already does this, so the anchor does not need it -- it is
+    // here so the two cases in this file establish their baseline the same
+    // way and neither depends on which one Catch2 ran first.
+    rta::test::resetAllocationProbe();
+
     const std::size_t bytes = g_opaqueCount * sizeof(double);
     std::size_t counted = 0;
     void* raw = nullptr;
@@ -130,6 +151,23 @@ TEST_CASE("B0c AllocationProbe resets on construction so one case cannot read an
     const std::size_t small = count / 64;
     REQUIRE(small >= 1);
 
+    // ZERO THE COUNTER FIRST, and this line is the fix for a real order
+    // dependence rather than defensive noise. The byte counter is
+    // program-global and `~AllocationProbe` deliberately does NOT clear it --
+    // `AllocationProbe.h` documents the reading as valid after the guard
+    // leaves scope, which is what lets a helper return a measurement it took
+    // inside one (`measureGroupPublishBytes` in test_average_group.cpp does
+    // exactly that). So in a ONE-PROCESS run the previous case's total is
+    // still sitting there, and the assertion below -- which runs before any
+    // probe is constructed in this case -- was reading it: `--order decl`
+    // failed `8192 == 0`, the anchor case's bytes.
+    //
+    // The claim being made is "counting is OFF outside a probe". Asserting it
+    // against a KNOWN-ZERO baseline is that claim; asserting it against
+    // whatever the last case left behind is a different, weaker one that also
+    // happens to be false.
+    rta::test::resetAllocationProbe();
+
     // Allocate OUTSIDE any probe: the counter must not be running at all.
     {
         std::vector<double> noise(count * 4, 1.0);
@@ -150,8 +188,10 @@ TEST_CASE("B0c AllocationProbe resets on construction so one case cannot read an
     CHECK(first >= count * sizeof(double));
 
     // A second probe sees its OWN allocations only: it resets on
-    // construction, so `first` cannot leak into it. Catch2 runs every file in
-    // this binary in one process, so this is not hypothetical.
+    // construction, so `first` cannot leak into it. Not hypothetical -- a
+    // direct one-process run puts three cases through this one counter, and
+    // dropping the constructor's reset turns the assertion below red (the
+    // mutation is in PR #22's body).
     std::size_t second = 0;
     {
         const rta::test::AllocationProbe probe;

@@ -377,6 +377,38 @@ một `BUNDLE_ID` tường minh. Agent làm được; chờ lúc rảnh, đừng
   `platform/tests` nằm ngoài mọi framework guard — ghi ở
   `memory/core-must-not-include-frameworks.md`, hôm nay JUCE-free.
 
+## Tech-debt từ CI macOS fix (2026-09-18, PR #22, nhánh `ci/macos-fixes`)
+
+Hai lỗ được ĐẶT TÊN trong PR #22 thay vì đóng, vì đóng chúng nằm ngoài việc
+"làm bốn test đỏ macOS xanh lại". Cả hai đều là loại mục rữa im lặng.
+
+- [ ] **`-ffp-contract=off` gần như KHÔNG CÓ GÌ gác.** Flag ở
+  `CMakeLists.txt` (block "The floating-point contract") là thứ giữ cho ba OS
+  ra **cùng bit**. Thứ duy nhất phát hiện nếu nó bị xoá là **D7 regression
+  lock** (`app/tests/test_api_serialise.cpp`), và D7 chỉ đỏ ở nơi contraction
+  thật sự xảy ra — tức **chỉ macos-latest trên CI**. Hệ quả: người phát triển
+  trên Windows xoá flag và **không thấy gì**; local ON/OFF đều xanh; ubuntu
+  xanh (baseline x86-64 không có FMA để fuse). Flag không được gác trên 2/3
+  platform và trên mọi máy local.
+  **Cần một câu của chủ nhân**, vì cả hai lối đều có giá: (a) một ctest
+  đọc `CMAKE_CXX_FLAGS`/`COMPILE_OPTIONS` và đỏ nếu thiếu flag — rẻ, nhưng là
+  guard kiểm *chuỗi ký tự* chứ không kiểm *hành vi*, đúng loại thứ
+  `memory/a-prescribed-mutation-is-not-proof-the-check-catches-it.md` cảnh báo;
+  (b) một test tính `10.0*std::log10(0.5) + 3.0102999566398120` và đòi bitwise
+  0.0 — kiểm hành vi thật, nhưng **chỉ đỏ trên arm64**, nên vẫn là guard một
+  platform, chỉ là rẻ hơn D7. Không tự chọn.
+
+- [ ] **JUCE chưa bao giờ biên dịch dưới `-ffp-contract=off`.** Flag là
+  `add_compile_options` ở root nên áp cho MỌI target, JUCE gồm cả nguồn C của
+  nó. Nhưng: CI chỉ chạy `RTA_BUILD_APP=OFF`, và cấu hình ON duy nhất được đo
+  là trên **MSVC**, nơi `if(NOT MSVC)` khiến flag không tồn tại. Nghĩa là
+  **không máy nào từng biên dịch JUCE với flag này** — clang/gcc + JUCE + ON là
+  tổ hợp zero lần chạy. Rủi ro thấp (`-ffp-contract` là flag chuẩn, JUCE không
+  đòi FMA) nhưng **chưa đo**, và CLAUDE.md không cho gọi cái chưa đo là "ổn".
+  Rẻ nhất để đóng: một job CI `RTA_BUILD_APP=ON` trên ubuntu, hoặc một lần
+  build ON tay trên macOS/Linux. Ghi ở đây vì nó là **quyết định về phạm vi
+  CI**, không phải một dòng code.
+
 ## Từ lane L7-ALIGN (2026-09-16, record `docs/dsp/2026-09-06-l7-alignment-wizard.md`)
 
 *Lane đã BUILT và merge (PR #8 `02bd02a`, PR #9 `6d9a53d`); report
