@@ -186,6 +186,7 @@ std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
     view.maxSlowDb = static_cast<float>(latest.maxSlowDb + config.referenceOffsetDb);
     view.peakCDb = static_cast<float>(latest.peakDb + config.referenceOffsetDb);
 
+    view.refusedMetrics = static_cast<std::uint32_t>(input.refusedMetrics);
     view.metrics.reserve(config.metrics.size());
     for (std::size_t i = 0; i < config.metrics.size(); ++i) {
         const SplMetricSpec& spec = config.metrics[i];
@@ -194,13 +195,21 @@ std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
         // THIS METRIC'S OWN window. `SplMeter` runs one weighting per instance
         // (W0-B), so an A-weighted metric and a C-weighted one are averaged
         // over different chains and `metricWindows` is what says which.
-        // Falling back to the shared `window` when none was supplied is the
-        // single-weighting case, not a guess: a caller with several weightings
-        // that failed to fill `metricWindows` would get one weighting's
-        // numbers for all of them, which is why `SplSession::fillMetricWindows`
-        // fills it unconditionally.
+        //
+        // NO PER-METRIC FALLBACK once `metricWindows` is non-empty (PR #17
+        // verifier defect 1). An EMPTY `metricWindows` means the caller
+        // supplied none at all -- the single-weighting case W0-C's own
+        // fixtures use -- and then every metric reads the shared `window`. But
+        // a caller that supplied SOME and ran out has said nothing about the
+        // rest, and reading `window` for those was how a C-weighted metric
+        // came to publish A-weighted numbers under a C label, 18.8 dB wrong.
+        // A row nobody filled is an EMPTY span, which `combineBlocks` turns
+        // into an absent Leq: the reading floors instead of lying.
+        const bool perMetric = !input.metricWindows.empty();
         const auto source =
-            (i < input.metricWindows.size()) ? input.metricWindows[i] : input.window;
+            perMetric ? (i < input.metricWindows.size() ? input.metricWindows[i]
+                                                        : std::span<const rta::meter::Block>{})
+                      : input.window;
 
         // The LAST windowBlocks of the buffer. A window longer than the
         // buffer takes the whole buffer and says so through bufferFill --

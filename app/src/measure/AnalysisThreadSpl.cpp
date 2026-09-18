@@ -116,6 +116,7 @@ void AnalysisThread::fillSplPublishInput(
     input.sampleRate = splSession_.sampleRate();
     input.latestBlock = latest;
     input.window = splSession_.window(channel);
+    input.refusedMetrics = splSession_.refusedMetrics();
     // PER-METRIC windows: metric i's weighting decides which chain it is
     // averaged over, and without this an A-weighted and a C-weighted metric
     // would read the same numbers.

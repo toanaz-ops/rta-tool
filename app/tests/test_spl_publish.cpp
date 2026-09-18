@@ -9,7 +9,11 @@
 #include "CodeLines.h"
 
 #include "measure/AnalysisPublish.h"
+#include "measure/Analyser.h"
+#include "measure/AverageGroup.h"
+#include "measure/RoutingPlan.h"
 #include "measure/Snapshot.h"
+#include "measure/SplSession.h"
 #include "measure/SplConfig.h"
 #include "measure/SplMeter.h"
 
@@ -17,6 +21,8 @@
 
 #include <array>
 #include <cmath>
+#include <memory>
+#include <string>
 #include <cstdint>
 #include <span>
 #include <filesystem>
@@ -347,4 +353,232 @@ TEST_CASE("Wave 0 publishes no dose and no Ln, and says so by absence", "[splpub
     for (const auto& d : view->dosePercent) CHECK_FALSE(d.has_value());
     for (const auto& d : view->doseProjected) CHECK_FALSE(d.has_value());
     CHECK(view->alarms.empty());
+}
+
+// --- defect 1, end to end: 17 metrics may not mislabel one ---------------
+
+namespace {
+
+/// `count` metrics, the LAST one C-weighted. At `count > kMaxMetrics` the
+/// verifier measured the C metric publishing the A chain's number -- a
+/// C label over an A reading, 18.8 dB out.
+SplConfig manyMetrics(std::size_t count) {
+    SplConfig config;
+    config.blockSeconds = 0.1;
+    for (std::size_t i = 0; i < count; ++i) {
+        const bool last = (i + 1 == count);
+        config.metrics.push_back(rta::measure::SplMetricSpec{
+            last ? "LCeq_last" : ("LAeq_" + std::to_string(i)),
+            last ? rta::dsp::WeightingType::C : rta::dsp::WeightingType::A,
+            rta::meter::TimeWeighting::Fast, 4});
+    }
+    return config;
+}
+
+std::vector<float> lowSine(std::size_t count) {
+    std::vector<float> x(count);
+    for (std::size_t n = 0; n < count; ++n) {
+        const double t = static_cast<double>(n) / kFs;
+        x[n] = static_cast<float>(0.5 * std::sin(2.0 * 3.14159265358979323846 * 100.0 * t));
+    }
+    return x;
+}
+
+/// The real Wave-0 publish path for `metricCount` metrics: a live SplSession
+/// fed a 100 Hz sine, its per-metric windows filled exactly as
+/// AnalysisThread::fillSplPublishInput does, through buildSplBlockView.
+std::optional<rta::measure::SplBlockView> publishThroughSession(std::size_t metricCount,
+                                                                 std::size_t* refusedOut) {
+    static rta::measure::SplSession session;
+    session.stop();
+    const int channels[] = {0};
+    session.start(manyMetrics(metricCount), kFs, channels);
+
+    const auto hop = lowSine(4800);
+    for (int i = 0; i < 6; ++i) session.feedHop(0, hop);
+
+    SplPublishInput in;
+    in.config = session.config();
+    in.sampleRate = session.sampleRate();
+    in.latestBlock = session.latestBlock(0);
+    in.window = session.window(0);
+    in.refusedMetrics = session.refusedMetrics();
+    if (refusedOut != nullptr) *refusedOut = session.refusedMetrics();
+
+    static std::array<std::span<const Block>, SplConfig::kMaxMetrics> windows{};
+    windows = {};
+    const std::size_t filled = session.fillMetricWindows(0, windows);
+    in.metricWindows = std::span<const std::span<const Block>>(windows).first(filled);
+    return rta::measure::buildSplBlockView(in);
+}
+
+}  // namespace
+
+TEST_CASE("defect 1: a metric list past the cap never publishes a mislabelled reading",
+          "[splpublish]") {
+    // The C-weighted metric's OWN number, measured at the cap where it is
+    // served, so the "wrong" value has something to be wrong against.
+    std::size_t refusedAtCap = 99;
+    const auto atCap = publishThroughSession(SplConfig::kMaxMetrics, &refusedAtCap);
+    REQUIRE(atCap.has_value());
+    REQUIRE(atCap->metrics.size() == SplConfig::kMaxMetrics);
+    CHECK(refusedAtCap == 0);
+    CHECK(atCap->refusedMetrics == 0);
+
+    const double aValue = static_cast<double>(atCap->metrics.front().valueDb);
+    const double cValue = static_cast<double>(atCap->metrics.back().valueDb);
+    INFO("at the cap: LAeq_0 = " << aValue << " dB, LCeq_last = " << cValue << " dB");
+    INFO("A-to-C gap  = " << (aValue - cValue) << " dB");
+    CHECK(atCap->metrics.back().id == "LCeq_last");
+    // The two are far apart -- a 100 Hz sine through A and through C -- so a
+    // fallback to the A chain cannot hide inside a tolerance.
+    CHECK(aValue < cValue - 10.0);
+
+    SECTION("one past the cap: the extra metric is DROPPED and COUNTED, not mislabelled") {
+        std::size_t refused = 99;
+        const auto over = publishThroughSession(SplConfig::kMaxMetrics + 1, &refused);
+        REQUIRE(over.has_value());
+        CHECK(refused == 1);
+        CHECK(over->refusedMetrics == 1);
+        // Sixteen published, and the C-weighted one is NOT among them --
+        // because it was the seventeenth. No published reading carries a C
+        // label at all, so none can carry a C label over an A number.
+        REQUIRE(over->metrics.size() == SplConfig::kMaxMetrics);
+        for (const auto& m : over->metrics) {
+            INFO("published metric: " << m.id << " = " << m.valueDb);
+            CHECK(m.id != "LCeq_last");
+            // Every survivor is A-weighted, so every value is the A number.
+            CHECK_THAT(static_cast<double>(m.valueDb), WithinAbs(aValue, 1e-4));
+        }
+    }
+}
+
+TEST_CASE("defect 1: a short metricWindows row is ABSENCE, never the shared window",
+          "[splpublish]") {
+    // The third layer, tested on its own so it holds even if the cap moves.
+    // `metricWindows` non-empty but shorter than `metrics` used to fall back
+    // to `window` for the uncovered rows -- which is exactly how a C-weighted
+    // metric came to read the A chain.
+    SplConfig config;
+    config.blockSeconds = 1.0;
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 2});
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 2});
+
+    std::vector<Block> aWindow{blockAtLevel(0, 48000, 70.0), blockAtLevel(1, 48000, 70.0)};
+    // ONE row supplied for TWO metrics.
+    const std::array<std::span<const Block>, 1> shortRows{aWindow};
+
+    SplPublishInput in;
+    in.config = &config;
+    in.sampleRate = kFs;
+    in.latestBlock = aWindow.back();
+    in.window = aWindow;  // the A window, deliberately WRONG for metric 1
+    in.metricWindows = shortRows;
+
+    const auto view = rta::measure::buildSplBlockView(in);
+    REQUIRE(view.has_value());
+    REQUIRE(view->metrics.size() == 2);
+    CHECK_THAT(static_cast<double>(view->metrics[0].valueDb), WithinAbs(70.0, 1e-4));
+    // FLOORED, not 70.0. The caller said nothing about metric 1, so the
+    // publish says nothing about metric 1.
+    CHECK(view->metrics[1].valueDb == static_cast<float>(rta::measure::kLevelFloorDb));
+    CHECK(view->metrics[1].leqBufferFill == 0.0f);
+}
+
+// --- defect 2: Snapshot::spl through the REAL publish path ---------------
+
+namespace {
+
+rta::measure::Analyser::Config fastAnalyserConfig() {
+    rta::measure::Analyser::Config config;
+    config.fftSize = 64;
+    config.hopSize = 64;
+    config.sampleRate = 48000.0;
+    config.mtwEnabled = false;
+    config.transferFifoDepth = 8;
+    return config;
+}
+
+}  // namespace
+
+TEST_CASE("defect 2: buildPublishedSnapshot attaches spl only when something is logging",
+          "[splpublish]") {
+    // THE GAP THIS CLOSES. Every earlier case in this file called
+    // buildSplBlockView DIRECTLY, so the one line that decides whether
+    // `Snapshot::spl` is set at all -- buildPublishedSnapshot's own
+    // `(spl != nullptr) ? buildSplBlockView(*spl) : std::nullopt` and the two
+    // branches that copy the base Snapshot -- was reachable from no test.
+    // Publishing a default-constructed SplBlockView there left 689/689 green.
+    std::vector<std::unique_ptr<rta::measure::Analyser>> analysers;
+    analysers.push_back(std::make_unique<rta::measure::Analyser>(fastAnalyserConfig()));
+    rta::measure::AverageGroup group;
+    std::vector<int> lastTfIndices;
+    const rta::measure::RoutingPlan plan;  // UNROUTED -- the plain single-channel path
+    REQUIRE(plan.routes.empty());
+
+    // Feed the Analyser enough for a real publish.
+    std::vector<float> tone(64);
+    for (std::size_t n = 0; n < tone.size(); ++n) {
+        tone[n] = static_cast<float>(
+            0.25 * std::sin(2.0 * 3.14159265358979323846 * 6.0 * static_cast<double>(n) / 64.0));
+    }
+    for (int frame = 0; frame < 20; ++frame) analysers[0]->pushMeasurement(tone);
+
+    SECTION("nothing logging: the snapshot carries NO spl block") {
+        const auto snapshot =
+            buildPublishedSnapshot(analysers, group, lastTfIndices, plan, 0, nullptr);
+        REQUIRE(snapshot != nullptr);
+        CHECK_FALSE(snapshot->spl.has_value());
+        // And the rest of the snapshot is still a real one, so absence of SPL
+        // is not absence of a publish.
+        CHECK(snapshot->sampleRate == 48000.0);
+        CHECK_FALSE(snapshot->bands.empty());
+    }
+
+    SECTION("a config with no completed block: still NO spl block") {
+        const SplConfig config = configWithOneMetric();
+        SplPublishInput in;
+        in.config = &config;
+        in.sampleRate = kFs;  // latestBlock left absent on purpose
+        const auto snapshot =
+            buildPublishedSnapshot(analysers, group, lastTfIndices, plan, 0, &in);
+        REQUIRE(snapshot != nullptr);
+        CHECK_FALSE(snapshot->spl.has_value());
+    }
+
+    SECTION("logging: the block reaches Snapshot::spl with its own values") {
+        const SplConfig config = configWithOneMetric();
+        std::vector<Block> window;
+        for (std::uint64_t i = 0; i < 90; ++i) window.push_back(blockAtLevel(i, 48000, 85.0));
+        window.back().flags |= static_cast<std::uint32_t>(rta::meter::BlockFlag::Gap);
+        window.back().droppedSamples = 12000;
+
+        SplPublishInput in;
+        in.config = &config;
+        in.sampleRate = kFs;
+        in.latestBlock = window.back();
+        in.window = window;
+
+        const auto snapshot =
+            buildPublishedSnapshot(analysers, group, lastTfIndices, plan, 0, &in);
+        REQUIRE(snapshot != nullptr);
+        REQUIRE(snapshot->spl.has_value());
+        // The VALUES, not just the presence: a default-constructed block would
+        // satisfy has_value() and every one of these would fail.
+        CHECK(snapshot->spl->blockIndex == 89);
+        CHECK(snapshot->spl->blockSamples == 48000);
+        CHECK(snapshot->spl->sampleRate == kFs);
+        CHECK(snapshot->spl->droppedSamples == 12000);
+        CHECK(rta::meter::hasFlag(snapshot->spl->flags, rta::meter::BlockFlag::Gap));
+        REQUIRE(snapshot->spl->metrics.size() == 2);
+        CHECK(snapshot->spl->metrics[0].id == "LAeq_1s");
+        CHECK_THAT(static_cast<double>(snapshot->spl->metrics[0].valueDb),
+                   WithinAbs(85.0, 1e-4));
+        CHECK(snapshot->spl->refusedMetrics == 0);
+        // The base snapshot survived the copy the fold makes.
+        CHECK(snapshot->sampleRate == 48000.0);
+        CHECK_FALSE(snapshot->bands.empty());
+    }
 }

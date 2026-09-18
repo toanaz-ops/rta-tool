@@ -245,6 +245,12 @@ struct SplBlockView {
     bool calibrated = false;
 
     std::vector<SplMetricReading> metrics;
+    /// How many configured metrics the session could NOT serve, because
+    /// `SplConfig::metrics` was longer than `SplConfig::kMaxMetrics`. Normally
+    /// 0. Published rather than logged, because a cap nobody is told about is
+    /// a silent drop, and an operator who configured eighteen readouts and got
+    /// sixteen needs to see the two (PR #17 verifier defect 1).
+    std::uint32_t refusedMetrics = 0;
 
     /// The most recent block's own held maxima and sampled C-weighted peak,
     /// offset applied. Floats, so a consumer compares them with a

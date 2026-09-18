@@ -149,11 +149,18 @@ public:
 
     // --- Lane L6a task W0-D: the SPL feed ---------------------------------
 
-    /// How many per-metric window spans `publishIfDue` has room for. A config
-    /// naming more metrics than this publishes the first `kMaxSplMetricWindows`
-    /// and no more, rather than allocating on the analysis thread; W2-A's
-    /// ring is where a real bound belongs.
-    static constexpr std::size_t kMaxSplMetricWindows = 16;
+    /// How many per-metric window spans `publishIfDue` has room for.
+    ///
+    /// DECLARED FROM `SplConfig::kMaxMetrics`, not repeated as 16 (PR #17
+    /// verifier defect 1). Two independent numbers is how the hole opened:
+    /// `SplConfig::metrics` was unbounded, this array was fixed, and a config
+    /// one metric past the bound made `fillMetricWindows` give up and the
+    /// publish path fall back to a single shared window -- a C-weighted metric
+    /// published A-weighted numbers under a C label. `SplSession::start` now
+    /// truncates the metric list to the SAME constant, so the array cannot be
+    /// too small for the list it is filled from, and raising the cap is one
+    /// edit in `SplConfig`.
+    static constexpr std::size_t kMaxSplMetricWindows = SplConfig::kMaxMetrics;
 
     /// Starts SPL logging on `channels` -- message-thread call, picked up on
     /// the NEXT `drain()`, never inside the audio callback. Replaces any

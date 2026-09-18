@@ -42,6 +42,23 @@ struct SplAlarmSpec {
 /// store anywhere under `app/src` (SPL-R11), so the composition root
 /// constructs them from these defaults.
 struct SplConfig {
+    /// THE ONE CAP ON `metrics`, and it is here rather than in the publish
+    /// path on purpose (PR #17 verifier defect 1).
+    ///
+    /// `metrics` was an unbounded vector validated nowhere, while the publish
+    /// path's per-metric window storage is a fixed array -- so a 17-metric
+    /// config overflowed the array's capacity, `fillMetricWindows` gave up
+    /// all-or-nothing, and every metric silently fell back to the first
+    /// weighting's chain: a C-weighted metric published A-weighted numbers
+    /// under a C label, 18.8 dB wrong. The cap lives with the data it bounds
+    /// so the number cannot drift from the storage it sizes;
+    /// `AnalysisThread`'s array is declared from THIS constant.
+    ///
+    /// Sixteen is generous against the six-slot Ln shape §13 Q3 ships and the
+    /// handful of broadband metrics a show actually reads. Raising it is a
+    /// one-line change here, and the array follows automatically.
+    static constexpr std::size_t kMaxMetrics = 16;
+
     /// Record §2's default, and settable. 1 s divides 3 s / 60 s / 5 min /
     /// 60 min, which is what makes every window in §3 a whole number of
     /// blocks.
@@ -95,6 +112,18 @@ struct SplConfig {
     // field cannot exist yet without inventing the type in the wrong lane.
     // It is added by W1-D's own task, where the two accumulators it names are
     // also built. Nothing in Wave 0 reads a dose.
+
+    /// How many of `metrics` a session can actually serve, and how many it
+    /// cannot. A caller that wants to refuse rather than truncate checks
+    /// `refusedMetricCount() != 0` before starting a session; `SplSession`
+    /// itself truncates and REPORTS, which is the default this lane takes
+    /// (see `SplSession::refusedMetrics`).
+    [[nodiscard]] std::size_t acceptedMetricCount() const noexcept {
+        return metrics.size() < kMaxMetrics ? metrics.size() : kMaxMetrics;
+    }
+    [[nodiscard]] std::size_t refusedMetricCount() const noexcept {
+        return metrics.size() - acceptedMetricCount();
+    }
 
     /// Blocks in `windowSeconds` of this configuration -- the one place a
     /// duration becomes a block count, so a caller never divides by

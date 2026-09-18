@@ -63,13 +63,33 @@ public:
 
     SplSession() = default;
 
-    /// Begins a session on `channels`. ALLOCATES -- the meters and the
+    /// Begins a session on `channels`. ALLOCATES -- the chains and the
     /// windows are built here and nothing after. A channel outside
     /// [0, kMaxLoggedChannels) is ignored rather than clamped onto a
-    /// neighbour's slot.
+    /// neighbour's slot. A config with no metrics gets one Z chain, so a
+    /// caller that only wants unweighted energy is not a special case
+    /// everywhere else.
+    ///
+    /// `config.metrics` is TRUNCATED to `SplConfig::kMaxMetrics` and the
+    /// number dropped is reported by `refusedMetrics()` below and published on
+    /// `SplBlockView::refusedMetrics` (PR #17 verifier defect 1: an unbounded
+    /// metric list overflowed the publish path's fixed window storage and
+    /// reopened the weighting defect one index above the bound).
+    ///
+    /// TRUNCATION RATHER THAN REFUSING THE WHOLE SESSION, and the choice is
+    /// the point: a misconfiguration that silenced SPL logging outright would
+    /// lose a show's evidence, which is worse than logging the first sixteen.
+    /// That is only acceptable BECAUSE the count is reported -- a silent drop
+    /// would be the same defect this closes, one layer further out. A caller
+    /// that would rather refuse reads `SplConfig::refusedMetricCount()` before
+    /// calling this.
     void start(const SplConfig& config, double sampleRate, std::span<const int> channels);
 
     void stop() noexcept;
+
+    /// How many of the caller's metrics `start` dropped, or 0. Never silent:
+    /// this reaches the published `SplBlockView` as well.
+    [[nodiscard]] std::size_t refusedMetrics() const noexcept { return refusedMetrics_; }
 
     [[nodiscard]] bool running() const noexcept { return running_; }
     [[nodiscard]] bool logsChannel(int channel) const noexcept;
@@ -110,9 +130,17 @@ public:
     [[nodiscard]] std::span<const rta::meter::Block> window(
         int channel, rta::dsp::WeightingType weighting) const noexcept;
 
-    /// Fills `out[i]` with metric `i`'s OWN window, for the config this
-    /// session was started with, and returns how many entries it wrote (0 if
-    /// `out` is shorter than `config()->metrics`).
+    /// Fills `out[i]` with metric `i`'s OWN window and returns how many
+    /// entries it wrote: `min(out.size(), config()->metrics.size())`.
+    ///
+    /// THE FIRST N, never all-or-nothing (PR #17 verifier defect 1). It used
+    /// to return 0 when `out` was shorter than the metric list, and a 0 read
+    /// downstream as "no per-metric windows supplied", which the publish path
+    /// took as permission to fall back to one shared window -- so an
+    /// undersized buffer turned into a wrong number under a right label
+    /// instead of into a short answer. A partial fill plus
+    /// `buildSplBlockView`'s no-fallback rule makes the same input produce
+    /// ABSENCE for the rows nobody filled.
     ///
     /// This is what `buildSplBlockView` reads, and it is the whole reason the
     /// chains exist: metric `i`'s WEIGHTING decides which window it is
@@ -167,7 +195,11 @@ private:
     [[nodiscard]] const ChannelState* state(int channel) const noexcept;
     [[nodiscard]] const Chain* chain(int channel, rta::dsp::WeightingType w) const noexcept;
 
+    /// TRUNCATED at `start` to at most `SplConfig::kMaxMetrics` metrics, so
+    /// every consumer downstream of this class sees a list the publish path
+    /// has storage for. `config()` returns this one, not the caller's.
     SplConfig config_;
+    std::size_t refusedMetrics_ = 0;
     double sampleRate_ = 0.0;
     bool running_ = false;
     std::size_t windowCapacity_ = 1;

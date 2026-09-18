@@ -20,6 +20,17 @@ void SplSession::start(const SplConfig& config, double sampleRate,
     config_ = config;
     sampleRate_ = sampleRate;
 
+    // TRUNCATE FIRST, so every line below -- the chain list, the window
+    // capacity, `config()`'s return value -- sees a metric list the publish
+    // path has storage for. The count is kept, not discarded: it reaches
+    // `refusedMetrics()` and `SplBlockView::refusedMetrics`, because a cap
+    // nobody is told about is the same silent-wrongness this cap exists to
+    // prevent (PR #17 verifier defect 1).
+    refusedMetrics_ = config_.refusedMetricCount();
+    if (refusedMetrics_ != 0) {
+        config_.metrics.resize(SplConfig::kMaxMetrics);
+    }
+
     // The distinct weightings the metrics named, in first-seen order. A config
     // with no metrics gets one Z chain, so a caller that only wants unweighted
     // energy is not a special case everywhere else.
@@ -55,6 +66,7 @@ void SplSession::start(const SplConfig& config, double sampleRate,
 void SplSession::stop() noexcept {
     for (auto& state : channels_) state.reset();
     weightings_.clear();
+    refusedMetrics_ = 0;
     running_ = false;
 }
 
@@ -188,14 +200,23 @@ std::span<const rta::meter::Block> SplSession::window(
 std::size_t SplSession::fillMetricWindows(
     int channel, std::span<std::span<const rta::meter::Block>> out) const noexcept {
     const auto& metrics = config_.metrics;
-    if (!running_ || out.size() < metrics.size()) return 0;
-    for (std::size_t i = 0; i < metrics.size(); ++i) {
+    if (!running_) return 0;
+    // THE FIRST N, never all-or-nothing. Returning 0 for an undersized buffer
+    // read downstream as "no per-metric windows supplied", which the publish
+    // path took as permission to use one shared window for everything -- so a
+    // buffer one row short produced a WRONG NUMBER under a RIGHT LABEL rather
+    // than a short answer. `start` now truncates the metric list to the same
+    // bound, so on the shipped path this loop always covers every metric;
+    // this is the second of the three layers, kept because the failure it
+    // guards was silent and 18.8 dB wide (PR #17 verifier defect 1).
+    const std::size_t n = std::min(out.size(), metrics.size());
+    for (std::size_t i = 0; i < n; ++i) {
         // Metric i's WEIGHTING decides which window it is averaged over. A
         // weighting with no chain yields an EMPTY span, which combineBlocks
         // turns into an absent Leq -- never another weighting's numbers.
         out[i] = window(channel, metrics[i].weighting);
     }
-    return metrics.size();
+    return n;
 }
 
 }  // namespace rta::measure

@@ -57,6 +57,10 @@ struct SplPublishInput {
     /// single-weighting case; when its entry for a metric is empty, that
     /// metric's value is ABSENT -- never another weighting's numbers.
     std::span<const std::span<const rta::meter::Block>> metricWindows;
+    /// How many configured metrics the session could not serve -- carried
+    /// straight to `SplBlockView::refusedMetrics` so the drop is visible
+    /// rather than inferred from a short list (PR #17 verifier defect 1).
+    std::size_t refusedMetrics = 0;
 };
 
 /// Builds the published SPL view, or `std::nullopt` when nothing is logging.
