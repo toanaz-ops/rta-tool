@@ -5,20 +5,199 @@
 
 ---
 
-# 2026-09-18 — **L6a station 4, WAVE 1 BUILT.** Branch `l6a/wave1-core-metrics`, PR open, NOT merged.
+# 2026-09-18 — **L6a station 4, WAVE 1 BUILT and VERIFIED (round 1).** Branch `l6a/wave1-core-metrics`, PR #20 open, NOT merged.
 
 Worktree `.claude\worktrees\agent-a8081552a1df7d90f`, branched from `main` at
-**`b1e14a9`** (where PR #17, Wave 0, merged). Six commits, `9a36c24..1357948`.
-GitHub Actions is still billing-blocked at the account level, so **every number
-below was measured on this machine and pasted**; a verifier is expected to
-re-measure from a clean rebuild.
+**`b1e14a9`** (where PR #17, Wave 0, merged), then **merged up to `origin/main`
+`d071269`**. Eight commits, `9a36c24..HEAD`. **Read the round-1 section first**:
+the verification found three real defects, and the tallies below the first table
+are the pre-merge ones.
+
+Actions was billing-blocked while this wave was built, so every number here was
+measured on this machine and pasted. **The block is now lifted and PR #20 has a
+real three-OS matrix** — see the last round-1 subsection for what that does and
+does not tell us.
 
 Wave 1 is the lane's **core pure-math layer**: the Ln histogram, the windowed
 energy recompute, the headroom identity and alarm latch, and dose. All of it is
 closed-form or clause-derived — **no golden vector, no sound card, no socket** —
 so the whole wave is provable on three operating systems.
 
-## Tallies
+## Round 1 of verification (2026-09-18) — three confirmed defects, eight lesser, all fixed
+
+PR #20's verifier rebuilt both configurations clean, diffed all 222 table rows
+against the primaries, re-ran every guard at both commits and ran seven
+mutations including a positive control. Verdict **SOUND-WITH-FIXES**. Fixes are
+`9e4b264`, then merged up to `origin/main` `d071269` at `590cdeb`.
+
+**Tallies after the fixes and the merge**, measured here:
+
+| config | build dir | `main` at `d071269` | at `HEAD` |
+|---|---|---|---|
+| OFF | `build-spl1` | 774 (derived — see below) | **818/818** |
+| ON | `build-spl1-on` | 848 (derived) | **892/892** |
+
+`0 warning C` in both build logs. `892 − 818 = 74`, the same JUCE-only
+constant as before the merge, which is the cross-check that the merge added no
+JUCE-side tests of its own.
+
+**The two `main` figures are derived, not rebuilt, and that is a real gap.**
+Wave 1's own contribution is 44 ctest entries, measured pre-merge as
+`791 − 747` on a tree whose only difference was this branch. `818 − 44 = 774`
+and `892 − 44 = 848`. I tried to rebuild `main` properly from a `git archive`
+export and **MSVC refuses to configure a build tree under `%TEMP%`** — "The
+CXX compiler identification is unknown", the same family of problem
+`memory/mutation-testing-needs-the-exe-deleted-first.md` records about
+`MSB8029`. A verifier with a second checkout re-measures it; the last one did.
+
+**Guard counts, read from each guard's own line:**
+
+| guard | `main` `d071269` | `HEAD` |
+|---|---|---|
+| `core_has_no_framework_deps` | 164 at `b1e14a9` | **181** |
+| `filter_design_has_no_polynomial_form` | 186 at `b1e14a9` | **200** |
+| `core_makes_no_class_1_claim` | 11 at `b1e14a9` | **28** |
+| `app_measure_has_no_framework_deps` | **86** (measured on main's own tree) | **87** |
+| `no_server_library_outside_api` | (L-API's, arrived in the merge) | 428 |
+
+`app_measure_has_no_framework_deps` is the one I could measure on both sides
+without building: main's GLOBS expands to 86 files, `HEAD`'s to 87, and the +1
+is `SplCriteria.h`. The three `core` guards moved again because round 1's fixes
+split three files (below).
+
+### The three confirmed defects
+
+1. **`Dose.h` claimed a negative that nothing had measured.** "No numeric
+   acceptance in this lane can distinguish either pair" — FALSE. `D2a` bounds
+   each regulator's exact duration formula at `1e-9 %`, and the typed
+   `9.9657843` misses it by **1600x** (worst `1.600e-06 %` at 130 dBA, red at
+   **50 of 51** rows; 85 dBA survives only because its exponent is zero).
+   `16.6096404` fails by **2485x**. The computed constants clear the same bound
+   by `1.0e4x`. Reproduced here, digit for digit with the verifier's numbers.
+
+   Where it came from: SPL-R7 argues against `D2b`'s printed-row bounds and
+   then assumes `D2a` uses a *float* tolerance. Shipped, `D2a` is an absolute
+   `1e-9 %` — four orders tighter. So the rule stands on **two** legs, accuracy
+   and bitwise exactness, and D1f's bitwise check is the weaker one.
+
+   Fixed in the header, the test, the plan's SPL-R7 note (dated) and its D1f
+   row. **The claim is now arithmetic in the suite**, not prose: D1f computes
+   the worst deviation for computed and typed constants over D2a's own grid for
+   both regulators. New memory:
+   `an-unmeasured-negative-claim-is-the-one-no-suite-exercises.md` — the second
+   time in three days a correction retiring an unmeasured claim shipped a new
+   one, and both were negatives.
+
+2. **The NIOSH row's label asserted FAST; the primary says SLOW.** Verified
+   myself in the archived PDF: cl. 1.3.3, printed p. 4 (PDF p. 22) is
+   **normative** — "If a sound level meter is used, the meter response shall be
+   set at SLOW" — and ch. 4, printed p. 25 (PDF p. 52) repeats it. So
+   `L_ASmax`. That is exactly the substituted-convention error `SplCriteria.h`
+   exists to prevent, shipped inside the fixture written to prevent it.
+
+   The root cause is fixed too: the detector had been one character inside a
+   label string, where nothing could assert it. `SplCriterion::timeWeighting`
+   is data now, with its own citation, and E1 asserts it. A new SECTION pins
+   that the two peak rows carry an EMPTY detector because a peak has no
+   exponential time weighting — a different fact from the OSHA row's empty
+   `weighting`, which means the CFR named none. Record §7a amended (A6, dated).
+
+   And the two allow-lists that had already drifted are now one,
+   `kQuantityTokens`, read by both the header predicate and E2's scan — the
+   test's copy carried `l_afmax` and omitted `l_asmax`, so this very correction
+   would have made a view file printing the corrected label read as an
+   offender.
+
+3. **B1's gate was hollow.** `sumSquares()` returning
+   `count_ * pow(10, (leqDb() − offset)/10)` — the inversion the header says
+   callers should not have to do — left B1 **green**, because what B1 checked
+   was a round trip any log-derived value satisfies. B1 now compares
+   `sumSquares()` **bitwise** against the same sum accumulated independently in
+   the test. Written with the mutant still in place: 4 assertions red, green
+   after revert. 4 of the 6 rows discriminate — the exact-power-of-two
+   amplitudes cannot — and the file says so, because trimming the list to the
+   clean amplitudes would hollow it again.
+
+### The eight lesser findings
+
+All fixed; the interesting one is **finding 4**, the per-row resolution rule.
+`table11ResolutionSeconds` keys on the **Hours** cell while the record's prose
+says "the row's smallest printed unit", and they differ on rows 97 and 100.
+**Resolved in favour of the code, with the justification written down and
+asserted** (new `D2b3`): Table 1-1 prints in two FORMATS, and an en dash means
+"zero of this unit" only in the minutes-and-seconds one — rows 97 and 100 are
+exactly 1800 s and 900 s, while 80 dBA prints `25 24 –` over an exact value
+carrying 54.3 seconds. The record's looser prose would give `r = 60 s` at
+100 dBA, a `6.6667 %` bound, which contradicts the record's **own** printed
+`0.1111 %` for that row and would make D2e's rejection of `q = 10` impossible
+there. D2d keeps a separate helper, `table11PrintedUnitSeconds`, because it
+asks a different question — which unit the value was rounded TO.
+
+The others: D2d retitled to name its three-row set (one erratum, two
+truncations); D3b's fifth forbidden token `EU` restored, case-sensitively on
+the stripped text because lowercase "eu" is a substring of ordinary English;
+`stripLineComments`' string-literal blind spot documented as fail-safe;
+`test_level_histogram.cpp`'s dangling "the scan below" now HAS a scan, reading
+`Levels.h` and `SplConfig.h` through `RTA_REPO_ROOT`; `exposureLevelDb` returns
+`std::optional` and is absent for `seconds <= 0` instead of returning the bare
+Leq; and A2's distribution-adapter portability written down (no assertion
+depends on it — the bound is a theorem and both shapes that reach it are
+deterministic).
+
+### Three files split, and the complete over-budget list
+
+Round 1's fixes grew three files past the 400-line hard cap, so three subjects
+moved out. None of this is new scope:
+
+| new file | what moved | was |
+|---|---|---|
+| `core/tests/test_dose_constants.cpp` | D1f, once it became a measurement over both regulators' full grids | 457 in `test_dose.cpp` |
+| `core/tests/test_level_histogram_span.cpp` | A7 + A8, the DERIVED span — and where finding 8's scan lives | 418 |
+| `core/tests/test_dose_table12.cpp` | D2e + D2f; Table 1-2 is a different table asking a different question | 431 |
+
+All three are registered in `core/tests/CMakeLists.txt` and all three are in
+the class-1 honesty guard by name.
+
+**Finding 9 was right and the PR's deviation 9 was incomplete.** The complete
+list of files over their plan budget, every one under CLAUDE.md's 400 hard cap:
+
+| file | plan cap | now |
+|---|---|---|
+| `app/tests/test_spl_criteria.cpp` | ≤200 | **387** |
+| `core/tests/test_dose.cpp` | ≤340 | **378** |
+| `core/tests/test_dose_tables.cpp` | ≤340 | **351** |
+| `core/tests/test_alarm.cpp` | ≤240 | **350** |
+| `core/tests/test_level_histogram.cpp` | ≤300 | **331** |
+| `app/src/measure/SplCriteria.h` | ≤120 | **177** |
+| `core/include/rta/meter/Leq.h` | ≤130 | **134** |
+
+Seven, not two. The longest file this wave touches is 387 lines.
+
+### One error of my own, caught by the suite
+
+D2b3's first draft asserted the 80 dBA exact duration against a typed
+`91434.300640` and went red against the true `91434.30059336829`. It
+cross-checks by MULTIPLYING (`60·480·2^(5/3)`) now rather than dividing — a
+different route to the same closed form. This project's verification standard
+catching the person applying it, in the commit that exists to fix two other
+instances of the same mistake.
+
+### CI is live again, and `main` is red on macOS for reasons that are not this branch
+
+The account's Actions billing block is lifted, so PR #20 now has a real
+three-OS matrix — which is what rule 3 of `docs/GIT-WORKFLOW.md` wants. `main`
+itself is red on macOS for **four unrelated tests**, with a fix in flight on
+`ci/macos-fixes`, so this PR's macOS job inherits that failure. Not chased
+here. The bitwise assertions this wave rests on — D1b, D1c, the
+`10^(Q/q) == 2.0` set, B2's 3600-step equality, C1's exactly-representable
+triple, A6's merge, and now B1's independent accumulation — will get their
+first non-MSVC evidence from that matrix, and the note at
+`test_dose_constants.cpp` says what to do if one of them disagrees: report a
+named libm on a named OS, do not widen.
+
+---
+
+## Tallies (as built, before round 1)
 
 | config | build dir | at `b1e14a9` (baseline) | at `1357948` |
 |---|---|---|---|
