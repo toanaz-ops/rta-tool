@@ -77,6 +77,7 @@ add_executable(rta_core_tests
     # vector, no sound card, no socket.
     test_level_histogram.cpp
     test_window_energy.cpp
+    test_alarm.cpp
 )
 
 # Golden vectors are committed, so the C++ suite needs neither Python nor

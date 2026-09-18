@@ -59,6 +59,7 @@ add_library(rta_core STATIC
     src/meter/Detector.cpp
     src/meter/Leq.cpp
     src/meter/LevelHistogram.cpp
+    src/meter/Alarm.cpp
 )
 
 add_library(rta::core ALIAS rta_core)
