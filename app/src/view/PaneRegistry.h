@@ -13,10 +13,16 @@ class TraceLibrary;
 
 namespace rta::view {
 
-/// The pane type vocabulary. Lives in app/, never in az_ui -- `rta` and
-/// `transfer` are measurement vocabulary, and the module rule keeps that out
-/// of the design system.
-enum class PaneView { Rta, Transfer };
+/// The pane type vocabulary. Lives in app/, never in az_ui -- `rta`,
+/// `transfer` and `spl` are measurement vocabulary, and the module rule keeps
+/// that out of the design system.
+///
+/// `Spl` added by lane L6a task W2-D (record docs/dsp/
+/// 2026-09-16-spl-pro-l6a.md §11, SPL-R11). No `kSchemaVersion` bump
+/// (`SessionCodec.h:30` stays 3): an older build reading a session that names
+/// `"spl"` already falls back to `Rta` and REPORTS it through `fellBack`,
+/// which is this type's whole contract below.
+enum class PaneView { Rta, Transfer, Spl };
 
 struct PaneResolution {
     PaneView view = PaneView::Rta;
@@ -31,6 +37,7 @@ struct PaneResolution {
     out.requested = name;
     if (name == "rta") return out;
     if (name == "transfer") { out.view = PaneView::Transfer; return out; }
+    if (name == "spl") { out.view = PaneView::Spl; return out; }
     out.fellBack = true;   // falls back to Rta, and says so
     return out;
 }

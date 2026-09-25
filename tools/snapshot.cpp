@@ -28,6 +28,7 @@
 #include "MainComponent.h"
 #include "dev/SpecimenComponent.h"
 #include "dev/preview/PhaseAlignPreview.h"
+#include "dev/preview/SplPreview.h"
 #include "dev/preview/TargetMatchPreview.h"
 #include "dev/preview/TransferFunctionPreview.h"
 #include "measure/Snapshot.h"
@@ -244,6 +245,15 @@ int main (int argc, char** argv)
     {
         PhaseAlignPreview component;
         if (! renderComponent (component, outDir, "preview-phase.png", width, height))
+            ++failures;
+    }
+
+    {
+        // preview-spl.png: lane L6a task W2-D4 -- the SPL strip over canned
+        // data (SplPreview.h's own comment). Same paint-only, no-timer
+        // contract as the three previews above.
+        SplPreview component;
+        if (! renderComponent (component, outDir, "preview-spl.png", width, height))
             ++failures;
     }
 

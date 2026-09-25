@@ -82,6 +82,11 @@ target_sources(rtatool PRIVATE
     # comment); those two are still needed here for MainComponent.cpp's pane
     # factory, which is why they are already above.
     src/view/WorkspaceView.cpp
+    # SplView.cpp: lane L6a task W2-D's live SPL pane (record §4, §11). Not
+    # yet wired into MainComponent's pane factory -- Wave 2 publishes no
+    # history ring for it to draw a strip from (see the class's own comment)
+    # -- but compiled here so it builds against real JUCE headers.
+    src/view/SplView.cpp
     # TraceLibrary.cpp is what StoredTraceLayer.cpp calls entry()/trace() on.
     # Header-only up to Task 5 because only rtatool_analysis_tests compiled it;
     # the moment the VIEW reads the library, both GUI binaries need the
@@ -195,6 +200,10 @@ target_sources(rtatool_snapshot PRIVATE
     src/dev/preview/TransferFunctionPreview.cpp
     src/dev/preview/TargetMatchPreview.cpp
     src/dev/preview/PhaseAlignPreview.cpp
+    # SplPreview.cpp: lane L6a task W2-D's SPL strip preview, over canned data
+    # (record §4, §11) -- needed here for preview-spl.png below. SplView.cpp
+    # is what the live pane draws with; the preview does not need it.
+    src/dev/preview/SplPreview.cpp
     ${CMAKE_SOURCE_DIR}/tools/snapshot.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
