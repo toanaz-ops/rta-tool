@@ -59,6 +59,16 @@ void SplView::paint(juce::Graphics& g) {
         g.drawText("LOG WRITE FAILED", row, juce::Justification::centredLeft, false);
     }
 
+    // Task W2-E2b part A (record §15 A2): the log is kept either way (W3-A
+    // A3) -- this is only the operator being told, live, the same fact the
+    // report will apply to the bracketed block range afterwards.
+    if (spl.calibrationInvalid) {
+        auto row = area.removeFromTop(az::ui::fieldHeight);
+        g.setColour(rta::view::miss);
+        g.drawText("CALIBRATION INVALID -- drift exceeded ISO 1996-2 cl. 5.2", row,
+                   juce::Justification::centredLeft, false);
+    }
+
     for (const auto& metric : spl.metrics) {
         auto row = area.removeFromTop(az::ui::fieldHeight);
         g.setColour(rta::view::readoutText);

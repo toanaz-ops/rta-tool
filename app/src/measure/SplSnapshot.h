@@ -131,6 +131,15 @@ struct SplBlockView {
     /// there is no partial credit for a file that never opened.
     bool logWriteFailed = false;
 
+    /// Task W2-E2b part A (record §15 A2): true once this session's
+    /// calibration END check found drift exceeding ISO 1996-2:2017 cl. 5.2's
+    /// 0.5 dB. The log itself is NOT rewritten (W3-A A3, record §10:
+    /// append-only) -- this is the LIVE half of that decision, so an
+    /// operator watching the pane during the show sees the same fact the
+    /// report will later apply to the bracketed block range by reading the
+    /// calibration record. Normally false.
+    bool calibrationInvalid = false;
+
     /// How many 100 ms Ln ticks the A-weighted chain has had to drop because
     /// its fixed tick buffer filled during one `push()` call (PR #29 round-4
     /// item 3) -- `SplMeter::overflowedLnTicks()` already existed and

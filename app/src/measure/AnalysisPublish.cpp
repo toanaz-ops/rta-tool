@@ -255,6 +255,10 @@ std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
     // Station-4 fix round (PR #31, finding 6): same "always copied,
     // independent of channelState" reasoning as logDroppedBlocks just above.
     view.logWriteFailed = input.logWriteFailed;
+    // Task W2-E2b part A: same "always copied, independent of channelState"
+    // reasoning -- the calibration verdict is decided on the message thread,
+    // never derived from anything SplChannelState tracks.
+    view.calibrationInvalid = input.calibrationInvalid;
     return view;
 }
 
