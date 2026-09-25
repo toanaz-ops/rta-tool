@@ -36,6 +36,15 @@ void SplLogWriter::openSegment() {
                         std::to_string(segmentIndex_) + ".csv";
 
     stream_.open(path, std::ios::out | std::ios::trunc);
+    if (!stream_.is_open()) {
+        // Station-4 fix round (PR #31, finding 6): a directory that does not
+        // exist or is not writable makes `open()` fail silently -- no
+        // exception, no non-zero return, `stream_` just stays in a failed
+        // state -- so the next `<<`/`flush()` below are harmless no-ops on a
+        // closed stream rather than a crash. Recording that here is the only
+        // place the failure is ever visible.
+        writeFailed_ = true;
+    }
     stream_ << logHeader(config_, info_);
     stream_ << csvHeaderRow() << '\n';
     stream_.flush();
@@ -51,7 +60,19 @@ void SplLogWriter::write(const rta::meter::Block& block) {
     }
     stream_ << logRow(block, config_.referenceOffsetDb);
     stream_.flush();
+    // Station-4 fix round (PR #31, round 3, finding 2): a stream that opened
+    // fine can still fail MID-SESSION -- the disk fills, or the underlying
+    // handle is closed out from under this writer -- and `<<`/`flush()` on a
+    // failed std::ofstream are silent no-ops, exactly like the open failure
+    // above. `stream_`'s own bool conversion is `!stream_.fail()`, so this
+    // catches both operations in one check without duplicating open's own
+    // is_open() test (a stream that failed to WRITE is still "open").
+    if (!stream_) writeFailed_ = true;
     ++blocksInSegment_;
+}
+
+void SplLogWriter::forceStreamFailureForTest() noexcept {
+    stream_.setstate(std::ios::failbit);
 }
 
 void SplLogWriter::reconfigure(rta::dsp::WeightingType weighting, rta::meter::TimeWeighting detector) {

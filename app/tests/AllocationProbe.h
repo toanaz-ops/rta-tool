@@ -67,6 +67,19 @@ void setAllocationCounting(bool active) noexcept;
 /// file in this binary in one process, so a measurement that did not reset
 /// would read whatever an earlier `TEST_CASE` allocated. Counting stops on
 /// destruction, so nothing outside the scope is charged to it either.
+///
+/// PER-THREAD ATTRIBUTION (round 4, PR #31): only allocations on the thread
+/// that CONSTRUCTED this guard are counted, even though `g_countingActive`
+/// itself is one process-wide flag every thread's `operator new` checks. Fix
+/// for a flaky ubuntu-latest CI failure: `SplLogPipeline`'s writer thread
+/// (SplLogPipeline.cpp) does its own legitimate allocating (opening a file,
+/// building a log row's `std::string`) concurrently with whatever the main
+/// test thread is measuring, and a probe with no thread attribution charged
+/// those to the wrong scope. Every EXISTING caller of this class already
+/// arms the probe and runs the measured code on the SAME thread (its own),
+/// so this is the same behaviour for them, never a narrower one -- it only
+/// EXCLUDES allocations this class previously (incorrectly) counted from
+/// somewhere else.
 class AllocationProbe {
 public:
     AllocationProbe() noexcept;

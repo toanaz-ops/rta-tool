@@ -16,8 +16,20 @@ namespace rta::measure {
 /// Locate) only fills for a wired route -- a calibrator-only rig with no
 /// REF channel configured never completes one, and without this the flag
 /// that guards BOTH features stays true for the rest of the session.
-[[nodiscard]] constexpr bool captureTimedOut(std::int64_t armedAtMs, std::int64_t nowMs,
-                                             std::int64_t timeoutMs) noexcept {
+///
+/// `double`, not `std::int64_t` (PR #27 round-2 verifier, LOW; fixed lane
+/// L6a task W2-E2a): the caller now feeds `juce::Time::getMillisecondCounterHiRes()`
+/// -- a MONOTONIC counter -- rather than `juce::Time::currentTimeMillis()`,
+/// the wall clock. A wall clock can jump backwards (NTP step, DST, the
+/// operator changing the system clock mid-capture) and a backwards jump here
+/// would make `nowMs - armedAtMs` negative, silently defeating this exact
+/// timeout for the rest of that capture. `getMillisecondCounterHiRes()`
+/// returns a `double` (sub-millisecond resolution since JUCE's own epoch,
+/// i.e. process start, not the Unix epoch), so this signature follows it
+/// rather than truncating and reintroducing the same rounding this class's
+/// own tests already exercise at whole milliseconds.
+[[nodiscard]] constexpr bool captureTimedOut(double armedAtMs, double nowMs,
+                                             double timeoutMs) noexcept {
     return (nowMs - armedAtMs) > timeoutMs;
 }
 

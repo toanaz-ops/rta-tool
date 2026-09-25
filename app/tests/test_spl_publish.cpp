@@ -133,6 +133,54 @@ TEST_CASE("C2 Snapshot carries no wall clock, and the SPL block did not add one"
     }
 }
 
+// --- station-4 fix round (PR #31, item 3): logDroppedBlocks is copied, not
+// dropped, on the way to the published view ---------------------------------
+
+TEST_CASE("logDroppedBlocks is copied straight into the published view",
+         "[splpublish]") {
+    // Deleting AnalysisPublish.cpp's `view.logDroppedBlocks =
+    // static_cast<std::uint32_t>(input.logDroppedBlocks);` left this whole
+    // OFF suite green: nothing in it read the field at all. Independent of
+    // channelState/config (that line's own comment: "a queue can overflow
+    // even on a channel whose SplChannelState allocation succeeded"), so a
+    // minimal publish with no metrics and no channelState isolates it.
+    const SplConfig config;
+    std::vector<Block> window;
+    window.push_back(blockAtLevel(0, 48000, 85.0));
+
+    SplPublishInput in;
+    in.config = &config;
+    in.sampleRate = kFs;
+    in.latestBlock = window.back();
+    in.window = window;
+    in.logDroppedBlocks = 7;
+
+    const auto view = rta::measure::buildSplBlockView(in);
+    REQUIRE(view.has_value());
+    CHECK(view->logDroppedBlocks == 7);
+}
+
+// --- station-4 fix round (PR #31, finding 6): logWriteFailed reaches the
+// published view, the same way logDroppedBlocks just above does -----------
+
+TEST_CASE("logWriteFailed is copied straight into the published view",
+         "[splpublish]") {
+    const SplConfig config;
+    std::vector<Block> window;
+    window.push_back(blockAtLevel(0, 48000, 85.0));
+
+    SplPublishInput in;
+    in.config = &config;
+    in.sampleRate = kFs;
+    in.latestBlock = window.back();
+    in.window = window;
+    in.logWriteFailed = true;
+
+    const auto view = rta::measure::buildSplBlockView(in);
+    REQUIRE(view.has_value());
+    CHECK(view->logWriteFailed == true);
+}
+
 // --- C3: the alarm state is server-computed -----------------------------
 
 TEST_CASE("C3 SplAlarmReading carries state and headroom, and nothing downstream re-derives it",

@@ -17,6 +17,17 @@
 
 namespace rta::measure {
 
+/// `blockSeconds` at `sampleRate`, as the sample count every mean in a block
+/// divides by. Rounded rather than truncated so a rate that does not divide
+/// evenly lands on the nearest whole sample instead of systematically short,
+/// and floored at 1 so a nonsense configuration cannot produce a zero divisor.
+///
+/// EXPORTED (not file-local) since W2-E2a: `SplLogPipeline` stamps this same
+/// figure into a log's header before the first block closes, and computing it
+/// a second, independent way would risk a one-sample disagreement with this
+/// class's own `accumulator_` at a rate that does not divide evenly.
+[[nodiscard]] std::uint32_t blockSamplesFor(double blockSeconds, double sampleRate) noexcept;
+
 /// The per-channel SPL chain for ONE frequency weighting:
 ///
 ///     hop -> Weighting(W) -> BlockAccumulator { energy, Fast, Slow }
