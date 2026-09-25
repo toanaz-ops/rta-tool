@@ -123,6 +123,28 @@ TEST_CASE("C2 sumSquares round-trips bitwise through 1000 written and read block
     }
 }
 
+// --- readLog on a REAL file: the header is skipped, never "discarded" ------
+// PR #26 fix round item 2: the independent verifier's probe wrote a real
+// SplLogWriter file (478 B, 5 rows) and read it back with readLog, and got
+// bytesDiscarded=283 -- readLog was trying to parse the `# key=value` header
+// lines and the csvHeaderRow() column-name line as 9-field numeric rows,
+// failing (they are not numbers), and silently counting them as corrupted
+// data. A reader holding a perfectly intact file must report 0 discarded.
+TEST_CASE("readLog skips a real file's header and column row, discarding nothing", "[spl_log]") {
+    TempDir dir("readlog-header");
+    SplConfig config;
+    SplLogWriter writer((dir.path / "channel").string(), config, headerInfo(), 3600);
+    for (std::uint64_t i = 0; i < 5; ++i) writer.write(blockAtLevel(i, 48000, 90.0 + i));
+
+    REQUIRE(writer.segmentPaths().size() == 1);
+    const std::string fileText = readWholeFile(writer.segmentPaths().front());
+
+    const auto result = readLog(fileText);
+    CHECK(result.bytesDiscarded == 0);
+    REQUIRE(result.blocks.size() == 5);
+    for (std::uint64_t i = 0; i < 5; ++i) CHECK(result.blocks[i].blockIndex == i);
+}
+
 // --- C3: an interrupted append costs at most one line -----------------------
 
 TEST_CASE("C3 readLog drops only the truncated final line and reports its length", "[spl_log]") {

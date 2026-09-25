@@ -185,7 +185,18 @@ namespace detail {
 /// C3: an interrupted append costs at most one line. Every well-formed,
 /// newline-terminated row before the break parses; the FINAL, possibly
 /// truncated line is dropped and its byte length reported, never guessed at.
+///
+/// A REAL file (`SplLogWriter`'s own output) is not just rows: it opens with
+/// `logHeader`'s `# key=value` lines and one `csvHeaderRow()` column-name
+/// line. Neither is a 9-field numeric row, so both are skipped here BEFORE
+/// `detail::parseRow` ever sees them -- an intact header must never be
+/// misread as corrupted data and folded into `bytesDiscarded` (PR #26 fix
+/// round item 2: the verifier's probe read a perfectly intact 478 B / 5-row
+/// file and got `bytesDiscarded=283`, which was every header byte).
 [[nodiscard]] inline LogReadResult readLog(std::string_view csvBody) {
+    using rta::trace::detail::stripTrailingCr;
+    const std::string_view header = csvHeaderRow();
+
     LogReadResult result;
     std::size_t pos = 0;
     while (pos < csvBody.size()) {
@@ -196,6 +207,10 @@ namespace detail {
         }
         const auto line = csvBody.substr(pos, newlinePos - pos);
         pos = newlinePos + 1;
+
+        const auto content = stripTrailingCr(line);
+        if (content.rfind("# ", 0) == 0 || content == header) continue;  // header, not data
+
         if (auto block = detail::parseRow(line)) {
             result.blocks.push_back(*block);
         } else {
