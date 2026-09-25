@@ -47,6 +47,20 @@ std::string renderReport(const ReportPayload& p) {
     sections += detail::renderValidity(p);
     sections += detail::renderIntegrity(p);
 
+    // A SENTINEL, not the real ReportPayload serialised to JSON -- a
+    // deliberate choice, not an oversight (PR #28 fix round, minor).
+    // window.__SPL_PAYLOAD__'s only job in this lane is A1b's seam: the
+    // report defines it exactly once, the viewer shell zero times, which is
+    // how the two transports are told apart. Wave 4b (the served viewer) --
+    // the only consumer that would ever READ this value off the wire -- was
+    // cut before shipping (owner decision, 2026-09-25), so nothing in this
+    // codebase ever parses it. Serialising the whole ReportPayload here
+    // would duplicate L-API's own ApiSerialise machinery (app/src/api/
+    // ApiSerialise*.cpp) for a value nothing reads, and it is exactly the
+    // kind of parallel implementation a future editor would have to
+    // remember to keep in sync with ApiSerialise by hand. If Wave 4b is
+    // ever un-cut, the real serialisation belongs here, alongside the JS
+    // that would need it.
     std::string payloadJson = "<script>window.__SPL_PAYLOAD__ = {\"frozen\":true};</script>";
     return documentShell(p.event.empty() ? "SPL report" : p.event, payloadJson, sections);
 }
