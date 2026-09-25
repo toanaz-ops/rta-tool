@@ -206,7 +206,12 @@ struct SplMetricReading {
     float leqBufferFill = 0.0f;
 };
 
-enum class SplAlarmState { Clear, Fired };
+// Filling is the default and is DISTINCT from Clear (record §15 A6,
+// corrected): SplAlarmReading carries no fill fraction, so reporting Clear
+// while the window is still filling would read as "compared, and under the
+// limit" when no comparison has run yet -- the placeholder-erases-state
+// trap (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+enum class SplAlarmState { Filling, Clear, Fired };
 
 /// One configured limit, with the verdict already reached.
 ///
@@ -220,7 +225,15 @@ struct SplAlarmReading {
     /// ABSENT when the bracket is already lost -- "the window cannot be met"
     /// is a fact about the arithmetic, not a threshold (record §6, W1-C).
     std::optional<double> headroomDb;
-    SplAlarmState state = SplAlarmState::Clear;
+    SplAlarmState state = SplAlarmState::Filling;
+    /// The alarm's own configured window, in blocks (plan B4's payload
+    /// list). Lane L6a task W2-B's `SplAlarms` is the one producer of this
+    /// type; PR #26 fix round item 6 folded its own separate SplAlarmReport
+    /// into this ONE type rather than keeping two near-duplicates.
+    std::uint64_t windowBlocks = 0;
+    /// The block index of the most recent fire-or-clear transition; absent
+    /// if this alarm has never transitioned.
+    std::optional<std::uint64_t> sinceBlock;
 };
 
 /// The SPL half of one publish.

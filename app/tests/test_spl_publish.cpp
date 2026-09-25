@@ -142,7 +142,9 @@ TEST_CASE("C3 SplAlarmReading carries state and headroom, and nothing downstream
     // window or the exclusion membership differed, and the log is the
     // evidence.
     rta::measure::SplAlarmReading reading;
-    CHECK(reading.state == rta::measure::SplAlarmState::Clear);
+    // Filling, not Clear (record §15 A6, round 4): a default-constructed
+    // reading has never been compared against anything.
+    CHECK(reading.state == rta::measure::SplAlarmState::Filling);
     CHECK_FALSE(reading.headroomDb.has_value());
 
     // Structural: no file under app/src compares a published valueDb against

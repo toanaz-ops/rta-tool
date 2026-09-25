@@ -220,6 +220,13 @@ TEST_CASE("E2 no SPL readout label in app/src/export or app/src/view says peak "
         {"peak_0dbfs", "an FIR normalisation mode, not a level", 0},
         {"peak_gain_db", "an FIR design quantity: the filter's own gain peak", 0},
         {"coefficient_peak", "the largest FIR coefficient, not a sound pressure", 0},
+        // W2-C (docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md, record sec.10
+        // item C8): the CSV/JSON column name for the sampled C-weighted peak.
+        // It DOES name its quantity -- the "C" -- just in the wire format's
+        // own camelCase vocabulary rather than the readout-label "L_Cpeak"
+        // form kQuantityTokens matches, and C8's acceptance fixes this exact
+        // spelling, so the column is exempted here rather than renamed.
+        {"peakcdb", "SplLog.h's CSV/JSON column for the sampled C-weighted peak (C8)", 0},
     };
 
     std::size_t filesScanned = 0;
