@@ -120,6 +120,27 @@ private:
     void pollCalibrationPipeline();
     void updateCalibrationReadout();
 
+    /// Task W2-E2b part A (record §8, §10 C4: "a weighting change starts a
+    /// new log"; by the same reasoning, so does a calibration change).
+    /// Called from `pollCalibrationPipeline()` right after a START check
+    /// completes: stops any log already running and starts a fresh one whose
+    /// `SplConfig::referenceOffsetDb`/`calibrated` carry the new offset --
+    /// never applied to blocks the OLD, uncalibrated log already wrote. A
+    /// no-op if nothing was logging yet (calibrating with no active
+    /// measurement session has nothing to restart into).
+    void restartSplLoggingForCalibration();
+
+    /// Task W2-E2b part A. Called from `pollCalibrationPipeline()` right
+    /// after an END check completes: writes the calibration record (start/end
+    /// readings, drift, verdict, the block-index range the pair brackets --
+    /// SplCalibrationRecord.h) into `currentSplSessionDir_`, and — when the
+    /// drift exceeded ISO 1996-2:2017 cl. 5.2's 0.5 dB — marks this session's
+    /// calibration invalid on `analysisThread_` so the live `SplBlockView`
+    /// publishes it (record §15 A2). Runs on the message thread, never the
+    /// analysis thread (task brief's own requirement). A no-op if
+    /// `currentSplSessionDir_` is empty.
+    void writeCalibrationRecordAndUpdateInvalidFlag();
+
     /// L6a task W2-E2a (record §10, §13 Q7), defined in MainComponentSpl.cpp:
     /// the composition root's own SPL wiring. Polled from `timerCallback()`
     /// -- the same shape `refreshChannelNamesFromDevice()` already uses --
@@ -145,6 +166,28 @@ private:
     /// increases (CaptureBus::prepare()'s own fetch_add), so it makes the
     /// name unique by construction with no clock precision to lose.
     void startFreshSplLog(std::uint64_t epoch);
+
+    /// The general form `startFreshSplLog(epoch)` calls with `SplConfig{}`
+    /// (uncalibrated defaults) -- task W2-E2b part A's own seam, so a
+    /// calibration-triggered restart (`restartSplLoggingForCalibration`) and
+    /// a device/epoch-triggered one (`startFreshSplLog`) share every line
+    /// except which config and calibrator level they pass down. Records the
+    /// new folder into `currentSplSessionDir_` and the channel list into
+    /// `currentSplLoggedChannels_` -- both read back by
+    /// `writeCalibrationRecordAndUpdateInvalidFlag()` and
+    /// `exportReportClicked()`.
+    void startFreshSplLogWithConfig(const rta::measure::SplConfig& config,
+                                    std::optional<double> calibratorLevelDb, std::uint64_t epoch);
+
+    /// Task W2-E2b part B (plan Wave 4a-A / W2-E2b): reachable from a
+    /// toolbar button. Builds a `ReportPayload` from `currentSplSessionDir_`
+    /// (SplReportPayloadBuilder.h) -- reading Ln/dose/alarm state from the
+    /// most recently published live `Snapshot::spl`, since neither is in the
+    /// log -- renders it (SplReport.h, already shipped) and writes
+    /// `report.html` into that same folder. Message-thread file I/O, a
+    /// one-off user action, never the analysis thread. A no-op if nothing has
+    /// logged a block yet.
+    void exportReportClicked();
 
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
@@ -198,6 +241,16 @@ private:
     // ------------------------------------------------------------------------
 
     // --- L6a Wave 3: the calibration flow --------------------------------
+    /// Route 0's measurement channel, raw -- what a calibrator clipped onto
+    /// the mic capsule delivers (MainComponentCalibration.cpp's own original
+    /// comment). Hoisted to a class constant (task W2-E2b part A) so it is
+    /// one spelling shared by the calibration capture itself, the block-index
+    /// range a calibration record brackets, and the channel
+    /// `writeCalibrationRecordAndUpdateInvalidFlag()` marks invalid --
+    /// previously a `MainComponentCalibration.cpp`-local anonymous-namespace
+    /// constant that only that file could see.
+    static constexpr int kCalibrationRouteIndex = 0;
+
     juce::TextButton calibrationStartButton_{"CAL START"};
     juce::TextButton calibrationEndButton_{"CAL END"};
     juce::Label calibrationReadout_;
@@ -232,6 +285,20 @@ private:
     /// `AnalysisThread::rebuildAnalysersIfEpochChanged` already relies on
     /// for the same reason, can. See measure/SplLoggingDecision.h.
     std::uint64_t lastSplEpoch_ = 0;
+    /// Task W2-E2b: the folder `startFreshSplLog`/`startFreshSplLogWithConfig`
+    /// most recently created -- where a calibration record
+    /// (`writeCalibrationRecordAndUpdateInvalidFlag`) and `report.html`
+    /// (`exportReportClicked`) are written. Empty until the first log opens.
+    std::string currentSplSessionDir_;
+    /// The channel list that folder's log(s) were opened for -- read back by
+    /// `exportReportClicked()` so it asks the payload builder for exactly the
+    /// channels that are actually logging, not a hardcoded one.
+    std::vector<int> currentSplLoggedChannels_;
+    // ----------------------------------------------------------------------
+
+    // --- L6a task W2-E2b part B: export the report from a live session -----
+    juce::TextButton exportReportButton_{"EXPORT REPORT"};
+    juce::Label exportReportReadout_;
     // ----------------------------------------------------------------------
 
     rta::view::DevicePanel devicePanel_;

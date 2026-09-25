@@ -68,6 +68,19 @@ target_sources(rtatool PRIVATE
     src/MainComponentSpl.cpp
     src/export/SplLogPipeline.cpp
     src/export/SplLogWriter.cpp
+    # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /
+    # SplReportSections.cpp: task W2-E2b part B -- MainComponentSpl.cpp's own
+    # exportReportClicked() is the first `app/src` caller of the report
+    # renderer (plan Wave 4a-A) and its own payload builder; both are
+    # JUCE-free and already compiled into rtatool_analysis_tests, but this
+    # target names every source one by one, so all four have to be listed
+    # here too or this binary fails to link with undefined symbols -- the
+    # same "first real caller" shape SplHistory.cpp/SplAlarms.cpp went
+    # through for W2-E1 above.
+    src/export/SplReportPayloadBuilder.cpp
+    src/export/SplReport.cpp
+    src/export/SplReportHash.cpp
+    src/export/SplReportSections.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
@@ -323,6 +336,13 @@ target_sources(rtatool_snapshot PRIVATE
     src/MainComponentSpl.cpp
     src/export/SplLogPipeline.cpp
     src/export/SplLogWriter.cpp
+    # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /
+    # SplReportSections.cpp: see the matching entry in rtatool's own source
+    # list above -- task W2-E2b part B, needed here for the same reason.
+    src/export/SplReportPayloadBuilder.cpp
+    src/export/SplReport.cpp
+    src/export/SplReportHash.cpp
+    src/export/SplReportSections.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
     src/view/RoutingMatrix.cpp

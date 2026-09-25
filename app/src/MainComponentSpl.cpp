@@ -27,6 +27,8 @@
 // read once, each time logging (re)starts.
 #include "MainComponent.h"
 
+#include "export/SplReport.h"
+#include "export/SplReportPayloadBuilder.h"
 #include "measure/SplConfig.h"
 #include "measure/SplLoggingDecision.h"
 #include "measure/SplSessionFolderName.h"
@@ -34,10 +36,22 @@
 
 #include <array>
 #include <chrono>
+#include <fstream>
 #include <span>
 #include <string>
 
 void MainComponent::startFreshSplLog(std::uint64_t epoch) {
+    // SplConfig{} defaults, no preferences store (SPL-R11) -- the task
+    // brief's own instruction. This path is the device/epoch-triggered
+    // restart, always uncalibrated: task W2-E2b part A's own restart, for a
+    // calibration change, is `startFreshSplLogWithConfig` below, called from
+    // `restartSplLoggingForCalibration()` instead.
+    startFreshSplLogWithConfig(rta::measure::SplConfig{}, std::nullopt, epoch);
+}
+
+void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& config,
+                                               std::optional<double> calibratorLevelDb,
+                                               std::uint64_t epoch) {
     // Whichever channels currently hold the Measurement role -- exactly what
     // W2-E2's own task text asks for ("measurement channel(s)"), read once
     // here rather than tracked continuously (this file's own header
@@ -74,13 +88,46 @@ void MainComponent::startFreshSplLog(std::uint64_t epoch) {
     // rather than needing a second, redundant one here.
     [[maybe_unused]] const bool sessionDirCreated = sessionDir.createDirectory();
 
-    // SplConfig{} defaults, no preferences store (SPL-R11) -- the task
-    // brief's own instruction. Wave 3's calibration offset is applied to a
-    // LIVE session by starting a new log (W2-E2b, out of scope here); this
-    // is the very first log of a session, so the default, uncalibrated
-    // offset is correct for it.
-    analysisThread_.enableSplLogging(rta::measure::SplConfig{}, channels,
-                                     sessionDir.getFullPathName().toStdString());
+    currentSplSessionDir_ = sessionDir.getFullPathName().toStdString();
+    currentSplLoggedChannels_.assign(channels.begin(), channels.end());
+    analysisThread_.enableSplLogging(config, channels, currentSplSessionDir_, calibratorLevelDb);
+}
+
+void MainComponent::exportReportClicked() {
+    if (currentSplSessionDir_.empty() || currentSplLoggedChannels_.empty()) {
+        exportReportReadout_.setText("export: no SPL session logged yet", juce::dontSendNotification);
+        return;
+    }
+
+    rta::splexport::SplReportBuildRequest request;
+    request.sessionDir = currentSplSessionDir_;
+    request.channels = currentSplLoggedChannels_;
+    request.appName = "RTA Tool";
+    // Task part B: Ln/dose/alarm are NOT in the log -- read from the most
+    // recently PUBLISHED live snapshot, exactly as the pane itself does
+    // (SplView.cpp reads the same `SnapshotSource::latest()->spl`).
+    if (const auto snapshot = analysisThread_.latest()) {
+        request.liveView = snapshot->spl;
+    }
+
+    const auto result = rta::splexport::buildReportPayload(request);
+    if (!result.payload.has_value()) {
+        exportReportReadout_.setText("export: no readable log in this session's folder",
+                                     juce::dontSendNotification);
+        return;
+    }
+
+    const std::string html = rta::splexport::renderReport(*result.payload);
+    const std::string path = currentSplSessionDir_ + "/report.html";
+    // Message-thread file I/O, a one-off user action -- never the analysis
+    // thread (task brief's own requirement). Binary mode: the
+    // SplLogWriter.cpp `writeSessionHeaderFile` precedent, so the bytes on
+    // disk match `html` exactly with no CRLF translation.
+    std::ofstream out(path, std::ios::out | std::ios::trunc | std::ios::binary);
+    out << html;
+    exportReportReadout_.setText(out ? juce::String("export: wrote ") + juce::String(path)
+                                     : juce::String("export: failed to write ") + juce::String(path),
+                                 juce::dontSendNotification);
 }
 
 void MainComponent::pollSplLogging() {

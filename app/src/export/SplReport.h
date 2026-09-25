@@ -103,6 +103,21 @@ struct ReportValidity {
     /// kMaxMetrics`, record sec.15 A5) -- 0 normally.
     std::uint32_t refusedMetrics = 0;
     std::vector<std::string> segmentPaths;
+    /// Task W2-E2b part B: trailing bytes `SplLog.h::readLog` discarded
+    /// because they were a truncated final line (record §10, C3: "no
+    /// atomicity claim... the reader discards it and reports how many bytes
+    /// it discarded"). Summed across every segment the payload builder read.
+    /// Normally 0.
+    std::uint64_t bytesDiscarded = 0;
+    /// Task W2-E2b part B's own instruction: "Ln / dose / alarm states are
+    /// NOT in the log ... take them from the live SplBlockView at export
+    /// time and state that source in the report's validity section". True
+    /// when a live view was available to the builder; false means this
+    /// report's dose/Ln/alarm rows are all absent because the session was
+    /// no longer running at export time -- never silently indistinguishable
+    /// from "measured, and there was nothing to report"
+    /// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+    bool lnDoseAlarmFromLiveSession = false;
 };
 
 /// One point of the time-history strip (record sec.9 item 7): one metric's

@@ -355,6 +355,11 @@ std::string renderValidity(const ReportPayload& p) {
     body += kv("Gap blocks", std::to_string(v.gapBlocks));
     body += kv("Total samples lost to gaps", std::to_string(v.droppedSamplesTotal));
     body += kv("Refused metrics (configured beyond the cap)", std::to_string(v.refusedMetrics));
+    body += kv("Bytes discarded (truncated final line)", std::to_string(v.bytesDiscarded));
+    body += kv("Ln / dose / alarm source",
+              v.lnDoseAlarmFromLiveSession
+                  ? "live session, read at export time"
+                  : "unavailable -- session was not live when this report was built");
     body += "<table><tr><th>Segment</th></tr>";
     for (const auto& seg : v.segmentPaths) body += "<tr><td>" + escapeHtml(seg) + "</td></tr>";
     body += "</table>";
