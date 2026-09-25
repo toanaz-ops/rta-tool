@@ -135,7 +135,16 @@ private:
     /// session folder and calls `enableSplLogging`. Never called with the
     /// previous session still open -- the caller disables first when one
     /// was running (station-4 fix round, PR #31, verifier finding 1).
-    void startFreshSplLog();
+    ///
+    /// `epoch` (station-4 fix round, round 3, LOW finding 3) is suffixed
+    /// onto the folder name: the UTC timestamp alone has 1-second
+    /// resolution, so two EnableFresh actions inside the same second (a
+    /// rapid device bounce) would otherwise both resolve to the SAME folder,
+    /// and the second one's createDirectory() + fresh log files would
+    /// truncate the first session's still-unread ones. `epoch` only ever
+    /// increases (CaptureBus::prepare()'s own fetch_add), so it makes the
+    /// name unique by construction with no clock precision to lose.
+    void startFreshSplLog(std::uint64_t epoch);
 
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from

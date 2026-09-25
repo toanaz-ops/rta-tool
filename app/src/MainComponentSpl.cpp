@@ -29,42 +29,15 @@
 
 #include "measure/SplConfig.h"
 #include "measure/SplLoggingDecision.h"
+#include "measure/SplSessionFolderName.h"
 #include "rta/platform/ChannelConfig.h"
 
 #include <array>
 #include <chrono>
-#include <ctime>
-#include <iomanip>
 #include <span>
-#include <sstream>
 #include <string>
 
-namespace {
-
-// The session directory's own leaf name: an ISO-8601-shaped, filesystem-safe
-// UTC stamp ("20260925T143007Z"). Built from <chrono>/<ctime> rather than
-// juce::Time::formatted()/toISO8601() -- both of those read LOCAL time
-// (JUCE's own juce_Time.cpp: every getter goes through millisToLocal()) and
-// this composition root wants the WALL CLOCK independent of the operator's
-// timezone, matching SplLogHeaderInfo::startedAtUnixMs's own "no wall clock
-// in any arithmetic, but one is recorded once as metadata" rule (record §2).
-std::string utcTimestampForFolder() {
-    const auto now = std::chrono::system_clock::now();
-    const std::time_t nowTimeT = std::chrono::system_clock::to_time_t(now);
-    std::tm utc{};
-#if defined(_MSC_VER)
-    gmtime_s(&utc, &nowTimeT);
-#else
-    gmtime_r(&nowTimeT, &utc);
-#endif
-    std::ostringstream out;
-    out << std::put_time(&utc, "%Y%m%dT%H%M%SZ");
-    return out.str();
-}
-
-}  // namespace
-
-void MainComponent::startFreshSplLog() {
+void MainComponent::startFreshSplLog(std::uint64_t epoch) {
     // Whichever channels currently hold the Measurement role -- exactly what
     // W2-E2's own task text asks for ("measurement channel(s)"), read once
     // here rather than tracked continuously (this file's own header
@@ -75,17 +48,20 @@ void MainComponent::startFreshSplLog() {
         audioIo_.bus().config().channelsWithRole(rta::platform::ChannelRole::Measurement, buf);
     const std::span<const int> channels(buf.data(), static_cast<std::size_t>(found));
 
-    // Documents/RTA Tool/spl/<UTC timestamp>/ -- the JUCE path resolution
-    // happens HERE, at the composition root, exactly as the task brief asks;
-    // AnalysisThread and SplLogPipeline below it receive a plain path string
-    // and know nothing about juce::File (measure_has_no_framework_deps'
-    // whole point). A fresh timestamp every call -- including the epoch-
-    // change case (finding 1) -- is what keeps a reconfigured session from
-    // ever sharing a folder with the one before it.
-    const auto sessionDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                                 .getChildFile("RTA Tool")
-                                 .getChildFile("spl")
-                                 .getChildFile(utcTimestampForFolder());
+    // Documents/RTA Tool/spl/<UTC timestamp>-e<epoch>/ -- the JUCE path
+    // resolution happens HERE, at the composition root, exactly as the task
+    // brief asks; AnalysisThread and SplLogPipeline below it receive a
+    // plain path string and know nothing about juce::File
+    // (measure_has_no_framework_deps' whole point). `sessionFolderName`
+    // (measure/SplSessionFolderName.h, JUCE-free) is what appends the epoch
+    // -- round 3, LOW finding 3 -- see that header's own comment for why the
+    // 1-second-resolution timestamp alone is not enough.
+    const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    const auto sessionDir =
+        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+            .getChildFile("RTA Tool")
+            .getChildFile("spl")
+            .getChildFile(rta::measure::sessionFolderName(now, epoch));
     // Station-4 fix round (PR #31, finding 6): the result USED to be
     // discarded outright. It still is not separately reported here -- a
     // directory `createDirectory()` failed to make means every segment
@@ -140,5 +116,5 @@ void MainComponent::pollSplLogging() {
     if (wasActive) {
         analysisThread_.disableSplLogging();
     }
-    startFreshSplLog();
+    startFreshSplLog(currentEpoch);
 }
