@@ -24,6 +24,7 @@
 #include "view/RoutingMatrix.h"
 #include "view/WorkspaceView.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -177,6 +178,10 @@ private:
     /// Calibration both arming it at once.
     bool calibrationCaptureArmed_ = false;
     bool calibrationCaptureIsStart_ = false;
+    /// When the currently-armed capture was requested; `captureTimedOut`
+    /// (fix round finding 6) is what stops a calibrator-only rig's missing
+    /// REF channel from locking Locate out for the rest of the session.
+    std::int64_t calibrationCaptureArmedAtMs_ = 0;
     std::shared_ptr<const rta::measure::LocateCapture> lastHandledCalibrationCapture_;
     // ----------------------------------------------------------------------
 
