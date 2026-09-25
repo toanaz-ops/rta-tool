@@ -510,9 +510,17 @@ add_test(NAME measure_has_no_framework_deps
 # SPL-R10: SplReportStyle.h's CSS intentionally contains no selector shaped
 # like "class" + separator + 0/1/2 (A8) -- Task G shows this guard red on a
 # deliberately-added `.class-1 {}` rule and green after reverting it.
+#
+# EXEMPTIONS (PR #30 fix round, LOW): only "core_makes_no_class_1_claim" --
+# SplReportStyle.h's own SPL-R10 comment names that guard by its identifier.
+# NOT "report_makes_no_class_1_claim" (this guard's own name): nothing in
+# this scope currently references it, and check_no_conformance_claim.cmake
+# FATAL_ERRORs on an exemption that matches zero files -- listing it here
+# unearned would break this very test, which is the point.
 add_test(NAME report_makes_no_class_1_claim
     COMMAND ${CMAKE_COMMAND}
             "-DGLOBS=${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplReport*.h;${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplReport*.cpp"
             -DTEST_NAME=report_makes_no_class_1_claim
             "-DSCOPE_LABEL=app/src/export's report templates"
+            -DEXEMPTIONS=core_makes_no_class_1_claim
             -P ${CMAKE_SOURCE_DIR}/core/tests/check_no_conformance_claim.cmake)

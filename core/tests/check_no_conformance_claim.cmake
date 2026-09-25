@@ -69,6 +69,19 @@ endif()
 if(NOT DEFINED SCOPE_LABEL)
     set(SCOPE_LABEL "core/")
 endif()
+# EXEMPTIONS (PR #30 fix round, LOW): semicolon-separated self-reference
+# tokens for THIS scan's own corpus, passed by the registering CMakeLists --
+# not a hardcoded list shared by both guards. A hardcoded list that names
+# both ctest names regardless of which one is running always carries at
+# least one entry that matches nothing wherever it runs (core/ never
+# mentions "report_makes_no_class_1_claim"; report/ never mentions its own
+# name either, only the core guard's), which is exactly the kind of
+# exemption memory/a-naming-grep-that-bans-a-word-bans-its-own-justification.md
+# warns rots silently. Each caller names only the tokens ITS OWN files
+# actually contain, and the check below FATAL_ERRORs if one does not.
+if(NOT DEFINED EXEMPTIONS)
+    set(EXEMPTIONS "")
+endif()
 
 if(DEFINED GLOBS)
     file(GLOB sources ${GLOBS})
@@ -111,26 +124,20 @@ file(GLOB sources
 endif()
 
 # SPL-R10 / memory/a-naming-grep-that-bans-a-word-bans-its-own-justification.md:
-# this guard's own two ctest names -- "core_makes_no_class_1_claim" and
+# this guard's own ctest names -- "core_makes_no_class_1_claim" and
 # "report_makes_no_class_1_claim" -- each contain the literal shape
 # "class_1" or "class_1_claim" that the regex below hunts for. A file that
 # explains *why* a false positive exists (SplReportStyle.h's SPL-R10 comment,
 # for one) must name the guard it is talking about, and naming it in a
-# backtick-quoted comment is not a conformance claim. Strip just these two
-# known self-references before matching -- not comments in general, because
-# an actual "Class 1" claim written INSIDE a comment is exactly the shape
-# this guard exists to catch (its own docstring above: "not as an
+# backtick-quoted comment is not a conformance claim. Strip just the
+# EXEMPTIONS tokens before matching -- not comments in general, because an
+# actual "Class 1"/"Class 2" claim written INSIDE a comment is exactly the
+# shape this guard exists to catch (its own docstring above: "not as an
 # identifier, a comment, a doc string, or a test name"), so blanket
 # comment-stripping would open a hole in the guard it is supposed to be
-# closing. If this list ever stops matching anything in the scanned corpus,
-# that is a sign the guard's own name changed and this list is stale --
-# re-check it rather than assuming it is still needed.
-set(self_reference_exemptions
-    "core_makes_no_class_1_claim"
-    "report_makes_no_class_1_claim"
-)
-
+# closing.
 set(violations "")
+set(exemptions_found "")
 foreach(file IN LISTS sources)
     file(READ "${file}" content)
 
@@ -147,11 +154,31 @@ foreach(file IN LISTS sources)
     set(content_to_scan "${content}")
     string(REGEX REPLACE "\"[ \t]*\r?\n[ \t]*\"" "" content_to_scan "${content_to_scan}")
 
-    foreach(exemption IN LISTS self_reference_exemptions)
+    foreach(exemption IN LISTS EXEMPTIONS)
+        if(content MATCHES "${exemption}")
+            list(APPEND exemptions_found "${exemption}")
+        endif()
         string(REPLACE "${exemption}" "" content_to_scan "${content_to_scan}")
     endforeach()
+
     if(content_to_scan MATCHES "[Cc][Ll][Aa][Ss][Ss][ \t_-]*[012]")
         list(APPEND violations "${file}")
+    endif()
+endforeach()
+
+# The exemption list is worthless the moment it stops matching anything --
+# the same "every exemption must actually be FOUND or the case goes red"
+# discipline memory/a-naming-grep-that-bans-a-word-bans-its-own-justification.md
+# prescribes for a homonym allow-list. A caller must name only tokens ITS OWN
+# corpus actually contains.
+foreach(exemption IN LISTS EXEMPTIONS)
+    if(NOT exemption IN_LIST exemptions_found)
+        message(FATAL_ERROR
+            "${TEST_NAME}: EXEMPTIONS entry \"${exemption}\" matches ZERO "
+            "files in this scan (scope: ${SCOPE_LABEL}) -- it is stale. "
+            "Either the guard it names was renamed, or this exemption was "
+            "never needed for this scope. Remove it or fix it; do not carry "
+            "an unproven exemption.")
     endif()
 endforeach()
 
