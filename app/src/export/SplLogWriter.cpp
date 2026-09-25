@@ -43,7 +43,7 @@ void SplLogWriter::openSegment() {
         // state -- so the next `<<`/`flush()` below are harmless no-ops on a
         // closed stream rather than a crash. Recording that here is the only
         // place the failure is ever visible.
-        openFailed_ = true;
+        writeFailed_ = true;
     }
     stream_ << logHeader(config_, info_);
     stream_ << csvHeaderRow() << '\n';
@@ -60,7 +60,19 @@ void SplLogWriter::write(const rta::meter::Block& block) {
     }
     stream_ << logRow(block, config_.referenceOffsetDb);
     stream_.flush();
+    // Station-4 fix round (PR #31, round 3, finding 2): a stream that opened
+    // fine can still fail MID-SESSION -- the disk fills, or the underlying
+    // handle is closed out from under this writer -- and `<<`/`flush()` on a
+    // failed std::ofstream are silent no-ops, exactly like the open failure
+    // above. `stream_`'s own bool conversion is `!stream_.fail()`, so this
+    // catches both operations in one check without duplicating open's own
+    // is_open() test (a stream that failed to WRITE is still "open").
+    if (!stream_) writeFailed_ = true;
     ++blocksInSegment_;
+}
+
+void SplLogWriter::forceStreamFailureForTest() noexcept {
+    stream_.setstate(std::ios::failbit);
 }
 
 void SplLogWriter::reconfigure(rta::dsp::WeightingType weighting, rta::meter::TimeWeighting detector) {

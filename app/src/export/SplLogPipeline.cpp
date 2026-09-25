@@ -81,7 +81,7 @@ void SplLogPipeline::setupWriters() {
         // Finding 6: the constructor's own openSegment() call already ran
         // (SplLog.h's own comment: "the constructor's own first call"), so
         // this is the earliest point a failed FIRST segment is visible.
-        if (sinkPtr->writer->openFailed()) {
+        if (sinkPtr->writer->writeFailed()) {
             sinkPtr->writeFailed.store(true, std::memory_order_relaxed);
         }
         channelFiles.push_back(sinkPtr->writer->segmentPaths().back());
@@ -114,10 +114,12 @@ bool SplLogPipeline::drainOnce() {
             sinkPtr->writer->write(scratch);
             any = true;
         }
-        // Finding 6: a LATER segment (rotation, mid-session) can also fail
-        // to open -- checked once per drain pass rather than once per
-        // `write()` call, cheap either way since this is a plain bool read.
-        if (sinkPtr->writer->openFailed()) {
+        // Finding 6/round-3 finding 2: a LATER segment can fail to open on
+        // rotation, or a `write()` call itself can fail mid-session (disk
+        // full, handle closed underneath this writer) -- checked once per
+        // drain pass rather than once per `write()` call, cheap either way
+        // since this is a plain bool read.
+        if (sinkPtr->writer->writeFailed()) {
             sinkPtr->writeFailed.store(true, std::memory_order_relaxed);
         }
     }

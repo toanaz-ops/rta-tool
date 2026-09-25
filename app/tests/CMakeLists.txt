@@ -212,6 +212,11 @@ add_executable(rtatool_analysis_tests
     # log (SplLog.h is header-only, the EqTextExport.h precedent).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogWriter.cpp
     test_spl_log.cpp
+    # test_spl_log_write_failure.cpp: station-4 fix round, PR #31, round 3,
+    # verifier finding 2 (MEDIUM) -- a write() failing AFTER a successful
+    # open, not just openSegment() itself. New file rather than growing
+    # test_spl_log.cpp, which was already close to the 400-line hard cap.
+    test_spl_log_write_failure.cpp
     # test_spl_session_header.cpp: fix round item 7, record §10's "one file
     # per logged channel plus one session header" -- SplSessionHeader.h is
     # header-only content, split out of SplLog.h to stay well clear of the

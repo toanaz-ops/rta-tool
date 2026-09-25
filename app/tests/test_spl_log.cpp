@@ -358,7 +358,7 @@ TEST_CASE("C9 reconstructedElapsedUnixMs is early-immune to a gap", "[spl_log]")
 
 // --- station-4 fix round (PR #31, finding 6): a silent open failure --------
 
-TEST_CASE("openFailed() is true when the segment cannot be opened, and stays "
+TEST_CASE("writeFailed() is true when the segment cannot be opened, and stays "
          "true after a later success",
          "[spl_log]") {
     // No TempDir here on purpose: basePath points INTO a directory that was
@@ -375,13 +375,13 @@ TEST_CASE("openFailed() is true when the segment cannot be opened, and stays "
 
     SplConfig config;
     SplLogWriter writer((missingDir / "channel").string(), config, headerInfo(), 3600);
-    CHECK(writer.openFailed());  // the constructor's own openSegment() already ran
+    CHECK(writer.writeFailed());  // the constructor's own openSegment() already ran
 
     // A write against a failed stream is a documented no-op (SplLogWriter.cpp
     // openSegment()'s own comment: "harmless no-ops on a closed stream"), not
     // a crash -- and STICKY means a later write must not clear the flag.
     writer.write(blockAtLevel(0, 48000, 80.0));
-    CHECK(writer.openFailed());
+    CHECK(writer.writeFailed());
 
     // Sticky the other direction too: creating the directory now and
     // rotating into a NEW segment must not un-report the earlier failure --
@@ -389,7 +389,7 @@ TEST_CASE("openFailed() is true when the segment cannot be opened, and stays "
     // segment never wrote, and a later success does not back-fill it.
     std::filesystem::create_directories(missingDir);
     writer.reconfigure(rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Slow);
-    CHECK(writer.openFailed());
+    CHECK(writer.writeFailed());
     std::error_code ec;
     std::filesystem::remove_all(missingDir, ec);
 }
