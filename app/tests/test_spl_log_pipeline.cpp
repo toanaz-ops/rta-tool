@@ -5,12 +5,9 @@
 // exercised with no AnalysisThread and no JUCE in the path.
 #include "export/SplLogPipeline.h"
 
-#include "AllocationProbe.h"
-
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -19,7 +16,6 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 using namespace rta::splexport;
@@ -193,69 +189,11 @@ TEST_CASE("SplLogPipeline rotates segments at config.segmentBlocks", "[spl_log_p
     for (std::uint64_t i = 0; i < kBlocks; ++i) CHECK(result.blocks[i].blockIndex == i);
 }
 
-// --- W0-B0's shared counting allocator: the producer never allocates -------
-
-TEST_CASE("pushBlock is allocation-free after enable(), pushing 10x queue capacity",
-         "[spl_log_pipeline]") {
-    TempDir dir("alloc");
-
-    SplLogEnableParams params;
-    params.config = SplConfig{};
-    params.channels = { channelSpec(dir.path, 0) };
-    params.queueCapacityBlocks = 64;
-
-    SplLogPipeline pipeline;
-
-    // Station-4 fix round (PR #31, finding 4) moved SplLogWriter's own
-    // construction -- opening the file, writing the header, an internal
-    // stream buffer allocation -- off enable() and onto the writer thread's
-    // own first act (setupWriters()). AllocationProbe is a GLOBAL, process-
-    // wide counter (its whole point: catch an allocation from ANY thread,
-    // memory/an-allocation-the-optimiser-removed-reads-as-zero-bytes.md), so
-    // if that setup is still running when the probe scope below starts, its
-    // allocations get charged to pushBlock() even though they are the
-    // writer thread's own one-time setup, not the producer. Wait for setup
-    // to finish (this same injection seam test_spl_log_pipeline.cpp's own
-    // "opens the log file on the writer thread" case already uses) BEFORE
-    // opening the probe scope -- caught intermittently on ubuntu-latest CI
-    // (32 bytes over 640 pushBlock calls) once finding 4 made the timing
-    // possible; it did not reproduce locally on Windows, consistent with a
-    // race whose odds differ by OS scheduler.
-    std::atomic<bool> writerReady{ false };
-    pipeline.setWriterFactoryForTest(
-        [&](const std::string& basePath, const SplConfig& config,
-            const rta::splexport::SplLogHeaderInfo& info, std::uint64_t segmentBlocks) {
-            auto writer = std::make_unique<rta::splexport::SplLogWriter>(basePath, config, info,
-                                                                         segmentBlocks);
-            writerReady.store(true, std::memory_order_release);
-            return writer;
-        });
-    pipeline.enable(params);
-
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-    while (!writerReady.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    REQUIRE(writerReady.load(std::memory_order_acquire));
-
-    std::size_t bytes = 0;
-    {
-        // Non-elidable (memory/an-allocation-the-optimiser-removed-reads-as-
-        // zero-bytes.md): every pushed block's effect ESCAPES this scope
-        // through `pipeline`'s own queue/dropped-counter state, which the
-        // assertions below read back, so the optimiser cannot prove the
-        // calls are dead and elide them.
-        const rta::test::AllocationProbe probe;
-        for (std::uint64_t i = 0; i < params.queueCapacityBlocks * 10; ++i) {
-            pipeline.pushBlock(0, distinguishableBlock(i));
-        }
-        bytes = probe.bytes();
-    }
-    INFO("bytes allocated by " << params.queueCapacityBlocks * 10 << " pushBlock calls = " << bytes);
-    CHECK(bytes == 0);
-
-    pipeline.disable();
-}
+// The allocation-free producer case moved to test_spl_log_pipeline_alloc.cpp
+// (round 4, LOW finding 3): this file was at 428 lines, over the project's
+// 400-line hard cap; that test's own subject (AllocationProbe's per-thread
+// attribution, round 4 finding 2) is a different concern from the round-trip
+// / rotation / overflow / wiring cases here.
 
 // --- a full queue is counted as dropped, and the producer never blocks ----
 
@@ -336,93 +274,4 @@ TEST_CASE("pushBlock on a channel nothing was enabled for does nothing and does 
     pipeline.pushBlock(5, distinguishableBlock(0));  // channel 5 has no sink
     CHECK(pipeline.droppedBlocks(5) == 0);
     pipeline.disable();
-}
-
-// --- station-4 fix round (PR #31, finding 4): enable() does no file I/O ---
-
-TEST_CASE("enable() opens the log file on the writer thread, never on the "
-         "calling thread",
-         "[spl_log_pipeline]") {
-    // enable() USED to construct SplLogWriter (which opens the file and
-    // writes the CSV/session header) inline, on whatever thread called it --
-    // the analysis thread in production, which repo CLAUDE.md's real-time
-    // rule forbids doing file I/O on. setWriterFactoryForTest lets this test
-    // see WHICH thread is running at the exact moment that construction
-    // happens, without needing a fake SplLogWriter: the factory still builds
-    // a real one, it just records std::this_thread::get_id() first.
-    TempDir dir("thread-id");
-
-    SplLogEnableParams params;
-    params.config = SplConfig{};
-    params.channels = { channelSpec(dir.path, 0) };
-
-    SplLogPipeline pipeline;
-    std::atomic<bool> captured{ false };
-    std::thread::id writerThreadId{};
-    pipeline.setWriterFactoryForTest(
-        [&](const std::string& basePath, const SplConfig& config,
-            const rta::splexport::SplLogHeaderInfo& info, std::uint64_t segmentBlocks) {
-            writerThreadId = std::this_thread::get_id();
-            captured.store(true, std::memory_order_release);
-            return std::make_unique<rta::splexport::SplLogWriter>(basePath, config, info,
-                                                                   segmentBlocks);
-        });
-
-    const auto callingThreadId = std::this_thread::get_id();
-    pipeline.enable(params);
-
-    // Poll rather than sleep-then-check: setupWriters() runs as the writer
-    // thread's very first act, before any idle sleep, so this is expected to
-    // resolve in well under a millisecond -- 500 ms is generous headroom
-    // over that, matching the poll-with-bounded-timeout shape this repo
-    // already uses for cross-thread handoffs (test_capture_timeout.cpp's own
-    // precedent), so a hang shows up as a clear test FAILURE, not the test
-    // process blocking forever.
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-    while (!captured.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    REQUIRE(captured.load(std::memory_order_acquire));
-    CHECK(writerThreadId != callingThreadId);
-
-    pipeline.disable();
-}
-
-// --- station-4 fix round (PR #31, finding 6): the pipeline mirrors a real
-// open failure through writeFailed(), and remembers it past disable() ------
-
-TEST_CASE("writeFailed() is true when the channel's directory does not "
-         "exist, and survives disable()",
-         "[spl_log_pipeline]") {
-    // Same "point basePath into a directory that was never created" idiom
-    // test_spl_log.cpp's own openFailed() case uses -- portable across CI
-    // OSes, unlike a chmod-based unwritable directory.
-    const auto missingDir = std::filesystem::temp_directory_path() / "rta-test-spllogpipeline" /
-                            "does-not-exist-6a2f9";
-    std::filesystem::remove_all(missingDir);
-
-    SplLogEnableParams params;
-    params.config = SplConfig{};
-    params.channels = { channelSpec(missingDir, 0) };
-
-    SplLogPipeline pipeline;
-    pipeline.enable(params);
-
-    // Poll rather than sleep-then-check, same shape as the thread-id test
-    // above: setupWriters() (which is where the failing open happens) runs
-    // as the writer thread's very first act.
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-    while (!pipeline.writeFailed(0) && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    CHECK(pipeline.writeFailed(0));
-
-    pipeline.disable();
-    // lastWriteFailed_'s whole reason to exist (SplLogPipeline.h's own
-    // comment): a caller reading AFTER the session ended, same shape as
-    // droppedBlocks()'s post-disable() snapshot.
-    CHECK(pipeline.writeFailed(0));
-
-    std::error_code ec;
-    std::filesystem::remove_all(missingDir, ec);
 }

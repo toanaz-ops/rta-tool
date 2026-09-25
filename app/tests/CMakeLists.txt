@@ -252,6 +252,17 @@ add_executable(rtatool_analysis_tests
     # operating systems; only the caller (AnalysisThread) is JUCE.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogPipeline.cpp
     test_spl_log_pipeline.cpp
+    # test_spl_log_pipeline_writefailed.cpp: split out of test_spl_log_
+    # pipeline.cpp (round 4, PR #31, LOW finding 3, 400-line hard cap) --
+    # every writeFailed()-mirror case: findings 4 and 6's own tests plus
+    # round 4 finding 1's mutant-M4 case (drainOnce()'s own check, isolated
+    # from setupWriters()'s by forcing the stream failure AFTER a
+    # successful open rather than at open time).
+    test_spl_log_pipeline_writefailed.cpp
+    # test_spl_log_pipeline_alloc.cpp: split out of the same file, same
+    # reason -- pure relocation this commit; round 4 finding 2 (the next
+    # commit) is what changes its body.
+    test_spl_log_pipeline_alloc.cpp
     # test_spl_publish_round4.cpp: PR #29 round-4 fix pass items 3/4 -- a NEW
     # file rather than growing test_spl_publish.cpp (already over the
     # 400-line cap pre-existing this round) -- SplBlockView::lnTicksOverflowed
