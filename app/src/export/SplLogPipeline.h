@@ -1,0 +1,167 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Part of RTA Tool -- app/src/export. No JUCE: enforced by the
+// measure_has_no_framework_deps ctest.
+// Lane L6a task W2-E2a (docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md
+// "W2-E -- the wiring nobody was assigned"; record docs/dsp/
+// 2026-09-16-spl-pro-l6a.md §10, §13 Q7).
+//
+// THE THREAD BOUNDARY this class exists to hold. The analysis thread closes
+// a `rta::meter::Block` on the same thread that runs every other live
+// measurement (repo CLAUDE.md's real-time rule: no allocation, no locks, no
+// file I/O in that path), so it must never open a file itself. The message
+// thread cannot write the log either: `Snapshot::spl` carries only the
+// LATEST block (record §9), so a UI stall longer than one block period would
+// silently lose every block in between -- there is no "catch up" once the
+// snapshot has moved on. So a THIRD thread, owned by this class, drains a
+// fixed-capacity single-producer/single-consumer queue -- one per logged
+// channel -- into `SplLogWriter`.
+//
+// THE PRODUCER NEVER BLOCKS. `pushBlock()` is called from the analysis
+// thread, at the exact point `AnalysisThread::feedSpl` already folds a
+// closed block into `SplChannelState` (AnalysisThreadSpl.cpp) -- allocation-
+// free after `enable()`, proven by app/tests/test_spl_log_pipeline.cpp's
+// shared `AllocationProbe` (non-elidable: the dropped-block counter is read
+// back and asserted on). A full queue means the writer thread -- disk I/O --
+// cannot keep up; the block is counted as DROPPED-FROM-LOG and published
+// (`AnalysisThread::splLogDroppedBlocks`), rather than the producer waiting
+// for room, because waiting is exactly the real-time hazard this design
+// exists to avoid.
+//
+// `rta::dsp::RingBuffer<rta::meter::Block>` is REUSED, not reimplemented:
+// core's ring is already a generic lock-free SPSC queue over any trivial,
+// default-constructible element, and `rta::meter::Block` is exactly that
+// (Block.h's own static_asserts pin its layout).
+#pragma once
+
+#include "export/SplLog.h"
+#include "export/SplSessionHeader.h"
+#include "measure/SplConfig.h"
+#include "measure/SplSession.h"  // kMaxLoggedChannels only -- no other dependency
+
+#include "rta/dsp/RingBuffer.h"
+#include "rta/dsp/Weighting.h"
+#include "rta/meter/Block.h"
+#include "rta/meter/Detector.h"
+
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace rta::splexport {
+
+/// One logged channel's own basename and header facts -- everything
+/// `SplLogWriter` needs to open its first segment. The caller (`AnalysisThread`,
+/// fed from `MainComponentSpl.cpp`) builds one of these per logged channel;
+/// `basePath` is typically `<sessionDir>/ch<N>` (SplLog.h's own convention:
+/// "directory + filename stem, no extension").
+struct SplLogChannelSpec {
+    int channel = -1;
+    std::string basePath;
+    SplLogHeaderInfo info;
+};
+
+/// Everything one `enable()` call needs, bundled so the signature does not
+/// grow a new positional parameter every time this pipeline learns a new
+/// fact about the session.
+struct SplLogEnableParams {
+    /// Read once, at `enable()` -- passed straight to every `SplLogWriter`
+    /// (its own `referenceOffsetDb`/`calibrated`/`segmentBlocks`). Record
+    /// §10: settings never change mid-log, so this is never re-read.
+    rta::measure::SplConfig config;
+    std::vector<SplLogChannelSpec> channels;
+    /// Where the session-wide header (`SplSessionHeaderInfo`) is written --
+    /// empty means none is written, which a caller wanting only the
+    /// per-channel logs (e.g. a single-channel test fixture) can leave unset.
+    std::string sessionHeaderPath;
+    std::uint64_t startedAtUnixMs = 0;
+    /// Rounded up to a power of two by `rta::dsp::RingBuffer`. The producer
+    /// counts a block as dropped rather than waiting once this many blocks
+    /// are unwritten -- see this file's own header comment.
+    std::size_t queueCapacityBlocks = 256;
+};
+
+/// The log-writing half of W2-E2a: a fixed-capacity SPSC `rta::meter::Block`
+/// queue per logged channel, allocated at `enable()` and never grown, plus a
+/// single dedicated writer thread that drains every channel's queue into its
+/// own `SplLogWriter`.
+///
+/// THREADING. `enable()`/`disable()` are called from
+/// `AnalysisThread::applyPendingSplRequest()` -- the analysis thread's own
+/// deferred-request handover, the SAME moment `SplSession::start()`/`stop()`
+/// run (that class's own class comment: "the caller is responsible for
+/// handing them over"). `pushBlock()` is called from the SAME thread, inside
+/// `feedSpl()`. So `sinks_` has exactly one writer (the analysis thread) and
+/// one reader (the writer thread this class owns), and `disable()` always
+/// JOINS the writer thread BEFORE touching `sinks_` again -- no lock is
+/// needed for the array itself, only `rta::dsp::RingBuffer`'s own internal
+/// atomics guard the data actually crossing the thread boundary.
+class SplLogPipeline {
+public:
+    SplLogPipeline() = default;
+    ~SplLogPipeline() { disable(); }
+
+    SplLogPipeline(const SplLogPipeline&) = delete;
+    SplLogPipeline& operator=(const SplLogPipeline&) = delete;
+
+    /// Stops and replaces any previous session (a fresh log, never appended
+    /// to -- record §10). Allocates one ring buffer and one `SplLogWriter`
+    /// per entry of `params.channels`, opens every first segment and the
+    /// session header (if `sessionHeaderPath` is non-empty), then starts the
+    /// writer thread. Analysis-thread call; allocates and may block briefly
+    /// on file I/O, which is acceptable here for the same reason
+    /// `SplSession::start()` allocating there already is: this runs once per
+    /// session start, never once per block.
+    void enable(const SplLogEnableParams& params);
+
+    /// Signals the writer thread to drain everything already pushed, then
+    /// joins it -- "shutdown drains then joins" (W2-E2a's own acceptance).
+    /// Safe to call when already disabled (a no-op). Blocking, bounded by
+    /// however long the final drain and the OS file close take; this is not
+    /// real-time code.
+    void disable() noexcept;
+
+    [[nodiscard]] bool enabled() const noexcept { return running_.load(std::memory_order_acquire); }
+
+    /// Analysis-thread call. NEVER BLOCKS, NEVER ALLOCATES (measured by
+    /// app/tests/test_spl_log_pipeline.cpp). A channel this pipeline has no
+    /// sink for (not passed to `enable`, or `enable` never called) is
+    /// silently a no-op: the caller only invokes this for a channel
+    /// `SplSession` is already logging, so reaching here with no sink is a
+    /// wiring question for the caller, not a drop this class should count.
+    void pushBlock(int channel, const rta::meter::Block& block) noexcept;
+
+    /// Blocks pushed for `channel` that the queue was too full to accept.
+    /// Safe from any thread: an atomic counter the analysis thread alone
+    /// increments (`pushBlock`) and any thread may read.
+    [[nodiscard]] std::uint64_t droppedBlocks(int channel) const noexcept;
+
+private:
+    using Ring = rta::dsp::RingBuffer<rta::meter::Block>;
+
+    struct ChannelSink {
+        int channel = -1;
+        std::unique_ptr<Ring> ring;
+        std::unique_ptr<SplLogWriter> writer;
+        std::atomic<std::uint64_t> dropped{ 0 };
+    };
+
+    /// One drain pass over every sink, writing whatever each ring currently
+    /// holds. @return true if any block was written, so `writerLoop` knows
+    /// whether to sleep before the next pass.
+    bool drainOnce();
+    void writerLoop();
+
+    static constexpr std::size_t kMaxLoggedChannels = rta::measure::SplSession::kMaxLoggedChannels;
+
+    std::array<std::unique_ptr<ChannelSink>, kMaxLoggedChannels> sinks_{};
+    std::thread writerThread_;
+    std::atomic<bool> running_{ false };
+};
+
+}  // namespace rta::splexport

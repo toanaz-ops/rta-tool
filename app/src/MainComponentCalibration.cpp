@@ -35,7 +35,7 @@ void MainComponent::calibrationStartClicked() {
     analysisThread_.armLocateCapture(kCalibrationRouteIndex, kCalibrationCaptureLength);
     calibrationCaptureArmed_ = true;
     calibrationCaptureIsStart_ = true;
-    calibrationCaptureArmedAtMs_ = juce::Time::currentTimeMillis();
+    calibrationCaptureArmedAtMs_ = juce::Time::getMillisecondCounterHiRes();
     calibrationReadout_.setText("calibration: measuring start check...",
                                 juce::dontSendNotification);
 }
@@ -52,7 +52,7 @@ void MainComponent::calibrationEndClicked() {
     analysisThread_.armLocateCapture(kCalibrationRouteIndex, kCalibrationCaptureLength);
     calibrationCaptureArmed_ = true;
     calibrationCaptureIsStart_ = false;
-    calibrationCaptureArmedAtMs_ = juce::Time::currentTimeMillis();
+    calibrationCaptureArmedAtMs_ = juce::Time::getMillisecondCounterHiRes();
     calibrationReadout_.setText("calibration: measuring end check...",
                                 juce::dontSendNotification);
 }
@@ -90,8 +90,8 @@ void MainComponent::pollCalibrationPipeline() {
     // on a rig where route 0 has no REF channel wired and the accumulator
     // this shares with Locate can never complete.
     if (rta::measure::captureTimedOut(calibrationCaptureArmedAtMs_,
-                                      juce::Time::currentTimeMillis(),
-                                      kCalibrationCaptureTimeoutMs)) {
+                                      juce::Time::getMillisecondCounterHiRes(),
+                                      static_cast<double>(kCalibrationCaptureTimeoutMs))) {
         calibrationCaptureArmed_ = false;
         calibrationReadout_.setText("calibration: capture timed out -- no REF channel routed?",
                                     juce::dontSendNotification);

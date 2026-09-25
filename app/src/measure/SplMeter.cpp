@@ -9,18 +9,20 @@
 
 namespace rta::measure {
 
-namespace {
-
-/// `blockSeconds` at `sampleRate`, as the sample count every mean in a block
-/// divides by. Rounded rather than truncated so a rate that does not divide
-/// evenly lands on the nearest whole sample instead of systematically short,
-/// and floored at 1 so a nonsense configuration cannot produce a zero divisor.
+// blockSamplesFor is declared in SplMeter.h (W2-E2a, PR body): SplLogPipeline
+// needs the SAME figure before the first block closes, to stamp the log
+// header's `blockSamples` key, and a second independently-rounded copy would
+// risk disagreeing with this class's own accumulator by one sample at a rate
+// that does not divide evenly. Defined here, at namespace scope rather than
+// in the anonymous namespace below, so it links from outside this file.
 std::uint32_t blockSamplesFor(double blockSeconds, double sampleRate) noexcept {
     if (!(blockSeconds > 0.0) || !(sampleRate > 0.0)) return 1;
     const double samples = blockSeconds * sampleRate + 0.5;
     if (samples < 1.0) return 1;
     return static_cast<std::uint32_t>(samples);
 }
+
+namespace {
 
 /// Record §5's 100 ms tick, rounded like `blockSamplesFor` above and floored
 /// at 1 so a nonsense sample rate cannot produce a zero-sample tick period.

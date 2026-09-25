@@ -120,6 +120,15 @@ private:
     void pollCalibrationPipeline();
     void updateCalibrationReadout();
 
+    /// L6a task W2-E2a (record §10, §13 Q7), defined in MainComponentSpl.cpp:
+    /// the composition root's own SPL wiring. Polled from `timerCallback()`
+    /// -- the same shape `refreshChannelNamesFromDevice()` already uses --
+    /// because neither a real device opening/closing nor `setSyntheticMode`
+    /// posts an event this class can subscribe to; edge-detects on
+    /// `splLoggingActive_` and calls `enableSplLogging`/`disableSplLogging`
+    /// only on the transition, never every tick.
+    void pollSplLogging();
+
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
     /// the poll timer while in LIVE mode (a device can be opened, closed or
@@ -180,11 +189,23 @@ private:
     /// Calibration both arming it at once.
     bool calibrationCaptureArmed_ = false;
     bool calibrationCaptureIsStart_ = false;
-    /// When the currently-armed capture was requested; `captureTimedOut`
-    /// (fix round finding 6) is what stops a calibrator-only rig's missing
-    /// REF channel from locking Locate out for the rest of the session.
-    std::int64_t calibrationCaptureArmedAtMs_ = 0;
+    /// When the currently-armed capture was requested, read from
+    /// `juce::Time::getMillisecondCounterHiRes()` -- a MONOTONIC counter,
+    /// not wall time (W2-E2a fix: PR #27 round-2 verifier, LOW). `double`
+    /// because that is what the monotonic counter itself returns.
+    /// `captureTimedOut` (fix round finding 6) is what stops a
+    /// calibrator-only rig's missing REF channel from locking Locate out for
+    /// the rest of the session.
+    double calibrationCaptureArmedAtMs_ = 0.0;
     std::shared_ptr<const rta::measure::LocateCapture> lastHandledCalibrationCapture_;
+    // ----------------------------------------------------------------------
+
+    // --- L6a task W2-E2a: SPL logging follows the bus, not a button --------
+    // What `pollSplLogging()` last told `analysisThread_` -- the previous
+    // tick's `isSyntheticMode() || audioIo_.isRunning()`, so that function
+    // can call `enableSplLogging`/`disableSplLogging` only on the transition
+    // rather than once per tick.
+    bool splLoggingActive_ = false;
     // ----------------------------------------------------------------------
 
     rta::view::DevicePanel devicePanel_;

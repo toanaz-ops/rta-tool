@@ -4,6 +4,7 @@
 // T-1 / T-3 / T-4 / T-5.
 #pragma once
 
+#include "export/SplLogPipeline.h"
 #include "measure/AnalysisPublish.h"
 #include "measure/Analyser.h"
 #include "measure/AtomicSharedPtr.h"
@@ -170,9 +171,21 @@ public:
     /// The channel list is NOT bounded by `kMaxTransferFunctions`: the SPL
     /// meters are their own array, sized by logged channels, and a route past
     /// that cap must still log (W0-D D1b).
-    void enableSplLogging(const SplConfig& config, std::span<const int> channels);
+    ///
+    /// `logDirectory` is W2-E2a's own addition: empty (the default) means
+    /// state only -- `SplChannelState` (history/alarms/dose/Ln) runs but
+    /// nothing touches disk, which is what every existing caller of this
+    /// method (app/tests_juce/test_spl_drain.cpp) asked for before this task
+    /// and keeps asking for unchanged. Non-empty starts the log-writing
+    /// pipeline (`SplLogPipeline`) against that directory: one file per
+    /// logged channel plus a session header (record §10), opened fresh every
+    /// time this is called with `enable == true`, never appended to.
+    void enableSplLogging(const SplConfig& config, std::span<const int> channels,
+                          std::string logDirectory = {});
 
-    /// Stops it, picked up the same way.
+    /// Stops it, picked up the same way. Also stops the log pipeline (if one
+    /// was started) -- drains whatever is already queued, then joins its
+    /// writer thread.
     void disableSplLogging();
 
     /// Blocks completed on `channel` since the session started, or 0.
@@ -187,6 +200,13 @@ public:
     /// Samples the bus lost across every block on `channel`. Elapsed samples
     /// is `Sigma(blockSamples + droppedSamples)` (SPL-R1, SPL-R2).
     [[nodiscard]] std::uint64_t splDroppedSamples(int channel) const noexcept;
+
+    /// W2-E2a: blocks the log pipeline could not queue for `channel` because
+    /// its fixed-capacity ring was full -- the writer thread (disk I/O)
+    /// falling behind the analysis thread, never the producer waiting for
+    /// room (`SplLogPipeline`'s own class comment). Safe from any thread,
+    /// same reason `splDroppedSamples` is. 0 when nothing is logging to disk.
+    [[nodiscard]] std::uint64_t splLogDroppedBlocks(int channel) const noexcept;
 
 private:
     /// Trap T-3: `SpectrumEngine::process` (reached through
@@ -306,6 +326,10 @@ private:
     SplConfig splRequestConfig_;
     std::vector<int> splRequestChannels_;
     bool splRequestEnable_ = false;
+    /// W2-E2a: empty means "state only, nothing touches disk" -- see
+    /// `enableSplLogging`'s own comment. Guarded by `splRequestLock_`, same
+    /// as the three members above it.
+    std::string splRequestLogDirectory_;
     /// The handover. Same shape as `locateArmRequested_`: the message thread
     /// writes under the lock and releases this flag; the analysis thread
     /// acquires it once per drain and takes the lock only then, so no drain
@@ -326,6 +350,20 @@ private:
     // afterward. ANALYSIS-THREAD-ONLY, same as splSession_ itself: fed from
     // feedSpl(), read from fillSplPublishInput().
     std::array<std::unique_ptr<SplChannelState>, SplSession::kMaxLoggedChannels> splChannelStates_;
+
+    // --- Lane L6a task W2-E2a: the log-writing pipeline ---------------------
+    // JUCE-free (app/src/export/SplLogPipeline.h), so the queue/writer
+    // mechanics are provable with RTA_BUILD_APP=OFF. Started/stopped from
+    // applyPendingSplRequest(), the same moment splSession_ itself is;
+    // pushBlock() is called from feedSpl(), on this thread alone -- see that
+    // class's own THREADING comment for why no lock guards it here.
+    rta::splexport::SplLogPipeline splLogPipeline_;
+
+    /// Published per channel, same shape as `splDroppedSamples_` above: a
+    /// plain mirror of `splLogPipeline_.droppedBlocks(channel)`, refreshed in
+    /// feedSpl() so the message thread never reads `splLogPipeline_` itself
+    /// (that object is analysis-thread-only).
+    std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splLogDroppedBlocks_{};
 };
 
 }  // namespace rta::measure

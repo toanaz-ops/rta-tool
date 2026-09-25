@@ -69,6 +69,12 @@ struct SplPublishInput {
     /// pointer: `AnalysisThread` owns the `SplChannelState` for the life of
     /// the session, and this struct is rebuilt fresh on every publish.
     const SplChannelState* channelState = nullptr;
+    /// Lane L6a task W2-E2a: blocks the log-writing pipeline could not queue
+    /// for this channel because its fixed-capacity ring was full -- carried
+    /// straight to `SplBlockView::logDroppedBlocks` so a stalled log is
+    /// visible on the live pane, not just discoverable after the fact by
+    /// comparing the file against `blockIndex`.
+    std::uint64_t logDroppedBlocks = 0;
 };
 
 /// Builds the published SPL view, or `std::nullopt` when nothing is logging.

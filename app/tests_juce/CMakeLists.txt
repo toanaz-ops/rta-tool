@@ -196,6 +196,14 @@ add_executable(rtatool_routing_live_tests
     # the Gap the paired drain cannot avoid. Against the same real
     # AnalysisThread/CaptureBus shape test_routing_live.cpp uses.
     test_spl_drain.cpp
+    # test_spl_log_wiring.cpp: lane L6a task W2-E2a (plan amendment "W2-E --
+    # the wiring nobody was assigned") -- AnalysisThread::enableSplLogging
+    # actually writing a log to disk, against the same real AnalysisThread/
+    # CaptureBus shape test_spl_drain.cpp uses. The queue/writer mechanics
+    # themselves are proven OFF in app/tests/test_spl_log_pipeline.cpp; what
+    # only a live thread can prove is that AnalysisThread wires the two
+    # together correctly.
+    test_spl_log_wiring.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------
     # The SPL feed AnalysisThread.cpp now calls: its own split-off half, the
@@ -217,6 +225,15 @@ add_executable(rtatool_routing_live_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplAlarms.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplChannelState.cpp
     # --- end L6a Wave 2 task W2-E1 ------------------------------------------
+    # --- L6a task W2-E2a -----------------------------------------------------
+    # AnalysisThread.h now includes export/SplLogPipeline.h and
+    # AnalysisThreadSpl.cpp calls into it, so both halves of the log-writing
+    # pipeline need linking here too. SplSessionHeader.h is header-only
+    # (writeSessionHeaderFile is DEFINED in SplLogWriter.cpp, that pair's own
+    # class comment).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogPipeline.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogWriter.cpp
+    # --- end L6a task W2-E2a --------------------------------------------------
     # DelayLocator.cpp is NOT needed here: this target's tests exercise
     # AnalysisThread's own armLocateCapture/applyReferenceDelay directly,
     # not the JUCE-free DelayLocator state machine (that lives entirely in

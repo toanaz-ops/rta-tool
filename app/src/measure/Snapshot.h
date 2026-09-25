@@ -288,6 +288,13 @@ struct SplBlockView {
     /// transitioned often enough to fill a 4096-marker ring had no way to
     /// see that markers past it were silently gone.
     std::uint32_t markersOverflowed = 0;
+    /// Lane L6a task W2-E2a: blocks the log-writing pipeline dropped for this
+    /// channel because its fixed-capacity queue was full -- the writer
+    /// thread's disk I/O falling behind, never the producer waiting for room
+    /// (`SplLogPipeline`'s own class comment: the producer never blocks).
+    /// Normally 0. Same "counted, never silent" shape as `refusedMetrics` and
+    /// `markersOverflowed` above.
+    std::uint32_t logDroppedBlocks = 0;
 
     /// ABSENT, never 0.0 %. A zero dose reads as "measured, and there was no
     /// exposure"; these are absent through Wave 0 because the accumulators
