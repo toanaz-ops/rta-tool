@@ -467,6 +467,27 @@ TEST_CASE("closed-form: an excluded block inside a FILLING window shrinks T, not
     CHECK_THAT(*alarm.report().headroomDb, WithinAbs(expected, 1e-9));
 }
 
+// PR #26 round-3 fix, item 4: the verifier's mutant M5 (breaking the
+// `valueDb_` update at SplAlarms.cpp's `if (windowed.leqDb.has_value())
+// valueDb_ = ...` line) survived every existing test, because none of them
+// ever read `report().valueDb` -- only headroomDb and state were asserted.
+TEST_CASE("closed-form: valueDb reports the windowed Leq the alarm actually computed",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 100.0;
+    spec.windowBlocks = 5;
+    SplAlarm alarm(spec);
+    SplHistory history(10);
+
+    std::vector<Block> blocks;
+    for (std::uint64_t i = 0; i < spec.windowBlocks; ++i) {
+        blocks.push_back(blockAtLevel(i, 48000, 65.0));
+        alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
+    }
+    CHECK_THAT(static_cast<double>(alarm.report().valueDb), WithinAbs(65.0, 1e-3));
+}
+
 TEST_CASE("B4 SplAlarms updates every configured alarm and collects their reports", "[spl_alarms]") {
     std::vector<SplAlarmSpec> specs;
     SplAlarmSpec a;
