@@ -246,6 +246,22 @@ TEST_CASE("A8 SplReportStyle.h and SplReportScript.h never spell class+digit",
     CHECK_FALSE(std::regex_search(std::string(kReportScript), kClassClaim));
 }
 
+// Fix round (PR #28 verifier, MEDIUM): mutant M11 (leaving `<` unescaped in
+// escapeHtml) survived the whole suite -- every payload string field IS
+// escaped in the source, but nothing exercised a string containing markup,
+// so nothing could have caught its removal.
+TEST_CASE("every escaped payload field defeats an embedded script tag", "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    const std::string xss = "<script>alert(1)</script>";
+    payload.notes = xss;
+    payload.config.alarms = {{xss, 100.0, 60}};
+    payload.validity.segmentPaths = {xss};
+
+    const auto html = renderReport(payload);
+    CHECK(html.find("&lt;script&gt;") != std::string::npos);
+    CHECK(html.find("<script>alert") == std::string::npos);
+}
+
 // --- report byte size, measured not assumed --------------------------------
 
 TEST_CASE("the rendered report stays small even over a long session", "[spl_report]") {
