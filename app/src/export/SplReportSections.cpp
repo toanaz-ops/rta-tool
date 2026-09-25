@@ -98,6 +98,24 @@ std::string percentOrAbsent(std::optional<double> value) {
     return value ? escapeHtml(percentDisplay(*value)) : absentSpan("no data");
 }
 
+std::string stateLabel(rta::measure::SplAlarmState state) {
+    switch (state) {
+        case rta::measure::SplAlarmState::Filling: return "Filling";
+        case rta::measure::SplAlarmState::Clear: return "Clear";
+        case rta::measure::SplAlarmState::Fired: return "Fired";
+    }
+    return "Filling";
+}
+
+std::string stateClass(rta::measure::SplAlarmState state) {
+    switch (state) {
+        case rta::measure::SplAlarmState::Filling: return "state-filling";
+        case rta::measure::SplAlarmState::Clear: return "state-clear";
+        case rta::measure::SplAlarmState::Fired: return "state-fired";
+    }
+    return "state-filling";
+}
+
 std::string renderIdentification(const ReportPayload& p) {
     std::string body;
     body += kv("Venue", escapeHtml(p.venue));
@@ -187,6 +205,24 @@ std::string renderSettings(const ReportPayload& p) {
                 "</td></tr>";
     }
     body += "</table>";
+
+    // Fix round (PR #28 verifier, MEDIUM): the alarms' LIVE verdict --
+    // `state` is SERVER-computed (record sec.9) and rendered with the
+    // existing `.state-*` CSS classes, never re-derived here from
+    // `limitDb`. Filling is not Clear: record sec.15 A6's own words --
+    // Clear would claim "compared, and under the limit" for a comparison
+    // that never ran.
+    if (!p.alarms.empty()) {
+        body += "<table><tr><th>Alarm status</th><th>State</th><th>Headroom</th></tr>";
+        for (const auto& a : p.alarms) {
+            const bool filling = a.state == rta::measure::SplAlarmState::Filling;
+            body += "<tr><td>" + escapeHtml(a.metricId) + "</td><td class=\"" + stateClass(a.state) +
+                    "\">" + stateLabel(a.state) +
+                    (filling ? " -- window not yet full, not compared" : "") + "</td><td>" +
+                    dbOrAbsent(a.headroomDb) + "</td></tr>";
+        }
+        body += "</table>";
+    }
 
     // Fix round (PR #28 verifier, MEDIUM): record sec.9 item 4, "dose
     // preset with L_c, T_c, q and threshold" -- the four settings a dose

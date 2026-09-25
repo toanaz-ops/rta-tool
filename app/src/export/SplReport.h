@@ -16,6 +16,7 @@
 #include "measure/CalibrationSession.h"
 #include "measure/SplConfig.h"
 #include "measure/SplHistory.h"
+#include "measure/Snapshot.h"  // rta::measure::SplAlarmState
 
 #include "rta/dsp/Weighting.h"
 #include "rta/meter/Detector.h"
@@ -73,6 +74,20 @@ struct ReportDoseResult {
     std::optional<double> exposureLevel8hDb;  ///< L_EX,8h, record sec.7's exposureLevelDb()
 };
 
+/// Record sec.9 item 4's alarm config, PLUS the live verdict (fix round, PR
+/// #28 verifier): `state` is SERVER-computed (record sec.9, mirroring
+/// `SplAlarmReading::state` in Snapshot.h) -- the report never re-derives
+/// Fired/Clear from `limitDb`, or the decision would live in two places.
+struct ReportAlarmResult {
+    std::string metricId;
+    double limitDb = 0.0;
+    std::uint64_t windowBlocks = 0;
+    rta::measure::SplAlarmState state = rta::measure::SplAlarmState::Filling;
+    /// ABSENT when the bracket is already lost (record sec.6) -- never
+    /// clamped or zeroed.
+    std::optional<double> headroomDb;
+};
+
 /// Record sec.9 item 8 plus record sec.15 A2's five-way count -- every block
 /// that did NOT reach a compliance window is accounted for by name, not
 /// folded into a single "excluded" figure that cannot say why.
@@ -116,8 +131,9 @@ struct ReportPayload {
     // 3. Calibration (item 3, task W3-C). `performed == false` prints
     // "calibration check not performed" -- Wave 3's own cut fallback.
     rta::measure::CalibrationReportFields calibration;
-    // 4. Settings (item 4)
+    // 4. Settings (item 4), plus the alarms' live verdict (fix round).
     rta::measure::SplConfig config;
+    std::vector<ReportAlarmResult> alarms;
     // 5. Results per configured metric (item 5)
     std::vector<ReportMetricResult> metrics;
     // 6. Dose (item 6)

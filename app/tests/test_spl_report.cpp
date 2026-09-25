@@ -280,6 +280,38 @@ TEST_CASE("A7 every number is the C++ formatter's own output", "[spl_report]") {
 
 // --- A8: no CSS class trips the honesty guard ------------------------------
 
+// --- alarm state: rendered, not silently dropped ----------------------------
+
+// Fix round (PR #28 verifier, MEDIUM): the payload's SplAlarmState never
+// reached the rendered report at all. Filling gets record sec.15 A6's own
+// words -- it is NOT Clear, because Clear would claim "compared, and
+// under the limit" for a comparison that never ran
+// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+TEST_CASE("alarm state is rendered for all three states, with the existing state-* classes",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    ReportAlarmResult filling;
+    filling.metricId = "Main";
+    filling.limitDb = 100.0;
+    filling.windowBlocks = 900;
+    filling.state = rta::measure::SplAlarmState::Filling;
+    ReportAlarmResult clear = filling;
+    clear.metricId = "Clear metric";
+    clear.state = rta::measure::SplAlarmState::Clear;
+    ReportAlarmResult fired = filling;
+    fired.metricId = "Fired metric";
+    fired.state = rta::measure::SplAlarmState::Fired;
+    payload.alarms = {filling, clear, fired};
+
+    const auto html = renderReport(payload);
+    CHECK(html.find("state-filling") != std::string::npos);
+    CHECK(html.find("window not yet full, not compared") != std::string::npos);
+    CHECK(html.find("state-clear") != std::string::npos);
+    CHECK(html.find(">Clear<") != std::string::npos);
+    CHECK(html.find("state-fired") != std::string::npos);
+    CHECK(html.find(">Fired<") != std::string::npos);
+}
+
 TEST_CASE("A8 SplReportStyle.h and SplReportScript.h never spell class+digit",
          "[spl_report]") {
     static const std::regex kClassClaim("[Cc][Ll][Aa][Ss][Ss][ \t_-]*[01]");

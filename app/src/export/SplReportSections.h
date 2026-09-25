@@ -41,6 +41,10 @@ namespace rta::splexport::detail {
 // `formatAgreement` means.
 [[nodiscard]] std::string percentDisplay(double percent);
 [[nodiscard]] std::string percentOrAbsent(std::optional<double> value);
+// The existing `.state-*` CSS classes (SplReportStyle.h): SERVER-computed,
+// never re-derived from limitDb by a reader (record sec.9).
+[[nodiscard]] std::string stateLabel(rta::measure::SplAlarmState state);
+[[nodiscard]] std::string stateClass(rta::measure::SplAlarmState state);
 
 [[nodiscard]] std::string renderIdentification(const ReportPayload& p);
 [[nodiscard]] std::string renderInstrument(const ReportPayload& p);
