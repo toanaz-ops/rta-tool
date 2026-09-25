@@ -29,7 +29,8 @@ namespace {
 /// metric lands in the group with `weighting == std::nullopt`, which
 /// `onBlockClosed` never feeds (that group's `SplAlarmReading` stays at its
 /// constructed default: `Filling`, no headroom).
-std::vector<SplChannelState::AlarmGroup> buildAlarmGroups(const SplConfig& config) {
+std::vector<SplChannelState::AlarmGroup> buildAlarmGroups(const SplConfig& config,
+                                                           std::vector<std::size_t>& outPublishOrder) {
     struct Bucket {
         std::optional<rta::dsp::WeightingType> weighting;
         std::vector<SplAlarmSpec> specs;
@@ -39,9 +40,14 @@ std::vector<SplChannelState::AlarmGroup> buildAlarmGroups(const SplConfig& confi
         // truncation, and a marker's real identity must survive that
         // (SplHistory.h's own SplMarker::metricIndex comment).
         std::vector<std::optional<std::size_t>> metricIndices;
+        // PR #29 round-3 step 5: parallel to `specs` too -- each spec's own
+        // ORIGINAL index in `config.alarms`, before this partition scrambled
+        // it (SplChannelState.h's own `alarmPublishOrder_` comment).
+        std::vector<std::size_t> configIndices;
     };
     std::vector<Bucket> buckets;
-    for (const SplAlarmSpec& spec : config.alarms) {
+    for (std::size_t configIndex = 0; configIndex < config.alarms.size(); ++configIndex) {
+        const SplAlarmSpec& spec = config.alarms[configIndex];
         std::optional<rta::dsp::WeightingType> weighting;
         std::optional<std::size_t> metricIndex;
         for (std::size_t i = 0; i < config.metrics.size(); ++i) {
@@ -54,16 +60,22 @@ std::vector<SplChannelState::AlarmGroup> buildAlarmGroups(const SplConfig& confi
         auto it = std::find_if(buckets.begin(), buckets.end(),
                                [&](const Bucket& b) { return b.weighting == weighting; });
         if (it == buckets.end()) {
-            buckets.push_back(Bucket{weighting, {}, {}});
+            buckets.push_back(Bucket{weighting, {}, {}, {}});
             it = std::prev(buckets.end());
         }
         it->specs.push_back(spec);
         it->metricIndices.push_back(metricIndex);
+        it->configIndices.push_back(configIndex);
     }
 
     std::vector<SplChannelState::AlarmGroup> groups;
     groups.reserve(buckets.size());
+    outPublishOrder.clear();
+    outPublishOrder.reserve(config.alarms.size());
     for (auto& bucket : buckets) {
+        for (const std::size_t configIndex : bucket.configIndices) {
+            outPublishOrder.push_back(configIndex);
+        }
         groups.push_back(SplChannelState::AlarmGroup{
             bucket.weighting, SplAlarms(std::move(bucket.specs), std::move(bucket.metricIndices))});
     }
@@ -78,9 +90,16 @@ SplChannelState::SplChannelState(const SplConfig& config, double sampleRate)
     , referenceOffsetDb_(config.referenceOffsetDb)
     , lnPercents_(config.lnPercents)
     , history_(SplHistory::capacityBlocks(config.logSpanSeconds, config.blockSeconds))
-    , alarmGroups_(buildAlarmGroups(config))
     , lnHistogram_(config.histogramBaseDb())
-    , dose_{{rta::meter::Dose(config.dose[0]), rta::meter::Dose(config.dose[1])}} {}
+    , dose_{{rta::meter::Dose(config.dose[0]), rta::meter::Dose(config.dose[1])}} {
+    // Assigned in the body rather than the initialiser list: buildAlarmGroups
+    // fills alarmPublishOrder_ as an out-parameter ALONGSIDE building
+    // alarmGroups_ itself (PR #29 round-3 step 5), and an initialiser-list
+    // entry for alarmGroups_ cannot safely reference a sibling member that
+    // is not guaranteed constructed yet under declaration order. Still ONE
+    // allocation event, still at construction, still never touched again.
+    alarmGroups_ = buildAlarmGroups(config, alarmPublishOrder_);
+}
 
 void SplChannelState::onBlockClosed(std::span<const ChainBlockAtClose> chains) {
     if (chains.empty()) return;
@@ -145,10 +164,23 @@ void SplChannelState::fillPublish(SplBlockView& view) const {
     // reading can be, so there is no "not yet produced" state to preserve.
     view.markersOverflowed = static_cast<std::uint32_t>(history_.overflowedMarkers());
 
-    view.alarms.clear();
+    // PR #29 round-3 step 5: gather every group's own readings in the
+    // internal (weighting-partitioned) order first -- unchanged from
+    // before -- then place each one back at its ORIGINAL `config.alarms`
+    // position via `alarmPublishOrder_`, so the published order always
+    // matches configuration order regardless of how the routing partition
+    // grouped them. `alarmPublishOrder_` is a permutation of
+    // `[0, flattened.size())` by construction (`buildAlarmGroups` visits
+    // every configured alarm exactly once), so every slot below is written.
+    std::vector<SplAlarmReading> flattened;
     for (const auto& group : alarmGroups_) {
         const auto reports = group.alarms.reports();
-        view.alarms.insert(view.alarms.end(), reports.begin(), reports.end());
+        flattened.insert(flattened.end(), reports.begin(), reports.end());
+    }
+    view.alarms.assign(flattened.size(), SplAlarmReading{});
+    for (std::size_t i = 0; i < flattened.size() && i < alarmPublishOrder_.size(); ++i) {
+        const std::size_t configIndex = alarmPublishOrder_[i];
+        if (configIndex < view.alarms.size()) view.alarms[configIndex] = std::move(flattened[i]);
     }
 
     for (std::size_t i = 0; i < dose_.size(); ++i) {

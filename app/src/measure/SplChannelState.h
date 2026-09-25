@@ -189,6 +189,23 @@ private:
 
     SplHistory history_;
     std::vector<AlarmGroup> alarmGroups_;
+    /// PR #29 round-3 fix pass step 5: `alarmGroups_` partitions alarms by
+    /// weighting for `onBlockClosed`'s own routing/update efficiency (round
+    /// 2's whole point), which reorders them relative to
+    /// `SplConfig::alarms`'s own configured order whenever alarms on
+    /// different weightings interleave (e.g. config order [C-alarm,
+    /// A-alarm] groups into [C-bucket, A-bucket], flattening back to
+    /// [C-alarm, A-alarm] only by coincidence -- three interleaved alarms
+    /// across two weightings do NOT recover the original order this way).
+    /// `alarmPublishOrder_[i]` is the ORIGINAL `config.alarms` index of the
+    /// alarm that is the i-th one `alarmGroups_` (walked group by group, in
+    /// order) produces a reading for -- a permutation of `[0,
+    /// config.alarms.size())`, computed once at construction by
+    /// `buildAlarmGroups`, alongside `alarmGroups_` itself. `fillPublish`
+    /// uses it to place each reading back at its ORIGINAL configured
+    /// position, so publish order always matches configuration order
+    /// regardless of the internal weighting partition.
+    std::vector<std::size_t> alarmPublishOrder_;
     rta::meter::LevelHistogram lnHistogram_;
     /// TWO accumulators, always (record §7): `dose_[0]`/`dose_[1]` mirror
     /// `SplConfig::dose[0]`/`[1]` index for index -- never re-ordered, so a

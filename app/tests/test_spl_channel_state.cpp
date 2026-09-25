@@ -372,6 +372,54 @@ TEST_CASE("a forced marker overflow reaches the published view", "[spl_channel_s
     CHECK(after.markersOverflowed == 100);
 }
 
+// --- PR #29 round-3 fix pass step 5: published order matches config order -
+
+TEST_CASE("published alarm order matches config.alarms order, never the weighting-grouped order",
+         "[spl_channel_state]") {
+    // Three alarms across two weightings, INTERLEAVED (C, A, C) -- the
+    // shape that actually distinguishes the fix from the old behaviour.
+    // With only TWO alarms on two different weightings (one each), the
+    // internal weighting partition's own first-seen bucket order already
+    // coincides with config order by construction (each weighting occurs
+    // exactly once, so "first occurrence" is "the only occurrence"); it
+    // takes a THIRD alarm reusing an earlier weighting, after a different
+    // one, to actually interleave and reveal the bug: alarmGroups_
+    // partitions by weighting, which reorders config.alarms whenever
+    // weightings interleave (old flattened order here would be
+    // [C1, C2, A1], not [C1, A1, C2]).
+    SplConfig config;
+    config.blockSeconds = 1.0;
+    config.logSpanSeconds = 100.0;
+    config.metrics = {
+        {"LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 1},
+        {"LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 1},
+    };
+    SplAlarmSpec c1;
+    c1.metricId = "LCeq";
+    c1.limitDb = 100.0;
+    c1.windowBlocks = 1;
+    SplAlarmSpec a1;
+    a1.metricId = "LAeq";
+    a1.limitDb = 100.0;
+    a1.windowBlocks = 1;
+    SplAlarmSpec c2;
+    c2.metricId = "LCeq";
+    c2.limitDb = 90.0;  // distinguishes c2 from c1: same metricId, different limit
+    c2.windowBlocks = 1;
+    config.alarms = {c1, a1, c2};
+
+    SplChannelState state(config, 48000.0);
+
+    SplBlockView view;
+    state.fillPublish(view);
+    REQUIRE(view.alarms.size() == 3);
+    CHECK(view.alarms[0].metricId == "LCeq");
+    CHECK(view.alarms[0].limitDb == 100.0);
+    CHECK(view.alarms[1].metricId == "LAeq");
+    CHECK(view.alarms[2].metricId == "LCeq");
+    CHECK(view.alarms[2].limitDb == 90.0);
+}
+
 // --- windowAtClose: the pure reconstruction, including the underflow fix --
 
 TEST_CASE("windowAtClose reconstructs the window ending at each block, never underflowing",
