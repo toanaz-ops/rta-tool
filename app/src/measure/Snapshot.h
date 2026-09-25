@@ -221,6 +221,14 @@ struct SplAlarmReading {
     /// is a fact about the arithmetic, not a threshold (record §6, W1-C).
     std::optional<double> headroomDb;
     SplAlarmState state = SplAlarmState::Clear;
+    /// The alarm's own configured window, in blocks (plan B4's payload
+    /// list). Lane L6a task W2-B's `SplAlarms` is the one producer of this
+    /// type; PR #26 fix round item 6 folded its own separate SplAlarmReport
+    /// into this ONE type rather than keeping two near-duplicates.
+    std::uint64_t windowBlocks = 0;
+    /// The block index of the most recent fire-or-clear transition; absent
+    /// if this alarm has never transitioned.
+    std::optional<std::uint64_t> sinceBlock;
 };
 
 /// The SPL half of one publish.

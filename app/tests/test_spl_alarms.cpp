@@ -12,7 +12,7 @@
 
 using Catch::Matchers::WithinAbs;
 using rta::measure::SplAlarm;
-using rta::measure::SplAlarmReport;
+using rta::measure::SplAlarmReading;
 using rta::measure::SplAlarms;
 using rta::measure::SplAlarmSpec;
 using rta::measure::SplHistory;
@@ -198,7 +198,7 @@ TEST_CASE("the latch fires only once the window actually holds windowBlocks bloc
 
 // --- B4: headroomDb travels with the state ----------------------------------
 
-TEST_CASE("B4 SplAlarmReport carries state, limitDb, windowBlocks, sinceBlock and headroomDb",
+TEST_CASE("B4 SplAlarmReading carries state, limitDb, windowBlocks, sinceBlock and headroomDb",
          "[spl_alarms]") {
     SplAlarmSpec spec;
     spec.metricId = "LAeq,Slow";
@@ -352,4 +352,19 @@ TEST_CASE("B4 SplAlarms updates every configured alarm and collects their report
     CHECK(reports[1].state == rta::measure::SplAlarmState::Clear);  // 92 < 95
     // One marker each, since both alarms fired-or-cleared exactly once.
     CHECK(history.markers().size() == 1);  // only A transitioned
+}
+
+// PR #26 fix round item 6: "there must be one type for one fact". SplAlarms
+// used to return its own SplAlarmReport, a near-duplicate of Snapshot.h's
+// SplAlarmReading carrying the same state/limitDb/headroomDb plus two fields
+// (windowBlocks, sinceBlock) that type didn't have. Those two fields now
+// live on SplAlarmReading itself (plan B4 names this the one alarm-reading
+// type), and SplAlarm::report() returns it directly.
+TEST_CASE("SplAlarmReading itself carries windowBlocks and sinceBlock", "[spl_alarms]") {
+    rta::measure::SplAlarmReading reading;
+    reading.windowBlocks = 900;
+    reading.sinceBlock = 42;
+    CHECK(reading.windowBlocks == 900);
+    REQUIRE(reading.sinceBlock.has_value());
+    CHECK(*reading.sinceBlock == 42);
 }

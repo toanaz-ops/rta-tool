@@ -56,6 +56,8 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
         rta::meter::combineBlocks(tail, sampleRate, referenceOffsetDb, spec_.windowBlocks);
     const bool windowFull = take == spec_.windowBlocks;
 
+    if (windowed.leqDb.has_value()) valueDb_ = static_cast<float>(*windowed.leqDb);
+
     // headroomDb (record §15 A6, fix round item 4). The identity itself
     // (Alarm.h) never changes; only WHICH (t, L_t) pair it is fed does, and
     // that pair is continuous across the fill->full transition -- neither
@@ -127,14 +129,15 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
     }
 }
 
-SplAlarmReport SplAlarm::report() const {
-    SplAlarmReport out;
+SplAlarmReading SplAlarm::report() const {
+    SplAlarmReading out;
     out.metricId = spec_.metricId;
     out.limitDb = spec_.limitDb;
-    out.windowBlocks = spec_.windowBlocks;
-    out.state = state_;
-    out.sinceBlock = sinceBlock_;
+    out.valueDb = valueDb_;
     out.headroomDb = headroomDb_;
+    out.state = state_;
+    out.windowBlocks = spec_.windowBlocks;
+    out.sinceBlock = sinceBlock_;
     return out;
 }
 
@@ -151,8 +154,8 @@ void SplAlarms::update(std::span<const rta::meter::Block> blocks, double sampleR
     }
 }
 
-std::vector<SplAlarmReport> SplAlarms::reports() const {
-    std::vector<SplAlarmReport> out;
+std::vector<SplAlarmReading> SplAlarms::reports() const {
+    std::vector<SplAlarmReading> out;
     out.reserve(alarms_.size());
     for (const auto& alarm : alarms_) out.push_back(alarm.report());
     return out;

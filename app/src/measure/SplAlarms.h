@@ -52,23 +52,6 @@ struct SplProxyWindow {
     double marginDb = 0.0;                 ///< the OPERATOR's margin; 0.0 = none applied
 };
 
-/// One alarm's fully-formed reading -- record §9's payload list. A superset
-/// of `Snapshot.h`'s own `SplAlarmReading`: this carries `windowBlocks` and
-/// `sinceBlock` alongside the fields that type already has. Wiring this into
-/// `Snapshot::spl` is a later wave's job (Wave 3/4); this is the richer type
-/// that wave reads from.
-struct SplAlarmReport {
-    std::string metricId;
-    double limitDb = 0.0;
-    std::uint64_t windowBlocks = 0;
-    SplAlarmState state = SplAlarmState::Clear;
-    /// The block index of the most recent fire-or-clear transition; absent
-    /// if this alarm has never transitioned.
-    std::optional<std::uint64_t> sinceBlock;
-    /// Absent when the bracket is already lost (record §6, W1-C).
-    std::optional<double> headroomDb;
-};
-
 /// One configured alarm, over the SLIDING windowed Leq -- the conservative
 /// of the two policies above, and therefore the one this class runs (record
 /// §13 Q5 default). No hysteresis and no debounce: `rta::meter::AlarmLatch`
@@ -86,7 +69,15 @@ public:
     void update(std::span<const rta::meter::Block> blocks, double sampleRate, double blockSeconds,
                double referenceOffsetDb, std::uint64_t currentBlockIndex, SplHistory& history);
 
-    [[nodiscard]] SplAlarmReport report() const;
+    /// Returns `Snapshot.h`'s own `SplAlarmReading` -- PR #26 fix round item
+    /// 6: "there must be one type for one fact". This used to return a
+    /// separate `SplAlarmReport` carrying the same state/limitDb/headroomDb
+    /// plus `windowBlocks`/`sinceBlock`; those two fields now live on
+    /// `SplAlarmReading` itself, so there is one alarm-reading type, not two.
+    /// `valueDb` carries the most recent windowed dB this alarm computed
+    /// (float, per that type's own convention), even while the window is
+    /// still filling.
+    [[nodiscard]] SplAlarmReading report() const;
     [[nodiscard]] const SplAlarmSpec& spec() const noexcept { return spec_; }
 
 private:
@@ -95,6 +86,7 @@ private:
     SplAlarmState state_ = SplAlarmState::Clear;
     std::optional<std::uint64_t> sinceBlock_;
     std::optional<double> headroomDb_;
+    float valueDb_ = static_cast<float>(kLevelFloorDb);
 };
 
 /// Every configured alarm for one session, updated together each block.
@@ -105,7 +97,7 @@ public:
     void update(std::span<const rta::meter::Block> blocks, double sampleRate, double blockSeconds,
                double referenceOffsetDb, std::uint64_t currentBlockIndex, SplHistory& history);
 
-    [[nodiscard]] std::vector<SplAlarmReport> reports() const;
+    [[nodiscard]] std::vector<SplAlarmReading> reports() const;
 
 private:
     std::vector<SplAlarm> alarms_;
