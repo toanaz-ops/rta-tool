@@ -61,7 +61,12 @@ struct CalibrationReportFields {
     CalibrationCheck start;
     CalibrationCheck end;
     double driftDb = 0.0;
-    CalibrationVerdict verdict = CalibrationVerdict::Pass;
+    /// ABSENT until `performed`, mirroring `CalibrationSession::verdict()`'s
+    /// own optionality exactly -- NOT a `Pass`-defaulted placeholder, which
+    /// would make "not performed" indistinguishable from "performed and
+    /// passed" to a reader holding only this struct
+    /// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+    std::optional<CalibrationVerdict> verdict;
     std::string_view clause;
 };
 

@@ -92,7 +92,7 @@ CalibrationReportFields CalibrationSession::reportFields() const noexcept {
     fields.start = *startCheck_;
     fields.end = *endCheck_;
     fields.driftDb = *driftDb();
-    fields.verdict = *verdict();
+    fields.verdict = verdict();  // already std::optional; no placeholder default
     return fields;
 }
 

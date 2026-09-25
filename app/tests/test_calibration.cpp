@@ -282,6 +282,32 @@ TEST_CASE("A3 drift does not silently invalidate the log", "[calibration]") {
     CHECK(fields.end.level.nominalDb == 90.0);
 }
 
+// Verifier round 1, finding 5: `CalibrationReportFields::verdict` used to
+// default-construct to `CalibrationVerdict::Pass`, a PLACEHOLDER for the
+// absent case rather than an honest "no verdict yet"
+// (memory/a-placeholder-for-an-absent-result-erases-its-state.md). A reader
+// of `reportFields()` alone -- W4a's renderer, once it exists -- could not
+// tell "calibration not performed" from "calibration passed" without ALSO
+// checking `performed`. `verdict` is now `std::optional<CalibrationVerdict>`,
+// mirroring `CalibrationSession::verdict()`'s own optionality exactly.
+TEST_CASE("reportFields() does not invent a verdict before both checks exist", "[calibration]") {
+    CalibrationSession session;
+    auto fields = session.reportFields();
+    CHECK_FALSE(fields.performed);
+    CHECK_FALSE(fields.verdict.has_value());
+
+    session.recordStartCheck(calibrationLevel(94.0), sineAt1kHz(0.5, kFs), kFs, 0);
+    fields = session.reportFields();
+    CHECK_FALSE(fields.performed);  // one check is still not a calibration
+    CHECK_FALSE(fields.verdict.has_value());
+
+    session.recordEndCheck(calibrationLevel(94.0), sineAt1kHz(0.5, kFs), kFs, 1000);
+    fields = session.reportFields();
+    CHECK(fields.performed);
+    REQUIRE(fields.verdict.has_value());
+    CHECK(*fields.verdict == CalibrationVerdict::Pass);
+}
+
 // --- A4: the nominal levels are IEC 60942's -------------------------------
 
 TEST_CASE("A4 the nominal levels are IEC 60942's, and anything else is operator-supplied",
