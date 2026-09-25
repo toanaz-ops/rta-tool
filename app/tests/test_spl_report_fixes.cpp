@@ -244,3 +244,17 @@ TEST_CASE("a single-block session renders finite x coordinates, no nan or inf",
     CHECK(history.find("0.000000,") != std::string::npos);
     CHECK(history.find("x1=\"0.000000\"") != std::string::npos);
 }
+
+// Task W2-E2b fix round (MEDIUM finding): the Validity section states, in
+// its own words, that an alarm FIRED/CLEARED transition is not something
+// this log format can recover -- only overload/gap markers are derived from
+// the block flags (SplReportPayloadBuilder.cpp), never a fabricated alarm
+// transition. Asserted here, on the RENDERED text, rather than trusting a
+// payload field the renderer might silently drop (the same mutant class M4
+// below guards against).
+TEST_CASE("the validity section states alarm transition markers are not recorded",
+         "[spl_report]") {
+    const auto html = renderReport(minimalPayload());
+    const auto validity = extractSection(html, "validity");
+    CHECK(validity.find("transition markers are not recorded") != std::string::npos);
+}

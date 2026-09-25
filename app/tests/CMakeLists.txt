@@ -347,6 +347,11 @@ add_executable(rtatool_analysis_tests
     # test_spl_publish.cpp further; proves SplBlockView::calibrationInvalid
     # actually reaches the published view.
     test_spl_publish_calibration_invalid.cpp
+    # test_spl_report_payload_builder_fixes.cpp: MEDIUM -- record §9 item 7's
+    # time history and markers, split out of test_spl_report_payload_
+    # builder.cpp (400-line cap); shared fixtures in
+    # SplReportPayloadBuilderTestSupport.h.
+    test_spl_report_payload_builder_fixes.cpp
     # --- end W2-E2b fix round ------------------------------------------------
     # --- end L6a task W2-E2b -------------------------------------------------
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp

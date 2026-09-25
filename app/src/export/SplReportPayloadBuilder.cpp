@@ -106,6 +106,64 @@ ChannelLog readChannelLog(const fs::path& dir, int channel) {
     return result;
 }
 
+/// Task W2-E2b fix round (MEDIUM finding): record §9 item 7's time history
+/// and markers, filled from the log's own per-block rows -- neither was
+/// wired at all before this fix, and the PR that shipped without them did
+/// not say so.
+///
+/// One history point per block NOT excluded from compliance windows (record
+/// §3/§15 A2's own membership rule) -- a session export must not plot a
+/// `CalibrationInvalid` block as if its level were trustworthy, the same
+/// reasoning that already excludes it from the recomputed Leq. Overload and
+/// Gap markers, in contrast, are drawn from EVERY block regardless of
+/// calibration validity: they are facts about the raw signal (a clipped
+/// waveform, samples the bus lost), not about whether the calibration held.
+/// Alarm transition markers are NOT derived here -- `SplAlarms`' fired/
+/// cleared state lives only in memory (record §9's own validity-section
+/// honesty sentence, `renderValidity`), and inventing one from the log alone
+/// would be a marker this format cannot actually support.
+void appendHistoryAndMarkers(int channel, const std::vector<rta::meter::Block>& blocks,
+                             double referenceOffsetDb, ReportPayload& payload) {
+    ReportHistorySeries series;
+    series.metricId = "ch" + std::to_string(channel);
+    series.points.reserve(blocks.size());
+
+    for (const auto& block : blocks) {
+        if (!rta::meter::hasFlag(block.flags, rta::meter::BlockFlag::CalibrationInvalid)) {
+            ReportHistoryPoint point;
+            point.blockIndex = block.blockIndex;
+            // The SAME per-block formula SplLog.h::logRow stamps into the
+            // log's own `leqDb` column (record §10) -- recomputed here from
+            // the raw columns rather than re-parsed from that derived one, so
+            // a bracket-excluded block (flagged only in this function's own
+            // in-memory copy, never on disk) cannot disagree with it.
+            point.valueDb = block.blockSamples > 0
+                                ? 10.0 * std::log10(block.sumSquares /
+                                                    static_cast<double>(block.blockSamples)) +
+                                      referenceOffsetDb
+                                : rta::meter::kLevelFloorDb;
+            series.points.push_back(point);
+        }
+
+        if (rta::meter::hasFlag(block.flags, rta::meter::BlockFlag::Overload)) {
+            rta::measure::SplMarker marker;
+            marker.blockIndex = block.blockIndex;
+            marker.kind = rta::measure::SplMarkerKind::Overload;
+            marker.quantity = series.metricId;
+            payload.markers.push_back(marker);
+        }
+        if (rta::meter::hasFlag(block.flags, rta::meter::BlockFlag::Gap)) {
+            rta::measure::SplMarker marker;
+            marker.blockIndex = block.blockIndex;
+            marker.kind = rta::measure::SplMarkerKind::Gap;
+            marker.quantity = series.metricId;
+            payload.markers.push_back(marker);
+        }
+    }
+
+    if (!series.points.empty()) payload.history.push_back(std::move(series));
+}
+
 }  // namespace
 
 SplReportBuildResult buildReportPayload(const SplReportBuildRequest& request) {
@@ -199,6 +257,8 @@ SplReportBuildResult buildReportPayload(const SplReportBuildRequest& request) {
         payload.validity.droppedBlocks += whole.droppedBlocks;
         payload.validity.gapBlocks += whole.gapBlocks;
         payload.validity.droppedSamplesTotal += whole.droppedSamplesTotal;
+
+        appendHistoryAndMarkers(channel, log.blocks, referenceOffsetDb, payload);
 
         ReportMetricResult metric;
         metric.id = "ch" + std::to_string(channel);

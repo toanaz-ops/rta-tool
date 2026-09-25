@@ -18,8 +18,12 @@ namespace rta::measure {
 
 /// Smaart's own four marker kinds (record §6: "what the alarm records"),
 /// reused here so the ring's marker list is the one place every annotated
-/// event in a session lands, not just alarm transitions.
-enum class SplMarkerKind { Alarm, Overload, Note, Reset };
+/// event in a session lands, not just alarm transitions. `Gap` is a fifth,
+/// added by the report payload builder (task W2-E2b fix round, MEDIUM
+/// finding): the paired drain stalling is exactly as annotation-worthy as an
+/// overload, and `rta::meter::BlockFlag::Gap` already carries the fact --
+/// nothing upstream of the report ever turned it into a marker.
+enum class SplMarkerKind { Alarm, Overload, Note, Reset, Gap };
 
 /// A marker's quantity label, with NO heap allocation, ever -- fix round
 /// 2026-09-25: `SplMarker::quantity` was a `std::string`, and an unreserved

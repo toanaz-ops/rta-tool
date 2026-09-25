@@ -333,9 +333,10 @@ std::string renderHistory(const ReportPayload& p) {
         svg += "<polyline class=\"trace\" points=\"" + points + "\" />";
     }
     for (const auto& marker : p.markers) {
-        const std::string cls = marker.kind == rta::measure::SplMarkerKind::Alarm ? "marker-alarm"
+        const std::string cls = marker.kind == rta::measure::SplMarkerKind::Alarm      ? "marker-alarm"
                                 : marker.kind == rta::measure::SplMarkerKind::Overload ? "marker-overload"
-                                                                                        : "";
+                                : marker.kind == rta::measure::SplMarkerKind::Gap      ? "marker-gap"
+                                                                                       : "";
         if (cls.empty()) continue;
         const std::string x = std::to_string(xFor(marker.blockIndex));
         svg += "<line class=\"" + cls + "\" x1=\"" + x + "\" x2=\"" + x + "\" y1=\"0\" y2=\"120\" />";
@@ -366,6 +367,14 @@ std::string renderValidity(const ReportPayload& p) {
     body += "<p class=\"honesty\">This report's content list is assembled from market "
             "practice; it is not claimed conformant with ISO 1996-2:2017 clause 13, "
             "whose body is paywalled and unread by this project.</p>";
+    // Task W2-E2b fix round (MEDIUM finding): overload/gap markers ARE
+    // derived from the log's own block flags (this section's own counts
+    // above), but an alarm FIRED/CLEARED transition is state SplAlarms holds
+    // only in memory -- nothing in the log format records it, so a session
+    // exported after the live view is gone cannot recover it. Stated rather
+    // than silently absent.
+    body += "<p class=\"honesty\">Alarm transition markers are not recorded in this log "
+            "format.</p>";
     return section("validity", "Validity", body);
 }
 

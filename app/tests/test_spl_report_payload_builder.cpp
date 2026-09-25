@@ -10,6 +10,7 @@
 
 #include "export/SplCalibrationRecord.h"
 #include "export/SplLog.h"
+#include "SplReportPayloadBuilderTestSupport.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -27,75 +28,9 @@ using rta::measure::CalibrationReportFields;
 using rta::measure::CalibrationVerdict;
 using rta::meter::Block;
 using rta::splexport::SplCalibrationRecordInfo;
-
-namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-    explicit TempDir(const char* name)
-        : path(std::filesystem::temp_directory_path() / "rta-test-splreportpayload" / name) {
-        std::filesystem::remove_all(path);
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() { std::error_code ec; std::filesystem::remove_all(path, ec); }
-};
-
-/// blockSamples fixed at 480 for every block, matching the other SPL log
-/// fixtures in this suite (test_spl_log_pipeline.cpp's own `distinguishableBlock`).
-Block block(std::uint64_t index, double sumSquares) {
-    Block b;
-    b.blockIndex = index;
-    b.blockSamples = 480;
-    b.sumSquares = sumSquares;
-    return b;
-}
-
-/// Writes one channel's log directly through `rta::splexport::SplLogWriter`
-/// -- the SAME writer `SplLogPipeline`'s writer thread uses in production --
-/// with `referenceOffsetDb` stamped into the header exactly as
-/// `AnalysisThreadSpl.cpp` does. `segmentBlocks` large enough that this
-/// fixture's handful of blocks never rotates, so there is exactly one
-/// `ch<channel>.gen0.seg0.csv` for the payload builder to find.
-void writeChannelLog(const std::filesystem::path& dir, int channel,
-                    const std::vector<Block>& blocks, double referenceOffsetDb) {
-    rta::measure::SplConfig config;
-    config.referenceOffsetDb = referenceOffsetDb;
-    config.calibrated = referenceOffsetDb != 0.0;
-
-    rta::splexport::SplLogHeaderInfo info;
-    info.weighting = rta::dsp::WeightingType::A;
-    info.detector = rta::meter::TimeWeighting::Fast;
-    info.blockSamples = 480;
-    info.sampleRate = 48000.0;
-    info.startedAtUnixMs = 1'700'000'000'000ull;
-
-    rta::splexport::SplLogWriter writer((dir / ("ch" + std::to_string(channel))).string(), config,
-                                        info, /*segmentBlocks=*/1000);
-    for (const auto& b : blocks) writer.write(b);
-    // The destructor closes `stream_`, flushing every write above to disk --
-    // the same lifetime the writer thread's own SplLogWriter has when
-    // SplLogPipeline::disable() joins it.
-}
-
-/// Four quiet blocks (raw mean-square 1.0, i.e. 0 dB before any offset) and
-/// four LOUD blocks (raw mean-square 1e6, 60 dB above quiet) -- the "loud
-/// invalid span" the task's own self-check asks for: excluding blocks
-/// 3..6 must move the whole-session Leq by tens of dB, not a rounding
-/// difference.
-std::vector<Block> eightBlockFixture() {
-    std::vector<Block> blocks;
-    blocks.push_back(block(0, 480.0 * 1.0));
-    blocks.push_back(block(1, 480.0 * 1.0));
-    blocks.push_back(block(2, 480.0 * 1.0));
-    blocks.push_back(block(3, 480.0 * 1.0e6));
-    blocks.push_back(block(4, 480.0 * 1.0e6));
-    blocks.push_back(block(5, 480.0 * 1.0e6));
-    blocks.push_back(block(6, 480.0 * 1.0e6));
-    blocks.push_back(block(7, 480.0 * 1.0));
-    return blocks;
-}
-
-}  // namespace
+using rta::splexport::test::eightBlockFixture;
+using rta::splexport::test::TempDir;
+using rta::splexport::test::writeChannelLog;
 
 TEST_CASE("buildReportPayload recomputes the whole-session Leq from sumSquares, offset applied",
          "[spl_report_payload_builder]") {
@@ -339,3 +274,8 @@ TEST_CASE("a truncated final line is discarded and counted, never silently dropp
     CHECK(result.payload->validity.bytesDiscarded > 0);
     CHECK(result.payload->validity.totalBlocks == 8);  // the eight WELL-FORMED rows still parsed
 }
+
+// Time history / marker cases (task W2-E2b fix round, MEDIUM finding) live in
+// test_spl_report_payload_builder_fixes.cpp -- this file's own 400-line cap
+// split; shared fixtures (TempDir/block/writeChannelLog/eightBlockFixture)
+// moved to SplReportPayloadBuilderTestSupport.h so both files use one copy.
