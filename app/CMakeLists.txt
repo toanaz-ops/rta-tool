@@ -120,6 +120,20 @@ target_sources(rtatool PRIVATE
     src/measure/SplSession.cpp
     src/measure/SplMeter.cpp
     # --- end L6a Wave 0 ---------------------------------------------------
+    # --- L6a Wave 2 task W2-E1 ---------------------------------------------
+    # SplChannelState.cpp: the per-channel history/alarms/dose/Ln state
+    # AnalysisThreadSpl.cpp's feedSpl() and AnalysisPublish.cpp's
+    # buildSplBlockView() both call into directly -- JUCE-free, same
+    # also-compiled-into-rtatool_analysis_tests shape as SplSession.cpp above.
+    # SplHistory.cpp (W2-A) and SplAlarms.cpp (W2-B) had NO caller anywhere in
+    # app/src before this task (the wiring gap the plan amendment names) and
+    # so were never in this list either; SplChannelState.cpp is their first
+    # real caller, and both have to be named here now or this target fails to
+    # link with undefined symbols.
+    src/measure/SplHistory.cpp
+    src/measure/SplAlarms.cpp
+    src/measure/SplChannelState.cpp
+    # --- end L6a Wave 2 task W2-E1 ------------------------------------------
     # AnalysisPublish.cpp is AnalysisThread's own wiring of AverageGroup
     # into its publish path (task F2, record §6) -- JUCE-free, same
     # one-static-library reason as Analyser.cpp below, so it is named
@@ -305,6 +319,15 @@ target_sources(rtatool_snapshot PRIVATE
     src/measure/SplSession.cpp
     src/measure/SplMeter.cpp
     # --- end L6a Wave 0 ---------------------------------------------------
+    # --- L6a Wave 2 task W2-E1 ---------------------------------------------
+    # SplHistory.cpp / SplAlarms.cpp / SplChannelState.cpp: see the same
+    # entries in rtatool's own source list above -- this target names every
+    # source one by one with no glob, so all three have to be listed here
+    # too or the snapshot tool fails to link.
+    src/measure/SplHistory.cpp
+    src/measure/SplAlarms.cpp
+    src/measure/SplChannelState.cpp
+    # --- end L6a Wave 2 task W2-E1 ------------------------------------------
     src/measure/AnalysisPublish.cpp
     src/measure/AverageGroup.cpp
     src/measure/SyntheticInput.cpp

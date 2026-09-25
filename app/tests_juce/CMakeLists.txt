@@ -205,6 +205,18 @@ add_executable(rtatool_routing_live_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplMeter.cpp
     # --- end L6a Wave 0 ---------------------------------------------------
+    # --- L6a Wave 2 task W2-E1 ---------------------------------------------
+    # SplChannelState.cpp: AnalysisThreadSpl.cpp's feedSpl() and
+    # AnalysisPublish.cpp's buildSplBlockView() (both linked below) now call
+    # into it directly, so it has to be named here too or this target fails
+    # to link with undefined symbols. SplHistory.cpp (W2-A) and SplAlarms.cpp
+    # (W2-B) had NO caller anywhere in app/src before this task, so were
+    # never in this list either -- SplChannelState.cpp is their first real
+    # caller, and both have to be named here now for the same reason.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplHistory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplAlarms.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplChannelState.cpp
+    # --- end L6a Wave 2 task W2-E1 ------------------------------------------
     # DelayLocator.cpp is NOT needed here: this target's tests exercise
     # AnalysisThread's own armLocateCapture/applyReferenceDelay directly,
     # not the JUCE-free DelayLocator state machine (that lives entirely in
