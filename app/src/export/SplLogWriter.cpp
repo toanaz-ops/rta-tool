@@ -12,6 +12,9 @@
 // acceptance C5 checks structurally (a grep for the literal call spellings,
 // which this paragraph avoids repeating for exactly that reason).
 #include "export/SplLog.h"
+#include "export/SplSessionHeader.h"
+
+#include <fstream>
 
 namespace rta::splexport {
 
@@ -59,6 +62,17 @@ void SplLogWriter::reconfigure(rta::dsp::WeightingType weighting, rta::meter::Ti
     ++logGeneration_;
     segmentIndex_ = 0;
     openSegment();  // a BRAND NEW log: fresh header, fresh CSV header row
+}
+
+void writeSessionHeaderFile(const std::string& path, const SplSessionHeaderInfo& info) {
+    // Binary, not text mode: text mode's CRLF translation would make the
+    // bytes on disk disagree with sessionHeader(info)'s own '\n'-only
+    // string, which is exactly the "no atomicity claim, but at least an
+    // exact one" property this file's own header rules already rely on
+    // (SplLog.h's readLog strips a trailing '\r' for the SAME reason on the
+    // read side).
+    std::ofstream stream(path, std::ios::out | std::ios::trunc | std::ios::binary);
+    stream << sessionHeader(info);
 }
 
 }  // namespace rta::splexport
