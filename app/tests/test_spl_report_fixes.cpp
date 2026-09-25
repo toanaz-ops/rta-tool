@@ -163,6 +163,38 @@ TEST_CASE("a marker at the last block lands at the same x as the trace's last po
     CHECK(history.find("marker-alarm") != std::string::npos);
 }
 
+// Fix round (PR #28 round-3 fix, LOW, M12): a Filling alarm has not yet
+// compared anything, so its headroomDb is absent (SplAlarmReading's own
+// contract, test_spl_alarms.cpp's B4/closed-form(c) cases) -- but nothing in
+// this suite ever asserted what the REPORT does with that absence. Mutant
+// M12 (`dbOrAbsent(a.headroomDb)` -> `escapeHtml(formatTrim(a.headroomDb
+// .value_or(0.0)))`) survived: it renders a silent "0.0 dB", indistinguishable
+// from a real zero-headroom reading
+// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+TEST_CASE("an alarm with no headroom reading renders absent, never 0.0 dB",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    ReportAlarmResult filling;
+    filling.metricId = "Main";
+    filling.limitDb = 100.0;
+    filling.windowBlocks = 900;
+    filling.state = rta::measure::SplAlarmState::Filling;
+    // headroomDb left default-constructed: std::optional's empty state.
+    payload.alarms = {filling};
+
+    const auto html = renderReport(payload);
+    const auto settings = extractSection(html, "settings");
+    // A generic "0.0 dB" substring search is unsafe here: the OSHA dose
+    // preset's own criterion/threshold ("90.0 dB") CONTAINS the literal
+    // "0.0 dB" starting at its second character, and that preset always
+    // renders a few rows below the alarm-status table (fix 2 above). Assert
+    // the full headroom CELL instead, pinned to the one row this fixture
+    // creates -- the same shape fix 3 above uses for the state cell.
+    CHECK(settings.find(
+              R"(Filling -- window not yet full, not compared</td><td><span class="absent">absent (no data)</span></td>)") !=
+         std::string::npos);
+}
+
 // Fix round (PR #28 round-3 fix, LOW, M09): a single-block session has
 // `first == last`, so the span computation's `*last > *first` branch is
 // false and the fallback value is what actually divides every x. Changing
