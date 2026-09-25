@@ -193,8 +193,17 @@ void SplMeter::push(std::span<const float> hop) noexcept {
                 // the same "flag and count ride the block being
                 // accumulated" convention noteDroppedSamples/setFlag
                 // already document.
+                //
+                // PLUS `block->droppedSamples` (round-4 item 2 fix): the
+                // evicted block may ALREADY carry a prior drop count of its
+                // own -- a bus-drop noted while it was still pending, or an
+                // earlier eviction that folded onto IT before it closed.
+                // Riding only `blockSamples` silently discarded that count
+                // on the floor instead of folding it forward, undercounting
+                // total elapsed time by exactly the amount already lost
+                // once before.
                 accumulator_.setFlag(rta::meter::BlockFlag::Dropped);
-                accumulator_.noteDroppedSamples(block->blockSamples);
+                accumulator_.noteDroppedSamples(block->blockSamples + block->droppedSamples);
             }
         }
 
