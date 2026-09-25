@@ -10,6 +10,7 @@
 // themselves are proven OFF in app/tests/test_spl_log_pipeline.cpp; this
 // file is only the wiring between AnalysisThread and that pipeline.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "export/SplLog.h"
 #include "export/SplSessionHeader.h"
@@ -19,8 +20,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <numbers>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -67,6 +71,27 @@ void pushBlocks(CaptureBus& bus, int channelsInCallback, int samplesPerBlock, in
     std::vector<const float*> ptrs(static_cast<std::size_t>(channelsInCallback), tone.data());
     for (int b = 0; b < blocks; ++b) {
         bus.pushFromCallback(ptrs.data(), channelsInCallback, samplesPerBlock);
+    }
+}
+
+/// A REAL sine, phase-continuous across calls via `sampleIndex` (the
+/// caller's own running counter) -- single channel only, one hop per call to
+/// `bus.pushFromCallback`. Needed for the A-vs-Z weighting test below: a
+/// constant value (what `pushBlocks` above feeds) is degenerate at low
+/// frequency and cannot distinguish a filter's passband from its stopband.
+void pushSineTone(CaptureBus& bus, double frequencyHz, double sampleRate, float amplitude,
+                  int hopSize, int hops, std::uint64_t& sampleIndex) {
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    std::vector<float> hop(static_cast<std::size_t>(hopSize));
+    for (int h = 0; h < hops; ++h) {
+        for (int i = 0; i < hopSize; ++i) {
+            const double t = static_cast<double>(sampleIndex) / sampleRate;
+            hop[static_cast<std::size_t>(i)] =
+                static_cast<float>(static_cast<double>(amplitude) * std::sin(kTwoPi * frequencyHz * t));
+            ++sampleIndex;
+        }
+        const float* ptr = hop.data();
+        bus.pushFromCallback(&ptr, 1, hopSize);
     }
 }
 
@@ -192,4 +217,106 @@ TEST_CASE("enableSplLogging with no logDirectory keeps Snapshot::spl live "
     CHECK(snapshot->spl->logDroppedBlocks == 0);  // nothing was ever asked to log
 
     thread.disableSplLogging();
+}
+
+// --- mutation-4 closure (station-4 verification pass): the log records the
+// A chain by CONTENT, not only by the header's own label --------------------
+
+TEST_CASE("the logged chain is A-weighted, not Z, at a frequency where the "
+         "two curves disagree by 39 dB",
+         "[spl_log_wiring]") {
+    // IEC 61672-1 Table 3, exact third-octave frequency f = 1000*10^(0.1n)
+    // at n = -15 (core/tests/test_weighting.cpp's own citation and table):
+    // A(f) = -39.4 dB. Z is unity gain BY DEFINITION (Weighting::analyticDb
+    // returns exactly 0.0 for WeightingType::Z at every frequency) -- it is
+    // not a filter at all, so there is no settling question on that side.
+    //
+    // A default SplConfig (no metrics) auto-creates exactly the Z chain
+    // (first, since nothing names a weighting) and the A chain (always
+    // second -- SplSession::start's "an A-weighted chain always exists"
+    // rule), and record §10's own worked log example is stamped
+    // "weighting=A". If AnalysisThreadSpl.cpp's feedSpl() ever pushed the Z
+    // chain's blocks into the log pipeline while the header still says A
+    // (the exact shape of a chain-selection mutation -- the header is a
+    // separate, hardcoded literal from the block-selection call), the level
+    // on disk would sit ~39 dB HIGHER than this test's closed-form A
+    // expectation: a wrong number under the right label.
+    constexpr double kFrequencyHz = 1000.0 * 0.03162277660168379;  // 1000*10^-1.5, exact
+    constexpr double kADb = -39.4;
+    constexpr float kAmplitude = 0.5f;
+    constexpr double kSampleRate = 48000.0;
+
+    TempDir dir("chain-a");
+    // Large enough to hold the WHOLE burst below (192000 samples) with
+    // margin, so this test's outcome does not depend on how fast the
+    // analysis thread happens to drain relative to the test thread's push
+    // loop -- nothing can be dropped from the ring regardless of scheduling.
+    CaptureBus bus(1 << 18);
+    REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
+    bus.prepare(kSampleRate, 1);
+    bus.setActive(true);
+
+    AnalysisThread thread(bus, fastConfig());
+    SplConfig config;
+    // 24000 samples/block: long enough that a weighting filter (a cascaded
+    // 2nd-order IIR with its lowest corner near 20 Hz, time constant on the
+    // order of 1/(2*pi*20 Hz) ~= 8 ms) has settled by many hundreds of time
+    // constants before the LAST of eight such blocks, which is the only one
+    // this test reads.
+    config.blockSeconds = 0.5;
+    const std::array<int, 1> channels{ 0 };
+    thread.enableSplLogging(config, channels, dir.path.string());
+
+    constexpr int kHopSize = 16;
+    constexpr int kBlocksToFeed = 8;
+    const int hopsNeeded =
+        static_cast<int>(config.blockSeconds * kSampleRate / kHopSize) * kBlocksToFeed;
+    std::uint64_t sampleIndex = 0;
+    pushSineTone(bus, kFrequencyHz, kSampleRate, kAmplitude, kHopSize, hopsNeeded, sampleIndex);
+    REQUIRE(waitForSplBlocks(thread, 0, kBlocksToFeed, 5000));
+
+    thread.disableSplLogging();
+    REQUIRE(waitForSplLoggingOff(thread, bus, 0, 3000));
+
+    const auto files = csvFilesIn(dir.path);
+    REQUIRE_FALSE(files.empty());
+    const std::string fileText = readWholeFile(files.front());
+    const auto result = rta::splexport::readLog(fileText);
+    REQUIRE(result.bytesDiscarded == 0);
+    REQUIRE(result.blocks.size() == static_cast<std::size_t>(kBlocksToFeed));
+
+    const auto& lastBlock = result.blocks.back();  // fully settled by now
+    REQUIRE(lastBlock.blockSamples > 0);
+    const double measuredDb =
+        10.0 * std::log10(lastBlock.sumSquares / static_cast<double>(lastBlock.blockSamples));
+
+    // Mean-square dBFS convention (SplMeter::blockLevelDb's own comment):
+    // 20*log10(amplitude) - 3.0102999566398120 for a full sine, then the
+    // weighting's own steady-state gain on top.
+    const double expectedUnweightedDb =
+        20.0 * std::log10(static_cast<double>(kAmplitude)) - 3.0102999566398120;
+    const double expectedADb = expectedUnweightedDb + kADb;
+
+    INFO("measured = " << measuredDb << " dB, expected A = " << expectedADb
+                        << " dB, expected Z (unweighted) = " << expectedUnweightedDb << " dB");
+    // 1 dB tolerance: test_weighting.cpp's own "digital filter tracks the
+    // analytic curve" case accepts 0.01 dB, and the analytic-vs-published
+    // Table 3 tolerance it also uses is 0.05 dB -- 1 dB is generous headroom
+    // over both combined, covering whatever residual the block-accumulation
+    // path itself (not exercised by test_weighting.cpp, which measures the
+    // filter alone) adds.
+    CHECK_THAT(measuredDb, Catch::Matchers::WithinAbs(expectedADb, 1.0));
+    // The hard refutation, independent of the tolerance above: a Z-labelled-
+    // as-A block reads within a fraction of a dB of expectedUnweightedDb,
+    // 39.4 dB higher than expectedADb. Half that gap (19.7 dB) is still far
+    // more margin than any settling residual or filter tolerance could close.
+    CHECK(measuredDb < expectedUnweightedDb - (std::abs(kADb) / 2.0));
+
+    // The label itself must say A too -- catches the OTHER half of a
+    // mismatch: a mutation that changed which chain's BLOCKS get pushed
+    // without touching applyPendingSplRequest's separate, hardcoded
+    // `spec.info.weighting = WeightingType::A` would still print
+    // "weighting=A" over the wrong chain's own numbers. Both halves have to
+    // agree for this test to mean what it says.
+    CHECK(fileText.find("weighting=A") != std::string::npos);
 }
