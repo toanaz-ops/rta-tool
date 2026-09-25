@@ -208,6 +208,11 @@ public:
     /// same reason `splDroppedSamples` is. 0 when nothing is logging to disk.
     [[nodiscard]] std::uint64_t splLogDroppedBlocks(int channel) const noexcept;
 
+    /// Station-4 fix round (PR #31, verifier finding 6): the same mirror
+    /// shape as `splLogDroppedBlocks` above, over
+    /// `splLogPipeline_.writeFailed(channel)`.
+    [[nodiscard]] bool splLogWriteFailed(int channel) const noexcept;
+
 private:
     /// Trap T-3: `SpectrumEngine::process` (reached through
     /// `Analyser::pushMeasurement` / `pushReference`) can throw. An
@@ -364,6 +369,9 @@ private:
     /// feedSpl() so the message thread never reads `splLogPipeline_` itself
     /// (that object is analysis-thread-only).
     std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splLogDroppedBlocks_{};
+    /// Station-4 fix round (PR #31, finding 6): same mirror shape as
+    /// `splLogDroppedBlocks_`, over `splLogPipeline_.writeFailed(channel)`.
+    std::array<std::atomic<bool>, SplSession::kMaxLoggedChannels> splLogWriteFailed_{};
 };
 
 }  // namespace rta::measure

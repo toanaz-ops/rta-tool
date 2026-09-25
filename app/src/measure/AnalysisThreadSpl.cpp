@@ -205,6 +205,12 @@ void AnalysisThread::feedSpl(int channel) {
         splLogDroppedBlocks_[slot].store(splLogPipeline_.droppedBlocks(channel),
                                          std::memory_order_relaxed);
     }
+    // Station-4 fix round (PR #31, finding 6): same mirror as the drop count
+    // just above, over splLogPipeline_.writeFailed(channel).
+    if (slot < splLogWriteFailed_.size()) {
+        splLogWriteFailed_[slot].store(splLogPipeline_.writeFailed(channel),
+                                       std::memory_order_relaxed);
+    }
 
     if (slot < splBlockCounts_.size()) {
         splBlockCounts_[slot].store(splSession_.blockCount(channel), std::memory_order_relaxed);
@@ -297,11 +303,19 @@ void AnalysisThread::fillSplPublishInput(
     // function's own contract ("no meter, no ring, no thread" -- see
     // SplPublishInput's class comment) intact.
     input.logDroppedBlocks = splLogDroppedBlocks(channel);
+    // Station-4 fix round (PR #31, finding 6): same reasoning as the drop
+    // count just above -- read the mirror, never splLogPipeline_ itself.
+    input.logWriteFailed = splLogWriteFailed(channel);
 }
 
 std::uint64_t AnalysisThread::splLogDroppedBlocks(int channel) const noexcept {
     if (channel < 0 || static_cast<std::size_t>(channel) >= splLogDroppedBlocks_.size()) return 0;
     return splLogDroppedBlocks_[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);
+}
+
+bool AnalysisThread::splLogWriteFailed(int channel) const noexcept {
+    if (channel < 0 || static_cast<std::size_t>(channel) >= splLogWriteFailed_.size()) return false;
+    return splLogWriteFailed_[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);
 }
 
 std::uint64_t AnalysisThread::splDroppedSamples(int channel) const noexcept {

@@ -252,6 +252,9 @@ std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
     // I/O pressure, the other is absent-because-nothing-is-logging, already
     // handled by the early return above).
     view.logDroppedBlocks = static_cast<std::uint32_t>(input.logDroppedBlocks);
+    // Station-4 fix round (PR #31, finding 6): same "always copied,
+    // independent of channelState" reasoning as logDroppedBlocks just above.
+    view.logWriteFailed = input.logWriteFailed;
     return view;
 }
 

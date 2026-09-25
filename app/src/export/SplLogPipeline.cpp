@@ -23,6 +23,10 @@ void SplLogPipeline::enable(const SplLogEnableParams& params) {
     // A fresh session starts with a fresh drop count, not the previous
     // session's tally left behind by writerLoop()'s own shutdown snapshot.
     for (auto& dropped : lastDropped_) dropped.store(0, std::memory_order_relaxed);
+    // Same for the previous session's open-failure flag (finding 6): a fresh
+    // log's file has not been attempted yet, so it starts clean regardless
+    // of whether the PREVIOUS session ever failed to open one.
+    for (auto& failed : lastWriteFailed_) failed.store(false, std::memory_order_relaxed);
 
     // Allocate the ring only -- no SplLogWriter, no open file, here. That is
     // ALL setupWriters() needs from `pendingParams_` to build the exact same
@@ -74,6 +78,12 @@ void SplLogPipeline::setupWriters() {
         }
         sinkPtr->writer = writerFactory_(spec.basePath, pendingParams_.config, spec.info,
                                          pendingParams_.config.segmentBlocks);
+        // Finding 6: the constructor's own openSegment() call already ran
+        // (SplLog.h's own comment: "the constructor's own first call"), so
+        // this is the earliest point a failed FIRST segment is visible.
+        if (sinkPtr->writer->openFailed()) {
+            sinkPtr->writeFailed.store(true, std::memory_order_relaxed);
+        }
         channelFiles.push_back(sinkPtr->writer->segmentPaths().back());
     }
 
@@ -104,6 +114,12 @@ bool SplLogPipeline::drainOnce() {
             sinkPtr->writer->write(scratch);
             any = true;
         }
+        // Finding 6: a LATER segment (rotation, mid-session) can also fail
+        // to open -- checked once per drain pass rather than once per
+        // `write()` call, cheap either way since this is a plain bool read.
+        if (sinkPtr->writer->openFailed()) {
+            sinkPtr->writeFailed.store(true, std::memory_order_relaxed);
+        }
     }
     return any;
 }
@@ -132,6 +148,8 @@ void SplLogPipeline::writerLoop() {
         if (sinks_[i]) {
             lastDropped_[i].store(sinks_[i]->dropped.load(std::memory_order_relaxed),
                                    std::memory_order_relaxed);
+            lastWriteFailed_[i].store(sinks_[i]->writeFailed.load(std::memory_order_relaxed),
+                                      std::memory_order_relaxed);
         }
         sinks_[i].reset();
     }
@@ -152,6 +170,14 @@ std::uint64_t SplLogPipeline::droppedBlocks(int channel) const noexcept {
     const auto& sinkPtr = sinks_[slot];
     if (!sinkPtr) return lastDropped_[slot].load(std::memory_order_relaxed);
     return sinkPtr->dropped.load(std::memory_order_relaxed);
+}
+
+bool SplLogPipeline::writeFailed(int channel) const noexcept {
+    if (channel < 0 || static_cast<std::size_t>(channel) >= kMaxLoggedChannels) return false;
+    const auto slot = static_cast<std::size_t>(channel);
+    const auto& sinkPtr = sinks_[slot];
+    if (!sinkPtr) return lastWriteFailed_[slot].load(std::memory_order_relaxed);
+    return sinkPtr->writeFailed.load(std::memory_order_relaxed);
 }
 
 }  // namespace rta::splexport

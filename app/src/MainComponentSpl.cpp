@@ -86,7 +86,17 @@ void MainComponent::startFreshSplLog() {
                                  .getChildFile("RTA Tool")
                                  .getChildFile("spl")
                                  .getChildFile(utcTimestampForFolder());
-    sessionDir.createDirectory();
+    // Station-4 fix round (PR #31, finding 6): the result USED to be
+    // discarded outright. It still is not separately reported here -- a
+    // directory `createDirectory()` failed to make means every segment
+    // `enableSplLogging` goes on to open underneath it fails too, and THAT
+    // failure already reaches the operator through `SplBlockView::
+    // logWriteFailed` (SplLogWriter::openFailed()'s own comment: "a
+    // directory that does not exist or is not writable makes open() fail").
+    // Calling `enableSplLogging` unconditionally, even when this returns
+    // false, is what lets that one downstream signal cover both causes
+    // rather than needing a second, redundant one here.
+    [[maybe_unused]] const bool sessionDirCreated = sessionDir.createDirectory();
 
     // SplConfig{} defaults, no preferences store (SPL-R11) -- the task
     // brief's own instruction. Wave 3's calibration offset is applied to a

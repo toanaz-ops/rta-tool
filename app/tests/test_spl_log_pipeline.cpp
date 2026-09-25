@@ -356,3 +356,42 @@ TEST_CASE("enable() opens the log file on the writer thread, never on the "
 
     pipeline.disable();
 }
+
+// --- station-4 fix round (PR #31, finding 6): the pipeline mirrors a real
+// open failure through writeFailed(), and remembers it past disable() ------
+
+TEST_CASE("writeFailed() is true when the channel's directory does not "
+         "exist, and survives disable()",
+         "[spl_log_pipeline]") {
+    // Same "point basePath into a directory that was never created" idiom
+    // test_spl_log.cpp's own openFailed() case uses -- portable across CI
+    // OSes, unlike a chmod-based unwritable directory.
+    const auto missingDir = std::filesystem::temp_directory_path() / "rta-test-spllogpipeline" /
+                            "does-not-exist-6a2f9";
+    std::filesystem::remove_all(missingDir);
+
+    SplLogEnableParams params;
+    params.config = SplConfig{};
+    params.channels = { channelSpec(missingDir, 0) };
+
+    SplLogPipeline pipeline;
+    pipeline.enable(params);
+
+    // Poll rather than sleep-then-check, same shape as the thread-id test
+    // above: setupWriters() (which is where the failing open happens) runs
+    // as the writer thread's very first act.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (!pipeline.writeFailed(0) && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(pipeline.writeFailed(0));
+
+    pipeline.disable();
+    // lastWriteFailed_'s whole reason to exist (SplLogPipeline.h's own
+    // comment): a caller reading AFTER the session ended, same shape as
+    // droppedBlocks()'s post-disable() snapshot.
+    CHECK(pipeline.writeFailed(0));
+
+    std::error_code ec;
+    std::filesystem::remove_all(missingDir, ec);
+}

@@ -85,6 +85,14 @@ struct SplPublishInput {
     /// visible on the live pane, not just discoverable after the fact by
     /// comparing the file against `blockIndex`.
     std::uint64_t logDroppedBlocks = 0;
+    /// Station-4 fix round (PR #31, verifier finding 6): true once this
+    /// channel's log file has ever failed to open -- carried straight to
+    /// `SplBlockView::logWriteFailed`, same shape as `logDroppedBlocks`
+    /// above. `createDirectory()`'s own result at the composition root
+    /// (MainComponentSpl.cpp) is not separately checked: a directory that
+    /// failed to create makes every segment open underneath it fail too, so
+    /// this one signal already covers both.
+    bool logWriteFailed = false;
 };
 
 /// Builds the published SPL view, or `std::nullopt` when nothing is logging.

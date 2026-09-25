@@ -292,6 +292,16 @@ public:
         return segmentPaths_;
     }
 
+    /// Station-4 fix round (PR #31, verifier finding 6, MEDIUM): true once
+    /// any `openSegment()` call -- the constructor's own first call, or a
+    /// later rotation/reconfigure -- failed to open its file (an unwritable
+    /// or missing directory, most often). STICKY: once true, always true,
+    /// because a segment that failed once means this session's log already
+    /// has a gap no later success can back-fill, and "still logging, and
+    /// nothing looked wrong for the last five minutes" is a worse thing to
+    /// report than a false alarm on a log that recovered.
+    [[nodiscard]] bool openFailed() const noexcept { return openFailed_; }
+
 private:
     void openSegment();
 
@@ -305,6 +315,7 @@ private:
     std::uint64_t blocksInSegment_ = 0;
     std::ofstream stream_;
     std::vector<std::string> segmentPaths_;
+    bool openFailed_ = false;
 };
 
 }  // namespace rta::splexport

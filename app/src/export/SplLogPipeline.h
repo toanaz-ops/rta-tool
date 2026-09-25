@@ -168,6 +168,14 @@ public:
     /// increments (`pushBlock`) and any thread may read.
     [[nodiscard]] std::uint64_t droppedBlocks(int channel) const noexcept;
 
+    /// Station-4 fix round (PR #31, verifier finding 6, MEDIUM): true once
+    /// `channel`'s `SplLogWriter` has ever failed to open a segment -- sticky,
+    /// same reasoning as `SplLogWriter::openFailed()`'s own comment. Safe
+    /// from any thread: mirrors that writer's own state into an atomic the
+    /// writer thread alone sets (`setupWriters()`, `drainOnce()`) and any
+    /// thread may read, the same shape as `droppedBlocks()` above.
+    [[nodiscard]] bool writeFailed(int channel) const noexcept;
+
 private:
     using Ring = rta::dsp::RingBuffer<rta::meter::Block>;
 
@@ -176,6 +184,7 @@ private:
         std::unique_ptr<Ring> ring;
         std::unique_ptr<SplLogWriter> writer;
         std::atomic<std::uint64_t> dropped{ 0 };
+        std::atomic<bool> writeFailed{ false };
     };
 
     /// One drain pass over every sink, writing whatever each ring currently
@@ -213,12 +222,15 @@ private:
     // writer thread has joined -- but a caller's whole reason to read
     // `droppedBlocks()` is often "how many did the session that just ended
     // lose", the same shape as `AnalysisThread::splLogDroppedBlocks` snapshot
-    // in a Snapshot taken after the bus goes inactive. So `disable()` copies
-    // each sink's final count here BEFORE resetting it, and `droppedBlocks()`
-    // falls back to this snapshot once the live sink is gone. `enable()`
-    // zeroes it for the new session -- a fresh log never inherits a previous
-    // session's drop count (record §10: never appended to).
+    // in a Snapshot taken after the bus goes inactive. So `writerLoop()`'s own
+    // shutdown sequence copies each sink's final count here BEFORE resetting
+    // it, and `droppedBlocks()` falls back to this snapshot once the live
+    // sink is gone. `enable()` zeroes it for the new session -- a fresh log
+    // never inherits a previous session's drop count (record §10: never
+    // appended to).
     std::array<std::atomic<std::uint64_t>, kMaxLoggedChannels> lastDropped_{};
+    /// Same snapshot shape as `lastDropped_`, for `writeFailed()` (finding 6).
+    std::array<std::atomic<bool>, kMaxLoggedChannels> lastWriteFailed_{};
 };
 
 }  // namespace rta::splexport

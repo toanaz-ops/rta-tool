@@ -122,6 +122,15 @@ struct SplBlockView {
     /// `markersOverflowed` above.
     std::uint32_t logDroppedBlocks = 0;
 
+    /// Station-4 fix round (PR #31, verifier finding 6): true once this
+    /// channel's log file has ever failed to open -- an unwritable or
+    /// missing directory, most often (`SplLogWriter::openFailed()`'s own
+    /// comment). STICKY, same reasoning as that method: once true, always
+    /// true for this session. Normally false. Same "counted, never silent"
+    /// shape as `logDroppedBlocks` above, but a bool rather than a count --
+    /// there is no partial credit for a file that never opened.
+    bool logWriteFailed = false;
+
     /// How many 100 ms Ln ticks the A-weighted chain has had to drop because
     /// its fixed tick buffer filled during one `push()` call (PR #29 round-4
     /// item 3) -- `SplMeter::overflowedLnTicks()` already existed and

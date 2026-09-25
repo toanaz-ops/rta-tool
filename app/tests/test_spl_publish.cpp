@@ -160,6 +160,27 @@ TEST_CASE("logDroppedBlocks is copied straight into the published view",
     CHECK(view->logDroppedBlocks == 7);
 }
 
+// --- station-4 fix round (PR #31, finding 6): logWriteFailed reaches the
+// published view, the same way logDroppedBlocks just above does -----------
+
+TEST_CASE("logWriteFailed is copied straight into the published view",
+         "[splpublish]") {
+    const SplConfig config;
+    std::vector<Block> window;
+    window.push_back(blockAtLevel(0, 48000, 85.0));
+
+    SplPublishInput in;
+    in.config = &config;
+    in.sampleRate = kFs;
+    in.latestBlock = window.back();
+    in.window = window;
+    in.logWriteFailed = true;
+
+    const auto view = rta::measure::buildSplBlockView(in);
+    REQUIRE(view.has_value());
+    CHECK(view->logWriteFailed == true);
+}
+
 // --- C3: the alarm state is server-computed -----------------------------
 
 TEST_CASE("C3 SplAlarmReading carries state and headroom, and nothing downstream re-derives it",

@@ -36,6 +36,15 @@ void SplLogWriter::openSegment() {
                         std::to_string(segmentIndex_) + ".csv";
 
     stream_.open(path, std::ios::out | std::ios::trunc);
+    if (!stream_.is_open()) {
+        // Station-4 fix round (PR #31, finding 6): a directory that does not
+        // exist or is not writable makes `open()` fail silently -- no
+        // exception, no non-zero return, `stream_` just stays in a failed
+        // state -- so the next `<<`/`flush()` below are harmless no-ops on a
+        // closed stream rather than a crash. Recording that here is the only
+        // place the failure is ever visible.
+        openFailed_ = true;
+    }
     stream_ << logHeader(config_, info_);
     stream_ << csvHeaderRow() << '\n';
     stream_.flush();
