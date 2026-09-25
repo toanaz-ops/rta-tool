@@ -10,17 +10,25 @@
 // WHAT THIS FILE DOES AND DOES NOT DO. It starts/stops the log-writing
 // pipeline (AnalysisThread::enableSplLogging/disableSplLogging) when the bus
 // this app measures from becomes active or inactive -- a real device opening
-// or closing, OR `setSyntheticMode` switching on (the CI-testable path: no
-// audio hardware is available on a CI runner, so synthetic mode is what
-// proves this wiring in app/tests_juce/test_spl_log_wiring.cpp). It does
-// NOT react to a measurement-channel ROLE CHANGE made while already active
-// -- SPL-R11 has no preferences store, and re-deriving the channel list on
-// every routing change is a defensible follow-up this task's own scope
-// (W2-E2a, not W2-E2b) does not reach; the channel list is read once, at the
-// moment logging turns on.
+// or closing, a sample-rate/device-list change while already active (see
+// SplLoggingDecision.h), OR `setSyntheticMode` switching on (the CI-testable
+// path: no audio hardware is available on a CI runner). The DECISION itself
+// -- off/on/epoch-changed -- is `decideSplLoggingAction`, a pure function in
+// measure/SplLoggingDecision.h, proven OFF by
+// app/tests/test_spl_logging_decision.cpp on all three CI operating
+// systems; `pollSplLogging()` below is only that decision's JUCE-facing
+// caller (station-4 fix round, PR #31, verifier finding 2 -- this comment
+// used to claim the composition root itself was tested, which it was not:
+// app/tests_juce/test_spl_log_wiring.cpp only proves the synthetic-mode
+// edge). It does NOT react to a measurement-channel ROLE CHANGE made while
+// already active -- SPL-R11 has no preferences store, and re-deriving the
+// channel list on every routing change is a defensible follow-up this
+// task's own scope (W2-E2a, not W2-E2b) does not reach; the channel list is
+// read once, each time logging (re)starts.
 #include "MainComponent.h"
 
 #include "measure/SplConfig.h"
+#include "measure/SplLoggingDecision.h"
 #include "rta/platform/ChannelConfig.h"
 
 #include <array>
@@ -56,18 +64,7 @@ std::string utcTimestampForFolder() {
 
 }  // namespace
 
-void MainComponent::pollSplLogging() {
-    const bool active = isSyntheticMode() || audioIo_.isRunning();
-    if (active == splLoggingActive_) {
-        return;  // no transition -- enable/disable only ever run on the edge
-    }
-    splLoggingActive_ = active;
-
-    if (!active) {
-        analysisThread_.disableSplLogging();
-        return;
-    }
-
+void MainComponent::startFreshSplLog() {
     // Whichever channels currently hold the Measurement role -- exactly what
     // W2-E2's own task text asks for ("measurement channel(s)"), read once
     // here rather than tracked continuously (this file's own header
@@ -82,7 +79,9 @@ void MainComponent::pollSplLogging() {
     // happens HERE, at the composition root, exactly as the task brief asks;
     // AnalysisThread and SplLogPipeline below it receive a plain path string
     // and know nothing about juce::File (measure_has_no_framework_deps'
-    // whole point).
+    // whole point). A fresh timestamp every call -- including the epoch-
+    // change case (finding 1) -- is what keeps a reconfigured session from
+    // ever sharing a folder with the one before it.
     const auto sessionDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
                                  .getChildFile("RTA Tool")
                                  .getChildFile("spl")
@@ -96,4 +95,40 @@ void MainComponent::pollSplLogging() {
     // offset is correct for it.
     analysisThread_.enableSplLogging(rta::measure::SplConfig{}, channels,
                                      sessionDir.getFullPathName().toStdString());
+}
+
+void MainComponent::pollSplLogging() {
+    const bool active = isSyntheticMode() || audioIo_.isRunning();
+    const std::uint64_t currentEpoch = audioIo_.bus().epoch();
+
+    rta::measure::SplLoggingDecisionInput decisionInput;
+    decisionInput.wasActive = splLoggingActive_;
+    decisionInput.isActive = active;
+    decisionInput.lastEpoch = lastSplEpoch_;
+    decisionInput.currentEpoch = currentEpoch;
+    const auto action = rta::measure::decideSplLoggingAction(decisionInput);
+
+    if (action == rta::measure::SplLoggingAction::NoOp) {
+        return;  // no transition -- enable/disable only ever run on the edge
+    }
+
+    const bool wasActive = splLoggingActive_;
+    splLoggingActive_ = active;
+    lastSplEpoch_ = currentEpoch;
+
+    if (action == rta::measure::SplLoggingAction::Disable) {
+        analysisThread_.disableSplLogging();
+        return;
+    }
+
+    // EnableFresh. `wasActive` distinguishes the two cases the pure function
+    // folds together (SplLoggingDecision.h's own comment): an off-to-on edge
+    // needs no disable first, but an epoch change while still "active" (a
+    // sample-rate or device-list change mid-session, verifier finding 1) is
+    // still writing into the OLD session's files and must be closed before
+    // a fresh one opens -- never appended to.
+    if (wasActive) {
+        analysisThread_.disableSplLogging();
+    }
+    startFreshSplLog();
 }

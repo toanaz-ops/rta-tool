@@ -129,6 +129,14 @@ private:
     /// only on the transition, never every tick.
     void pollSplLogging();
 
+    /// The half of `pollSplLogging()`'s EnableFresh action that is common to
+    /// both an off-to-on edge and an epoch change while already active:
+    /// reads the current Measurement-role channels, mints a fresh UTC
+    /// session folder and calls `enableSplLogging`. Never called with the
+    /// previous session still open -- the caller disables first when one
+    /// was running (station-4 fix round, PR #31, verifier finding 1).
+    void startFreshSplLog();
+
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
     /// the poll timer while in LIVE mode (a device can be opened, closed or
@@ -206,6 +214,15 @@ private:
     // can call `enableSplLogging`/`disableSplLogging` only on the transition
     // rather than once per tick.
     bool splLoggingActive_ = false;
+    /// Station-4 fix round (PR #31, verifier finding 1, HIGH): `audioIo_.
+    /// bus().epoch()` as of the last tick `pollSplLogging()` acted on. A
+    /// sample-rate or device-list change restarts the device WITHOUT ever
+    /// clearing `AudioIo::isRunning()` (platform/src/AudioIo.cpp,
+    /// AudioIo_Devices.cpp), so `splLoggingActive_` alone cannot see a
+    /// mid-session reconfiguration -- the epoch, which
+    /// `AnalysisThread::rebuildAnalysersIfEpochChanged` already relies on
+    /// for the same reason, can. See measure/SplLoggingDecision.h.
+    std::uint64_t lastSplEpoch_ = 0;
     // ----------------------------------------------------------------------
 
     rta::view::DevicePanel devicePanel_;
