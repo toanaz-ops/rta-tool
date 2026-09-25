@@ -64,6 +64,10 @@ std::filesystem::path measureSrc() {
     return std::filesystem::path(RTA_REPO_ROOT) / "app" / "src" / "measure";
 }
 
+std::filesystem::path appSrc() {
+    return std::filesystem::path(RTA_REPO_ROOT) / "app" / "src";
+}
+
 }  // namespace
 
 // --- A1: the closed form, no microphone ----------------------------------
@@ -338,9 +342,15 @@ TEST_CASE("A5 no invented +-1.5 dB factory-calibration refusal is shipped here",
     // that is the shape of check only a flow (the start/end pair above) can
     // perform, not a constant to copy. codeText() strips comments and empties
     // literals, so this sentence's own "+-1.5 dB" in test prose cannot make
-    // the grep pass by accident: it only ever reads the two SHIPPED files.
+    // the grep pass by accident: it only ever reads the three SHIPPED files.
+    //
+    // Verifier round 1, finding 8: MainComponentCalibration.cpp (W3-B's
+    // composition-root wiring) was not scanned, so a refusal band added
+    // there instead of in CalibrationSession itself would have shipped
+    // undetected.
     for (const auto& file : {measureSrc() / "CalibrationSession.h",
-                             measureSrc() / "CalibrationSession.cpp"}) {
+                             measureSrc() / "CalibrationSession.cpp",
+                             appSrc() / "MainComponentCalibration.cpp"}) {
         INFO("scanning " << file.string());
         const std::string code = rta::test::codeText(file);
         CHECK(code.find("1.5") == std::string::npos);
