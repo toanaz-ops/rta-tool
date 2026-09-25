@@ -180,6 +180,14 @@ add_executable(rtatool_analysis_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplSession.cpp
     # test_spl_session.cpp: its own OFF-build fixtures.
     test_spl_session.cpp
+    # test_spl_session_newly_closed.cpp: split out of test_spl_session.cpp
+    # (PR #29 round-3 fix pass step 6, 400-line hard cap) -- the fix round
+    # 2026-09-25 item 4 / M5 newlyClosedBlocks-per-chain cases.
+    test_spl_session_newly_closed.cpp
+    # test_spl_session_metric_cap.cpp: split out of test_spl_session.cpp
+    # (PR #29 round-3 fix pass step 6, 400-line hard cap) -- the PR #17
+    # verifier defect 1 metric-cap / fillMetricWindows cases.
+    test_spl_session_metric_cap.cpp
     # --- end L6a Wave 0 ---------------------------------------------------
     # --- L6a Wave 1 (task W1-E, record section 7a) ------------------------
     # test_spl_criteria.cpp + SplCriteria.h: the three 140s as three NAMED
@@ -220,6 +228,15 @@ add_executable(rtatool_analysis_tests
     # JUCE-free so it is proven OFF on all three CI operating systems.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplChannelState.cpp
     test_spl_channel_state.cpp
+    # test_spl_channel_state_routing.cpp: split out of test_spl_channel_
+    # state.cpp (PR #29 round-3 fix pass step 6, 400-line hard cap) -- the
+    # 1a/1b/1c "every consumer reads the chain its own definition names"
+    # routing cases, which need a real SplSession to prove.
+    test_spl_channel_state_routing.cpp
+    # test_spl_channel_state_fixes.cpp: split out of test_spl_channel_
+    # state.cpp too (same step 6) -- the round-3 verifier's own steps 3/4/5,
+    # following the test_spl_report_fixes.cpp precedent.
+    test_spl_channel_state_fixes.cpp
     # test_spl_ln_ticks.cpp: PR #29 round-3 fix pass step 1 (MEDIUM) -- Ln
     # sampled at the detector's own 100 ms clock, never at block closure.
     test_spl_ln_ticks.cpp

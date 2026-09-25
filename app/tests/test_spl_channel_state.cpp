@@ -5,23 +5,26 @@
 // 2026-09-25: an independent verifier refuted the first version of this
 // file -- every consumer read the channel's FIRST configured chain
 // regardless of which metric it was actually about. See SplChannelState.h.
+//
+// PR #29 round-3 fix pass step 6: split at the 400-line hard cap. The 1a/
+// 1b/1c "every consumer reads the chain its own definition names" routing
+// cases and their own SplSession-driven fixtures moved to
+// test_spl_channel_state_routing.cpp; the round-3 step 3/4/5 fixes moved to
+// test_spl_channel_state_fixes.cpp; construction/allocation/windowAtClose
+// stayed here.
 #include "measure/SplChannelState.h"
 
 #include "AllocationProbe.h"
-
-#include "measure/SplSession.h"
 
 #include "rta/dsp/Weighting.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <optional>
 #include <span>
-#include <string>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -31,14 +34,10 @@ using rta::measure::SplAlarmState;
 using rta::measure::SplBlockView;
 using rta::measure::SplChannelState;
 using rta::measure::SplConfig;
-using rta::measure::SplMetricSpec;
-using rta::measure::SplSession;
 using rta::meter::Block;
 using rta::meter::DoseSettings;
 
 namespace {
-
-constexpr double kTwoPi = 6.283185307179586;
 
 Block blockAtLevel(std::uint64_t index, std::uint32_t samples, double levelDb) {
     Block b;
@@ -66,195 +65,7 @@ void feedOneChain(SplChannelState& state, std::vector<Block>& window, const Bloc
     state.onBlockClosed(std::span<const ChainBlockAtClose>(&atClose, 1));
 }
 
-/// Drains a real `SplSession` after `feedHop` and folds every chain's own
-/// newly-closed block(s) into `state`, mirroring `AnalysisThread::feedSpl`'s
-/// own loop (including `rta::measure::windowAtClose`) so these fixtures
-/// exercise the SAME reconstruction production code uses, over REAL,
-/// weighting-filtered audio.
-///
-/// PR #29 round-3 fix pass step 7: this helper diverged from `feedSpl` the
-/// moment step 1 added `feedLnTicks` there -- `feedSpl` calls it once per
-/// hop, unconditionally, AFTER the closed-block loop, whether or not a
-/// block closed on this hop. Updated here to keep mirroring production
-/// (rather than leaving `runOrderProbe`'s own `Probe::ln50` silently
-/// starved of ticks).
-void feedAndDrive(SplSession& session, SplChannelState& state, int channel,
-                  std::span<const float> hop) {
-    session.feedHop(channel, hop);
-    const auto weightings = session.weightings();
-    std::vector<std::span<const Block>> closedByChain(weightings.size());
-    std::vector<std::span<const Block>> fullWindowByChain(weightings.size());
-    std::size_t closedCount = 0;
-    for (std::size_t c = 0; c < weightings.size(); ++c) {
-        closedByChain[c] = session.newlyClosedBlocks(channel, weightings[c]);
-        fullWindowByChain[c] = session.window(channel, weightings[c]);
-        closedCount = closedByChain[c].size();
-    }
-    std::vector<ChainBlockAtClose> atClose(weightings.size());
-    for (std::size_t i = 0; i < closedCount; ++i) {
-        for (std::size_t c = 0; c < weightings.size(); ++c) {
-            atClose[c].weighting = weightings[c];
-            atClose[c].block = closedByChain[c][i];
-            atClose[c].windowThroughThisBlock =
-                rta::measure::windowAtClose(closedByChain[c], fullWindowByChain[c], i);
-        }
-        state.onBlockClosed(atClose);
-    }
-    state.feedLnTicks(session.newlyTickedLnLevelsDb(channel, rta::dsp::WeightingType::A));
-}
-
-struct Probe {
-    float alarmValueDb = 0.0f;
-    std::optional<double> dose0;
-    std::optional<double> ln50;
-};
-
-/// Reproduces the verifier's own probe: metrics [LCeq, LAeq] (or the reverse,
-/// via `aFirst`), an alarm on LAeq, a real low-frequency tone fed through the
-/// REAL weighting filters via a real `SplSession`.
-Probe runOrderProbe(bool aFirst, double freqHz, double fs, std::uint32_t blockSamples) {
-    SplConfig config;
-    config.blockSeconds = 1.0;
-    config.logSpanSeconds = 100.0;
-    const SplMetricSpec aMetric{"LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 1};
-    const SplMetricSpec cMetric{"LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 1};
-    config.metrics = aFirst ? std::vector<SplMetricSpec>{aMetric, cMetric}
-                           : std::vector<SplMetricSpec>{cMetric, aMetric};
-    SplAlarmSpec spec;
-    spec.metricId = "LAeq";
-    spec.limitDb = 1000.0;  // never fires; only valueDb is read
-    spec.windowBlocks = 1;
-    config.alarms = {spec};
-
-    SplSession session;
-    const int channels[] = {0};
-    session.start(config, fs, channels);
-    SplChannelState state(config, fs);
-
-    std::vector<float> hop(blockSamples);
-    for (int block = 0; block < 3; ++block) {  // let the biquad cascade settle
-        for (std::uint32_t n = 0; n < blockSamples; ++n) {
-            const double t = static_cast<double>(block) + static_cast<double>(n) / fs;
-            hop[n] = static_cast<float>(std::sin(kTwoPi * freqHz * t));
-        }
-        feedAndDrive(session, state, 0, hop);
-    }
-
-    SplBlockView view;
-    state.fillPublish(view);
-    REQUIRE(view.alarms.size() == 1);
-    REQUIRE(view.dosePercent[0].has_value());
-
-    Probe p;
-    p.alarmValueDb = view.alarms[0].valueDb;
-    p.dose0 = view.dosePercent[0];
-    p.ln50 = view.lnDb[3];  // config.lnPercents default {1,5,10,50,90,95}: index 3 = 50.0
-    return p;
-}
-
 }  // namespace
-
-// --- 1: every consumer reads the chain its own definition names -----------
-
-TEST_CASE("1a a low-frequency tone: alarm follows A, matching the shipped filter's own analytic gap",
-         "[spl_channel_state]") {
-    constexpr double kFs = 48000.0;
-    constexpr double kFreqHz = 20.0;  // A rolls off sharply here; C stays near flat
-    constexpr std::uint32_t kBlockSamples = 48000;  // blockSeconds = 1.0
-
-    const auto withCFirst = runOrderProbe(/*aFirst=*/false, kFreqHz, kFs, kBlockSamples);
-    const auto withAFirst = runOrderProbe(/*aFirst=*/true, kFreqHz, kFs, kBlockSamples);
-
-    // ORDER-INDEPENDENCE: config.metrics listing LAeq first or LCeq first
-    // must publish the identical number. Mutant "feed the first chain
-    // again" flips this: with LCeq first, the alarm would read LCeq's own
-    // (much louder, unattenuated) level instead.
-    CHECK_THAT(withCFirst.alarmValueDb, WithinAbs(withAFirst.alarmValueDb, 1e-4));
-
-    // AND it is actually the A-WEIGHTED level, not merely order-stable:
-    // derive the expected level from the shipped weighting filter's own
-    // ANALYTIC magnitude at 20 Hz -- computed here, never typed. A
-    // unit-amplitude sine reads 0 dBFS sine-referenced; mean-square
-    // referenced (record §13 Q1's own seam) that is kFullScaleSineOffsetDb
-    // below, and a steady-state tone through the filter adds its own
-    // analytic gain on top.
-    constexpr double kMeanSquareSeamDb = -3.0102999566398120;
-    const double expectedALevel =
-        kMeanSquareSeamDb + rta::dsp::Weighting::analyticDb(kFreqHz, rta::dsp::WeightingType::A);
-    const double gapDb = rta::dsp::Weighting::analyticDb(kFreqHz, rta::dsp::WeightingType::C) -
-                         rta::dsp::Weighting::analyticDb(kFreqHz, rta::dsp::WeightingType::A);
-    // Sanity on the fixture itself: 20 Hz really does separate A from C
-    // sharply, or this test would not be able to tell the bug from a pass.
-    REQUIRE(gapDb > 20.0);
-
-    // Generous (digital-filter approximation + block-boundary settling,
-    // record 8's own "the design target and closed form" note): still tight
-    // enough to fail by a wide margin under the first-chain bug, which would
-    // read within a fraction of a dB of LCeq's level, `gapDb` away.
-    CHECK_THAT(static_cast<double>(withCFirst.alarmValueDb), WithinAbs(expectedALevel, 1.0));
-}
-
-TEST_CASE("1b dose and Ln read the A-weighted chain, never the first configured chain",
-         "[spl_channel_state]") {
-    SplConfig config;
-    config.blockSeconds = 1.0;
-    config.logSpanSeconds = 100.0;
-    config.dose[0] = DoseSettings{85.0, 10.0, 10.0, 80.0};  // T_c=10s, L_c=85, q=10, threshold=80
-
-    SplChannelState state(config, 48000.0);
-    std::vector<Block> cWindow, aWindow;
-
-    // C is fed FIRST in the per-hop array (as a config listing LCeq before
-    // LAeq would produce) at an absurd level that would blow dose past
-    // 100 % many times over if it were ever read; A sits EXACTLY at the
-    // criterion, which is the D1a closed form: L = L_c, T = T_c => D = 100 %.
-    for (std::uint64_t i = 0; i < 10; ++i) {
-        const Block cBlock = blockAtLevel(i, 48000, 130.0);
-        const Block aBlock = blockAtLevel(i, 48000, 85.0);
-        cWindow.push_back(cBlock);
-        aWindow.push_back(aBlock);
-        std::array<ChainBlockAtClose, 2> atClose{
-            ChainBlockAtClose{rta::dsp::WeightingType::C, cBlock, cWindow},
-            ChainBlockAtClose{rta::dsp::WeightingType::A, aBlock, aWindow},
-        };
-        state.onBlockClosed(atClose);
-    }
-
-    SplBlockView view;
-    state.fillPublish(view);
-    REQUIRE(view.dosePercent[0].has_value());
-    // Mutant "feed the first chain again" reads the 130 dB C block instead:
-    // D = 100 * 10 * 10^((130-85)/10) / 10 = 3.16e6 %, nowhere near 100 %.
-    CHECK_THAT(*view.dosePercent[0], WithinAbs(100.0, 1e-9));
-}
-
-TEST_CASE("1c onBlockClosed no longer feeds Ln at all -- feedLnTicks is the only path",
-         "[spl_channel_state]") {
-    // Fix round 2026-09-25 (PR #29 round-3 fix pass step 1): Ln used to be
-    // fed from the A-weighted chain's own closed block (Block::maxFastDb)
-    // inside onBlockClosed -- the wrong granularity entirely (record §5:
-    // "Fast, 100 ms sampling", not once per block). It now comes
-    // EXCLUSIVELY from feedLnTicks (test_spl_ln_ticks.cpp exercises that
-    // path through a real SplSession+SplMeter). A caller that closes many
-    // blocks but never calls feedLnTicks must see Ln stay ABSENT -- proof
-    // the two paths are actually decoupled, not merely that the old wrong
-    // value stopped appearing. The "feed maxFastDb again" mutant (reverting
-    // this fix) makes Ln PRESENT here, at ~80 dB, failing every CHECK_FALSE
-    // below.
-    SplConfig config;
-    config.blockSeconds = 1.0;
-    config.logSpanSeconds = 200.0;
-
-    SplChannelState state(config, 48000.0);
-    std::vector<Block> aWindow;
-    for (std::uint64_t i = 0; i < 20; ++i) {
-        feedOneChain(state, aWindow, blockAtLevel(i, 48000, 80.0));
-    }
-
-    SplBlockView view;
-    state.fillPublish(view);
-    for (const auto& ln : view.lnDb) CHECK_FALSE(ln.has_value());
-}
 
 TEST_CASE("an alarm naming no configured metric is published absent, not refused",
          "[spl_channel_state]") {
@@ -284,141 +95,9 @@ TEST_CASE("an alarm naming no configured metric is published absent, not refused
     CHECK_FALSE(view.alarms[0].headroomDb.has_value());
 }
 
-// --- PR #29 round-3 fix pass step 3: a marker's real identity is an index,
-// not MarkerQuantity's 31-char-truncated string -----------------------------
-
-TEST_CASE("two metric ids sharing a 31-char prefix produce DISTINGUISHABLE alarm markers",
-         "[spl_channel_state]") {
-    // MarkerQuantity truncates at 31 characters (SplHistory.h). Two 32-char
-    // ids identical in their first 31 characters collide under it: the OLD
-    // string-based identity (`quantity == quantity`) cannot tell these two
-    // alarms' markers apart. buildAlarmGroups now resolves each alarm's
-    // metric INDEX at construction (the same place it already resolves the
-    // weighting) and threads it onto every marker that alarm writes.
-    const std::string id1(31, 'A');
-    const std::string id2(31, 'A');
-    const std::string longId1 = id1 + "1";  // 32 chars, first 31 identical
-    const std::string longId2 = id2 + "2";
-
-    SplConfig config;
-    config.blockSeconds = 1.0;
-    config.logSpanSeconds = 100.0;
-    config.metrics = {
-        {longId1, rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 1},
-        {longId2, rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 1},
-    };
-    SplAlarmSpec spec1;
-    spec1.metricId = longId1;
-    spec1.limitDb = -1000.0;  // fires on any real level
-    spec1.windowBlocks = 1;
-    SplAlarmSpec spec2;
-    spec2.metricId = longId2;
-    spec2.limitDb = -1000.0;
-    spec2.windowBlocks = 1;
-    config.alarms = {spec1, spec2};
-
-    SplChannelState state(config, 48000.0);
-    std::vector<Block> window;
-    feedOneChain(state, window, blockAtLevel(0, 48000, 0.0));
-
-    const auto& markers = state.history().markers();
-    REQUIRE(markers.size() == 2);
-
-    // The collision this fix closes: both markers' TRUNCATED string
-    // identity really is byte-identical.
-    CHECK(markers[0].quantity == markers[1].quantity);
-
-    // The fix: the resolved metric INDEX distinguishes them, even though
-    // the string collided. Neither is absent (both metricId's matched a
-    // configured metric).
-    REQUIRE(markers[0].metricIndex.has_value());
-    REQUIRE(markers[1].metricIndex.has_value());
-    CHECK(*markers[0].metricIndex != *markers[1].metricIndex);
-    // And each index actually names the RIGHT metric in config.metrics.
-    std::vector<std::size_t> indices{*markers[0].metricIndex, *markers[1].metricIndex};
-    std::sort(indices.begin(), indices.end());
-    CHECK(indices == std::vector<std::size_t>{0, 1});
-}
-
-// --- PR #29 round-3 fix pass step 4: publish the marker overflow count -----
-
-TEST_CASE("a forced marker overflow reaches the published view", "[spl_channel_state]") {
-    // SplHistory::overflowedMarkers() already existed (SplHistory.h's own
-    // kMaxMarkers comment); nothing published it. fillPublish now carries
-    // it unconditionally on SplBlockView::markersOverflowed.
-    SplConfig config;
-    config.blockSeconds = 1.0;
-    config.logSpanSeconds = 100.0;
-
-    SplChannelState state(config, 48000.0);
-
-    SplBlockView before;
-    state.fillPublish(before);
-    CHECK(before.markersOverflowed == 0);
-
-    // Directly at the ring, bypassing alarm computation -- this fixture's
-    // own subject is the PUBLISH path, not how a marker comes to exist.
-    const std::size_t pushed = rta::measure::SplHistory::kMaxMarkers + 100;
-    for (std::size_t i = 0; i < pushed; ++i) {
-        rta::measure::SplMarker marker;
-        marker.blockIndex = i;
-        marker.kind = rta::measure::SplMarkerKind::Note;
-        state.history().addMarker(marker);
-    }
-    REQUIRE(state.history().overflowedMarkers() == 100);
-
-    SplBlockView after;
-    state.fillPublish(after);
-    CHECK(after.markersOverflowed == 100);
-}
-
-// --- PR #29 round-3 fix pass step 5: published order matches config order -
-
-TEST_CASE("published alarm order matches config.alarms order, never the weighting-grouped order",
-         "[spl_channel_state]") {
-    // Three alarms across two weightings, INTERLEAVED (C, A, C) -- the
-    // shape that actually distinguishes the fix from the old behaviour.
-    // With only TWO alarms on two different weightings (one each), the
-    // internal weighting partition's own first-seen bucket order already
-    // coincides with config order by construction (each weighting occurs
-    // exactly once, so "first occurrence" is "the only occurrence"); it
-    // takes a THIRD alarm reusing an earlier weighting, after a different
-    // one, to actually interleave and reveal the bug: alarmGroups_
-    // partitions by weighting, which reorders config.alarms whenever
-    // weightings interleave (old flattened order here would be
-    // [C1, C2, A1], not [C1, A1, C2]).
-    SplConfig config;
-    config.blockSeconds = 1.0;
-    config.logSpanSeconds = 100.0;
-    config.metrics = {
-        {"LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 1},
-        {"LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 1},
-    };
-    SplAlarmSpec c1;
-    c1.metricId = "LCeq";
-    c1.limitDb = 100.0;
-    c1.windowBlocks = 1;
-    SplAlarmSpec a1;
-    a1.metricId = "LAeq";
-    a1.limitDb = 100.0;
-    a1.windowBlocks = 1;
-    SplAlarmSpec c2;
-    c2.metricId = "LCeq";
-    c2.limitDb = 90.0;  // distinguishes c2 from c1: same metricId, different limit
-    c2.windowBlocks = 1;
-    config.alarms = {c1, a1, c2};
-
-    SplChannelState state(config, 48000.0);
-
-    SplBlockView view;
-    state.fillPublish(view);
-    REQUIRE(view.alarms.size() == 3);
-    CHECK(view.alarms[0].metricId == "LCeq");
-    CHECK(view.alarms[0].limitDb == 100.0);
-    CHECK(view.alarms[1].metricId == "LAeq");
-    CHECK(view.alarms[2].metricId == "LCeq");
-    CHECK(view.alarms[2].limitDb == 90.0);
-}
+// The round-3 fix pass step 3/4/5 cases that used to follow here moved to
+// test_spl_channel_state_fixes.cpp (PR #29 round-3 fix pass step 6,
+// 400-line hard cap).
 
 // --- windowAtClose: the pure reconstruction, including the underflow fix --
 
