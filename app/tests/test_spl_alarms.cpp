@@ -307,6 +307,42 @@ TEST_CASE("closed-form (b): a full window 10 dB under the limit gives the closed
     CHECK_THAT(*alarm.report().headroomDb, WithinAbs(expected, 1e-9));
 }
 
+// PR #26 round-3 fix, item 1: the verifier's mutant M1 (`tail.subspan(0,
+// W-1)` -- keep the OLDEST W-1 blocks instead of the most recent) survived
+// every existing headroom fixture, because they are all UNIFORM: dropping
+// the oldest or the newest of a constant signal gives the same Leq either
+// way. A NON-uniform fixture is what makes "most recent" observable: block 0
+// (the OLDEST, about to roll off) is very loud; blocks 1..9 (the newest 9,
+// the ones the NEXT window actually keeps) are quiet. The expected value
+// comes from the identity over those 9 quiet blocks ONLY -- if the oldest,
+// loud block leaked in (M1's own bug), the result would be far lower.
+TEST_CASE("closed-form: headroom uses the MOST RECENT windowBlocks-1 blocks, not the oldest",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 100.0;
+    spec.windowBlocks = 10;
+    SplAlarm alarm(spec);
+    SplHistory history(20);
+
+    std::vector<Block> blocks;
+    blocks.push_back(blockAtLevel(0, 48000, 120.0));  // OLDEST -- must be dropped
+    alarm.update(blocks, 48000.0, 1.0, 0.0, 0, history);
+    for (std::uint64_t i = 1; i < 10; ++i) {
+        blocks.push_back(blockAtLevel(i, 48000, 60.0));  // the 9 NEWEST -- must be kept
+        alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
+    }
+
+    const double T = 10.0;      // windowBlocks * blockSeconds
+    const double delta = 1.0;
+    const double recentLevelDb = 60.0;  // uniform over blocks 1..9
+    const double expected = 10.0 * std::log10(
+        (T * std::pow(10.0, spec.limitDb / 10.0) -
+         (T - delta) * std::pow(10.0, recentLevelDb / 10.0)) / delta);
+    REQUIRE(alarm.report().headroomDb.has_value());
+    CHECK_THAT(*alarm.report().headroomDb, WithinAbs(expected, 1e-9));
+}
+
 TEST_CASE("closed-form (c): when the recent window already exceeds budget, headroom is absent",
          "[spl_alarms]") {
     SplAlarm alarm(fullWindowSpec());
