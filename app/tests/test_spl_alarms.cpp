@@ -148,6 +148,54 @@ TEST_CASE("B3 a fire and a clear each append exactly one marker with the bitwise
     CHECK(alarm.report().state == rta::measure::SplAlarmState::Clear);
 }
 
+// --- the latch is not evaluated on a partial window (PR #26 fix round 3) ---
+// Alarm.h's own AlarmLatch::update contract: "An ABSENT leqDb ... is not
+// compared at all". SplAlarm::update was feeding the latch a leqDb computed
+// from whatever PARTIAL tail existed -- combineBlocks happily returns one
+// even when far short of windowBlocks -- so a single loud block against a
+// 900-block window fired immediately. The independent verifier's probe:
+// exactly that, fired=1.
+TEST_CASE("a single loud block does not fire a 900-block window", "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 90.0;
+    spec.windowBlocks = 900;
+
+    SplAlarm alarm(spec);
+    SplHistory history(4096);
+
+    std::vector<Block> blocks{ blockAtLevel(0, 480, 130.0) };  // one block, VERY loud
+    alarm.update(blocks, 48000.0, 1.0, 0.0, 0, history);
+
+    CHECK(alarm.report().state == rta::measure::SplAlarmState::Clear);
+    CHECK(history.markers().empty());
+    CHECK_FALSE(alarm.report().sinceBlock.has_value());
+}
+
+TEST_CASE("the latch fires only once the window actually holds windowBlocks blocks",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 90.0;
+    spec.windowBlocks = 10;
+
+    SplAlarm alarm(spec);
+    SplHistory history(4096);
+
+    std::vector<Block> blocks;
+    for (std::uint64_t i = 0; i < 9; ++i) {
+        blocks.push_back(blockAtLevel(i, 480, 130.0));  // loud, but window is still partial
+        alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
+        CHECK(alarm.report().state == rta::measure::SplAlarmState::Clear);
+    }
+    CHECK(history.markers().empty());
+
+    blocks.push_back(blockAtLevel(9, 480, 130.0));  // the 10th block: window is now full
+    alarm.update(blocks, 48000.0, 1.0, 0.0, 9, history);
+    CHECK(alarm.report().state == rta::measure::SplAlarmState::Fired);
+    REQUIRE(history.markers().size() == 1);
+}
+
 // --- B4: headroomDb travels with the state ----------------------------------
 
 TEST_CASE("B4 SplAlarmReport carries state, limitDb, windowBlocks, sinceBlock and headroomDb",

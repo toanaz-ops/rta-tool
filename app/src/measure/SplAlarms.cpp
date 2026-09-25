@@ -55,14 +55,26 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
     const auto windowed =
         rta::meter::combineBlocks(tail, sampleRate, referenceOffsetDb, spec_.windowBlocks);
 
-    const auto transition = latch_.update(windowed, spec_.limitDb);
-
     headroomDb_ = std::nullopt;
     if (windowed.leqDb.has_value()) {
         const double windowSeconds = static_cast<double>(spec_.windowBlocks) * blockSeconds;
         headroomDb_ = rta::meter::headroomDb(windowSeconds, windowed.seconds, *windowed.leqDb,
                                             spec_.limitDb);
     }
+
+    // The latch is NOT evaluated until the window actually holds
+    // `windowBlocks` blocks (PR #26 fix round item 3). `combineBlocks` over a
+    // PARTIAL tail happily returns a real `leqDb` -- that is what §9's
+    // `bufferFill` is for -- so without this gate a single loud block against
+    // a 900-block window fired immediately. `AlarmLatch::update`'s own
+    // contract (Alarm.h) is "an ABSENT leqDb is not compared at all"; a
+    // still-filling window is exactly that case, so it is fed `std::nullopt`
+    // rather than a premature partial value, and `state_` simply stays at
+    // whatever it already was (`Clear`, its constructed default, until the
+    // window first fills) with no marker written.
+    const bool windowFull = take == spec_.windowBlocks;
+    const rta::meter::WindowResult forLatch = windowFull ? windowed : rta::meter::WindowResult{};
+    const auto transition = latch_.update(forLatch, spec_.limitDb);
 
     if (transition != rta::meter::AlarmLatch::Transition::None) {
         state_ = (transition == rta::meter::AlarmLatch::Transition::Fired) ? SplAlarmState::Fired
