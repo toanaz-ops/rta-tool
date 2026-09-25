@@ -260,6 +260,40 @@ TEST_CASE("the rendered report stays small even over a long session", "[spl_repo
     CHECK(html.size() < 3'000'000);
 }
 
+// Fix round (PR #28 verifier, MEDIUM): the marker x-scale must match the
+// trace's own -- both walk the SAME (idx-first)/span*width mapping, or an
+// alarm marker drawn on a >1000-block session lands nowhere near the
+// trace point it is supposed to annotate (28799 % 1000 == 799, nowhere
+// near the trace's own last-point x of 1000).
+TEST_CASE("a marker at the last block lands at the same x as the trace's last point",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    ReportHistorySeries series;
+    series.metricId = "Main";
+    series.points = {{0, 80.0}, {28799, 90.0}};  // longer than 1000 blocks
+    payload.history = {series};
+
+    rta::measure::SplMarker marker;
+    marker.blockIndex = 28799;
+    marker.kind = rta::measure::SplMarkerKind::Alarm;
+    payload.markers = {marker};
+
+    const auto html = renderReport(payload);
+    const auto history = extractSection(html, "history");
+
+    // Both the trace's last point and the marker sit at exactly the
+    // viewBox's right edge (idx == last, so (idx-first)/span*1000 == 1000)
+    // -- std::to_string(1000.0) is deterministic, so the same literal text
+    // must appear in both places.
+    const std::string lastPointX = "1000.000000,";
+    const std::string markerX = "x1=\"1000.000000\"";
+    CHECK(history.find(lastPointX) != std::string::npos);
+    CHECK(history.find(markerX) != std::string::npos);
+    // Mutant M14 (drop markers entirely) must go RED against this: no
+    // marker line at all means no x1 attribute of any kind.
+    CHECK(history.find("marker-alarm") != std::string::npos);
+}
+
 // --- W3-C: calibration in the report ---------------------------------------
 
 TEST_CASE("W3-C not performed prints the fallback sentence and never a verdict",

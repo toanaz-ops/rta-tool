@@ -222,18 +222,38 @@ std::string renderDose(const ReportPayload& p) {
 
 // One polyline per series, a fixed 1000x120 viewBox so a very long session
 // scales without a decimation policy the report would have to invent.
+//
+// Fix round (PR #28 verifier, MEDIUM): markers used to map blockIndex via
+// `% 1000`, a DIFFERENT scale from the trace's own `(idx-first)/span*width`
+// -- on a 28800-block session an alarm at the last block landed at x=799
+// instead of x=1000, nowhere near the point it annotates. Both now share
+// ONE first/last range, computed once over every series, so a marker
+// anywhere in the session lands on the same x-axis the trace itself uses.
 std::string renderHistory(const ReportPayload& p) {
     constexpr double kW = 1000.0, kH = 120.0, kFloor = -20.0, kCeil = 140.0;
+
+    std::optional<std::uint64_t> first;
+    std::optional<std::uint64_t> last;
+    for (const auto& series : p.history) {
+        for (const auto& pt : series.points) {
+            if (!first || pt.blockIndex < *first) first = pt.blockIndex;
+            if (!last || pt.blockIndex > *last) last = pt.blockIndex;
+        }
+    }
+    const double span = (first && last && *last > *first) ? static_cast<double>(*last - *first) : 1.0;
+    auto xFor = [&](std::uint64_t idx) -> double {
+        if (!first) return 0.0;
+        const double delta = idx >= *first ? static_cast<double>(idx - *first) : 0.0;
+        return delta / span * kW;
+    };
+
     std::string svg = "<svg class=\"strip\" viewBox=\"0 0 1000 120\" "
                       "xmlns=\"http://www.w3.org/2000/svg\">";
     for (const auto& series : p.history) {
         if (series.points.empty()) continue;
-        const auto first = series.points.front().blockIndex;
-        const auto last = series.points.back().blockIndex;
-        const double span = last > first ? static_cast<double>(last - first) : 1.0;
         std::string points;
         for (const auto& pt : series.points) {
-            const double x = static_cast<double>(pt.blockIndex - first) / span * kW;
+            const double x = xFor(pt.blockIndex);
             const double clamped = std::min(std::max(pt.valueDb, kFloor), kCeil);
             const double y = kH - (clamped - kFloor) / (kCeil - kFloor) * kH;
             points += std::to_string(x) + "," + std::to_string(y) + " ";
@@ -245,8 +265,8 @@ std::string renderHistory(const ReportPayload& p) {
                                 : marker.kind == rta::measure::SplMarkerKind::Overload ? "marker-overload"
                                                                                         : "";
         if (cls.empty()) continue;
-        svg += "<line class=\"" + cls + "\" x1=\"" + std::to_string(marker.blockIndex % 1000) +
-               "\" x2=\"" + std::to_string(marker.blockIndex % 1000) + "\" y1=\"0\" y2=\"120\" />";
+        const std::string x = std::to_string(xFor(marker.blockIndex));
+        svg += "<line class=\"" + cls + "\" x1=\"" + x + "\" x2=\"" + x + "\" y1=\"0\" y2=\"120\" />";
     }
     svg += "</svg>";
     return section("history", "Time history", svg);
