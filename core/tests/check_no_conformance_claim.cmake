@@ -130,7 +130,20 @@ set(self_reference_exemptions
 set(violations "")
 foreach(file IN LISTS sources)
     file(READ "${file}" content)
+
+    # PR #30 fix round (MEDIUM): a real claim split across two adjacent C++
+    # string literals -- e.g. "IEC 61672-1 Class " followed by a line break
+    # and "1 ..." -- concatenates into one claim at compile time but was
+    # invisible to a regex that only looks within a single line. Join
+    # exactly that shape (a literal's closing quote, only whitespace/a line
+    # break, the next literal's opening quote) before matching -- mirroring
+    # what the compiler itself does: nothing is inserted, so a literal's own
+    # trailing/leading spacing (already there for word boundaries -- see the
+    # honesty sentence at SplReportSections.cpp:148-153, which this exact
+    # join exercises on every scan) is preserved rather than duplicated.
     set(content_to_scan "${content}")
+    string(REGEX REPLACE "\"[ \t]*\r?\n[ \t]*\"" "" content_to_scan "${content_to_scan}")
+
     foreach(exemption IN LISTS self_reference_exemptions)
         string(REPLACE "${exemption}" "" content_to_scan "${content_to_scan}")
     endforeach()
