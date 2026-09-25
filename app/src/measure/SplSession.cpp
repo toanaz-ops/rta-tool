@@ -221,6 +221,13 @@ std::span<const double> SplSession::newlyTickedLnLevelsDb(
     return c->meter.newlyTickedLnLevelsDb();
 }
 
+std::uint64_t SplSession::overflowedLnTicks(
+    int channel, rta::dsp::WeightingType weighting) const noexcept {
+    const Chain* c = chain(channel, weighting);
+    if (c == nullptr) return 0;
+    return c->meter.overflowedLnTicks();
+}
+
 std::optional<rta::meter::Block> SplSession::latestBlock(int channel) const noexcept {
     const ChannelState* s = state(channel);
     if (s == nullptr || s->chains.empty() || s->chains.front().window.empty()) {

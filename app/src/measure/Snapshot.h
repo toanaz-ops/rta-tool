@@ -289,6 +289,24 @@ struct SplBlockView {
     /// see that markers past it were silently gone.
     std::uint32_t markersOverflowed = 0;
 
+    /// How many 100 ms Ln ticks the A-weighted chain has had to drop because
+    /// its fixed tick buffer filled during one `push()` call (PR #29 round-4
+    /// item 3) -- `SplMeter::overflowedLnTicks()` already existed and
+    /// nothing published it, the same "counted, not silent" pattern
+    /// `markersOverflowed` above and `refusedMetrics` both already follow.
+    /// Normally 0.
+    std::uint32_t lnTicksOverflowed = 0;
+
+    /// True when the session's `blockSeconds` fell below
+    /// `SplConfig::blockSecondsBelowRecommendedFloor`'s own advisory floor
+    /// (PR #29 round-4 item 4). ADVISORY ONLY -- see that method's own
+    /// comment: `SplMeter`'s internal ready buffer keeps sample accounting
+    /// exact regardless of `blockSeconds`, so this is a UX recommendation
+    /// ("this configuration serves no real measurement purpose"), never a
+    /// correctness signal, and the session runs and logs normally either
+    /// way. Normally false.
+    bool blockSecondsBelowRecommendedFloor = false;
+
     /// ABSENT, never 0.0 %. A zero dose reads as "measured, and there was no
     /// exposure"; these are absent through Wave 0 because the accumulators
     /// ship in W1-D and a placeholder for an absent result erases its state

@@ -163,6 +163,17 @@ public:
     [[nodiscard]] std::span<const double> newlyTickedLnLevelsDb(
         int channel, rta::dsp::WeightingType weighting) const noexcept;
 
+    /// How many 100 ms Ln ticks the chain running `weighting` has had to drop
+    /// because `SplMeter::lnTicks_`'s own fixed buffer filled during a
+    /// `push()` call (round 4 item 3) -- a thin forward onto
+    /// `SplMeter::overflowedLnTicks()`, mirroring `newlyTickedLnLevelsDb`
+    /// just above. 0 when this session has no chain for `weighting`, which
+    /// is indistinguishable from "no overflow yet" -- exactly like that
+    /// method's own empty-span convention, because a channel with no such
+    /// chain was never going to overflow it either.
+    [[nodiscard]] std::uint64_t overflowedLnTicks(
+        int channel, rta::dsp::WeightingType weighting) const noexcept;
+
     /// The latest block on `channel`'s FIRST chain -- the one `Snapshot`'s
     /// held maxima and sampled peak are read from.
     [[nodiscard]] std::optional<rta::meter::Block> latestBlock(int channel) const noexcept;

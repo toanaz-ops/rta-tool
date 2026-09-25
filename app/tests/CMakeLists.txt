@@ -240,6 +240,11 @@ add_executable(rtatool_analysis_tests
     # test_spl_ln_ticks.cpp: PR #29 round-3 fix pass step 1 (MEDIUM) -- Ln
     # sampled at the detector's own 100 ms clock, never at block closure.
     test_spl_ln_ticks.cpp
+    # test_spl_publish_round4.cpp: PR #29 round-4 fix pass items 3/4 -- a NEW
+    # file rather than growing test_spl_publish.cpp (already over the
+    # 400-line cap pre-existing this round) -- SplBlockView::lnTicksOverflowed
+    # and ::blockSecondsBelowRecommendedFloor actually reach the publish.
+    test_spl_publish_round4.cpp
     # --- end L6a Wave 2 -----------------------------------------------------
     # --- L6a Wave 3 task W3-A (record §8, §13 Q2) --------------------------
     # test_calibration.cpp + CalibrationSession.cpp: calibration as a flow --

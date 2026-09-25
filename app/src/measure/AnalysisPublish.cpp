@@ -187,6 +187,12 @@ std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
     view.peakCDb = static_cast<float>(latest.peakDb + config.referenceOffsetDb);
 
     view.refusedMetrics = static_cast<std::uint32_t>(input.refusedMetrics);
+    // Round-4 items 3/4: both live counters/flags on the SESSION or the
+    // A-weighted METER, never on `SplChannelState`, so both are filled here
+    // -- the same spot `refusedMetrics` just above already is -- rather than
+    // inside `SplChannelState::fillPublish`.
+    view.lnTicksOverflowed = static_cast<std::uint32_t>(input.overflowedLnTicks);
+    view.blockSecondsBelowRecommendedFloor = input.blockSecondsTooSmall;
     view.metrics.reserve(config.metrics.size());
     for (std::size_t i = 0; i < config.metrics.size(); ++i) {
         const SplMetricSpec& spec = config.metrics[i];
