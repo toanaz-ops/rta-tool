@@ -342,6 +342,11 @@ add_executable(rtatool_analysis_tests
     # a dropped offset assignment is caught OFF rather than shipping quietly.
     # Header-only.
     test_calibrated_spl_config.cpp
+    # test_spl_publish_calibration_invalid.cpp: MEDIUM (mutant M5) -- a NEW
+    # file per this fix round's own instruction not to grow
+    # test_spl_publish.cpp further; proves SplBlockView::calibrationInvalid
+    # actually reaches the published view.
+    test_spl_publish_calibration_invalid.cpp
     # --- end W2-E2b fix round ------------------------------------------------
     # --- end L6a task W2-E2b -------------------------------------------------
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
