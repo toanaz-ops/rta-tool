@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -18,6 +19,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace rta::splexport;
@@ -302,5 +304,55 @@ TEST_CASE("pushBlock on a channel nothing was enabled for does nothing and does 
     pipeline.enable(params);
     pipeline.pushBlock(5, distinguishableBlock(0));  // channel 5 has no sink
     CHECK(pipeline.droppedBlocks(5) == 0);
+    pipeline.disable();
+}
+
+// --- station-4 fix round (PR #31, finding 4): enable() does no file I/O ---
+
+TEST_CASE("enable() opens the log file on the writer thread, never on the "
+         "calling thread",
+         "[spl_log_pipeline]") {
+    // enable() USED to construct SplLogWriter (which opens the file and
+    // writes the CSV/session header) inline, on whatever thread called it --
+    // the analysis thread in production, which repo CLAUDE.md's real-time
+    // rule forbids doing file I/O on. setWriterFactoryForTest lets this test
+    // see WHICH thread is running at the exact moment that construction
+    // happens, without needing a fake SplLogWriter: the factory still builds
+    // a real one, it just records std::this_thread::get_id() first.
+    TempDir dir("thread-id");
+
+    SplLogEnableParams params;
+    params.config = SplConfig{};
+    params.channels = { channelSpec(dir.path, 0) };
+
+    SplLogPipeline pipeline;
+    std::atomic<bool> captured{ false };
+    std::thread::id writerThreadId{};
+    pipeline.setWriterFactoryForTest(
+        [&](const std::string& basePath, const SplConfig& config,
+            const rta::splexport::SplLogHeaderInfo& info, std::uint64_t segmentBlocks) {
+            writerThreadId = std::this_thread::get_id();
+            captured.store(true, std::memory_order_release);
+            return std::make_unique<rta::splexport::SplLogWriter>(basePath, config, info,
+                                                                   segmentBlocks);
+        });
+
+    const auto callingThreadId = std::this_thread::get_id();
+    pipeline.enable(params);
+
+    // Poll rather than sleep-then-check: setupWriters() runs as the writer
+    // thread's very first act, before any idle sleep, so this is expected to
+    // resolve in well under a millisecond -- 500 ms is generous headroom
+    // over that, matching the poll-with-bounded-timeout shape this repo
+    // already uses for cross-thread handoffs (test_capture_timeout.cpp's own
+    // precedent), so a hang shows up as a clear test FAILURE, not the test
+    // process blocking forever.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (!captured.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(captured.load(std::memory_order_acquire));
+    CHECK(writerThreadId != callingThreadId);
+
     pipeline.disable();
 }

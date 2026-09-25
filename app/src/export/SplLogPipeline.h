@@ -47,6 +47,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -110,21 +111,47 @@ public:
     SplLogPipeline& operator=(const SplLogPipeline&) = delete;
 
     /// Stops and replaces any previous session (a fresh log, never appended
-    /// to -- record §10). Allocates one ring buffer and one `SplLogWriter`
-    /// per entry of `params.channels`, opens every first segment and the
-    /// session header (if `sessionHeaderPath` is non-empty), then starts the
-    /// writer thread. Analysis-thread call; allocates and may block briefly
-    /// on file I/O, which is acceptable here for the same reason
-    /// `SplSession::start()` allocating there already is: this runs once per
-    /// session start, never once per block.
+    /// to -- record §10). Allocates one ring buffer per entry of
+    /// `params.channels` and starts the writer thread -- NO FILE I/O runs on
+    /// the calling thread (station-4 fix round, PR #31, verifier finding 4:
+    /// opening every first segment and writing the session header used to
+    /// happen HERE, on whatever thread called `enable()` -- the analysis
+    /// thread in production, which repo CLAUDE.md's real-time rule forbids
+    /// doing file I/O on). Every bit of that file I/O now runs as the
+    /// writer thread's own first act, in `writerLoop()`, before it starts
+    /// draining -- see that function. `pushBlock()` only ever touches the
+    /// ring, which this call DOES allocate on the calling thread (the same
+    /// "runs once per session start, never once per block" reasoning
+    /// `SplSession::start()` already relies on), so a block pushed the
+    /// instant `enable()` returns has somewhere to land even before the
+    /// writer thread finishes opening files.
     void enable(const SplLogEnableParams& params);
 
     /// Signals the writer thread to drain everything already pushed, then
     /// joins it -- "shutdown drains then joins" (W2-E2a's own acceptance).
-    /// Safe to call when already disabled (a no-op). Blocking, bounded by
-    /// however long the final drain and the OS file close take; this is not
-    /// real-time code.
+    /// Safe to call when already disabled (a no-op). The join's wait is
+    /// bounded in WORK, not wall-clock: one final `drainOnce()` pass over
+    /// data already queued (at most `queueCapacityBlocks` per channel,
+    /// fixed at `enable()`) plus the OS closing already-open file handles --
+    /// neither can grow without bound. `disable()` never runs on the
+    /// real-time audio callback (that callback only ever touches `AudioIo`,
+    /// never this class), so blocking the analysis thread here costs it one
+    /// late `publishIfDue()` tick, not a dropout.
     void disable() noexcept;
+
+    /// Test-only injection point (station-4 fix round, PR #31, finding 4):
+    /// replaces how `writerLoop()` constructs each channel's `SplLogWriter`.
+    /// A production caller never sets this -- the default factory just
+    /// constructs a real one. `app/tests/test_spl_log_pipeline.cpp` uses it
+    /// to record `std::this_thread::get_id()` at construction time and
+    /// prove that id is the WRITER thread's, never the thread that called
+    /// `enable()`.
+    using WriterFactory =
+        std::function<std::unique_ptr<SplLogWriter>(const std::string& basePath,
+                                                     const rta::measure::SplConfig& config,
+                                                     const SplLogHeaderInfo& info,
+                                                     std::uint64_t segmentBlocks)>;
+    void setWriterFactoryForTest(WriterFactory factory) { writerFactory_ = std::move(factory); }
 
     [[nodiscard]] bool enabled() const noexcept { return running_.load(std::memory_order_acquire); }
 
@@ -157,11 +184,31 @@ private:
     bool drainOnce();
     void writerLoop();
 
+    /// The writer thread's own first act, called once from the top of
+    /// `writerLoop()`, before the drain loop starts: opens every channel's
+    /// first segment (via `writerFactory_`) and the session header, if
+    /// requested -- all the file I/O `enable()` used to do on the calling
+    /// thread (finding 4). Reads `pendingParams_`, which `enable()` wrote on
+    /// the calling thread strictly before starting this thread, so no lock
+    /// is needed (`std::thread`'s constructor synchronizes-with the start of
+    /// the new thread's execution).
+    void setupWriters();
+
     static constexpr std::size_t kMaxLoggedChannels = rta::measure::SplSession::kMaxLoggedChannels;
 
     std::array<std::unique_ptr<ChannelSink>, kMaxLoggedChannels> sinks_{};
     std::thread writerThread_;
     std::atomic<bool> running_{ false };
+    /// Written by `enable()` on the calling thread, read only by
+    /// `setupWriters()` on the writer thread -- see that function's own
+    /// comment for why this needs no lock.
+    SplLogEnableParams pendingParams_;
+    WriterFactory writerFactory_ = [](const std::string& basePath,
+                                      const rta::measure::SplConfig& config,
+                                      const SplLogHeaderInfo& info,
+                                      std::uint64_t segmentBlocks) {
+        return std::make_unique<SplLogWriter>(basePath, config, info, segmentBlocks);
+    };
     // `disable()` destroys every ChannelSink (and with it, `dropped`) once the
     // writer thread has joined -- but a caller's whole reason to read
     // `droppedBlocks()` is often "how many did the session that just ended
