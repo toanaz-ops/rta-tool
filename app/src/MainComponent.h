@@ -268,6 +268,16 @@ private:
     /// the rest of the session.
     double calibrationCaptureArmedAtMs_ = 0.0;
     std::shared_ptr<const rta::measure::LocateCapture> lastHandledCalibrationCapture_;
+    /// Fix round (verifier HIGH finding): `kCalibrationRouteIndex` is a ROUTE
+    /// POSITION, resolved to a CHANNEL NUMBER exactly once, in
+    /// `pollCalibrationPipeline()`, via `rta::measure::
+    /// calibrationMeasurementChannel` against the routing plan the capture
+    /// that just completed actually used -- never re-derived later, and never
+    /// the route index itself. -1 (no channel resolved yet, or the last
+    /// capture's route had none -- the calibrator-only, no-REF-channel case)
+    /// is what every channel-indexed `AnalysisThread` call already treats as
+    /// a safe no-op.
+    int calibrationChannel_ = -1;
     // ----------------------------------------------------------------------
 
     // --- L6a task W2-E2a: SPL logging follows the bus, not a button --------

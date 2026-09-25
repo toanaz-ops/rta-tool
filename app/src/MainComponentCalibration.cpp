@@ -8,7 +8,9 @@
 #include "MainComponent.h"
 
 #include "export/SplCalibrationRecord.h"
+#include "measure/CalibrationChannel.h"
 #include "measure/CaptureTimeout.h"
+#include "measure/RoutingPlan.h"
 
 namespace {
 
@@ -79,6 +81,18 @@ void MainComponent::pollCalibrationPipeline() {
         const auto level = rta::measure::calibrationLevel(rta::measure::kIec60942Level94Db);
         const double sampleRate = audioIo_.bus().sampleRate();
         const auto unixMs = static_cast<std::uint64_t>(juce::Time::currentTimeMillis());
+
+        // Fix round (verifier HIGH finding): resolve the ROUTE this capture
+        // used to a CHANNEL NUMBER exactly once, here -- the routing plan the
+        // capture actually completed against, not the plan whenever
+        // restartSplLoggingForCalibration()/writeCalibrationRecordAndUpdate
+        // InvalidFlag() happen to run afterwards (same tick today, but the
+        // resolution point should not depend on that staying true).
+        const auto plan =
+            rta::measure::planRouting(audioIo_.bus().config(), audioIo_.bus().numChannels());
+        calibrationChannel_ =
+            rta::measure::calibrationMeasurementChannel(plan, kCalibrationRouteIndex).value_or(-1);
+
         if (calibrationCaptureIsStart_) {
             calibrationSession_.recordStartCheck(level, capture->measurement, sampleRate, unixMs);
             // Task W2-E2b part A (record §8, §10 C4): the offset this check
@@ -155,8 +169,10 @@ void MainComponent::restartSplLoggingForCalibration() {
     // AnalysisThreadSpl.cpp's own reset-block comment for why
     // `enableSplLogging` (started by the call above) already clears this
     // mirror; this call is defence in depth for the same fact stated once
-    // more at the call site that most needs it to be true.
-    analysisThread_.setCalibrationInvalid(kCalibrationRouteIndex, false);
+    // more at the call site that most needs it to be true. `calibrationChannel_`,
+    // never `kCalibrationRouteIndex` -- fix round HIGH finding, see that
+    // member's own comment.
+    analysisThread_.setCalibrationInvalid(calibrationChannel_, false);
 }
 
 void MainComponent::writeCalibrationRecordAndUpdateInvalidFlag() {
@@ -169,13 +185,15 @@ void MainComponent::writeCalibrationRecordAndUpdateInvalidFlag() {
 
     // The new log's own blockIndex 0 IS the calibration START check
     // (restartSplLoggingForCalibration ran before this log wrote a single
-    // block), so the range is [0, latest block on the calibration route].
-    const auto blockCount = analysisThread_.splBlockCount(kCalibrationRouteIndex);
+    // block), so the range is [0, latest block on the calibration CHANNEL --
+    // fix round HIGH finding: `calibrationChannel_`, resolved from the route
+    // in pollCalibrationPipeline(), never the route index itself].
+    const auto blockCount = analysisThread_.splBlockCount(calibrationChannel_);
     const std::uint64_t endBlockIndex = blockCount > 0 ? blockCount - 1 : 0;
 
     rta::splexport::SplCalibrationRecordInfo info;
     info.fields = fields;
-    info.channel = kCalibrationRouteIndex;
+    info.channel = calibrationChannel_;
     info.startBlockIndex = 0;
     info.endBlockIndex = endBlockIndex;
     rta::splexport::writeCalibrationRecordFile(currentSplSessionDir_ + "/calibration.txt", info);
@@ -186,5 +204,5 @@ void MainComponent::writeCalibrationRecordAndUpdateInvalidFlag() {
     // record above.
     const bool invalid =
         fields.verdict.has_value() && *fields.verdict == rta::measure::CalibrationVerdict::Fail;
-    analysisThread_.setCalibrationInvalid(kCalibrationRouteIndex, invalid);
+    analysisThread_.setCalibrationInvalid(calibrationChannel_, invalid);
 }
