@@ -225,12 +225,100 @@ TEST_CASE("B4 SplAlarmReport carries state, limitDb, windowBlocks, sinceBlock an
         REQUIRE(report.headroomDb.has_value());
     }
 
-    // Fill the window completely: elapsedSeconds == windowSeconds, so the
-    // bracket's `remaining` term is exactly 0 and headroom is ABSENT --
-    // "the window is already lost" is a fact about the arithmetic here, not
-    // about the level (rta::meter::headroomDb's own contract).
+    // Fill the window completely. record §15 A6 (fix round item 4): once
+    // full, headroom no longer freezes at "the window is already lost" --
+    // t becomes T-Delta (Delta = one block's duration) and L_t is the Leq of
+    // the most recent windowBlocks-1 blocks, i.e. the highest level the NEXT
+    // block can take without the NEXT sliding window exceeding the limit.
+    // Continuous with the filling phase above: same closed form, no new
+    // constant, just a different (t, L_t) pair once the window can no longer
+    // grow. See the "closed-form" test cases below for the two derivations
+    // (steady state, and 10 dB under the limit) this number is checked
+    // against.
     for (std::uint64_t i = 5; i < 10; ++i) {
         blocks.push_back(blockAtLevel(i, 48000, 60.0));
+        alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
+    }
+    {
+        const double T = static_cast<double>(spec.windowBlocks);
+        const double delta = 1.0;
+        const double recentLevelDb = 60.0;  // the most recent 9 of 10 blocks
+        const double expected = 10.0 * std::log10(
+            (T * std::pow(10.0, spec.limitDb / 10.0) -
+             (T - delta) * std::pow(10.0, recentLevelDb / 10.0)) / delta);
+        REQUIRE(alarm.report().headroomDb.has_value());
+        CHECK_THAT(*alarm.report().headroomDb, WithinAbs(expected, 1e-9));
+    }
+}
+
+// --- fix round item 4: headroomDb once the sliding window is full ----------
+// record §15 A6 (orchestrator's design decision). Once full, t = T - Delta
+// (Delta = one block's duration) and L_t is the Leq of the MOST RECENT
+// windowBlocks-1 blocks -- the highest level the NEXT block can have so the
+// NEXT sliding window does not exceed the limit. Continuous across the
+// fill->full transition (same closed form throughout); no new constant.
+
+namespace {
+constexpr std::uint64_t kFullWindowBlocks = 900;  // T = 900 s at 1 s/block
+constexpr double kFullWindowLimitDb = 100.0;
+
+SplAlarmSpec fullWindowSpec() {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = kFullWindowLimitDb;
+    spec.windowBlocks = kFullWindowBlocks;
+    return spec;
+}
+}  // namespace
+
+TEST_CASE("closed-form (a): a full window steady at L_lim gives headroom == L_lim", "[spl_alarms]") {
+    SplAlarm alarm(fullWindowSpec());
+    SplHistory history(kFullWindowBlocks + 10);
+
+    std::vector<Block> blocks;
+    for (std::uint64_t i = 0; i < kFullWindowBlocks; ++i) {
+        blocks.push_back(blockAtLevel(i, 48000, kFullWindowLimitDb));
+        alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
+    }
+    REQUIRE(alarm.report().headroomDb.has_value());
+    CHECK_THAT(*alarm.report().headroomDb, WithinAbs(kFullWindowLimitDb, 1e-9));
+}
+
+TEST_CASE("closed-form (b): a full window 10 dB under the limit gives the closed-form L_allow",
+         "[spl_alarms]") {
+    SplAlarm alarm(fullWindowSpec());
+    SplHistory history(kFullWindowBlocks + 10);
+
+    const double blockLevelDb = kFullWindowLimitDb - 10.0;
+    std::vector<Block> blocks;
+    for (std::uint64_t i = 0; i < kFullWindowBlocks; ++i) {
+        blocks.push_back(blockAtLevel(i, 48000, blockLevelDb));
+        alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
+    }
+
+    const double T = static_cast<double>(kFullWindowBlocks);
+    const double delta = 1.0;
+    // L_allow = 10*log10((T*10^(Llim/10) - (T-Delta)*10^((Llim-10)/10))/Delta)
+    const double expected = 10.0 * std::log10(
+        (T * std::pow(10.0, kFullWindowLimitDb / 10.0) -
+         (T - delta) * std::pow(10.0, blockLevelDb / 10.0)) / delta);
+    INFO("T=900 s, Delta=1 s, Llim=100: L_allow = " << expected);
+    REQUIRE(alarm.report().headroomDb.has_value());
+    CHECK_THAT(*alarm.report().headroomDb, WithinAbs(expected, 1e-9));
+}
+
+TEST_CASE("closed-form (c): when the recent window already exceeds budget, headroom is absent",
+         "[spl_alarms]") {
+    SplAlarm alarm(fullWindowSpec());
+    SplHistory history(kFullWindowBlocks + 10);
+
+    // Every block well ABOVE the limit: the most recent windowBlocks-1
+    // blocks alone already spend more than the whole window's budget, so the
+    // bracket is <= 0 -- "the window is already lost" is a fact about the
+    // arithmetic (Alarm.h), never a floor or a clamp.
+    std::vector<Block> blocks;
+    for (std::uint64_t i = 0; i < kFullWindowBlocks; ++i) {
+        blocks.push_back(blockAtLevel(i, 48000, kFullWindowLimitDb + 20.0));
         alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
     }
     CHECK_FALSE(alarm.report().headroomDb.has_value());

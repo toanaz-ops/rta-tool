@@ -54,12 +54,43 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
     const auto tail = blocks.subspan(blocks.size() - take, take);
     const auto windowed =
         rta::meter::combineBlocks(tail, sampleRate, referenceOffsetDb, spec_.windowBlocks);
+    const bool windowFull = take == spec_.windowBlocks;
 
+    // headroomDb (record §15 A6, fix round item 4). The identity itself
+    // (Alarm.h) never changes; only WHICH (t, L_t) pair it is fed does, and
+    // that pair is continuous across the fill->full transition -- neither
+    // side introduces a new constant.
+    //
+    //   FILLING (window not yet full): t = elapsed seconds, T = window
+    //   seconds, L_t = the Leq of whatever partial tail exists -- this is
+    //   asking "what can the block that completes THIS window be".
+    //
+    //   FULL: t = T - Delta (Delta = one block's duration), L_t = the Leq of
+    //   the MOST RECENT windowBlocks-1 blocks -- once the window is full,
+    //   there is no "next slot in this window" left to fill, so the question
+    //   becomes "what can the FIRST block of the NEXT sliding window be":
+    //   that window drops the current oldest block and keeps the current
+    //   newest windowBlocks-1, which is exactly `tail` with its first (oldest)
+    //   entry removed. Recomputed as a fresh energy sum over those blocks
+    //   (record §3's own "recomputed over current membership" rule) -- never
+    //   carried from a running total.
     headroomDb_ = std::nullopt;
-    if (windowed.leqDb.has_value()) {
-        const double windowSeconds = static_cast<double>(spec_.windowBlocks) * blockSeconds;
-        headroomDb_ = rta::meter::headroomDb(windowSeconds, windowed.seconds, *windowed.leqDb,
-                                            spec_.limitDb);
+    if (!windowFull) {
+        if (windowed.leqDb.has_value()) {
+            const double windowSeconds = static_cast<double>(spec_.windowBlocks) * blockSeconds;
+            headroomDb_ = rta::meter::headroomDb(windowSeconds, windowed.seconds, *windowed.leqDb,
+                                                spec_.limitDb);
+        }
+    } else if (spec_.windowBlocks > 0) {
+        const auto recent = tail.subspan(1, spec_.windowBlocks - 1);
+        const auto recentResult = rta::meter::combineBlocks(recent, sampleRate, referenceOffsetDb,
+                                                            spec_.windowBlocks - 1);
+        if (recentResult.leqDb.has_value()) {
+            const double windowSeconds = static_cast<double>(spec_.windowBlocks) * blockSeconds;
+            const double tSeconds = windowSeconds - blockSeconds;
+            headroomDb_ = rta::meter::headroomDb(windowSeconds, tSeconds, *recentResult.leqDb,
+                                                spec_.limitDb);
+        }
     }
 
     // The latch is NOT evaluated until the window actually holds
@@ -72,7 +103,6 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
     // rather than a premature partial value, and `state_` simply stays at
     // whatever it already was (`Clear`, its constructed default, until the
     // window first fills) with no marker written.
-    const bool windowFull = take == spec_.windowBlocks;
     const rta::meter::WindowResult forLatch = windowFull ? windowed : rta::meter::WindowResult{};
     const auto transition = latch_.update(forLatch, spec_.limitDb);
 
