@@ -79,7 +79,7 @@ std::optional<CalibrationVerdict> CalibrationSession::verdict() const noexcept {
     if (!drift.has_value()) {
         return std::nullopt;
     }
-    return *drift <= kMaxDriftDb ? CalibrationVerdict::Pass : CalibrationVerdict::Fail;
+    return verdictForDrift(*drift);
 }
 
 CalibrationReportFields CalibrationSession::reportFields() const noexcept {

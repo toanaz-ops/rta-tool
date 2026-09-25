@@ -83,6 +83,14 @@ public:
     static constexpr double kMaxDriftDb = 0.5;
     static constexpr std::string_view kClause = "ISO 1996-2:2017 cl. 5.2";
 
+    /// The ONE comparison A2's verdict rests on, factored out so the exact
+    /// boundary (driftDb == kMaxDriftDb, which no log10-derived fixture can
+    /// hit bit-exactly) is testable directly against `std::nextafter`
+    /// rather than only through a measurement several tenths away from it.
+    [[nodiscard]] static constexpr CalibrationVerdict verdictForDrift(double driftDb) noexcept {
+        return driftDb <= kMaxDriftDb ? CalibrationVerdict::Pass : CalibrationVerdict::Fail;
+    }
+
     /// Measures `samples` through the SAME Z-weighted chain a session would
     /// use (`SplMeter`, `WeightingType::Z`, never `rta::meter::Leq` --
     /// SPL-R3) and records it as the pre-check. A caller supplies whatever

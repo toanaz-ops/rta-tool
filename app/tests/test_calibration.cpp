@@ -123,6 +123,23 @@ TEST_CASE("A2 the pair, and the clause it is compared against", "[calibration]")
     CHECK(fields.clause.find("5.2") != std::string_view::npos);
 }
 
+// Verifier round 1, finding 1: mutants `<=`->`<`, 0.5->3.0 and 0.5->0.4 all
+// SURVIVED against A2/A3 because neither fixture sits AT the boundary --
+// 0.3 and 4.0 are both far enough from 0.5 that any of those three mutants
+// still agrees with the correct answer. Pinning the boundary needs a
+// fixture exactly there, which log10-derived drift cannot hit bit-exactly
+// (§8's own quantities are transcendental) -- so the comparison itself is
+// factored out and tested directly, against std::nextafter, with no
+// measurement noise anywhere in the path.
+TEST_CASE("A2b verdictForDrift is pinned at the exact 0.5 dB boundary", "[calibration]") {
+    CHECK(CalibrationSession::kMaxDriftDb == 0.5);
+    CHECK(CalibrationSession::verdictForDrift(0.5) == CalibrationVerdict::Pass);
+    CHECK(CalibrationSession::verdictForDrift(std::nextafter(0.5, 1.0)) == CalibrationVerdict::Fail);
+    // The other side, for completeness -- not itself a surviving mutant's
+    // target, but the "iff" in A2's acceptance means both directions.
+    CHECK(CalibrationSession::verdictForDrift(std::nextafter(0.5, 0.0)) == CalibrationVerdict::Pass);
+}
+
 TEST_CASE("A3 drift does not silently invalidate the log", "[calibration]") {
     // Opposite-signed raw difference on purpose: the end nominal is LOWER
     // than the start's, so `offsetEnd - offsetStart` (no abs) would be
