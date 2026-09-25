@@ -34,8 +34,13 @@ TEST_CASE("the frozen report itself states the viewer rounding constraint is unt
 TEST_CASE("Settings prints each dose preset's L_c, q and threshold", "[spl_report]") {
     const auto html = renderReport(minimalPayload());
     const auto settings = extractSection(html, "settings");
-    const auto& niosh = ReportPayload{}.config.dose[0];  // 85.0 dB, q=9.9657843..., 80.0 dB
-    const auto& osha = ReportPayload{}.config.dose[1];   // 90.0 dB, q=16.6096405..., 90.0 dB
+    // COPIES, not references: `ReportPayload{}` is a temporary, and binding
+    // a reference to one of its array elements dangles the moment the full
+    // expression ends (gcc -Wdangling-reference/-Wdangling-pointer,
+    // AppleClang -Wdangling-gsl -- CI's warning gate on both, and lines
+    // below would have read freed stack).
+    const auto niosh = ReportPayload{}.config.dose[0];  // 85.0 dB, q=9.9657843..., 80.0 dB
+    const auto osha = ReportPayload{}.config.dose[1];   // 90.0 dB, q=16.6096405..., 90.0 dB
     CHECK(settings.find(rta::view::formatTrim(niosh.criterionLevelDb)) != std::string::npos);
     CHECK(settings.find(rta::view::formatTrim(niosh.thresholdDb)) != std::string::npos);
     CHECK(settings.find(rta::view::formatTrim(osha.criterionLevelDb)) != std::string::npos);
