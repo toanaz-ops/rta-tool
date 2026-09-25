@@ -127,6 +127,16 @@ TEST_CASE("A1b window.__SPL_PAYLOAD__ is present once in the report, absent from
     CHECK(shell.find("window.__SPL_PAYLOAD__") == std::string::npos);
 }
 
+// Fix round (PR #28 verifier, HIGH): the record sec.12 constraint-2
+// "untested for the viewer" sentence lived only in renderViewerShell(),
+// which the product never emits -- the owner decision says that sentence
+// goes in the REPORT.
+TEST_CASE("the frozen report itself states the viewer rounding constraint is untested",
+         "[spl_report]") {
+    const auto html = renderReport(minimalPayload());
+    CHECK(html.find("untested for the viewer") != std::string::npos);
+}
+
 // --- A2: the nine sections, each by a stable id ---------------------------
 
 TEST_CASE("A2 all nine record sec.9 sections are present by id", "[spl_report]") {

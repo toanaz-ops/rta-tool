@@ -117,6 +117,14 @@ std::string renderInstrument(const ReportPayload& p) {
             "IEC 61672-1 accuracy class. The instrument's linear operating range, overload and "
             "under-range behaviour have not been verified against IEC 61672-1 clause 3.28's "
             "validity definition.</p>";
+    // Fix round (PR #28 verifier, HIGH): this sentence used to live only in
+    // renderViewerShell(), which the product never emits -- the owner
+    // decision (2026-09-25) says it goes in the REPORT. Wave 4b (the served
+    // viewer) was cut before shipping, so record sec.12 constraint 2's
+    // rounding obligation is recorded as untested for the viewer.
+    body += "<p class=\"honesty\">Wave 4b (the served viewer) was cut before shipping "
+            "(owner decision, 2026-09-25); record sec.12 constraint 2's rounding "
+            "obligation is therefore recorded as untested for the viewer.</p>";
     return section("instrument", "Instrument", body);
 }
 
