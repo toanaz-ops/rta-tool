@@ -11,7 +11,10 @@
 
 #include "measure/CalibrationSession.h"
 #include "measure/Levels.h"
+#include "measure/SplConfig.h"
+#include "measure/SplMeter.h"
 
+#include "rta/dsp/Weighting.h"
 #include "rta/meter/Block.h"
 
 #include <cmath>
@@ -28,23 +31,33 @@ using rta::measure::CalibrationVerdict;
 using rta::measure::kFullScaleSineOffsetDb;
 using rta::measure::kIec60942Level114Db;
 using rta::measure::kIec60942Level94Db;
+using rta::measure::SplConfig;
+using rta::measure::SplMeter;
 
 namespace {
 
 constexpr double kFs = 48000.0;
 
-/// A `amplitude`-scaled 1 kHz sine, one second, 48 000 samples. Reused
-/// verbatim from test_spl_seam.cpp's own `unitSine()` shape: a whole number
-/// of periods, so the mean square is exact UP TO the float32 quantisation
+/// An `amplitude`-scaled sine at `frequencyHz`, `numSamples` long. The
+/// caller picks `numSamples`/`frequencyHz` pairs that land on a whole number
+/// of periods so the mean square is exact UP TO the float32 quantisation
 /// `SplMeter::push` imposes on every sample (record §8's identity is proven
-/// against exactly this floor, not a tighter one -- see A1 below).
-std::vector<float> sineAt1kHz(double amplitude, double sampleRate) {
-    std::vector<float> x(static_cast<std::size_t>(sampleRate));
-    for (std::size_t n = 0; n < x.size(); ++n) {
+/// against exactly that floor, not a tighter one -- see A1 below).
+std::vector<float> sineWave(double amplitude, double frequencyHz, double sampleRate,
+                            std::size_t numSamples) {
+    std::vector<float> x(numSamples);
+    for (std::size_t n = 0; n < numSamples; ++n) {
         const double t = static_cast<double>(n) / sampleRate;
-        x[n] = static_cast<float>(amplitude * std::sin(2.0 * std::numbers::pi * 1000.0 * t));
+        x[n] = static_cast<float>(amplitude * std::sin(2.0 * std::numbers::pi * frequencyHz * t));
     }
     return x;
+}
+
+/// The original fixture: one second at 1 kHz, 48 000 samples -- kept as its
+/// own name because A2/A3/A4 only need SOME whole-period sine and do not
+/// care about its length (A1 below is what tests the length itself).
+std::vector<float> sineAt1kHz(double amplitude, double sampleRate) {
+    return sineWave(amplitude, 1000.0, sampleRate, static_cast<std::size_t>(sampleRate));
 }
 
 std::filesystem::path measureSrc() {
@@ -55,9 +68,82 @@ std::filesystem::path measureSrc() {
 
 // --- A1: the closed form, no microphone ----------------------------------
 
-TEST_CASE("A1 the closed form, no microphone: a 1 kHz sine through the Z path", "[calibration]") {
+TEST_CASE("A1 the closed form, no microphone: a sine through the Z path", "[calibration]") {
     // Record §8: L_meas = 10log10(A^2/2) = 20log10(A) - kFullScaleSineOffsetDb.
     // An identity, not a golden vector.
+    //
+    // Verifier round 1, finding 2: a mutant that hardcodes
+    // measureRawZLevelDb's internal `blockSeconds` at 1.0 SURVIVED, because
+    // every fixture in this file was exactly 48 000 samples at 48 kHz -- one
+    // second, where the mutant's wrong constant and the correct
+    // `samples.size()/sampleRate` computation happen to agree. The app itself
+    // never feeds a round second (MainComponentCalibration.cpp's
+    // kCalibrationCaptureLength is 8192), so two more fixtures are added
+    // here, neither a round second, both a WHOLE number of periods so the
+    // closed form still applies: 4800 samples @ 1 kHz is 100 cycles in 0.1 s,
+    // and 8192 samples @ 1125 Hz is 192 cycles (1125 * 8192 / 48000 == 192
+    // exactly -- 48000/gcd(8192,48000) == 375, and 1125 is a multiple of it).
+    // Under the mutant, both non-1-second fixtures never close a block at all
+    // (the accumulator waits for 48 000 samples that never arrive), so
+    // `measureRawZLevelDb` returns the floor instead of the real level --
+    // off by ~114 dB, nowhere near this test's 1e-6 tolerance.
+    struct Fixture {
+        const char* name;
+        double frequencyHz;
+        std::size_t numSamples;
+    };
+    const Fixture fixtures[] = {
+        {"1 s @ 1 kHz (48000 samples)", 1000.0, 48000},
+        {"0.1 s @ 1 kHz (4800 samples, 100 whole cycles)", 1000.0, 4800},
+        {"8192 samples @ 1125 Hz (192 whole cycles; the app's own capture length)", 1125.0, 8192},
+    };
+
+    for (const auto& fixture : fixtures) {
+        INFO("fixture: " << fixture.name);
+        constexpr double amplitude = 0.5;
+        const auto samples = sineWave(amplitude, fixture.frequencyHz, kFs, fixture.numSamples);
+        const auto level = calibrationLevel(kIec60942Level94Db);
+
+        CalibrationSession session;
+        session.recordStartCheck(level, samples, kFs, 0);
+        REQUIRE(session.hasStartCheck());
+
+        const double expected = 20.0 * std::log10(amplitude) - kFullScaleSineOffsetDb;
+        // TOLERANCE DEVIATION FROM THE PLAN'S 1e-12, MEASURED NOT ARGUED, same
+        // shape as test_spl_seam.cpp's E2: CalibrationSession measures through
+        // `SplMeter::push(std::span<const float>)`, so the sine is quantised
+        // to float32 BEFORE the meter ever sees it. A float32 rounding is at
+        // most half a ULP, 2^-24 relative to the sample; squaring roughly
+        // doubles a relative error, so the mean square's worst-case relative
+        // error is `2 * 2^-24`, and `10*log10(1 + 2*2^-24) = 5.18e-7 dB` is
+        // the derived bound -- corrected from an earlier, wrong "~2.6e-7"
+        // that dropped the factor of 2 from squaring. 1e-6 (comfortably
+        // above 5.18e-7) is what this test asserts; it is unreachable to
+        // tighten through the real Z path for any signal that is not exactly
+        // float32-representable.
+        INFO("residual = " << (session.startCheck().measuredLevelDb - expected));
+        CHECK_THAT(session.startCheck().measuredLevelDb, WithinAbs(expected, 1e-6));
+
+        // offset = L_cal - L_meas (record §8's one-line identity), and
+        // applying it makes the same signal read L_cal -- the round trip
+        // test_block.cpp's A7 already pins on calibrationOffsetDb itself,
+        // checked here through the flow rather than the bare function.
+        const double offset = session.referenceOffsetDb();
+        CHECK(offset == level.nominalDb - session.startCheck().measuredLevelDb);
+        CHECK_THAT(session.startCheck().measuredLevelDb + offset,
+                  WithinAbs(level.nominalDb, 1e-9));
+    }
+}
+
+TEST_CASE("A1b the offset, fed into a REAL session's SplMeter, reads L_cal exactly",
+          "[calibration]") {
+    // Verifier round 1, finding 4: A1's round-trip check above is pure
+    // arithmetic on CalibrationSession's own stored fields -- it never
+    // exercises the actual call a real session makes,
+    // `SplMeter::blockLevelDb(block, meter.referenceOffsetDb())` against a
+    // SECOND SplMeter built from an `SplConfig` carrying the computed
+    // offset, which is what §8's "applying it" sentence promises. This
+    // pushes the SAME samples through exactly that path.
     constexpr double amplitude = 0.5;
     const auto samples = sineAt1kHz(amplitude, kFs);
     const auto level = calibrationLevel(kIec60942Level94Db);
@@ -66,25 +152,51 @@ TEST_CASE("A1 the closed form, no microphone: a 1 kHz sine through the Z path", 
     session.recordStartCheck(level, samples, kFs, 0);
     REQUIRE(session.hasStartCheck());
 
-    const double expected = 20.0 * std::log10(amplitude) - kFullScaleSineOffsetDb;
-    // TOLERANCE DEVIATION FROM THE PLAN'S 1e-12, MEASURED NOT ARGUED, same
-    // shape as test_spl_seam.cpp's E2: CalibrationSession measures through
-    // `SplMeter::push(std::span<const float>)`, so the sine is quantised to
-    // float32 BEFORE the meter ever sees it -- up to half a float ULP of
-    // relative amplitude error, ~2.6e-7 dB of mean-square error. 1e-12 is
-    // unreachable through the real Z path for any signal that is not exactly
-    // float32-representable, and this is the same measured bound E2 already
-    // shipped rather than a new, weaker one invented for this task.
-    INFO("residual = " << (session.startCheck().measuredLevelDb - expected));
-    CHECK_THAT(session.startCheck().measuredLevelDb, WithinAbs(expected, 1e-6));
+    SplConfig config;
+    config.blockSeconds = static_cast<double>(samples.size()) / kFs;
+    config.referenceOffsetDb = session.referenceOffsetDb();
+    SplMeter meter(config, rta::dsp::WeightingType::Z, kFs);
+    meter.push(samples);
+    const auto block = meter.poll();
+    REQUIRE(block.has_value());
 
-    // offset = L_cal - L_meas (record §8's one-line identity), and applying
-    // it makes the same signal read L_cal -- the round trip test_block.cpp's
-    // A7 already pins on calibrationOffsetDb itself, checked here through
-    // the flow rather than the bare function.
-    const double offset = session.referenceOffsetDb();
-    CHECK(offset == level.nominalDb - session.startCheck().measuredLevelDb);
-    CHECK_THAT(session.startCheck().measuredLevelDb + offset, WithinAbs(level.nominalDb, 1e-9));
+    const double calibrated = SplMeter::blockLevelDb(*block, meter.referenceOffsetDb());
+    // DERIVED, not the plan's bare "1e-12": measureRawZLevelDb is a pure,
+    // deterministic function of `samples`, so the level this SECOND SplMeter
+    // measures is the SAME double `m` A1 already computed. The only new
+    // arithmetic is the round trip `m + (94.0 - m)`, two double roundings on
+    // quantities of magnitude <= ~128 (the next power of 2 above 94): each
+    // rounding is bounded by 2^-53 relative, i.e. ~128 * 2^-53 ~= 1.4e-14
+    // absolute, so ~2.8e-14 for both -- comfortably inside 1e-12.
+    INFO("residual = " << (calibrated - level.nominalDb));
+    CHECK_THAT(calibrated, WithinAbs(level.nominalDb, 1e-12));
+}
+
+TEST_CASE("recordStartCheck/recordEndCheck refuse an empty span or a non-positive sample rate",
+          "[calibration]") {
+    // Verifier round 1, finding 3: the guard exists in both record*Check
+    // methods but nothing exercised it -- a later edit could drop it with no
+    // test noticing.
+    const auto level = calibrationLevel(kIec60942Level94Db);
+    const auto samples = sineAt1kHz(0.5, kFs);
+
+    CalibrationSession session;
+    session.recordStartCheck(level, {}, kFs, 0);
+    CHECK_FALSE(session.hasStartCheck());
+    session.recordStartCheck(level, samples, 0.0, 0);
+    CHECK_FALSE(session.hasStartCheck());
+    session.recordStartCheck(level, samples, -kFs, 0);
+    CHECK_FALSE(session.hasStartCheck());
+
+    // A good start check, then the same three refusals against END.
+    session.recordStartCheck(level, samples, kFs, 0);
+    REQUIRE(session.hasStartCheck());
+    session.recordEndCheck(level, {}, kFs, 1000);
+    CHECK_FALSE(session.hasEndCheck());
+    session.recordEndCheck(level, samples, 0.0, 1000);
+    CHECK_FALSE(session.hasEndCheck());
+    session.recordEndCheck(level, samples, -kFs, 1000);
+    CHECK_FALSE(session.hasEndCheck());
 }
 
 // --- A2 / A3: the pair, the drift, and the verdict -----------------------
