@@ -8,6 +8,7 @@
 #include "MainComponent.h"
 
 #include "export/SplCalibrationRecord.h"
+#include "measure/CalibratedSplConfig.h"
 #include "measure/CalibrationChannel.h"
 #include "measure/CaptureTimeout.h"
 #include "measure/RoutingPlan.h"
@@ -153,17 +154,18 @@ void MainComponent::restartSplLoggingForCalibration() {
 
     analysisThread_.disableSplLogging();
 
-    rta::measure::SplConfig config;  // SplConfig{} defaults, SPL-R11, same as startFreshSplLog
-    config.referenceOffsetDb = calibrationSession_.referenceOffsetDb();
-    config.calibrated = true;
-    const double calibratorLevelDb = calibrationSession_.startCheck().level.nominalDb;
+    // Fix round (verifier MEDIUM finding, mutant M2): lifted out of this
+    // function into a pure, OFF-tested one -- see CalibratedSplConfig.h's own
+    // comment for why the inline version was untestable.
+    const auto calibrated = rta::measure::calibratedSplLogConfig(calibrationSession_);
 
     // `splLoggingActive_`/`lastSplEpoch_` are left exactly as they were: this
     // restart changes neither whether the bus is active nor its epoch, so
     // `pollSplLogging()`'s own edge-detected decision correctly reads NoOp on
     // the very next tick (measure/SplLoggingDecision.h) -- no state to
     // re-synchronise here beyond the fresh session directory itself.
-    startFreshSplLogWithConfig(config, calibratorLevelDb, audioIo_.bus().epoch());
+    startFreshSplLogWithConfig(calibrated.config, calibrated.calibratorLevelDb,
+                               audioIo_.bus().epoch());
 
     // A fresh log is an unverified calibration state again -- see
     // AnalysisThreadSpl.cpp's own reset-block comment for why
