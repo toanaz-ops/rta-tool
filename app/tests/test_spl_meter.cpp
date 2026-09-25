@@ -254,6 +254,57 @@ TEST_CASE("B4 push allocates nothing after construction", "[splmeter]") {
     CHECK(bytes == 0);
 }
 
+// --- step 2 (PR #29 round-3 fix pass, MEDIUM): every pushed sample is ------
+// accounted for, exactly, never silently lost -------------------------------
+
+TEST_CASE("every sample pushed is accounted for: closed blocks + dropped + pending, exactly",
+         "[splmeter]") {
+    // Latent, pre-existing defect: a hop spanning several kScratchSamples
+    // (1024) segments could complete more than
+    // rta::meter::BlockAccumulator::kReadyCapacity (4) blocks before the
+    // OLD code ever called accumulator_.poll() (only done AFTER push(hop)
+    // returned) -- so the accumulator's own cap silently stopped consuming
+    // partway through the hop and the rest was never processed at all, not
+    // even counted as Dropped. Verifier repro: blockSeconds = 0.002, only 8
+    // of 21 expected blocks, >= 1089 of 2048 pushed samples unaccounted
+    // for. Record §15 A1's own invariant:
+    // Sigma(blockSamples + droppedSamples) == total samples pushed.
+    //
+    // Constructed directly against SplMeter -- bypassing
+    // SplSession::start()'s own advisory `blockSecondsBelowRecommendedFloor`
+    // gate (PR #29 step 2's separate, purely advisory floor) -- so this
+    // proves the FIX itself (SplMeter's own internal ready buffer, drained
+    // inside the segment loop) holds for the exact configurations that
+    // broke it, independent of that advisory check.
+    for (const double blockSeconds : {0.002, 0.004, 0.005}) {
+        INFO("blockSeconds = " << blockSeconds);
+        SplConfig config = oneSecondConfig();
+        config.blockSeconds = blockSeconds;
+        SplMeter meter(config, WeightingType::A, kFs);
+
+        constexpr std::size_t kHopSamples = 1024;
+        constexpr int kHops = 50;
+        std::vector<float> hop(kHopSamples);
+        for (std::size_t n = 0; n < kHopSamples; ++n) {
+            hop[n] = static_cast<float>(
+                0.3 * std::sin(2.0 * std::numbers::pi * 200.0 * static_cast<double>(n) / kFs));
+        }
+
+        std::uint64_t accountedSamples = 0;
+        for (int h = 0; h < kHops; ++h) {
+            meter.push(hop);
+            while (auto b = meter.poll()) accountedSamples += b->blockSamples + b->droppedSamples;
+        }
+        // The currently-open (never-yet-closed) block's own partial count --
+        // the ONE place a sample can legitimately be "not yet in a Block"
+        // without being lost.
+        accountedSamples += meter.pendingSamples();
+
+        const auto totalPushed = static_cast<std::uint64_t>(kHopSamples) * static_cast<std::uint64_t>(kHops);
+        CHECK(accountedSamples == totalPushed);
+    }
+}
+
 // --- B5: the offset is DATA ---------------------------------------------
 
 TEST_CASE("B5 referenceOffsetDb is data -- no calibration flow in this path", "[splmeter]") {

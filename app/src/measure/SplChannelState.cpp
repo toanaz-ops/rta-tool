@@ -93,12 +93,9 @@ void SplChannelState::onBlockClosed(std::span<const ChainBlockAtClose> chains) {
     }
     if (aChain != nullptr && !rta::meter::hasFlag(aChain->block.flags,
                                                    rta::meter::BlockFlag::CalibrationInvalid)) {
-        // Ln (record §5): A-weighted, Fast detector -- Block::maxFastDb is
-        // the MAX-HELD Fast-detector reading within the block (record §2),
-        // the closest per-block quantity to ISO 1996-1 cl. 3.1.3's own
-        // "Fast, 100 ms sampling" convention this project already names in
-        // its Ln labels (L_AF...).
-        lnHistogram_.add(static_cast<double>(aChain->block.maxFastDb) + referenceOffsetDb_);
+        // Ln no longer comes from the closed block at all (fix round
+        // 2026-09-25) -- see `feedLnTicks`, called once per HOP by
+        // `AnalysisThread::feedSpl`, never here.
 
         // Dose (record §7): the block's own broadband Leq, offset-applied --
         // combineBlocks over a single-block "window" is exactly that,
@@ -125,6 +122,10 @@ void SplChannelState::onBlockClosed(std::span<const ChainBlockAtClose> chains) {
             }
         }
     }
+}
+
+void SplChannelState::feedLnTicks(std::span<const double> aChainTickLevelsDb) {
+    for (double raw : aChainTickLevelsDb) lnHistogram_.add(raw + referenceOffsetDb_);
 }
 
 void SplChannelState::fillPublish(SplBlockView& view) const {

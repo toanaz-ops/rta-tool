@@ -187,6 +187,29 @@ struct SplConfig {
         return metrics.size() - acceptedMetricCount();
     }
 
+    /// PR #29 round-3 fix pass step 2's defensive sanity gate: true when
+    /// `blockSeconds` is so small, relative to `scratchSamples`/
+    /// `readyCapacity`, that more than `readyCapacity` blocks could
+    /// complete within a single scratch-sized segment window
+    /// (`SplMeter::kScratchSamples` / `rta::meter::BlockAccumulator::
+    /// kReadyCapacity` -- passed in rather than named here so this header
+    /// stays SplMeter-free). `SplSession::start` checks this and reports it
+    /// through `blockSecondsTooSmall()`, NEVER silently, mirroring
+    /// `refusedMetricCount()`'s own pattern -- but it does NOT refuse to
+    /// start: `SplMeter`'s own internal ready buffer (SplMeter.h's
+    /// `kReadyBufferCapacity`) is independently sized at `kScratchSamples`
+    /// (1024) and keeps every sample counted (Sigma(blockSamples +
+    /// droppedSamples) == total pushed) regardless of this gate. This is a
+    /// SEPARATE, purely advisory floor: a `blockSeconds` this far under one
+    /// scratch chunk serves no real measurement purpose either way, and an
+    /// operator who typed one gets told rather than left to wonder why the
+    /// block clock looks odd.
+    [[nodiscard]] bool blockSecondsBelowRecommendedFloor(double sampleRate, double scratchSamples,
+                                                          double readyCapacity) const noexcept {
+        if (!(sampleRate > 0.0) || !(blockSeconds > 0.0) || !(readyCapacity > 0.0)) return true;
+        return blockSeconds * sampleRate < (scratchSamples / readyCapacity);
+    }
+
     /// Blocks in `windowSeconds` of this configuration -- the one place a
     /// duration becomes a block count, so a caller never divides by
     /// `blockSeconds` itself and rounds differently.

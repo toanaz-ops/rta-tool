@@ -220,6 +220,9 @@ add_executable(rtatool_analysis_tests
     # JUCE-free so it is proven OFF on all three CI operating systems.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplChannelState.cpp
     test_spl_channel_state.cpp
+    # test_spl_ln_ticks.cpp: PR #29 round-3 fix pass step 1 (MEDIUM) -- Ln
+    # sampled at the detector's own 100 ms clock, never at block closure.
+    test_spl_ln_ticks.cpp
     # --- end L6a Wave 2 -----------------------------------------------------
     # --- L6a Wave 3 task W3-A (record §8, §13 Q2) --------------------------
     # test_calibration.cpp + CalibrationSession.cpp: calibration as a flow --

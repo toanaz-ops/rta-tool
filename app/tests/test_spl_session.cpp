@@ -176,6 +176,44 @@ TEST_CASE("feedHop allocates nothing once the session has started", "[splsession
     CHECK(session.blockCount(9) == 20);
 }
 
+// --- PR #29 round-3 fix pass step 2: blockSecondsTooSmall is ADVISORY, ----
+// reported, and never silent --------------------------------------------
+
+TEST_CASE("blockSecondsTooSmall reports, but does not refuse, an under-floor config",
+         "[splsession]") {
+    SplSession session;
+    const int channels[] = {0};
+
+    SECTION("the shipped 1 s default is comfortably above the floor") {
+        session.start(shortBlockConfig(), kFs, channels);
+        CHECK_FALSE(session.blockSecondsTooSmall());
+        CHECK(session.running());
+    }
+
+    SECTION("blockSeconds = 0.002 at 48 kHz is BELOW the advisory floor, and still runs") {
+        SplConfig config = shortBlockConfig();
+        config.blockSeconds = 0.002;
+        session.start(config, kFs, channels);
+        CHECK(session.blockSecondsTooSmall());
+        // Advisory, not a refusal: the session still runs, and still logs
+        // the channel -- SplMeter's own (generously oversized) ready buffer
+        // is what actually protects sample accounting, proven directly by
+        // test_spl_meter.cpp's own Sigma(blockSamples+droppedSamples) case.
+        CHECK(session.running());
+        CHECK(session.logsChannel(0));
+    }
+
+    SECTION("stop() clears the flag for the next start()") {
+        SplConfig tooSmall = shortBlockConfig();
+        tooSmall.blockSeconds = 0.002;
+        session.start(tooSmall, kFs, channels);
+        REQUIRE(session.blockSecondsTooSmall());
+        session.stop();
+        session.start(shortBlockConfig(), kFs, channels);
+        CHECK_FALSE(session.blockSecondsTooSmall());
+    }
+}
+
 // --- one chain per DISTINCT weighting, and the reason it is not optional --
 
 TEST_CASE("a C-weighted metric is served C-weighted numbers, not A-weighted ones",
@@ -455,12 +493,16 @@ TEST_CASE("a hop that closes several blocks reports each newly-closed block exac
     const int channels[] = {0};
     session.start(shortBlockConfig(4), kFs, channels);  // 4800-sample blocks
 
-    // 4 blocks, not more: rta::meter::BlockAccumulator::kReadyCapacity (its
-    // own header comment) bounds how many blocks a SINGLE push() can ever
-    // complete without an intervening poll() -- a 5th block's worth in the
-    // same hop would hit that bound and be flagged Dropped instead of
-    // closed, which is BlockAccumulator's own documented behaviour, not
-    // this fixture's subject (per-chain `newlyClosedBlocks` reporting).
+    // 4 blocks, an arbitrary round number for this fixture's own subject
+    // (per-chain `newlyClosedBlocks` reporting) -- NOT a ceiling. Before the
+    // PR #29 round-3 step 2 fix, `rta::meter::BlockAccumulator::
+    // kReadyCapacity` (4) bounded how many blocks a single `SplMeter::push`
+    // could complete before a 5th block's worth in the same hop was
+    // silently counted `Dropped`; `SplMeter` now drains the accumulator
+    // inside its own segment loop (see that class's `readyBuffer_`), so a
+    // hop can close far more than 4 blocks without losing any -- proven
+    // directly by test_spl_meter.cpp's own step-2 Sigma(blockSamples +
+    // droppedSamples) identity case.
     std::vector<float> bigHop(4800 * 4, 0.2f);  // 4 blocks in ONE hop/drain
     session.feedHop(0, bigHop);
 

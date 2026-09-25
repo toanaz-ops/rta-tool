@@ -139,6 +139,23 @@ public:
     ///     no-op.
     void onBlockClosed(std::span<const ChainBlockAtClose> chains);
 
+    /// Record §5: Ln is fed at the DETECTOR SAMPLING RATE (100 ms), never
+    /// tied to block closure. Called once per hop, always, whether or not a
+    /// block closed on this hop (fix round 2026-09-25: `onBlockClosed` used
+    /// to feed the A-weighted chain's `Block::maxFastDb` -- a max-HELD-per-
+    /// BLOCK quantity -- once per closed block, which is the wrong
+    /// granularity entirely: with 1 s blocks alternating loud/quiet halves,
+    /// every Ln read the block's loud peak).
+    ///
+    /// SCOPE DECISION, deliberate: ticks are fed UNCONDITIONALLY, with NO
+    /// per-tick `CalibrationInvalid` gating. The old block-level gate
+    /// excluded Ln when the closed block carried that flag; doing the
+    /// equivalent per-100-ms-tick would require knowing which block-interval
+    /// each tick falls in, which record §5 does not ask for and the
+    /// verifier's own probe does not test. This is a documented scope limit,
+    /// not a silent gap.
+    void feedLnTicks(std::span<const double> aChainTickLevelsDb);
+
     /// Fills the alarm/dose/Ln half of a publish from the state accumulated
     /// so far. A slot this class has not yet produced a result for is left
     /// exactly as `view` arrived -- ABSENT, never a placeholder zero

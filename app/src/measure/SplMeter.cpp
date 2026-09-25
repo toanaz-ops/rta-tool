@@ -22,6 +22,35 @@ std::uint32_t blockSamplesFor(double blockSeconds, double sampleRate) noexcept {
     return static_cast<std::uint32_t>(samples);
 }
 
+/// Record §5's 100 ms tick, rounded like `blockSamplesFor` above and floored
+/// at 1 so a nonsense sample rate cannot produce a zero-sample tick period.
+std::uint64_t lnSamplesPerTickFor(double sampleRate) noexcept {
+    if (!(sampleRate > 0.0)) return 1;
+    const double samples = 0.1 * sampleRate + 0.5;
+    if (samples < 1.0) return 1;
+    return static_cast<std::uint64_t>(samples);
+}
+
+/// `max(1, round(blockSeconds / 0.1))` -- how many 100 ms ticks one block
+/// spans, the unit `lnTickBufferCapacity` below is generous against.
+std::uint64_t ticksPerBlockFor(double blockSeconds) noexcept {
+    if (!(blockSeconds > 0.0)) return 1;
+    const double ticks = blockSeconds / 0.1 + 0.5;
+    if (ticks < 1.0) return 1;
+    return static_cast<std::uint64_t>(ticks);
+}
+
+/// `(kReadyCapacity + 2) * ticksPerBlock`, floored at 16 -- mirrors
+/// `SplSession::Chain::newlyClosed`'s own sizing (that class's own header
+/// comment): generous against how many ticks a single `push()` call (at
+/// most one hop) can produce before the caller drains it.
+std::size_t lnTickBufferCapacity(double blockSeconds) noexcept {
+    const std::uint64_t ticksPerBlock = ticksPerBlockFor(blockSeconds);
+    const std::uint64_t generous =
+        (rta::meter::BlockAccumulator::kReadyCapacity + 2) * ticksPerBlock;
+    return static_cast<std::size_t>(generous < 16 ? 16 : generous);
+}
+
 }  // namespace
 
 SplMeter::SplMeter(const SplConfig& config, rta::dsp::WeightingType weighting, double sampleRate)
@@ -30,13 +59,23 @@ SplMeter::SplMeter(const SplConfig& config, rta::dsp::WeightingType weighting, d
     , referenceOffsetDb_(config.referenceOffsetDb)
     , mainWeighting_(weighting, sampleRate)
     , peakWeighting_(rta::dsp::WeightingType::C, sampleRate)
-    , accumulator_(blockSamplesFor(config.blockSeconds, sampleRate), sampleRate) {}
+    , accumulator_(blockSamplesFor(config.blockSeconds, sampleRate), sampleRate)
+    , lnDetector_(rta::meter::TimeWeighting::Fast, sampleRate)
+    , lnSamplesPerTick_(lnSamplesPerTickFor(sampleRate)) {
+    lnTicks_.reserve(lnTickBufferCapacity(config.blockSeconds));
+}
 
 void SplMeter::reset() noexcept {
     mainWeighting_.reset();
     peakWeighting_.reset();
     accumulator_.reset();
     overloadRun_ = 0;
+    lnDetector_.reset();
+    lnSampleCounter_ = 0;
+    lnTicks_.clear();
+    overflowedLnTicks_ = 0;
+    readyHead_ = 0;
+    readyCount_ = 0;
 }
 
 void SplMeter::noteDroppedSamples(std::uint32_t count) noexcept {
@@ -45,9 +84,25 @@ void SplMeter::noteDroppedSamples(std::uint32_t count) noexcept {
 
 void SplMeter::setFlag(rta::meter::BlockFlag flag) noexcept { accumulator_.setFlag(flag); }
 
-std::optional<rta::meter::Block> SplMeter::poll() noexcept { return accumulator_.poll(); }
+std::optional<rta::meter::Block> SplMeter::poll() noexcept {
+    if (readyCount_ > 0) {
+        const rta::meter::Block b = readyBuffer_[readyHead_];
+        readyHead_ = (readyHead_ + 1) % kReadyBufferCapacity;
+        --readyCount_;
+        return b;
+    }
+    // Should be empty by construction once push() has run (see
+    // readyBuffer_'s own comment) -- the fallthrough costs nothing and
+    // keeps this the one seam a caller ever needs to drain.
+    return accumulator_.poll();
+}
 
 void SplMeter::push(std::span<const float> hop) noexcept {
+    // Cleared at the TOP, so every caller of push() gets a fresh view of
+    // exactly what THIS call ticked -- mirrors SplSession::feedHop already
+    // clearing c.newlyClosed before c.meter.push(hop), moved one layer in.
+    lnTicks_.clear();
+
     std::size_t off = 0;
     while (off < hop.size()) {
         // Two bounds at once: the fixed scratch, and the samples left in the
@@ -68,6 +123,26 @@ void SplMeter::push(std::span<const float> hop) noexcept {
         // no special case is needed for it.
         mainWeighting_.process(segment, main);
         peakWeighting_.process(segment, peak);
+
+        // RECORD §5's Ln FEED: the SAME weighted `main` span, one sample at
+        // a time, into a SECOND Fast detector sampled on its own persistent
+        // 100 ms clock -- independent of block closure (ticks are NOT tied
+        // to `blockSamples`/`pending_`; the counter here never resets at a
+        // block boundary). `lnSampleCounter_` is the running TOTAL across
+        // every push() this meter has ever seen, so a tick lands on the
+        // correct absolute 100 ms boundary regardless of how a hop happens
+        // to be sliced into segments.
+        for (std::size_t i = 0; i < n; ++i) {
+            lnDetector_.processSample(main[i]);
+            ++lnSampleCounter_;
+            if (lnSampleCounter_ % lnSamplesPerTick_ == 0) {
+                if (lnTicks_.size() < lnTicks_.capacity()) {
+                    lnTicks_.push_back(lnDetector_.levelDb());
+                } else {
+                    ++overflowedLnTicks_;
+                }
+            }
+        }
 
         // THE OVERLOAD RUN, on the RAW segment, BEFORE the block is fed.
         //
@@ -100,11 +175,35 @@ void SplMeter::push(std::span<const float> hop) noexcept {
         }
 
         const std::size_t consumed = accumulator_.push(main, peak);
+
+        // DRAIN IMMEDIATELY (fix round 2026-09-25 step 2), into THIS
+        // class's own ready buffer -- see readyBuffer_'s own comment for
+        // why: this is what keeps accumulator_'s kReadyCapacity(4) from
+        // ever being reached within one push(hop) call, for a hop spanning
+        // any number of kScratchSamples-sized segments.
+        while (auto block = accumulator_.poll()) {
+            if (readyCount_ < kReadyBufferCapacity) {
+                readyBuffer_[(readyHead_ + readyCount_) % kReadyBufferCapacity] = *block;
+                ++readyCount_;
+            } else {
+                // readyBuffer_ itself is exhausted -- see its own comment
+                // for how far out of realistic range that is. Counted, not
+                // silently discarded: the already-closed block's own sample
+                // count rides whatever block is CURRENTLY pending, exactly
+                // the same "flag and count ride the block being
+                // accumulated" convention noteDroppedSamples/setFlag
+                // already document.
+                accumulator_.setFlag(rta::meter::BlockFlag::Dropped);
+                accumulator_.noteDroppedSamples(block->blockSamples);
+            }
+        }
+
         if (consumed < n) {
-            // BlockAccumulator only stops short when kReadyCapacity blocks are
-            // already waiting, which means the caller is not polling. Record
-            // the loss rather than hiding it: the flag and the count both ride
-            // the block, so the log says how many samples went missing.
+            // Unreachable in ordinary operation now that the accumulator is
+            // drained every segment (its own readyCount_ never reaches
+            // kReadyCapacity within this loop) -- kept as the same
+            // counted-loss fallback it always was, in case a future change
+            // to the drain above ever lets it happen again.
             accumulator_.setFlag(rta::meter::BlockFlag::Dropped);
             accumulator_.noteDroppedSamples(static_cast<std::uint32_t>(n - consumed));
             return;

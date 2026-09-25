@@ -130,6 +130,12 @@ void AnalysisThread::feedSpl(int channel) {
             }
             state->onBlockClosed(std::span<const ChainBlockAtClose>(atClose.data(), chainCount));
         }
+
+        // Record §5: Ln is sampled at the detector's own 100 ms clock, NEVER
+        // tied to block closure -- fed once per hop, unconditionally,
+        // whether or not the loop above closed any block this hop (fix
+        // round 2026-09-25).
+        state->feedLnTicks(splSession_.newlyTickedLnLevelsDb(channel, rta::dsp::WeightingType::A));
     }
 
     if (slot < splBlockCounts_.size()) {

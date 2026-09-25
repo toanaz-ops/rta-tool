@@ -102,6 +102,12 @@ public:
     /// this reaches the published `SplBlockView` as well.
     [[nodiscard]] std::size_t refusedMetrics() const noexcept { return refusedMetrics_; }
 
+    /// PR #29 round-3 fix pass step 2: true when `config.blockSeconds` fell
+    /// below `SplConfig::blockSecondsBelowRecommendedFloor`'s own advisory
+    /// floor at `start()`. Reported, never silent -- see that method's own
+    /// comment for why this does NOT refuse to start the session.
+    [[nodiscard]] bool blockSecondsTooSmall() const noexcept { return blockSecondsTooSmall_; }
+
     [[nodiscard]] bool running() const noexcept { return running_; }
     [[nodiscard]] bool logsChannel(int channel) const noexcept;
 
@@ -145,6 +151,16 @@ public:
     /// a throttled copy for the message thread and can be built less often
     /// than a block closes.
     [[nodiscard]] std::span<const rta::meter::Block> newlyClosedBlocks(
+        int channel, rta::dsp::WeightingType weighting) const noexcept;
+
+    /// The A-weighted (or whichever `weighting` names) chain's own Ln ticks
+    /// recorded during the most recent `feedHop` call, oldest first -- a
+    /// thin forward onto `SplMeter::newlyTickedLnLevelsDb`, cleared at the
+    /// TOP of that meter's own `push()` (fix round 2026-09-25: record §5's
+    /// Ln feed samples the Fast detector every 100 ms, independent of block
+    /// closure -- see `SplChannelState::feedLnTicks`). An empty span when
+    /// this session has no chain for `weighting`.
+    [[nodiscard]] std::span<const double> newlyTickedLnLevelsDb(
         int channel, rta::dsp::WeightingType weighting) const noexcept;
 
     /// The latest block on `channel`'s FIRST chain -- the one `Snapshot`'s
@@ -241,6 +257,7 @@ private:
     /// has storage for. `config()` returns this one, not the caller's.
     SplConfig config_;
     std::size_t refusedMetrics_ = 0;
+    bool blockSecondsTooSmall_ = false;
     double sampleRate_ = 0.0;
     bool running_ = false;
     std::size_t windowCapacity_ = 1;

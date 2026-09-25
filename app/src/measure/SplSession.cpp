@@ -35,6 +35,13 @@ void SplSession::start(const SplConfig& config, double sampleRate,
         config_.metrics.resize(SplConfig::kMaxMetrics);
     }
 
+    // PR #29 round-3 fix pass step 2: advisory only -- see
+    // SplConfig::blockSecondsBelowRecommendedFloor's own comment for why
+    // this reports rather than refuses.
+    blockSecondsTooSmall_ = config_.blockSecondsBelowRecommendedFloor(
+        sampleRate, static_cast<double>(SplMeter::kScratchSamples),
+        static_cast<double>(rta::meter::BlockAccumulator::kReadyCapacity));
+
     // The distinct weightings the metrics named, in first-seen order. A config
     // with no metrics gets one Z chain, so a caller that only wants unweighted
     // energy is not a special case everywhere else.
@@ -83,6 +90,7 @@ void SplSession::stop() noexcept {
     for (auto& state : channels_) state.reset();
     weightings_.clear();
     refusedMetrics_ = 0;
+    blockSecondsTooSmall_ = false;
     running_ = false;
 }
 
@@ -203,6 +211,13 @@ std::span<const rta::meter::Block> SplSession::newlyClosedBlocks(
     const Chain* c = chain(channel, weighting);
     if (c == nullptr) return {};
     return c->newlyClosed;
+}
+
+std::span<const double> SplSession::newlyTickedLnLevelsDb(
+    int channel, rta::dsp::WeightingType weighting) const noexcept {
+    const Chain* c = chain(channel, weighting);
+    if (c == nullptr) return {};
+    return c->meter.newlyTickedLnLevelsDb();
 }
 
 std::optional<rta::meter::Block> SplSession::latestBlock(int channel) const noexcept {

@@ -69,6 +69,13 @@ void feedOneChain(SplChannelState& state, std::vector<Block>& window, const Bloc
 /// own loop (including `rta::measure::windowAtClose`) so these fixtures
 /// exercise the SAME reconstruction production code uses, over REAL,
 /// weighting-filtered audio.
+///
+/// PR #29 round-3 fix pass step 7: this helper diverged from `feedSpl` the
+/// moment step 1 added `feedLnTicks` there -- `feedSpl` calls it once per
+/// hop, unconditionally, AFTER the closed-block loop, whether or not a
+/// block closed on this hop. Updated here to keep mirroring production
+/// (rather than leaving `runOrderProbe`'s own `Probe::ln50` silently
+/// starved of ticks).
 void feedAndDrive(SplSession& session, SplChannelState& state, int channel,
                   std::span<const float> hop) {
     session.feedHop(channel, hop);
@@ -91,6 +98,7 @@ void feedAndDrive(SplSession& session, SplChannelState& state, int channel,
         }
         state.onBlockClosed(atClose);
     }
+    state.feedLnTicks(session.newlyTickedLnLevelsDb(channel, rta::dsp::WeightingType::A));
 }
 
 struct Probe {
@@ -218,36 +226,32 @@ TEST_CASE("1b dose and Ln read the A-weighted chain, never the first configured 
     CHECK_THAT(*view.dosePercent[0], WithinAbs(100.0, 1e-9));
 }
 
-TEST_CASE("1c Ln reads the A-weighted chain, never the first configured chain",
+TEST_CASE("1c onBlockClosed no longer feeds Ln at all -- feedLnTicks is the only path",
          "[spl_channel_state]") {
+    // Fix round 2026-09-25 (PR #29 round-3 fix pass step 1): Ln used to be
+    // fed from the A-weighted chain's own closed block (Block::maxFastDb)
+    // inside onBlockClosed -- the wrong granularity entirely (record §5:
+    // "Fast, 100 ms sampling", not once per block). It now comes
+    // EXCLUSIVELY from feedLnTicks (test_spl_ln_ticks.cpp exercises that
+    // path through a real SplSession+SplMeter). A caller that closes many
+    // blocks but never calls feedLnTicks must see Ln stay ABSENT -- proof
+    // the two paths are actually decoupled, not merely that the old wrong
+    // value stopped appearing. The "feed maxFastDb again" mutant (reverting
+    // this fix) makes Ln PRESENT here, at ~80 dB, failing every CHECK_FALSE
+    // below.
     SplConfig config;
     config.blockSeconds = 1.0;
     config.logSpanSeconds = 200.0;
-    config.referenceOffsetDb = 20.0;  // keeps the published 80 dB inside the span
 
     SplChannelState state(config, 48000.0);
-    std::vector<Block> cWindow, aWindow;
-
-    for (std::uint64_t i = 0; i < 100; ++i) {  // A: 50 at 60 dB published, 50 at 80 dB published
-        const double publishedLevelDb = (i % 2 == 0) ? 60.0 : 80.0;
-        const Block cBlock = blockAtLevel(i, 48000, 140.0 - config.referenceOffsetDb);  // decoy
-        const Block aBlock = blockAtLevel(i, 48000, publishedLevelDb - config.referenceOffsetDb);
-        cWindow.push_back(cBlock);
-        aWindow.push_back(aBlock);
-        std::array<ChainBlockAtClose, 2> atClose{
-            ChainBlockAtClose{rta::dsp::WeightingType::C, cBlock, cWindow},
-            ChainBlockAtClose{rta::dsp::WeightingType::A, aBlock, aWindow},
-        };
-        state.onBlockClosed(atClose);
+    std::vector<Block> aWindow;
+    for (std::uint64_t i = 0; i < 20; ++i) {
+        feedOneChain(state, aWindow, blockAtLevel(i, 48000, 80.0));
     }
 
     SplBlockView view;
     state.fillPublish(view);
-    constexpr double kHalfBinBoundDb = 0.05 + 1e-9;
-    REQUIRE(view.lnDb[2].has_value());  // L10
-    CHECK_THAT(*view.lnDb[2], WithinAbs(80.0, kHalfBinBoundDb));
-    REQUIRE(view.lnDb[4].has_value());  // L90
-    CHECK_THAT(*view.lnDb[4], WithinAbs(60.0, kHalfBinBoundDb));
+    for (const auto& ln : view.lnDb) CHECK_FALSE(ln.has_value());
 }
 
 TEST_CASE("an alarm naming no configured metric is published absent, not refused",
@@ -403,19 +407,23 @@ TEST_CASE("b dose over N blocks at the criterion level reaches the closed form v
 
 // --- c: Ln of a two-level stream lands within the histogram's w/2 bound ----
 
-TEST_CASE("c Ln of a two-level stream reads L10 near 80 and L90 near 60, within 0.05 dB",
+TEST_CASE("c Ln of a two-level tick stream reads L10 near 80 and L90 near 60, within 0.05 dB",
          "[spl_channel_state]") {
+    // Fed via feedLnTicks directly (fix round 2026-09-25, PR #29 round-3
+    // step 1: Ln is on the detector's own 100 ms clock, not the block
+    // clock) -- one tick per iteration, which is the same shape the old
+    // one-per-block feed had, so this fixture's own percentile-math
+    // assertions carry over unchanged.
     SplConfig config;
     config.blockSeconds = 1.0;
     config.logSpanSeconds = 200.0;
     config.referenceOffsetDb = 20.0;
 
     SplChannelState state(config, 48000.0);
-    std::vector<Block> window;
     for (std::uint64_t i = 0; i < 100; ++i) {
         const double publishedLevelDb = (i % 2 == 0) ? 60.0 : 80.0;
-        feedOneChain(state, window,
-                    blockAtLevel(i, 48000, publishedLevelDb - config.referenceOffsetDb));
+        const double tickDb = publishedLevelDb - config.referenceOffsetDb;
+        state.feedLnTicks(std::span<const double>(&tickDb, 1));
     }
 
     SplBlockView view;
@@ -462,8 +470,16 @@ TEST_CASE("d every alarm/dose/Ln slot is absent before it has a result", "[spl_c
 
 // --- CalibrationInvalid excludes Ln/dose the same way it excludes a window -
 
-TEST_CASE("a CalibrationInvalid block is excluded from Ln and dose, honestly",
+TEST_CASE("a CalibrationInvalid block is excluded from dose, honestly",
          "[spl_channel_state]") {
+    // Ln is NOT part of this fixture's own claim any more (fix round
+    // 2026-09-25, PR #29 round-3 step 1): onBlockClosed no longer feeds Ln
+    // at all -- feedLnTicks does, unconditionally, with NO per-tick
+    // CalibrationInvalid gating (SplChannelState.h's own documented scope
+    // decision: doing so would require knowing which block-interval each
+    // 100 ms tick falls in, which record §5 does not ask for). Asserting
+    // Ln absence here would be vacuously true regardless of this fixture's
+    // CalibrationInvalid flag and would misstate that as a guarded property.
     SplConfig config;
     config.blockSeconds = 1.0;
     config.logSpanSeconds = 100.0;
@@ -479,9 +495,6 @@ TEST_CASE("a CalibrationInvalid block is excluded from Ln and dose, honestly",
     SplBlockView view;
     state.fillPublish(view);
     CHECK_FALSE(view.dosePercent[0].has_value());
-    for (const auto& ln : view.lnDb) {
-        CHECK_FALSE(ln.has_value());
-    }
 }
 
 // --- e: allocated once, at construction, and never again -------------------
