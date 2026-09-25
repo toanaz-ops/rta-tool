@@ -169,6 +169,42 @@ TEST_CASE("C3 readLog drops only the truncated final line and reports its length
     }
 }
 
+// PR #26 fix round item 5: the verifier's mutant M3 ("accept a parseable
+// unterminated tail") SURVIVED against the cut loop above, because every row
+// there ends in a single-digit `flags` (always 0) -- cutting the one digit
+// off leaves an EMPTY final field, which fails to parse whether or not a
+// mutant tries. A multi-digit final field is what actually exercises the
+// defence: `flags=16` (Gap) with the cut landing BETWEEN its two digits
+// leaves a tail whose last field reads "1" -- non-empty, and a perfectly
+// valid (WRONG) uint32 -- so a reader that tried to parse an unterminated
+// tail and accept it if parseable would silently admit a corrupted block
+// instead of rejecting it. The shipped reader never attempts that parse at
+// all (no trailing '\n' is discarded outright, unconditionally), which is
+// what this fixture is here to keep proven.
+TEST_CASE("C3 a truncated tail that would still parse is rejected, not silently accepted",
+         "[spl_log]") {
+    std::string body;
+    for (std::uint64_t i = 0; i < 19; ++i) body += logRow(blockAtLevel(i, 480, 90.0), 0.0);
+    Block last = blockAtLevel(19, 480, 90.0);
+    last.flags = 16;  // BlockFlag::Gap -- a two-digit field, "16"
+    const std::string lastRow = logRow(last, 0.0);
+    body += lastRow;
+
+    REQUIRE(lastRow.substr(lastRow.size() - 3) == "16\n");
+    // Cut off the trailing "6\n", leaving "...,1" -- no newline, and the
+    // remaining text parses as nine complete fields with flags=1.
+    const std::string truncated = body.substr(0, body.size() - 2);
+    CHECK(truncated.back() == '1');
+
+    const auto result = readLog(truncated);
+    REQUIRE(result.blocks.size() == 19);  // the 19 complete rows before it
+    CHECK(result.bytesDiscarded == lastRow.size() - 2);
+    // The critical property M3 checks: NOT 20 blocks, and no block anywhere
+    // in the result carries flags == 1 (the value a coincidental parse would
+    // have produced).
+    for (const auto& block : result.blocks) CHECK(block.flags != 1u);
+}
+
 // --- C4: settings cannot change mid-log -------------------------------------
 
 TEST_CASE("C4 reconfigure starts a brand new log rather than a mixed file", "[spl_log]") {
