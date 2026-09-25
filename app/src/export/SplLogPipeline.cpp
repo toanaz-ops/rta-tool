@@ -20,6 +20,9 @@ constexpr std::chrono::milliseconds kIdleSleep{ 5 };
 
 void SplLogPipeline::enable(const SplLogEnableParams& params) {
     disable();  // stop and join any previous session first -- never appended to
+    // A fresh session starts with a fresh drop count, not the previous
+    // session's tally left behind by disable()'s own snapshot below.
+    for (auto& dropped : lastDropped_) dropped.store(0, std::memory_order_relaxed);
 
     std::vector<std::string> channelFiles;
     channelFiles.reserve(params.channels.size());
@@ -60,7 +63,16 @@ void SplLogPipeline::disable() noexcept {
         return;  // already disabled -- enable() always calls this first, so nothing to join
     }
     if (writerThread_.joinable()) writerThread_.join();
-    for (auto& sink : sinks_) sink.reset();
+    for (std::size_t i = 0; i < sinks_.size(); ++i) {
+        if (sinks_[i]) {
+            // Snapshot BEFORE resetting -- the writer thread is already
+            // joined, so this read races nothing, and it is the last chance
+            // to read a count this session's sink will ever hold again.
+            lastDropped_[i].store(sinks_[i]->dropped.load(std::memory_order_relaxed),
+                                   std::memory_order_relaxed);
+        }
+        sinks_[i].reset();
+    }
 }
 
 bool SplLogPipeline::drainOnce() {
@@ -103,8 +115,9 @@ void SplLogPipeline::pushBlock(int channel, const rta::meter::Block& block) noex
 
 std::uint64_t SplLogPipeline::droppedBlocks(int channel) const noexcept {
     if (channel < 0 || static_cast<std::size_t>(channel) >= kMaxLoggedChannels) return 0;
-    const auto& sinkPtr = sinks_[static_cast<std::size_t>(channel)];
-    if (!sinkPtr) return 0;
+    const auto slot = static_cast<std::size_t>(channel);
+    const auto& sinkPtr = sinks_[slot];
+    if (!sinkPtr) return lastDropped_[slot].load(std::memory_order_relaxed);
     return sinkPtr->dropped.load(std::memory_order_relaxed);
 }
 

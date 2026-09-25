@@ -162,6 +162,16 @@ private:
     std::array<std::unique_ptr<ChannelSink>, kMaxLoggedChannels> sinks_{};
     std::thread writerThread_;
     std::atomic<bool> running_{ false };
+    // `disable()` destroys every ChannelSink (and with it, `dropped`) once the
+    // writer thread has joined -- but a caller's whole reason to read
+    // `droppedBlocks()` is often "how many did the session that just ended
+    // lose", the same shape as `AnalysisThread::splLogDroppedBlocks` snapshot
+    // in a Snapshot taken after the bus goes inactive. So `disable()` copies
+    // each sink's final count here BEFORE resetting it, and `droppedBlocks()`
+    // falls back to this snapshot once the live sink is gone. `enable()`
+    // zeroes it for the new session -- a fresh log never inherits a previous
+    // session's drop count (record §10: never appended to).
+    std::array<std::atomic<std::uint64_t>, kMaxLoggedChannels> lastDropped_{};
 };
 
 }  // namespace rta::splexport

@@ -163,6 +163,12 @@ TEST_CASE("enableSplLogging's logDirectory writes a real, readable log and "
     REQUIRE(std::filesystem::exists(headerPath));
     const std::string sessionHeaderText = readWholeFile(headerPath);
     CHECK(sessionHeaderText.find("channelFile0=") != std::string::npos);
+    // Mutation gap closed (station-4 mutation pass, PR round): the header's
+    // blockSamples must come from blockSamplesFor(config.blockSeconds,
+    // sampleRate), not any other figure -- fastConfig()/splConfig() above
+    // give 64 samples/block exactly (64/48000 s @ 48000 Hz), and no other
+    // assertion in this file or in test_spl_log_pipeline.cpp reads this key.
+    CHECK(sessionHeaderText.find("blockSamples=64") != std::string::npos);
 }
 
 TEST_CASE("enableSplLogging with no logDirectory keeps Snapshot::spl live "
