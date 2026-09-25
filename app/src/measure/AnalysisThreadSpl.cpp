@@ -14,6 +14,34 @@
 
 namespace rta::measure {
 
+// THE WINDOW ARRAY'S BOUND IS A GATE, NOT A CONVENTION (round-2 verifier).
+//
+// `AnalysisThread::publishIfDue` declares its per-metric window storage as
+// `std::array<..., kMaxSplMetricWindows>`, and that header constant is written
+// as `= SplConfig::kMaxMetrics`. Written that way it is only a CONVENTION: a
+// literal 16 there with `kMaxMetrics` raised to 24 compiles, every test stays
+// green, and the eight metrics past the array's end silently lose their
+// windows -- which `buildSplBlockView`'s no-fallback rule then publishes as
+// ABSENT readings. This assertion is in the same translation unit as the SPL
+// feed's own array declarations, so the drift fails the BUILD rather than a
+// test somebody has to think to write.
+//
+// The behavioural half is `app/tests_juce/test_spl_drain.cpp`'s D5, which
+// sizes its own buffer from THIS constant and asserts every configured metric
+// gets a window -- measured red under the same mutation, reading
+// "kMaxSplMetricWindows = 16, kMaxMetrics = 24, metrics = 24, filled = 16".
+//
+// NOTE, because it is easy to assume otherwise: the OFF-build case
+// `app/tests/test_spl_publish.cpp` "every metric the config can express gets a
+// PRESENT reading" does NOT catch this drift. `AnalysisThread.h` includes
+// JUCE, so that file cannot name this constant, and it sizes its buffer from
+// `SplConfig::kMaxMetrics` instead -- measured, it stays GREEN under the
+// literal-16 mutation. So this assertion and D5 are the only two guards on the
+// relationship, and the one CI runs is this one, at compile time.
+static_assert(AnalysisThread::kMaxSplMetricWindows == SplConfig::kMaxMetrics,
+              "the per-metric window array must be sized by SplConfig::kMaxMetrics -- a "
+              "smaller array silently drops the metrics past its end to ABSENT readings");
+
 void AnalysisThread::applyPendingSplRequest() {
     if (!splRequestPending_.exchange(false, std::memory_order_acquire)) return;
 
@@ -34,6 +62,22 @@ void AnalysisThread::applyPendingSplRequest() {
     } else {
         splSession_.stop();
     }
+
+    // W2-E1: one SplChannelState per logged channel, allocated HERE --
+    // exactly where splSession_.start() allocates its own chains and
+    // windows -- and never resized afterward. A disable (or a fresh enable
+    // replacing a previous session) drops every existing state, so a
+    // channel's history/alarms/dose/Ln never survive across two sessions
+    // that happen to share a channel number.
+    for (auto& state : splChannelStates_) state.reset();
+    if (enable) {
+        for (const int ch : channels) {
+            if (ch < 0 || static_cast<std::size_t>(ch) >= splChannelStates_.size()) continue;
+            splChannelStates_[static_cast<std::size_t>(ch)] =
+                std::make_unique<SplChannelState>(config, bus_.sampleRate());
+        }
+    }
+
     for (auto& count : splBlockCounts_) count.store(0, std::memory_order_relaxed);
     for (auto& flags : splFlagsSeen_) flags.store(0, std::memory_order_relaxed);
     for (auto& dropped : splDroppedSamples_) dropped.store(0, std::memory_order_relaxed);
@@ -50,7 +94,28 @@ void AnalysisThread::feedSpl(int channel) {
     splSession_.noteDropCount(channel, bus_.dropCount(channel));
     splSession_.feedHop(channel, channelScratch_[static_cast<std::size_t>(channel)]);
 
+    // W2-E1: fold every block the FIRST chain just closed into this
+    // channel's own SPL state -- history, alarms, dose, Ln -- once each,
+    // here, never recomputed at publish time and never read off a
+    // (throttled) Snapshot. `AnalysisPublish.cpp`'s publish fold only READS
+    // this state, at whatever rate `publishIfDue` runs.
     const auto slot = static_cast<std::size_t>(channel);
+    if (auto& state = splChannelStates_[slot]) {
+        const auto closed = splSession_.newlyClosedBlocks(channel);
+        const auto fullWindow = splSession_.window(channel);
+        // Each block gets the window AS IT STOOD when THAT block closed --
+        // never the final window, which (on the rare hop that closes more
+        // than one block) already contains blocks after it. `closed` is
+        // oldest-first and is exactly the last `closed.size()` entries of
+        // `fullWindow`, in the same order, so trimming `trim` entries off
+        // the end recovers each intermediate window without a second copy.
+        for (std::size_t i = 0; i < closed.size(); ++i) {
+            const std::size_t trim = closed.size() - 1 - i;
+            const auto windowAtClose = fullWindow.first(fullWindow.size() - trim);
+            state->onBlockClosed(closed[i], windowAtClose);
+        }
+    }
+
     if (slot < splBlockCounts_.size()) {
         splBlockCounts_[slot].store(splSession_.blockCount(channel), std::memory_order_relaxed);
         splFlagsSeen_[slot].store(splSession_.flagsSeen(channel), std::memory_order_relaxed);
@@ -122,6 +187,12 @@ void AnalysisThread::fillSplPublishInput(
     // would read the same numbers.
     const std::size_t filled = splSession_.fillMetricWindows(channel, metricWindows);
     input.metricWindows = metricWindows.first(filled);
+    // W2-E1: the alarm/dose/Ln half of the publish reads from this channel's
+    // own accumulated state, never recomputed from `input.window` --
+    // SplAlarms/Dose/LevelHistogram all carry state across blocks (a fired
+    // alarm's sinceBlock, an accumulated dose) that a per-publish recompute
+    // could not reconstruct.
+    input.channelState = splChannelStates_[static_cast<std::size_t>(channel)].get();
 }
 
 std::uint64_t AnalysisThread::splDroppedSamples(int channel) const noexcept {

@@ -58,6 +58,9 @@ void SplSession::start(const SplConfig& config, double sampleRate,
         for (const auto w : weightings_) {
             s->chains.emplace_back(config_, w, sampleRate, windowCapacity_);
         }
+        // W2-E1: reserved once, here, on the message thread -- feedHop below
+        // never grows it (see ChannelState::newlyClosed's own comment).
+        s->newlyClosed.reserve(rta::meter::BlockAccumulator::kReadyCapacity);
         channels_[static_cast<std::size_t>(channel)] = std::move(s);
     }
     running_ = true;
@@ -125,12 +128,19 @@ void SplSession::feedHop(int channel, std::span<const float> hop) noexcept {
     ChannelState* s = state(channel);
     if (s == nullptr) return;
 
+    // W2-E1: cleared here so a caller draining `newlyClosedBlocks` right
+    // after this call sees exactly the blocks THIS hop closed, never a
+    // leftover from the previous one.
+    s->newlyClosed.clear();
+
     for (Chain& c : s->chains) {
+        const bool isFirstChain = &c == &s->chains.front();
         c.meter.push(hop);
         while (auto block = c.meter.poll()) {
             ++c.blocks;
             c.flagsSeen |= block->flags;
             c.droppedSamplesTotal += block->droppedSamples;
+            if (isFirstChain) s->newlyClosed.push_back(*block);
 
             if (c.window.size() < c.window.capacity()) {
                 c.window.push_back(*block);
@@ -174,6 +184,12 @@ std::uint64_t SplSession::droppedSamplesTotal(int channel) const noexcept {
     // report it `chainCount()` times over and make a reconstructed timestamp
     // LATE instead of early -- the same defect in the other direction.
     return s->chains.front().droppedSamplesTotal;
+}
+
+std::span<const rta::meter::Block> SplSession::newlyClosedBlocks(int channel) const noexcept {
+    const ChannelState* s = state(channel);
+    if (s == nullptr) return {};
+    return s->newlyClosed;
 }
 
 std::optional<rta::meter::Block> SplSession::latestBlock(int channel) const noexcept {

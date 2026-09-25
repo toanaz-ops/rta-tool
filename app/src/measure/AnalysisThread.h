@@ -12,6 +12,7 @@
 #include "measure/RoutingPlan.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
+#include "measure/SplChannelState.h"
 #include "measure/SplConfig.h"
 #include "measure/SplSession.h"
 
@@ -317,6 +318,14 @@ private:
     std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splBlockCounts_{};
     std::array<std::atomic<std::uint32_t>, SplSession::kMaxLoggedChannels> splFlagsSeen_{};
     std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splDroppedSamples_{};
+
+    // --- Lane L6a task W2-E1: the per-channel SPL state --------------------
+    // One JUCE-free SplChannelState per logged channel (history, alarms,
+    // dose, Ln), allocated in applyPendingSplRequest() -- the same moment
+    // splSession_.start() allocates its own chains -- and never resized
+    // afterward. ANALYSIS-THREAD-ONLY, same as splSession_ itself: fed from
+    // feedSpl(), read from fillSplPublishInput().
+    std::array<std::unique_ptr<SplChannelState>, SplSession::kMaxLoggedChannels> splChannelStates_;
 };
 
 }  // namespace rta::measure

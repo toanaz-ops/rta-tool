@@ -117,6 +117,18 @@ public:
     [[nodiscard]] std::uint32_t flagsSeen(int channel) const noexcept;
     [[nodiscard]] std::uint64_t droppedSamplesTotal(int channel) const noexcept;
 
+    /// The FIRST chain's blocks that closed during the most recent `feedHop`
+    /// call on `channel`, oldest first -- empty between calls, or when the
+    /// hop just fed did not complete one. Cleared at the top of every
+    /// `feedHop`, so a caller that drains this right after `feedHop` sees
+    /// each block exactly once.
+    ///
+    /// Lane L6a task W2-E1: this is what `SplChannelState` (history, alarms,
+    /// dose, the Ln histogram) is fed from, on the analysis thread, block by
+    /// block -- never from a `Snapshot`, which is a throttled copy for the
+    /// message thread and can be built less often than a block closes.
+    [[nodiscard]] std::span<const rta::meter::Block> newlyClosedBlocks(int channel) const noexcept;
+
     /// The latest block on `channel`'s FIRST chain -- the one `Snapshot`'s
     /// held maxima and sampled peak are read from.
     [[nodiscard]] std::optional<rta::meter::Block> latestBlock(int channel) const noexcept;
@@ -189,6 +201,14 @@ private:
         std::vector<Chain> chains;
         std::uint64_t lastBusDropCount = 0;
         bool dropBaselineSet = false;
+
+        /// The FIRST chain's blocks closed during the CURRENT `feedHop` call.
+        /// Reserved once, at `start()`, to
+        /// `rta::meter::BlockAccumulator::kReadyCapacity` -- the most a
+        /// single `push()` can ever complete (that class's own bound: `push`
+        /// stops consuming once `kReadyCapacity` blocks are waiting) -- so
+        /// draining it after every `feedHop` allocates nothing.
+        std::vector<rta::meter::Block> newlyClosed;
     };
 
     [[nodiscard]] ChannelState* state(int channel) noexcept;

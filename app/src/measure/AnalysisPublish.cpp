@@ -226,10 +226,20 @@ std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
         view.metrics.push_back(std::move(reading));
     }
 
-    // `alarms`, `dosePercent`, `doseProjected` and `lnDb` stay EMPTY/ABSENT
-    // through Wave 0. The latch is W1-C, the accumulators are W1-D and the
-    // histogram is W1-A; publishing a 0.0 % dose here would read as "measured,
-    // and there was no exposure".
+    // `alarms`, `dosePercent`, `doseProjected` and `lnDb` come from the
+    // channel's own accumulated state (lane L6a task W2-E1: SplHistory,
+    // SplAlarms, LevelHistogram and the two Dose accumulators, fed once per
+    // closed block by AnalysisThread::feedSpl -- never recomputed here).
+    // `channelState` is nullptr only when nothing is logging on this
+    // channel, which `input.config == nullptr` above already returns absent
+    // for -- so reaching this line with a null `channelState` would itself
+    // be a wiring defect, not an expected state, and every slot simply stays
+    // at `view`'s own default (empty vector, absent optional) rather than a
+    // placeholder zero (memory/a-placeholder-for-an-absent-result-erases-
+    // its-state.md).
+    if (input.channelState != nullptr) {
+        input.channelState->fillPublish(view);
+    }
     return view;
 }
 
