@@ -99,12 +99,18 @@ TEST_CASE("alarm state is rendered for all three states, with the existing state
     payload.alarms = {filling, clear, fired};
 
     const auto html = renderReport(payload);
-    CHECK(html.find("state-filling") != std::string::npos);
-    CHECK(html.find("window not yet full, not compared") != std::string::npos);
-    CHECK(html.find("state-clear") != std::string::npos);
-    CHECK(html.find(">Clear<") != std::string::npos);
-    CHECK(html.find("state-fired") != std::string::npos);
-    CHECK(html.find(">Fired<") != std::string::npos);
+    const auto settings = extractSection(html, "settings");
+    // Round-3 fix: searching the whole document for "state-fired" and
+    // ">Fired<" SEPARATELY is vacuous -- SplReportStyle.h's CSS always
+    // contains all three `.state-*` selectors regardless of what the
+    // table actually rendered, and mutants M11 (Fired rendered with the
+    // state-clear class) and M06 (Filling's own label swapped for
+    // "Clear") both survived that shape. Assert the full CELL instead, so
+    // the class and the label are pinned to the SAME element.
+    CHECK(settings.find(R"(class="state-filling">Filling -- window not yet full, not compared<)") !=
+         std::string::npos);
+    CHECK(settings.find(R"(class="state-clear">Clear<)") != std::string::npos);
+    CHECK(settings.find(R"(class="state-fired">Fired<)") != std::string::npos);
 }
 
 // Fix round (PR #28 verifier, MEDIUM): mutant M11 (leaving `<` unescaped in
