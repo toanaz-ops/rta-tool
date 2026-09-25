@@ -246,6 +246,15 @@ std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
     if (input.channelState != nullptr) {
         input.channelState->fillPublish(view);
     }
+    // W2-E2a: always copied, independent of channelState -- a queue can
+    // overflow even on a channel whose SplChannelState allocation succeeded,
+    // and the two failure modes are unrelated (one is a full ring under disk
+    // I/O pressure, the other is absent-because-nothing-is-logging, already
+    // handled by the early return above).
+    view.logDroppedBlocks = static_cast<std::uint32_t>(input.logDroppedBlocks);
+    // Station-4 fix round (PR #31, finding 6): same "always copied,
+    // independent of channelState" reasoning as logDroppedBlocks just above.
+    view.logWriteFailed = input.logWriteFailed;
     return view;
 }
 

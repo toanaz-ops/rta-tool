@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <new>
+#include <thread>
 
 #if defined(_MSC_VER)
 #include <malloc.h>
@@ -29,6 +30,17 @@ namespace {
 
 std::atomic<bool> g_countingActive{false};
 std::atomic<std::size_t> g_bytesAllocated{0};
+// Round 4 (PR #31): the thread that armed the probe. `g_countingActive` is
+// still the one flag every thread's operator new checks -- what changed is
+// that a hit ALSO requires this id to match std::this_thread::get_id(), so a
+// background thread's own legitimate allocation (SplLogPipeline's writer
+// thread opening a file, say) never gets charged to whatever the arming
+// thread is measuring. Written (relaxed) strictly BEFORE g_countingActive's
+// own release-store in setAllocationCounting(true), and read (relaxed) only
+// after operator new's acquire-load of g_countingActive has already
+// observed that same release -- the standard release/acquire "publish"
+// idiom, so no reader ever sees a torn or stale id.
+std::atomic<std::thread::id> g_countingThreadId{};
 
 // The ONLY platform-conditional block in this file, and it is unavoidable.
 //
@@ -79,7 +91,13 @@ void resetAllocationProbe() noexcept { g_bytesAllocated.store(0, std::memory_ord
 std::size_t allocationBytes() noexcept { return g_bytesAllocated.load(std::memory_order_relaxed); }
 
 void setAllocationCounting(bool active) noexcept {
-    g_countingActive.store(active, std::memory_order_relaxed);
+    if (active) {
+        // Published BEFORE the release-store below -- see g_countingThreadId's
+        // own comment for why this ordering is what makes the reader side
+        // (operator new) safe with only a relaxed load of the id itself.
+        g_countingThreadId.store(std::this_thread::get_id(), std::memory_order_relaxed);
+    }
+    g_countingActive.store(active, std::memory_order_release);
 }
 
 AllocationProbe::AllocationProbe() noexcept {
@@ -96,7 +114,11 @@ std::size_t AllocationProbe::bytes() const noexcept { return allocationBytes(); 
 void* operator new(std::size_t size) {
     void* p = std::malloc(size);
     if (p == nullptr) throw std::bad_alloc();
-    if (g_countingActive.load(std::memory_order_relaxed)) {
+    // Acquire: pairs with setAllocationCounting(true)'s release-store, so
+    // observing `true` here also makes that call's earlier (relaxed) write to
+    // g_countingThreadId visible -- see that variable's own comment.
+    if (g_countingActive.load(std::memory_order_acquire) &&
+        g_countingThreadId.load(std::memory_order_relaxed) == std::this_thread::get_id()) {
         g_bytesAllocated.fetch_add(size, std::memory_order_relaxed);
     }
     return p;
@@ -126,7 +148,8 @@ void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void* operator new(std::size_t size, std::align_val_t alignment) {
     void* p = alignedAllocate(size, alignment);
     if (p == nullptr) throw std::bad_alloc();
-    if (g_countingActive.load(std::memory_order_relaxed)) {
+    if (g_countingActive.load(std::memory_order_acquire) &&
+        g_countingThreadId.load(std::memory_order_relaxed) == std::this_thread::get_id()) {
         g_bytesAllocated.fetch_add(size, std::memory_order_relaxed);
     }
     return p;

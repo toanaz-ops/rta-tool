@@ -45,17 +45,27 @@ static_assert(AnalysisThread::kMaxSplMetricWindows == SplConfig::kMaxMetrics,
 void AnalysisThread::applyPendingSplRequest() {
     if (!splRequestPending_.exchange(false, std::memory_order_acquire)) return;
 
+    // Station-4 fix round (PR #31, round 3, finding 1, MEDIUM: the epoch
+    // race). `rebuildAnalysersIfEpochChanged()` always runs before `drain()`
+    // (and so before this function) in the same tick -- AnalysisThread.cpp's
+    // own runBody() -- so `lastEpoch_` is never stale relative to here.
+    // Capturing it NOW is what lets feedSpl() tell "this session's own
+    // epoch" apart from "the bus reconfigured out from under it since".
+    splSessionEpoch_ = lastEpoch_;
+
     // The lock is taken only on the tick a request actually arrived, never on
     // every drain -- and never from the audio callback, which cannot reach
     // this function at all.
     SplConfig config;
     std::vector<int> channels;
     bool enable = false;
+    std::string logDirectory;
     {
         const std::lock_guard<std::mutex> lock(splRequestLock_);
         config = splRequestConfig_;
         channels = splRequestChannels_;
         enable = splRequestEnable_;
+        logDirectory = splRequestLogDirectory_;
     }
     if (enable) {
         splSession_.start(config, bus_.sampleRate(), channels);
@@ -78,12 +88,84 @@ void AnalysisThread::applyPendingSplRequest() {
         }
     }
 
+    // W2-E2a: the log-writing pipeline, started/stopped in lockstep with
+    // splSession_ itself -- a fresh log every time this runs with
+    // enable == true, never appended to (record §10: "a weighting change
+    // starts a new log"), and an empty logDirectory means state only (see
+    // enableSplLogging's own comment).
+    //
+    // BEFORE the counter resets below, deliberately (fix round, station-4
+    // self-check): `splLogPipeline_.disable()` BLOCKS until its writer
+    // thread has drained and joined, so a caller polling `splBlockCount()`
+    // back to 0 from another thread (the same "wait for the request to
+    // land" idiom `AnalysisThread`'s own tests already use) must not be able
+    // to observe that 0 before the pipeline has actually finished closing
+    // its files -- ordering this after the reset would let a polling reader
+    // race a writer thread that is still mid-drain.
+    if (enable && !logDirectory.empty()) {
+        rta::splexport::SplLogEnableParams params;
+        params.config = config;
+        params.startedAtUnixMs = static_cast<std::uint64_t>(juce::Time::currentTimeMillis());
+        params.sessionHeaderPath = logDirectory + "/session.header.txt";
+
+        const double sampleRate = bus_.sampleRate();
+        const std::uint32_t blockSamples = blockSamplesFor(config.blockSeconds, sampleRate);
+        for (const int ch : channels) {
+            if (ch < 0 || static_cast<std::size_t>(ch) >= SplSession::kMaxLoggedChannels) continue;
+            rta::splexport::SplLogChannelSpec spec;
+            spec.channel = ch;
+            spec.basePath = logDirectory + "/ch" + std::to_string(ch);
+            // A-WEIGHTED, ALWAYS -- not "whichever chain happens to be
+            // first" (SplSession::window()'s own convention, which is Z by
+            // default). Dose and Ln are both defined in dBA and both always
+            // configured (SplSession::start's own comment: "an A-weighted
+            // chain always exists"), and record §10's own worked example
+            // shows `weighting=A` -- so the archival log records the ONE
+            // chain that is guaranteed to exist and to match what the rest
+            // of this session's own numbers (dose, Ln) are computed from.
+            spec.info.weighting = rta::dsp::WeightingType::A;
+            spec.info.detector = rta::meter::TimeWeighting::Fast;
+            spec.info.blockSamples = blockSamples;
+            spec.info.sampleRate = sampleRate;
+            spec.info.startedAtUnixMs = params.startedAtUnixMs;
+            params.channels.push_back(std::move(spec));
+        }
+        splLogPipeline_.enable(params);
+    } else {
+        splLogPipeline_.disable();
+    }
+
+    // Reset LAST, after the pipeline transition above has fully settled --
+    // see that block's own comment for why the order matters. `splBlockCounts_`
+    // reading back to 0 is what every caller (production and test alike)
+    // treats as "the request has landed".
     for (auto& count : splBlockCounts_) count.store(0, std::memory_order_relaxed);
     for (auto& flags : splFlagsSeen_) flags.store(0, std::memory_order_relaxed);
     for (auto& dropped : splDroppedSamples_) dropped.store(0, std::memory_order_relaxed);
+    for (auto& dropped : splLogDroppedBlocks_) dropped.store(0, std::memory_order_relaxed);
+    // Station-4 fix round (PR #31, round 3, LOW finding 4): this mirror was
+    // missing from the reset above -- a channel whose PREVIOUS session ever
+    // failed to write kept reporting splLogWriteFailed()==true forever after
+    // a disable(), because nothing refreshes this mirror once feedSpl() stops
+    // being called for that channel. Same shape as splLogDroppedBlocks_ just
+    // above.
+    for (auto& failed : splLogWriteFailed_) failed.store(false, std::memory_order_relaxed);
 }
 
 void AnalysisThread::feedSpl(int channel) {
+    // Station-4 fix round (PR #31, round 3, finding 1, MEDIUM: the epoch
+    // race). A device reconfiguration bumps `lastEpoch_` (via
+    // rebuildAnalysersIfEpochChanged(), always run before this on the same
+    // tick) well before MainComponentSpl.cpp's 2 Hz poll notices and calls
+    // enableSplLogging again -- up to 500 ms in which this session's own
+    // SplSession/SplChannelState/SplLogPipeline are still sized and clocked
+    // for the OLD rate. Freezing here, on the very first feedSpl() call
+    // after the epoch changes, is what stops a mixed-rate block from ever
+    // closing; there is no Gap to flag it otherwise (CaptureBus::prepare()
+    // zeroes the drop counter). The freeze lifts the moment
+    // applyPendingSplRequest() next runs with a real request -- disable then
+    // EnableFresh, from the poll -- and re-captures splSessionEpoch_.
+    if (splSessionEpoch_ != lastEpoch_) return;
     if (!splSession_.logsChannel(channel)) return;
 
     // The bus's own cumulative drop count, read BEFORE the hop is fed, so a
@@ -138,6 +220,26 @@ void AnalysisThread::feedSpl(int channel) {
         state->feedLnTicks(splSession_.newlyTickedLnLevelsDb(channel, rta::dsp::WeightingType::A));
     }
 
+    // W2-E2a: the log-writing pipeline gets the A-weighted chain's newly
+    // closed blocks -- the SAME chain applyPendingSplRequest() stamps into
+    // the log header (see that function's own comment for why A, not
+    // "whichever chain is first"). `newlyClosedBlocks` was already computed
+    // by `feedHop` above, so this is a second read of the same per-chain
+    // buffer, not a second pass over the samples.
+    for (const auto& block : splSession_.newlyClosedBlocks(channel, rta::dsp::WeightingType::A)) {
+        splLogPipeline_.pushBlock(channel, block);
+    }
+    if (slot < splLogDroppedBlocks_.size()) {
+        splLogDroppedBlocks_[slot].store(splLogPipeline_.droppedBlocks(channel),
+                                         std::memory_order_relaxed);
+    }
+    // Station-4 fix round (PR #31, finding 6): same mirror as the drop count
+    // just above, over splLogPipeline_.writeFailed(channel).
+    if (slot < splLogWriteFailed_.size()) {
+        splLogWriteFailed_[slot].store(splLogPipeline_.writeFailed(channel),
+                                       std::memory_order_relaxed);
+    }
+
     if (slot < splBlockCounts_.size()) {
         splBlockCounts_[slot].store(splSession_.blockCount(channel), std::memory_order_relaxed);
         splFlagsSeen_[slot].store(splSession_.flagsSeen(channel), std::memory_order_relaxed);
@@ -146,12 +248,14 @@ void AnalysisThread::feedSpl(int channel) {
     }
 }
 
-void AnalysisThread::enableSplLogging(const SplConfig& config, std::span<const int> channels) {
+void AnalysisThread::enableSplLogging(const SplConfig& config, std::span<const int> channels,
+                                      std::string logDirectory) {
     {
         const std::lock_guard<std::mutex> lock(splRequestLock_);
         splRequestConfig_ = config;
         splRequestChannels_.assign(channels.begin(), channels.end());
         splRequestEnable_ = true;
+        splRequestLogDirectory_ = std::move(logDirectory);
     }
     splRequestPending_.store(true, std::memory_order_release);
 }
@@ -161,6 +265,7 @@ void AnalysisThread::disableSplLogging() {
         const std::lock_guard<std::mutex> lock(splRequestLock_);
         splRequestEnable_ = false;
         splRequestChannels_.clear();
+        splRequestLogDirectory_.clear();
     }
     splRequestPending_.store(true, std::memory_order_release);
 }
@@ -220,6 +325,25 @@ void AnalysisThread::fillSplPublishInput(
     // alarm's sinceBlock, an accumulated dose) that a per-publish recompute
     // could not reconstruct.
     input.channelState = splChannelStates_[static_cast<std::size_t>(channel)].get();
+    // W2-E2a: the published count is a mirror splLogDroppedBlocks_ already
+    // holds (feedSpl refreshes it every hop from splLogPipeline_ itself,
+    // which is analysis-thread-only) -- reading the mirror here keeps this
+    // function's own contract ("no meter, no ring, no thread" -- see
+    // SplPublishInput's class comment) intact.
+    input.logDroppedBlocks = splLogDroppedBlocks(channel);
+    // Station-4 fix round (PR #31, finding 6): same reasoning as the drop
+    // count just above -- read the mirror, never splLogPipeline_ itself.
+    input.logWriteFailed = splLogWriteFailed(channel);
+}
+
+std::uint64_t AnalysisThread::splLogDroppedBlocks(int channel) const noexcept {
+    if (channel < 0 || static_cast<std::size_t>(channel) >= splLogDroppedBlocks_.size()) return 0;
+    return splLogDroppedBlocks_[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);
+}
+
+bool AnalysisThread::splLogWriteFailed(int channel) const noexcept {
+    if (channel < 0 || static_cast<std::size_t>(channel) >= splLogWriteFailed_.size()) return false;
+    return splLogWriteFailed_[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);
 }
 
 std::uint64_t AnalysisThread::splDroppedSamples(int channel) const noexcept {

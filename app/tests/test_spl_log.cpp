@@ -355,3 +355,41 @@ TEST_CASE("C9 reconstructedElapsedUnixMs is early-immune to a gap", "[spl_log]")
     CHECK(withGap > noGap);
     CHECK(withGap == startedAt + 4000 + 250);  // 12000/48000 s = 250 ms
 }
+
+// --- station-4 fix round (PR #31, finding 6): a silent open failure --------
+
+TEST_CASE("writeFailed() is true when the segment cannot be opened, and stays "
+         "true after a later success",
+         "[spl_log]") {
+    // No TempDir here on purpose: basePath points INTO a directory that was
+    // never created ("does-not-exist"), which makes std::ofstream::open()
+    // fail portably on every CI OS without needing OS-specific permission
+    // manipulation (chmod is not meaningful the same way on Windows) --
+    // exactly the "unwritable directory" case the verifier asked for, aimed
+    // at the one failure mode `open()` actually has: the path is not
+    // reachable, whether because a directory is missing or because it is not
+    // writable.
+    const auto missingDir =
+        std::filesystem::temp_directory_path() / "rta-test-spllog" / "does-not-exist-6a2f9";
+    std::filesystem::remove_all(missingDir);  // guarantee it is absent, not just unlikely to exist
+
+    SplConfig config;
+    SplLogWriter writer((missingDir / "channel").string(), config, headerInfo(), 3600);
+    CHECK(writer.writeFailed());  // the constructor's own openSegment() already ran
+
+    // A write against a failed stream is a documented no-op (SplLogWriter.cpp
+    // openSegment()'s own comment: "harmless no-ops on a closed stream"), not
+    // a crash -- and STICKY means a later write must not clear the flag.
+    writer.write(blockAtLevel(0, 48000, 80.0));
+    CHECK(writer.writeFailed());
+
+    // Sticky the other direction too: creating the directory now and
+    // rotating into a NEW segment must not un-report the earlier failure --
+    // this session's log already has the gap the first (missing-directory)
+    // segment never wrote, and a later success does not back-fill it.
+    std::filesystem::create_directories(missingDir);
+    writer.reconfigure(rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Slow);
+    CHECK(writer.writeFailed());
+    std::error_code ec;
+    std::filesystem::remove_all(missingDir, ec);
+}

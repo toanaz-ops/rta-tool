@@ -250,6 +250,7 @@ void MainComponent::timerCallback() {
     refreshMembershipFromSnapshot();
     pollLocatePipeline();
     pollCalibrationPipeline();
+    pollSplLogging();
 
     if (isSyntheticMode()) {
         return;  // fixed list, set once in setSyntheticMode()

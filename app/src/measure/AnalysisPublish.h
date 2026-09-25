@@ -79,6 +79,20 @@ struct SplPublishInput {
     /// pointer: `AnalysisThread` owns the `SplChannelState` for the life of
     /// the session, and this struct is rebuilt fresh on every publish.
     const SplChannelState* channelState = nullptr;
+    /// Lane L6a task W2-E2a: blocks the log-writing pipeline could not queue
+    /// for this channel because its fixed-capacity ring was full -- carried
+    /// straight to `SplBlockView::logDroppedBlocks` so a stalled log is
+    /// visible on the live pane, not just discoverable after the fact by
+    /// comparing the file against `blockIndex`.
+    std::uint64_t logDroppedBlocks = 0;
+    /// Station-4 fix round (PR #31, verifier finding 6): true once this
+    /// channel's log file has ever failed to open -- carried straight to
+    /// `SplBlockView::logWriteFailed`, same shape as `logDroppedBlocks`
+    /// above. `createDirectory()`'s own result at the composition root
+    /// (MainComponentSpl.cpp) is not separately checked: a directory that
+    /// failed to create makes every segment open underneath it fail too, so
+    /// this one signal already covers both.
+    bool logWriteFailed = false;
 };
 
 /// Builds the published SPL view, or `std::nullopt` when nothing is logging.

@@ -58,6 +58,16 @@ target_sources(rtatool PRIVATE
     # compiled into rtatool_analysis_tests.
     src/MainComponentCalibration.cpp
     src/measure/CalibrationSession.cpp
+    # MainComponentSpl.cpp: L6a task W2-E2a's own 400-line-cap split (plan
+    # amendment "W2-E -- the wiring nobody was assigned"), same shape as
+    # MainComponentDelay.cpp/MainComponentCalibration.cpp. SplLogPipeline.cpp
+    # and SplLogWriter.cpp had NO caller anywhere in app/src before this task
+    # (AnalysisThread.h now includes SplLogPipeline.h and calls into it) --
+    # same "first real caller, must be named explicitly" shape SplHistory.cpp/
+    # SplAlarms.cpp already went through for W2-E1, just above.
+    src/MainComponentSpl.cpp
+    src/export/SplLogPipeline.cpp
+    src/export/SplLogWriter.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
@@ -305,6 +315,14 @@ target_sources(rtatool_snapshot PRIVATE
     # main-live.png constructs the real MainComponent.
     src/MainComponentCalibration.cpp
     src/measure/CalibrationSession.cpp
+    # MainComponentSpl.cpp / SplLogPipeline.cpp / SplLogWriter.cpp: L6a task
+    # W2-E2a, needed here for the same reason MainComponentCalibration.cpp is
+    # -- main-live.png constructs the real MainComponent, which now calls
+    # enableSplLogging. See the matching entry in rtatool's own source list
+    # above for why the export/ pair has to be named explicitly here too.
+    src/MainComponentSpl.cpp
+    src/export/SplLogPipeline.cpp
+    src/export/SplLogWriter.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
     src/view/RoutingMatrix.cpp

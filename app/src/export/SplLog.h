@@ -292,6 +292,32 @@ public:
         return segmentPaths_;
     }
 
+    /// Station-4 fix round (PR #31, verifier finding 6, MEDIUM; renamed and
+    /// widened round 3, finding 2): true once any `openSegment()` call --
+    /// the constructor's own first call, or a later rotation/reconfigure --
+    /// failed to open its file (an unwritable or missing directory, most
+    /// often), OR any `write()` call left `stream_` in a failed state (the
+    /// disk filled, or the handle was closed out from under this writer)
+    /// AFTER already having opened successfully. Named `writeFailed`, not
+    /// `openFailed`, because it now covers both: a write half a session in
+    /// is exactly as much "this log stopped" as a write that never started.
+    /// STICKY: once true, always true, because either failure means this
+    /// session's log already has a gap no later success can back-fill, and
+    /// "still logging, and nothing looked wrong for the last five minutes"
+    /// is a worse thing to report than a false alarm on a log that
+    /// recovered.
+    [[nodiscard]] bool writeFailed() const noexcept { return writeFailed_; }
+
+    /// Test-only injection point (station-4 fix round, PR #31, round 3,
+    /// finding 2), the same shape as `SplLogPipeline::setWriterFactoryForTest`:
+    /// forces `stream_` into a failed state without closing it or touching
+    /// the filesystem, so a test can prove `write()`'s own `if (!stream_)
+    /// writeFailed_ = true;` check actually runs against a REAL failed
+    /// stream -- portable across all three CI OSes, unlike simulating a full
+    /// disk or reaching into an implementation's native file handle. A
+    /// production caller never calls this.
+    void forceStreamFailureForTest() noexcept;
+
 private:
     void openSegment();
 
@@ -305,6 +331,7 @@ private:
     std::uint64_t blocksInSegment_ = 0;
     std::ofstream stream_;
     std::vector<std::string> segmentPaths_;
+    bool writeFailed_ = false;
 };
 
 }  // namespace rta::splexport

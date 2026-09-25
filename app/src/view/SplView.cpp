@@ -48,6 +48,17 @@ void SplView::paint(juce::Graphics& g) {
     auto area = getLocalBounds().reduced(az::ui::gap * 2);
     g.setFont(az::ui::monoFont(az::ui::tableFontSize));
 
+    // Station-4 fix round (PR #31, verifier finding 6): a log that silently
+    // stopped writing used to show nothing at all -- the operator would only
+    // find out after the show, comparing the file against blockIndex. Same
+    // `miss` colour as a FIRED alarm above: this IS an alarm, just one about
+    // the log rather than the level.
+    if (spl.logWriteFailed) {
+        auto row = area.removeFromTop(az::ui::fieldHeight);
+        g.setColour(rta::view::miss);
+        g.drawText("LOG WRITE FAILED", row, juce::Justification::centredLeft, false);
+    }
+
     for (const auto& metric : spl.metrics) {
         auto row = area.removeFromTop(az::ui::fieldHeight);
         g.setColour(rta::view::readoutText);
