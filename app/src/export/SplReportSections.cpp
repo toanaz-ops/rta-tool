@@ -84,13 +84,15 @@ std::string lnLabel(rta::dsp::WeightingType w, rta::meter::TimeWeighting d, doub
            "," + intervalText(windowSeconds);
 }
 
-std::string percentDisplay(double percent) {
+std::string oneDecimal(double value) {
     std::ostringstream ss;
     ss.setf(std::ios::fixed);
     ss.precision(1);
-    ss << percent << " %";
+    ss << value;
     return ss.str();
 }
+
+std::string percentDisplay(double percent) { return oneDecimal(percent) + " %"; }
 
 std::string renderIdentification(const ReportPayload& p) {
     std::string body;
@@ -179,6 +181,23 @@ std::string renderSettings(const ReportPayload& p) {
                 "</td><td>" +
                 escapeHtml(intervalText(static_cast<double>(a.windowBlocks) * cfg.blockSeconds)) +
                 "</td></tr>";
+    }
+    body += "</table>";
+
+    // Fix round (PR #28 verifier, MEDIUM): record sec.9 item 4, "dose
+    // preset with L_c, T_c, q and threshold" -- the four settings a dose
+    // accumulator was configured with, not its RESULT (that is the Dose
+    // section). `q` is a dimensionless exchange-rate denominator, not a
+    // sound level, so it goes through `oneDecimal` rather than
+    // `formatTrim`, which would print a false "dB" unit on it.
+    body += "<table><tr><th>Dose preset</th><th>L_c</th><th>q</th><th>Threshold</th>"
+            "<th>T_c</th></tr>";
+    for (std::size_t i = 0; i < cfg.dose.size(); ++i) {
+        const auto& d = cfg.dose[i];
+        body += "<tr><td>" + std::to_string(i + 1) + "</td><td>" + escapeHtml(formatTrim(d.criterionLevelDb)) +
+                "</td><td>" + escapeHtml(oneDecimal(d.q)) + "</td><td>" +
+                escapeHtml(formatTrim(d.thresholdDb)) + "</td><td>" +
+                escapeHtml(intervalText(d.criterionSeconds)) + "</td></tr>";
     }
     body += "</table>";
     return section("settings", "Settings", body);

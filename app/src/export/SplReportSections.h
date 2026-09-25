@@ -32,6 +32,11 @@ namespace rta::splexport::detail {
 [[nodiscard]] std::string intervalText(double seconds);
 [[nodiscard]] std::string lnLabel(rta::dsp::WeightingType w, rta::meter::TimeWeighting d, double percent,
                                   double windowSeconds);
+// One decimal, no unit suffix -- for a bare number that is neither a dB
+// level, a hertz value nor a 0..1 agreement (record sec.9's dose exchange
+// rate `q`), so it is never squeezed into a formatter that would print a
+// unit the quantity does not have.
+[[nodiscard]] std::string oneDecimal(double value);
 // Dose is a percentage that can exceed 100, NOT the 0..1 ratio
 // `formatAgreement` means.
 [[nodiscard]] std::string percentDisplay(double percent);

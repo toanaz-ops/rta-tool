@@ -175,6 +175,27 @@ TEST_CASE("A4 the report disclaims ISO 1996-2 clause 13 conformance", "[spl_repo
     CHECK(html.find("paywalled") != std::string::npos);
 }
 
+// Fix round (PR #28 verifier, MEDIUM): record sec.9 item 4 wants "dose
+// preset with L_c, T_c, q and threshold" in Settings, and none of the
+// four appeared. `minimalPayload()`'s default-constructed `config.dose`
+// already carries the real NIOSH REL / OSHA PEL presets
+// (SplConfig::dose's own default), so this needs no fixture beyond that.
+TEST_CASE("Settings prints each dose preset's L_c, q and threshold", "[spl_report]") {
+    const auto html = renderReport(minimalPayload());
+    const auto settings = extractSection(html, "settings");
+    const auto& niosh = ReportPayload{}.config.dose[0];  // 85.0 dB, q=9.9657843..., 80.0 dB
+    const auto& osha = ReportPayload{}.config.dose[1];   // 90.0 dB, q=16.6096405..., 90.0 dB
+    CHECK(settings.find(rta::view::formatTrim(niosh.criterionLevelDb)) != std::string::npos);
+    CHECK(settings.find(rta::view::formatTrim(niosh.thresholdDb)) != std::string::npos);
+    CHECK(settings.find(rta::view::formatTrim(osha.criterionLevelDb)) != std::string::npos);
+    CHECK(settings.find(rta::view::formatTrim(osha.thresholdDb)) != std::string::npos);
+    // q is a dimensionless exchange-rate denominator, not a dB value --
+    // rendered as a plain one-decimal number, never through formatTrim
+    // (which would print a false "dB" unit on it).
+    CHECK(settings.find("10.0</td>") != std::string::npos);  // 9.9657843... at 1 decimal
+    CHECK(settings.find("16.6</td>") != std::string::npos);  // 16.6096405... at 1 decimal
+}
+
 // --- A5: the integrity hash ------------------------------------------------
 
 TEST_CASE("A5 the integrity hash reproduces bitwise and moves on one byte", "[spl_report]") {
