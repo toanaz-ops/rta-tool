@@ -15,6 +15,7 @@
 #include "view/Readouts.h"
 
 #include <algorithm>
+#include <format>
 #include <sstream>
 
 namespace rta::splexport::detail {
@@ -93,6 +94,8 @@ std::string oneDecimal(double value) {
 }
 
 std::string percentDisplay(double percent) { return oneDecimal(percent) + " %"; }
+
+std::string exchangeRateDisplay(double q) { return std::format("{:.7f}", q); }
 
 std::string percentOrAbsent(std::optional<double> value) {
     return value ? escapeHtml(percentDisplay(*value)) : absentSpan("no data");
@@ -228,14 +231,17 @@ std::string renderSettings(const ReportPayload& p) {
     // preset with L_c, T_c, q and threshold" -- the four settings a dose
     // accumulator was configured with, not its RESULT (that is the Dose
     // section). `q` is a dimensionless exchange-rate denominator, not a
-    // sound level, so it goes through `oneDecimal` rather than
-    // `formatTrim`, which would print a false "dB" unit on it.
+    // sound level, so it never goes through `formatTrim` (which would
+    // print a false "dB" unit on it) -- and round-3's own fix, it prints to
+    // SEVEN decimals via `exchangeRateDisplay`, matching the record's own
+    // table, because one decimal made NIOSH's computed 9.9657843 read as
+    // "10.0", textually the exact q=10 value it exists to be distinct from.
     body += "<table><tr><th>Dose preset</th><th>L_c</th><th>q</th><th>Threshold</th>"
             "<th>T_c</th></tr>";
     for (std::size_t i = 0; i < cfg.dose.size(); ++i) {
         const auto& d = cfg.dose[i];
         body += "<tr><td>" + std::to_string(i + 1) + "</td><td>" + escapeHtml(formatTrim(d.criterionLevelDb)) +
-                "</td><td>" + escapeHtml(oneDecimal(d.q)) + "</td><td>" +
+                "</td><td>" + escapeHtml(exchangeRateDisplay(d.q)) + "</td><td>" +
                 escapeHtml(formatTrim(d.thresholdDb)) + "</td><td>" +
                 escapeHtml(intervalText(d.criterionSeconds)) + "</td></tr>";
     }

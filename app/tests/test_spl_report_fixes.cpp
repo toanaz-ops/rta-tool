@@ -46,10 +46,17 @@ TEST_CASE("Settings prints each dose preset's L_c, q and threshold", "[spl_repor
     CHECK(settings.find(rta::view::formatTrim(osha.criterionLevelDb)) != std::string::npos);
     CHECK(settings.find(rta::view::formatTrim(osha.thresholdDb)) != std::string::npos);
     // q is a dimensionless exchange-rate denominator, not a dB value --
-    // rendered as a plain one-decimal number, never through formatTrim
-    // (which would print a false "dB" unit on it).
-    CHECK(settings.find("10.0</td>") != std::string::npos);  // 9.9657843... at 1 decimal
-    CHECK(settings.find("16.6</td>") != std::string::npos);  // 16.6096405... at 1 decimal
+    // rendered as a plain number, never through formatTrim (which would
+    // print a false "dB" unit on it). Round-3 fix: one decimal printed
+    // NIOSH's 9.9657843 as "10.0", textually the SAME as the q=10 value
+    // record sec.7 spends a page telling apart (SplConfig.h's own
+    // exchangeDenominator comment: the two constants differ by 1.53e-08
+    // relative, but the whole point of using the computed value instead of
+    // a literal is that it is NOT 10). Seven decimals, matching the
+    // record's own table, cannot collide the two.
+    CHECK(settings.find("9.9657843</td>") != std::string::npos);
+    CHECK(settings.find("16.6096405</td>") != std::string::npos);
+    CHECK(settings.find("10.0000000</td>") == std::string::npos);
 }
 
 // Fix round (PR #28 verifier, MEDIUM): ReportDoseResult's percent/

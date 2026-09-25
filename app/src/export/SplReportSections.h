@@ -33,13 +33,17 @@ namespace rta::splexport::detail {
 [[nodiscard]] std::string lnLabel(rta::dsp::WeightingType w, rta::meter::TimeWeighting d, double percent,
                                   double windowSeconds);
 // One decimal, no unit suffix -- for a bare number that is neither a dB
-// level, a hertz value nor a 0..1 agreement (record sec.9's dose exchange
-// rate `q`), so it is never squeezed into a formatter that would print a
-// unit the quantity does not have.
+// level nor a hertz value, so it is never squeezed into a formatter that
+// would print a unit the quantity does not have.
 [[nodiscard]] std::string oneDecimal(double value);
 // Dose is a percentage that can exceed 100, NOT the 0..1 ratio
 // `formatAgreement` means.
 [[nodiscard]] std::string percentDisplay(double percent);
+// Seven decimals, matching record sec.7's own table -- round-3 fix: one
+// decimal printed NIOSH's computed q (9.9657843...) as "10.0", textually
+// the SAME as the q=10 OSHA-shaped constant the record spends a page
+// telling it apart from (SplConfig.h's own exchangeDenominator comment).
+[[nodiscard]] std::string exchangeRateDisplay(double q);
 [[nodiscard]] std::string percentOrAbsent(std::optional<double> value);
 // The existing `.state-*` CSS classes (SplReportStyle.h): SERVER-computed,
 // never re-derived from limitDb by a reader (record sec.9).
