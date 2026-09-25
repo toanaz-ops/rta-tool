@@ -4,9 +4,6 @@
 #include "MainComponent.h"
 
 #include "trace/Workspace.h"
-#include "view/PaneRegistry.h"
-#include "view/RtaView.h"
-#include "view/TransferView.h"
 
 namespace {
 
@@ -39,25 +36,12 @@ constexpr int kRoutingMatrixHeight = 220;
 // role(s) the table below assigns to them.
 const std::vector<std::string> kSyntheticChannelNames{"Synthetic L", "Synthetic R"};
 
-// The pane factory `workspace_` is built with -- the one place in the whole
-// lane that names both `RtaView` and `TransferView` alongside the
-// `AnalysisThread` reference they both read from, because that wiring is
-// this composition root's job and no one else's (WorkspaceView.h's own
-// class comment: including both pane headers there would make it a second
-// composition root). `source` is captured by reference, not copied -- both
-// pane constructors already take `const SnapshotSource&` and hold onto that
-// reference themselves (RtaView.h, TransferView.h), so this factory outlives
-// nothing they do not already outlive.
-rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSource& source) {
-    return [&source](rta::view::PaneView view) -> std::unique_ptr<juce::Component> {
-        if (view == rta::view::PaneView::Transfer) {
-            return std::make_unique<rta::view::TransferView>(source);
-        }
-        return std::make_unique<rta::view::RtaView>(source);
-    };
-}
-
 }  // namespace
+
+// makePaneFactory itself now lives in PaneFactory.h/.cpp (included via
+// MainComponent.h) -- see that header's own comment for why it was split
+// out (fix round, PR #26: a test needs to call the REAL production closure,
+// and this function needs none of MainComponent's own heavy dependencies).
 
 MainComponent::MainComponent()
     : analysisThread_(audioIo_.bus(), rta::measure::Analyser::Config{}),

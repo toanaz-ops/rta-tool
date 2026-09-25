@@ -39,6 +39,10 @@ add_executable(rtatool_view_tests
     # (docs/reports/005-mtw-engine.md "Known gaps").
     test_transfer_source_toggle.cpp
     test_workspace_view.cpp
+    # test_main_component_pane_factory.cpp: fix round, PR #26 -- calls the
+    # REAL makePaneFactory (PaneFactory.h) and checks its Spl branch builds
+    # an SplView, not an RtaView.
+    test_main_component_pane_factory.cpp
     # test_routing_matrix.cpp: task B7's routing matrix (record §6, §7) --
     # composes az_ui's GridPanel, JUCE-using for the same reason
     # TransferSourceToggle.cpp already gives.
@@ -110,6 +114,15 @@ add_executable(rtatool_view_tests
     # RoutingMatrix.cpp: test_routing_matrix.cpp's own dependency (task B7).
     # Links rta::platform_types (below) for ChannelConfig.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/RoutingMatrix.cpp
+    # test_main_component_pane_factory.cpp's own dependency (fix round, PR
+    # #26): PaneFactory.cpp is the REAL production closure MainComponent.cpp
+    # builds workspace_ with, split into its own translation unit precisely
+    # so it links here with no AnalysisThread/ApiServer/DevicePanel needed --
+    # only the pane types this target already links (RtaView.cpp above,
+    # TransferView.cpp already linked for test_transfer_view.cpp) plus
+    # SplView.cpp, new here.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/PaneFactory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/SplView.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:

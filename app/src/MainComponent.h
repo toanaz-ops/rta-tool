@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 
+#include "PaneFactory.h"
+
 /// The real measurement window's contents: composition root for one screen,
 /// not a DSP class and not a drawing class beyond its own masthead and
 /// background. Left rail carries a LIVE/SYNTHETIC mode switch, the device

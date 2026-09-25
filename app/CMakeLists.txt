@@ -48,6 +48,10 @@ target_sources(rtatool PRIVATE
     src/Main.cpp
     src/MainComponent.cpp
     src/MainComponentDelay.cpp
+    # PaneFactory.cpp: makePaneFactory's own translation unit, split out of
+    # MainComponent.cpp (fix round, PR #26) so a test can link it without
+    # MainComponent's other dependencies. See PaneFactory.h.
+    src/PaneFactory.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
@@ -271,6 +275,11 @@ target_sources(rtatool_snapshot PRIVATE
     # itself, not only feed a StaticSnapshotSource into RtaView.
     src/MainComponent.cpp
     src/MainComponentDelay.cpp
+    # PaneFactory.cpp: makePaneFactory's own translation unit (fix round, PR
+    # #26), needed here since MainComponent.cpp calls it. SplView.cpp is
+    # what its Spl branch constructs.
+    src/PaneFactory.cpp
+    src/view/SplView.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
     src/view/RoutingMatrix.cpp
