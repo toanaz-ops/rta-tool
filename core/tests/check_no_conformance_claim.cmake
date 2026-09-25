@@ -9,8 +9,8 @@
 # ubuntu-latest job went red on 2026-09-06 while windows and macos passed --
 # same script, different CMake, different policy defaults. Keep this line.
 cmake_minimum_required(VERSION 3.22)
-# Fails if the weighting/meter track's OWN files claim IEC 61672-1 "Class 1"
-# (or "Class 0") conformance. Modelled on check_no_framework_deps.cmake.
+# Fails if the weighting/meter track's OWN files claim IEC 61672-1 "Class 1",
+# "Class 2" (or "Class 0") conformance. Modelled on check_no_framework_deps.cmake.
 #
 # Why this exists: docs/dsp/2026-08-27-weighting-and-meters.md records that
 # the analytic weighting curve is verified within 0.05 dB of IEC 61672-1
@@ -29,9 +29,12 @@ cmake_minimum_required(VERSION 3.22)
 # cosmetic: a purchaser acting on the guard's own wording would buy against
 # the wrong reference.
 # (20 Hz / 1 kHz / 10 kHz / 16 kHz) are corroborated. Until that table is
-# sourced, no "Class 1" claim may appear in this track's files -- not as an
-# identifier, a comment, a doc string, or a test name -- because it would be
-# an unverifiable claim shipping as if it were a proven one.
+# sourced, no "Class 1" or "Class 2" claim may appear in this track's files --
+# not as an identifier, a comment, a doc string, or a test name -- because it
+# would be an unverifiable claim shipping as if it were a proven one. "Class
+# 2" is in scope by the same reasoning as "Class 1" (plan "Build sequence and
+# acceptance gate": "Any Class 1 or Class 2 claim, anywhere, in any
+# artefact"); "Class 0" was already covered.
 #
 # Scope is deliberately narrow -- dsp/Weighting.*, meter/*, and this track's
 # three test files -- and NOT all of core/: the filter-bank track's
@@ -40,10 +43,49 @@ cmake_minimum_required(VERSION 3.22)
 # the octave-band filters, a different standard this guard has no business
 # policing. "No claim ... produced by this work" (the plan's own wording)
 # means this track's files, not every file under core/.
-if(NOT DEFINED CORE_DIR)
-    message(FATAL_ERROR "CORE_DIR is not set")
+#
+# SPL-R9: two ways to select what gets scanned, mirroring
+# check_no_framework_deps.cmake's CORE_DIR/GLOBS split -- exactly one of
+# CORE_DIR or GLOBS must be given:
+#   CORE_DIR   this track's fixed list under core/ (unchanged below).
+#   GLOBS      an explicit, semicolon-separated file list for a layer with no
+#              such directory convention -- app/'s report/export templates,
+#              named by app/tests/CMakeLists.txt rather than core/tests/, so a
+#              change to one scope's file list cannot silently shrink the
+#              other's. Pass TEST_NAME and SCOPE_LABEL alongside it: without
+#              them the messages below would say "core_makes_no_class_1_claim"
+#              and "core/" while scanning app/, which is what SPL-R9 calls out
+#              by name as wrong.
+if(NOT DEFINED CORE_DIR AND NOT DEFINED GLOBS)
+    message(FATAL_ERROR "Neither CORE_DIR nor GLOBS is set")
+endif()
+if(DEFINED CORE_DIR AND DEFINED GLOBS)
+    message(FATAL_ERROR "Both CORE_DIR and GLOBS are set -- pass exactly one")
 endif()
 
+if(NOT DEFINED TEST_NAME)
+    set(TEST_NAME "core_makes_no_class_1_claim")
+endif()
+if(NOT DEFINED SCOPE_LABEL)
+    set(SCOPE_LABEL "core/")
+endif()
+# EXEMPTIONS (PR #30 fix round, LOW): semicolon-separated self-reference
+# tokens for THIS scan's own corpus, passed by the registering CMakeLists --
+# not a hardcoded list shared by both guards. A hardcoded list that names
+# both ctest names regardless of which one is running always carries at
+# least one entry that matches nothing wherever it runs (core/ never
+# mentions "report_makes_no_class_1_claim"; report/ never mentions its own
+# name either, only the core guard's), which is exactly the kind of
+# exemption memory/a-naming-grep-that-bans-a-word-bans-its-own-justification.md
+# warns rots silently. Each caller names only the tokens ITS OWN files
+# actually contain, and the check below FATAL_ERRORs if one does not.
+if(NOT DEFINED EXEMPTIONS)
+    set(EXEMPTIONS "")
+endif()
+
+if(DEFINED GLOBS)
+    file(GLOB sources ${GLOBS})
+else()
 file(GLOB sources
     "${CORE_DIR}/include/rta/dsp/Weighting.h"
     "${CORE_DIR}/src/dsp/Weighting.cpp"
@@ -79,26 +121,79 @@ file(GLOB sources
     "${CORE_DIR}/tests/DoseTableFixtures.h"
     "${CORE_DIR}/tests/BlockFixtures.h"
 )
+endif()
 
+# SPL-R10 / memory/a-naming-grep-that-bans-a-word-bans-its-own-justification.md:
+# this guard's own ctest names -- "core_makes_no_class_1_claim" and
+# "report_makes_no_class_1_claim" -- each contain the literal shape
+# "class_1" or "class_1_claim" that the regex below hunts for. A file that
+# explains *why* a false positive exists (SplReportStyle.h's SPL-R10 comment,
+# for one) must name the guard it is talking about, and naming it in a
+# backtick-quoted comment is not a conformance claim. Strip just the
+# EXEMPTIONS tokens before matching -- not comments in general, because an
+# actual "Class 1"/"Class 2" claim written INSIDE a comment is exactly the
+# shape this guard exists to catch (its own docstring above: "not as an
+# identifier, a comment, a doc string, or a test name"), so blanket
+# comment-stripping would open a hole in the guard it is supposed to be
+# closing.
 set(violations "")
+set(exemptions_found "")
 foreach(file IN LISTS sources)
     file(READ "${file}" content)
-    if(content MATCHES "[Cc][Ll][Aa][Ss][Ss][ \t_-]*[01]")
+
+    # PR #30 fix round (MEDIUM): a real claim split across two adjacent C++
+    # string literals -- e.g. "IEC 61672-1 Class " followed by a line break
+    # and "1 ..." -- concatenates into one claim at compile time but was
+    # invisible to a regex that only looks within a single line. Join
+    # exactly that shape (a literal's closing quote, only whitespace/a line
+    # break, the next literal's opening quote) before matching -- mirroring
+    # what the compiler itself does: nothing is inserted, so a literal's own
+    # trailing/leading spacing (already there for word boundaries -- see the
+    # honesty sentence at SplReportSections.cpp:148-153, which this exact
+    # join exercises on every scan) is preserved rather than duplicated.
+    set(content_to_scan "${content}")
+    string(REGEX REPLACE "\"[ \t]*\r?\n[ \t]*\"" "" content_to_scan "${content_to_scan}")
+
+    foreach(exemption IN LISTS EXEMPTIONS)
+        if(content MATCHES "${exemption}")
+            list(APPEND exemptions_found "${exemption}")
+        endif()
+        string(REPLACE "${exemption}" "" content_to_scan "${content_to_scan}")
+    endforeach()
+
+    if(content_to_scan MATCHES "[Cc][Ll][Aa][Ss][Ss][ \t_-]*[012]")
         list(APPEND violations "${file}")
+    endif()
+endforeach()
+
+# The exemption list is worthless the moment it stops matching anything --
+# the same "every exemption must actually be FOUND or the case goes red"
+# discipline memory/a-naming-grep-that-bans-a-word-bans-its-own-justification.md
+# prescribes for a homonym allow-list. A caller must name only tokens ITS OWN
+# corpus actually contains.
+foreach(exemption IN LISTS EXEMPTIONS)
+    if(NOT exemption IN_LIST exemptions_found)
+        message(FATAL_ERROR
+            "${TEST_NAME}: EXEMPTIONS entry \"${exemption}\" matches ZERO "
+            "files in this scan (scope: ${SCOPE_LABEL}) -- it is stale. "
+            "Either the guard it names was renamed, or this exemption was "
+            "never needed for this scope. Remove it or fix it; do not carry "
+            "an unproven exemption.")
     endif()
 endforeach()
 
 list(LENGTH sources n_sources)
 if(n_sources EQUAL 0)
-    message(FATAL_ERROR "No sources found under ${CORE_DIR} -- check is not actually running")
+    message(FATAL_ERROR "No sources found for ${TEST_NAME} (scope: ${SCOPE_LABEL}) -- check is not actually running")
 endif()
 
 if(violations)
     message(FATAL_ERROR
-        "core/ must not claim IEC 61672-1 Class 1/Class 0 conformance -- the "
-        "full Table 3 tolerance envelope is not sourced yet. See "
-        "docs/dsp/2026-08-27-weighting-and-meters.md. Offending files:\n"
+        "${SCOPE_LABEL} must not claim IEC 61672-1 Class 0/Class 1/Class 2 "
+        "conformance -- the full Table 3 tolerance envelope is not sourced "
+        "yet. See docs/dsp/2026-08-27-weighting-and-meters.md. Offending "
+        "files:\n"
         "  ${violations}")
 endif()
 
-message(STATUS "core_makes_no_class_1_claim: OK (${n_sources} files scanned)")
+message(STATUS "${TEST_NAME}: OK (${n_sources} files scanned)")
