@@ -1,9 +1,66 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Part of RTA Tool -- app/src/measure. No JUCE, no Qt, no audio-device API.
-// Lane L6a task W2-E1.
+// Lane L6a task W2-E1. Fix round 2026-09-25 -- see SplChannelState.h.
 #include "measure/SplChannelState.h"
 
+#include <algorithm>
+#include <utility>
+
 namespace rta::measure {
+
+std::span<const rta::meter::Block> windowAtClose(std::span<const rta::meter::Block> closed,
+                                                  std::span<const rta::meter::Block> fullWindow,
+                                                  std::size_t i) noexcept {
+    if (i >= closed.size()) return {};
+    if (closed.size() <= fullWindow.size()) {
+        const std::size_t trim = closed.size() - 1 - i;
+        return fullWindow.first(fullWindow.size() - trim);
+    }
+    const std::size_t count = std::min(fullWindow.size(), i + 1);
+    return closed.subspan(i + 1 - count, count);
+}
+
+namespace {
+
+/// Partitions `config.alarms` by the weighting of the metric each alarm's
+/// `metricId` names, in first-encountered order -- the construction-time
+/// half of "every consumer reads the chain its own definition names"
+/// (SplChannelState.h's own class comment). An alarm naming no configured
+/// metric lands in the group with `weighting == std::nullopt`, which
+/// `onBlockClosed` never feeds (that group's `SplAlarmReading` stays at its
+/// constructed default: `Filling`, no headroom).
+std::vector<SplChannelState::AlarmGroup> buildAlarmGroups(const SplConfig& config) {
+    struct Bucket {
+        std::optional<rta::dsp::WeightingType> weighting;
+        std::vector<SplAlarmSpec> specs;
+    };
+    std::vector<Bucket> buckets;
+    for (const SplAlarmSpec& spec : config.alarms) {
+        std::optional<rta::dsp::WeightingType> weighting;
+        for (const SplMetricSpec& metric : config.metrics) {
+            if (metric.id == spec.metricId) {
+                weighting = metric.weighting;
+                break;
+            }
+        }
+        auto it = std::find_if(buckets.begin(), buckets.end(),
+                               [&](const Bucket& b) { return b.weighting == weighting; });
+        if (it == buckets.end()) {
+            buckets.push_back(Bucket{weighting, {}});
+            it = std::prev(buckets.end());
+        }
+        it->specs.push_back(spec);
+    }
+
+    std::vector<SplChannelState::AlarmGroup> groups;
+    groups.reserve(buckets.size());
+    for (auto& bucket : buckets) {
+        groups.push_back(SplChannelState::AlarmGroup{bucket.weighting, SplAlarms(std::move(bucket.specs))});
+    }
+    return groups;
+}
+
+}  // namespace
 
 SplChannelState::SplChannelState(const SplConfig& config, double sampleRate)
     : sampleRate_(sampleRate)
@@ -11,38 +68,71 @@ SplChannelState::SplChannelState(const SplConfig& config, double sampleRate)
     , referenceOffsetDb_(config.referenceOffsetDb)
     , lnPercents_(config.lnPercents)
     , history_(SplHistory::capacityBlocks(config.logSpanSeconds, config.blockSeconds))
-    , alarms_(config.alarms)
+    , alarmGroups_(buildAlarmGroups(config))
     , lnHistogram_(config.histogramBaseDb())
     , dose_{{rta::meter::Dose(config.dose[0]), rta::meter::Dose(config.dose[1])}} {}
 
-void SplChannelState::onBlockClosed(const rta::meter::Block& block,
-                                    std::span<const rta::meter::Block> windowThroughThisBlock) {
-    history_.push(block);
+void SplChannelState::onBlockClosed(std::span<const ChainBlockAtClose> chains) {
+    if (chains.empty()) return;
 
-    // ONE identity, reused: combineBlocks over a single-block "window" is
-    // exactly that block's own Leq, offset-applied -- and it is ABSENT under
-    // the SAME rule a multi-block window already obeys: a CalibrationInvalid
-    // block excludes (record §2, §15 A2). Feeding the Ln histogram and both
-    // dose accumulators from this one call means a block this project has
-    // already decided not to trust is not trusted here either, rather than a
-    // second, silently different, exclusion rule growing beside the first.
-    const auto single = std::span<const rta::meter::Block>(&block, 1);
-    const auto blockResult = rta::meter::combineBlocks(single, sampleRate_, referenceOffsetDb_, 1);
-    if (blockResult.leqDb.has_value()) {
-        lnHistogram_.add(*blockResult.leqDb);
-        for (auto& dose : dose_) dose.addBlock(*blockResult.leqDb, blockResult.seconds);
+    // History: the FIRST configured chain, unchanged (not the fix round's
+    // subject -- a generic per-channel display ring, not tied to one
+    // metric's weighting).
+    history_.push(chains.front().block);
+
+    // Dose + Ln: the A-weighted chain, always present now that
+    // SplSession::start() auto-creates it (fix round 2026-09-25). Still
+    // guarded defensively -- a caller driving this class directly (as
+    // test_spl_channel_state.cpp does) is not required to supply one.
+    const ChainBlockAtClose* aChain = nullptr;
+    for (const auto& c : chains) {
+        if (c.weighting == rta::dsp::WeightingType::A) {
+            aChain = &c;
+            break;
+        }
     }
+    if (aChain != nullptr && !rta::meter::hasFlag(aChain->block.flags,
+                                                   rta::meter::BlockFlag::CalibrationInvalid)) {
+        // Ln (record §5): A-weighted, Fast detector -- Block::maxFastDb is
+        // the MAX-HELD Fast-detector reading within the block (record §2),
+        // the closest per-block quantity to ISO 1996-1 cl. 3.1.3's own
+        // "Fast, 100 ms sampling" convention this project already names in
+        // its Ln labels (L_AF...).
+        lnHistogram_.add(static_cast<double>(aChain->block.maxFastDb) + referenceOffsetDb_);
 
-    // The alarms read the window ENDING AT this block -- record §15 A6's
-    // sliding recompute -- never the whole channel window, which may already
-    // hold blocks after this one (SplChannelState::onBlockClosed's own
-    // header comment; AnalysisThread::feedSpl is what trims for that).
-    alarms_.update(windowThroughThisBlock, sampleRate_, blockSeconds_, referenceOffsetDb_,
-                   block.blockIndex, history_);
+        // Dose (record §7): the block's own broadband Leq, offset-applied --
+        // combineBlocks over a single-block "window" is exactly that,
+        // reusing the ONE identity rather than re-deriving 10*log10 here.
+        const auto single = std::span<const rta::meter::Block>(&aChain->block, 1);
+        const auto result =
+            rta::meter::combineBlocks(single, sampleRate_, referenceOffsetDb_, 1);
+        if (result.leqDb.has_value()) {
+            for (auto& dose : dose_) dose.addBlock(*result.leqDb, result.seconds);
+        }
+    }
+    // No A-weighted chain in `chains` at all: dose_ and lnHistogram_ simply
+    // stay exactly as constructed (never fed), so fillPublish's own
+    // absence gates below leave them ABSENT.
+
+    const std::uint64_t currentBlockIndex = chains.front().block.blockIndex;
+    for (auto& group : alarmGroups_) {
+        if (!group.weighting.has_value()) continue;  // no configured metric named this alarm
+        for (const auto& c : chains) {
+            if (c.weighting == *group.weighting) {
+                group.alarms.update(c.windowThroughThisBlock, sampleRate_, blockSeconds_,
+                                    referenceOffsetDb_, currentBlockIndex, history_);
+                break;
+            }
+        }
+    }
 }
 
 void SplChannelState::fillPublish(SplBlockView& view) const {
-    view.alarms = alarms_.reports();
+    view.alarms.clear();
+    for (const auto& group : alarmGroups_) {
+        const auto reports = group.alarms.reports();
+        view.alarms.insert(view.alarms.end(), reports.begin(), reports.end());
+    }
 
     for (std::size_t i = 0; i < dose_.size(); ++i) {
         // ABSENT until this accumulator has actually seen a block -- a fresh

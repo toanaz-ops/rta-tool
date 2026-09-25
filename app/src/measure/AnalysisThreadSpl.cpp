@@ -94,25 +94,41 @@ void AnalysisThread::feedSpl(int channel) {
     splSession_.noteDropCount(channel, bus_.dropCount(channel));
     splSession_.feedHop(channel, channelScratch_[static_cast<std::size_t>(channel)]);
 
-    // W2-E1: fold every block the FIRST chain just closed into this
+    // W2-E1: fold every CONFIGURED CHAIN's newly closed block into this
     // channel's own SPL state -- history, alarms, dose, Ln -- once each,
     // here, never recomputed at publish time and never read off a
     // (throttled) Snapshot. `AnalysisPublish.cpp`'s publish fold only READS
     // this state, at whatever rate `publishIfDue` runs.
+    //
+    // EVERY CHAIN, not just the first (fix round 2026-09-25, verifier HIGH
+    // finding): `SplChannelState::onBlockClosed` routes each consumer
+    // (alarm/dose/Ln) to the specific weighting its own definition names,
+    // so it needs every chain's own closed block and window for this hop,
+    // not one shared pair.
     const auto slot = static_cast<std::size_t>(channel);
     if (auto& state = splChannelStates_[slot]) {
-        const auto closed = splSession_.newlyClosedBlocks(channel);
-        const auto fullWindow = splSession_.window(channel);
-        // Each block gets the window AS IT STOOD when THAT block closed --
-        // never the final window, which (on the rare hop that closes more
-        // than one block) already contains blocks after it. `closed` is
-        // oldest-first and is exactly the last `closed.size()` entries of
-        // `fullWindow`, in the same order, so trimming `trim` entries off
-        // the end recovers each intermediate window without a second copy.
-        for (std::size_t i = 0; i < closed.size(); ++i) {
-            const std::size_t trim = closed.size() - 1 - i;
-            const auto windowAtClose = fullWindow.first(fullWindow.size() - trim);
-            state->onBlockClosed(closed[i], windowAtClose);
+        const auto weightings = splSession_.weightings();
+        // At most one chain per WeightingType (A, C, Z) -- SplSession's own
+        // bound (weightings_'s class comment).
+        std::array<std::span<const rta::meter::Block>, 3> closedByChain{};
+        std::array<std::span<const rta::meter::Block>, 3> fullWindowByChain{};
+        std::size_t chainCount = std::min(weightings.size(), closedByChain.size());
+        std::size_t closedCount = 0;
+        for (std::size_t c = 0; c < chainCount; ++c) {
+            closedByChain[c] = splSession_.newlyClosedBlocks(channel, weightings[c]);
+            fullWindowByChain[c] = splSession_.window(channel, weightings[c]);
+            closedCount = closedByChain[c].size();  // every chain closes in lockstep
+        }
+
+        std::array<ChainBlockAtClose, 3> atClose{};
+        for (std::size_t i = 0; i < closedCount; ++i) {
+            for (std::size_t c = 0; c < chainCount; ++c) {
+                atClose[c].weighting = weightings[c];
+                atClose[c].block = closedByChain[c][i];
+                atClose[c].windowThroughThisBlock =
+                    windowAtClose(closedByChain[c], fullWindowByChain[c], i);
+            }
+            state->onBlockClosed(std::span<const ChainBlockAtClose>(atClose.data(), chainCount));
         }
     }
 
