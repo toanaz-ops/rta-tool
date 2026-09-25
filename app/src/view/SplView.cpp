@@ -61,10 +61,31 @@ void SplView::paint(juce::Graphics& g) {
 
     for (const auto& alarm : spl.alarms) {
         auto row = area.removeFromTop(az::ui::fieldHeight);
-        const bool fired = alarm.state == rta::measure::SplAlarmState::Fired;
-        g.setColour(fired ? rta::view::miss : rta::view::match);
-        g.drawText(juce::String(alarm.metricId) + (fired ? " FIRED" : " clear"), row,
-                   juce::Justification::centredLeft, false);
+        // Filling is a third, honest state (record §15 A6, round 4): the
+        // window has not yet held enough blocks for the latch to compare
+        // anything, so it must not read as "clear" (compared, and under the
+        // limit) -- `untrusted`'s own meaning is "judged by nobody", which is
+        // exactly this. A switch (not a bool) so a future fourth state fails
+        // to compile here instead of silently drawing nothing.
+        juce::String suffix;
+        juce::Colour colour;
+        switch (alarm.state) {
+            case rta::measure::SplAlarmState::Filling:
+                suffix = " filling";
+                colour = rta::view::untrusted;
+                break;
+            case rta::measure::SplAlarmState::Clear:
+                suffix = " clear";
+                colour = rta::view::match;
+                break;
+            case rta::measure::SplAlarmState::Fired:
+                suffix = " FIRED";
+                colour = rta::view::miss;
+                break;
+        }
+        g.setColour(colour);
+        g.drawText(juce::String(alarm.metricId) + suffix, row, juce::Justification::centredLeft,
+                   false);
     }
 }
 

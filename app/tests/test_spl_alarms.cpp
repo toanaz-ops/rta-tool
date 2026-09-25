@@ -168,7 +168,8 @@ TEST_CASE("a single loud block does not fire a 900-block window", "[spl_alarms]"
     std::vector<Block> blocks{ blockAtLevel(0, 480, 130.0) };  // one block, VERY loud
     alarm.update(blocks, 48000.0, 1.0, 0.0, 0, history);
 
-    CHECK(alarm.report().state == rta::measure::SplAlarmState::Clear);
+    // Filling, not Clear (record §15 A6, round 4): no comparison has run yet.
+    CHECK(alarm.report().state == rta::measure::SplAlarmState::Filling);
     CHECK(history.markers().empty());
     CHECK_FALSE(alarm.report().sinceBlock.has_value());
 }
@@ -187,7 +188,8 @@ TEST_CASE("the latch fires only once the window actually holds windowBlocks bloc
     for (std::uint64_t i = 0; i < 9; ++i) {
         blocks.push_back(blockAtLevel(i, 480, 130.0));  // loud, but window is still partial
         alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
-        CHECK(alarm.report().state == rta::measure::SplAlarmState::Clear);
+        // Filling, not Clear (record §15 A6, round 4): no comparison has run.
+        CHECK(alarm.report().state == rta::measure::SplAlarmState::Filling);
     }
     CHECK(history.markers().empty());
 
@@ -221,7 +223,8 @@ TEST_CASE("B4 SplAlarmReading carries state, limitDb, windowBlocks, sinceBlock a
         CHECK(report.metricId == spec.metricId);
         CHECK(report.limitDb == spec.limitDb);
         CHECK(report.windowBlocks == spec.windowBlocks);
-        CHECK(report.state == rta::measure::SplAlarmState::Clear);
+        // Filling, not Clear (record §15 A6, round 4): no comparison has run.
+        CHECK(report.state == rta::measure::SplAlarmState::Filling);
         CHECK_FALSE(report.sinceBlock.has_value());  // never transitioned yet
         REQUIRE(report.headroomDb.has_value());
     }

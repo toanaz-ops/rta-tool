@@ -83,7 +83,15 @@ public:
 private:
     SplAlarmSpec spec_;
     rta::meter::AlarmLatch latch_;
-    SplAlarmState state_ = SplAlarmState::Clear;
+    SplAlarmState state_ = SplAlarmState::Filling;
+    // True from the first update where the window holds windowBlocks blocks
+    // onward. AlarmLatch's own Transition enum has no "coming out of
+    // Filling" case -- its `active_` starts false, so a COMPLIANT first
+    // window matches it and reports Transition::None, the same value it
+    // reports for "nothing changed" on every later window. This flag is what
+    // lets SplAlarm::update tell those two None cases apart (record §15 A6,
+    // round 4).
+    bool windowEverFull_ = false;
     std::optional<std::uint64_t> sinceBlock_;
     std::optional<double> headroomDb_;
     float valueDb_ = static_cast<float>(kLevelFloorDb);

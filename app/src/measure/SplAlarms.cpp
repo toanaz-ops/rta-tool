@@ -125,10 +125,28 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
     // contract (Alarm.h) is "an ABSENT leqDb is not compared at all"; a
     // still-filling window is exactly that case, so it is fed `std::nullopt`
     // rather than a premature partial value, and `state_` simply stays at
-    // whatever it already was (`Clear`, its constructed default, until the
+    // whatever it already was (`Filling`, its constructed default, until the
     // window first fills) with no marker written.
     const rta::meter::WindowResult forLatch = windowFull ? windowed : rta::meter::WindowResult{};
     const auto transition = latch_.update(forLatch, spec_.limitDb);
+
+    // Filling -> {Clear, Fired} happens exactly once, the instant the window
+    // first holds windowBlocks blocks (record §15 A6, round 4). This is
+    // SEPARATE from the `transition != None` branch below: AlarmLatch's
+    // `active_` starts false, so a COMPLIANT first window matches it
+    // (over == active_ == false) and AlarmLatch reports Transition::None --
+    // the identical value it reports for "nothing changed" on every later
+    // window. Left alone, `state_` would stay at its Filling placeholder
+    // forever on a first window that never exceeds the limit. Filling->Clear
+    // writes NO marker here (it is not an alarm transition, B3's own
+    // wording); Filling->Fired's marker is the ordinary Fired transition
+    // handled below, unchanged.
+    if (windowFull && !windowEverFull_) {
+        windowEverFull_ = true;
+        if (transition == rta::meter::AlarmLatch::Transition::None) {
+            state_ = SplAlarmState::Clear;
+        }
+    }
 
     if (transition != rta::meter::AlarmLatch::Transition::None) {
         state_ = (transition == rta::meter::AlarmLatch::Transition::Fired) ? SplAlarmState::Fired
