@@ -16,10 +16,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -280,6 +282,62 @@ TEST_CASE("an alarm naming no configured metric is published absent, not refused
     REQUIRE(view.alarms.size() == 1);
     CHECK(view.alarms[0].state == SplAlarmState::Filling);
     CHECK_FALSE(view.alarms[0].headroomDb.has_value());
+}
+
+// --- PR #29 round-3 fix pass step 3: a marker's real identity is an index,
+// not MarkerQuantity's 31-char-truncated string -----------------------------
+
+TEST_CASE("two metric ids sharing a 31-char prefix produce DISTINGUISHABLE alarm markers",
+         "[spl_channel_state]") {
+    // MarkerQuantity truncates at 31 characters (SplHistory.h). Two 32-char
+    // ids identical in their first 31 characters collide under it: the OLD
+    // string-based identity (`quantity == quantity`) cannot tell these two
+    // alarms' markers apart. buildAlarmGroups now resolves each alarm's
+    // metric INDEX at construction (the same place it already resolves the
+    // weighting) and threads it onto every marker that alarm writes.
+    const std::string id1(31, 'A');
+    const std::string id2(31, 'A');
+    const std::string longId1 = id1 + "1";  // 32 chars, first 31 identical
+    const std::string longId2 = id2 + "2";
+
+    SplConfig config;
+    config.blockSeconds = 1.0;
+    config.logSpanSeconds = 100.0;
+    config.metrics = {
+        {longId1, rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 1},
+        {longId2, rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 1},
+    };
+    SplAlarmSpec spec1;
+    spec1.metricId = longId1;
+    spec1.limitDb = -1000.0;  // fires on any real level
+    spec1.windowBlocks = 1;
+    SplAlarmSpec spec2;
+    spec2.metricId = longId2;
+    spec2.limitDb = -1000.0;
+    spec2.windowBlocks = 1;
+    config.alarms = {spec1, spec2};
+
+    SplChannelState state(config, 48000.0);
+    std::vector<Block> window;
+    feedOneChain(state, window, blockAtLevel(0, 48000, 0.0));
+
+    const auto& markers = state.history().markers();
+    REQUIRE(markers.size() == 2);
+
+    // The collision this fix closes: both markers' TRUNCATED string
+    // identity really is byte-identical.
+    CHECK(markers[0].quantity == markers[1].quantity);
+
+    // The fix: the resolved metric INDEX distinguishes them, even though
+    // the string collided. Neither is absent (both metricId's matched a
+    // configured metric).
+    REQUIRE(markers[0].metricIndex.has_value());
+    REQUIRE(markers[1].metricIndex.has_value());
+    CHECK(*markers[0].metricIndex != *markers[1].metricIndex);
+    // And each index actually names the RIGHT metric in config.metrics.
+    std::vector<std::size_t> indices{*markers[0].metricIndex, *markers[1].metricIndex};
+    std::sort(indices.begin(), indices.end());
+    CHECK(indices == std::vector<std::size_t>{0, 1});
 }
 
 // --- windowAtClose: the pure reconstruction, including the underflow fix --

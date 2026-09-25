@@ -33,29 +33,39 @@ std::vector<SplChannelState::AlarmGroup> buildAlarmGroups(const SplConfig& confi
     struct Bucket {
         std::optional<rta::dsp::WeightingType> weighting;
         std::vector<SplAlarmSpec> specs;
+        // PR #29 round-3 step 3: parallel to `specs`, resolved in THIS SAME
+        // loop -- the metric's INDEX, not its id, because two 32+ char ids
+        // sharing a 31-char prefix collide under MarkerQuantity's
+        // truncation, and a marker's real identity must survive that
+        // (SplHistory.h's own SplMarker::metricIndex comment).
+        std::vector<std::optional<std::size_t>> metricIndices;
     };
     std::vector<Bucket> buckets;
     for (const SplAlarmSpec& spec : config.alarms) {
         std::optional<rta::dsp::WeightingType> weighting;
-        for (const SplMetricSpec& metric : config.metrics) {
-            if (metric.id == spec.metricId) {
-                weighting = metric.weighting;
+        std::optional<std::size_t> metricIndex;
+        for (std::size_t i = 0; i < config.metrics.size(); ++i) {
+            if (config.metrics[i].id == spec.metricId) {
+                weighting = config.metrics[i].weighting;
+                metricIndex = i;
                 break;
             }
         }
         auto it = std::find_if(buckets.begin(), buckets.end(),
                                [&](const Bucket& b) { return b.weighting == weighting; });
         if (it == buckets.end()) {
-            buckets.push_back(Bucket{weighting, {}});
+            buckets.push_back(Bucket{weighting, {}, {}});
             it = std::prev(buckets.end());
         }
         it->specs.push_back(spec);
+        it->metricIndices.push_back(metricIndex);
     }
 
     std::vector<SplChannelState::AlarmGroup> groups;
     groups.reserve(buckets.size());
     for (auto& bucket : buckets) {
-        groups.push_back(SplChannelState::AlarmGroup{bucket.weighting, SplAlarms(std::move(bucket.specs))});
+        groups.push_back(SplChannelState::AlarmGroup{
+            bucket.weighting, SplAlarms(std::move(bucket.specs), std::move(bucket.metricIndices))});
     }
     return groups;
 }

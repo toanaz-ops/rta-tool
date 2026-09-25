@@ -69,11 +69,26 @@ private:
 /// about (a metric id, or empty); `window` and `value` are the windowed
 /// reading that caused it, so a marker is self-contained without a second
 /// lookup into the log.
+///
+/// `metricIndex` is the marker's REAL identity (fix round 2026-09-25, PR
+/// #29 round-3 step 3): `quantity` truncates at `MarkerQuantity::kCapacity`
+/// (31 chars), so two configured metric ids sharing a 31-char prefix
+/// collide under it -- `quantity == quantity` cannot tell them apart. The
+/// index into `SplConfig::metrics` cannot collide (it is the metric's own
+/// position, resolved once at `SplChannelState`/`SplAlarms` construction,
+/// the same place the weighting-routing lookup already happens in
+/// `buildAlarmGroups`), so any IDENTITY comparison between markers must use
+/// THIS field, never `quantity`. `nullopt` for a marker with no associated
+/// metric (an alarm whose `metricId` named no configured metric; Overload/
+/// Reset/Note kinds). `quantity` itself stays -- a bounded string display
+/// buffer is still useful for rendering -- but it must never be trusted for
+/// identity.
 struct SplMarker {
     std::uint64_t blockIndex = 0;
     SplMarkerKind kind = SplMarkerKind::Note;
     int direction = 0;
     MarkerQuantity quantity;
+    std::optional<std::size_t> metricIndex;
     std::uint64_t window = 0;
     double value = 0.0;
 };

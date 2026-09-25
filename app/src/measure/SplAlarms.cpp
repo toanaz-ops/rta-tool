@@ -165,6 +165,7 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
         marker.kind = SplMarkerKind::Alarm;
         marker.direction = (transition == rta::meter::AlarmLatch::Transition::Fired) ? 1 : -1;
         marker.quantity = spec_.metricId;
+        marker.metricIndex = metricIndex_;
         marker.window = spec_.windowBlocks;
         // BITWISE the same value the latch just compared -- B3's own wording.
         // `windowed.leqDb` is guaranteed present here: `AlarmLatch::update`
@@ -188,9 +189,14 @@ SplAlarmReading SplAlarm::report() const {
     return out;
 }
 
-SplAlarms::SplAlarms(std::vector<SplAlarmSpec> specs) {
+SplAlarms::SplAlarms(std::vector<SplAlarmSpec> specs,
+                     std::vector<std::optional<std::size_t>> metricIndices) {
     alarms_.reserve(specs.size());
-    for (auto& spec : specs) alarms_.emplace_back(std::move(spec));
+    for (std::size_t i = 0; i < specs.size(); ++i) {
+        const std::optional<std::size_t> idx = i < metricIndices.size() ? metricIndices[i]
+                                                                        : std::nullopt;
+        alarms_.emplace_back(std::move(specs[i]), idx);
+    }
 }
 
 void SplAlarms::update(std::span<const rta::meter::Block> blocks, double sampleRate,
