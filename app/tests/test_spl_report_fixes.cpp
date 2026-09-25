@@ -162,3 +162,33 @@ TEST_CASE("a marker at the last block lands at the same x as the trace's last po
     // marker line at all means no x1 attribute of any kind.
     CHECK(history.find("marker-alarm") != std::string::npos);
 }
+
+// Fix round (PR #28 round-3 fix, LOW, M09): a single-block session has
+// `first == last`, so the span computation's `*last > *first` branch is
+// false and the fallback value is what actually divides every x. Changing
+// that fallback from 1.0 to 0.0 went unnoticed by every other fixture
+// (all of which span more than one block) -- 0.0/0.0 is `nan`, and a
+// nonzero delta over a zero span is `inf`. This session has exactly one
+// block, so it is the one fixture that exercises the fallback at all.
+TEST_CASE("a single-block session renders finite x coordinates, no nan or inf",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    ReportHistorySeries series;
+    series.metricId = "Main";
+    series.points = {{42, 80.0}};  // exactly one block: first == last
+    payload.history = {series};
+
+    rta::measure::SplMarker marker;
+    marker.blockIndex = 42;
+    marker.kind = rta::measure::SplMarkerKind::Alarm;
+    payload.markers = {marker};
+
+    const auto html = renderReport(payload);
+    const auto history = extractSection(html, "history");
+    CHECK(history.find("nan") == std::string::npos);
+    CHECK(history.find("inf") == std::string::npos);
+    // The one point and the one marker both sit at x=0 (delta 0 over any
+    // finite, nonzero span).
+    CHECK(history.find("0.000000,") != std::string::npos);
+    CHECK(history.find("x1=\"0.000000\"") != std::string::npos);
+}
