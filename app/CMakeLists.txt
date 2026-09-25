@@ -52,6 +52,12 @@ target_sources(rtatool PRIVATE
     # MainComponent.cpp (fix round, PR #26) so a test can link it without
     # MainComponent's other dependencies. See PaneFactory.h.
     src/PaneFactory.cpp
+    # MainComponentCalibration.cpp: L6a Wave 3 task W3-B's own 400-line-cap
+    # split (record docs/dsp/2026-09-16-spl-pro-l6a.md §8), same shape as
+    # MainComponentDelay.cpp. CalibrationSession.cpp is JUCE-free and also
+    # compiled into rtatool_analysis_tests.
+    src/MainComponentCalibration.cpp
+    src/measure/CalibrationSession.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
@@ -280,6 +286,11 @@ target_sources(rtatool_snapshot PRIVATE
     # what its Spl branch constructs.
     src/PaneFactory.cpp
     src/view/SplView.cpp
+    # MainComponentCalibration.cpp / CalibrationSession.cpp: L6a Wave 3 task
+    # W3-B, needed here for the same reason MainComponentDelay.cpp is --
+    # main-live.png constructs the real MainComponent.
+    src/MainComponentCalibration.cpp
+    src/measure/CalibrationSession.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
     src/view/RoutingMatrix.cpp

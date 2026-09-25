@@ -71,6 +71,24 @@ MainComponent::MainComponent()
     delayReadout_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(delayReadout_);
 
+    // L6a Wave 3 (record §8): the calibration flow. IEC 60942's 94.0 dB
+    // nominal is what these two buttons offer -- an operator-typed level is
+    // CalibrationSession's own affordance (A4) and has no text-entry field in
+    // this pass; wiring one is a UI addition, not a flow one.
+    calibrationStartButton_.getProperties().set(az::ui::hintProperty,
+                                                "94 dB calibrator, route 0's mic channel");
+    calibrationStartButton_.onClick = [this] { calibrationStartClicked(); };
+    addAndMakeVisible(calibrationStartButton_);
+
+    calibrationEndButton_.getProperties().set(az::ui::hintProperty,
+                                              "same calibrator, no adjustment since START");
+    calibrationEndButton_.onClick = [this] { calibrationEndClicked(); };
+    addAndMakeVisible(calibrationEndButton_);
+
+    calibrationReadout_.setText("calibration: not started", juce::dontSendNotification);
+    calibrationReadout_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(calibrationReadout_);
+
     addAndMakeVisible(devicePanel_);
     addAndMakeVisible(channelRoleTable_);
     addAndMakeVisible(routingMatrix_);
@@ -217,6 +235,9 @@ void MainComponent::modeSwitchClicked() {
 
 // locateClicked / pollLocatePipeline / updateDelayReadout / applyClicked:
 // MainComponentDelay.cpp (this file's own 400-line cap split).
+//
+// calibrationStartClicked / calibrationEndClicked / pollCalibrationPipeline /
+// updateCalibrationReadout: MainComponentCalibration.cpp, the same split.
 
 void MainComponent::timerCallback() {
     // routingMatrix_ caches its cell text (RoutingMatrix.h's own class
@@ -228,6 +249,7 @@ void MainComponent::timerCallback() {
     routingMatrix_.refreshFromConfig();
     refreshMembershipFromSnapshot();
     pollLocatePipeline();
+    pollCalibrationPipeline();
 
     if (isSyntheticMode()) {
         return;  // fixed list, set once in setSyntheticMode()
@@ -309,6 +331,17 @@ void MainComponent::resized() {
     applyButton_.setBounds(locateRow.removeFromLeft(buttonWidth));
     locateRow.removeFromLeft(az::ui::gap);
     delayReadout_.setBounds(locateRow);
+    rail.removeFromTop(az::ui::gap * 2);
+
+    // L6a Wave 3: one more fixed row, same shape as the Locate row above --
+    // CAL START, CAL END, and the readout sharing what's left.
+    auto calibrationRow = rail.removeFromTop(az::ui::buttonCellHeight);
+    const int calibrationButtonWidth = (calibrationRow.getWidth() - az::ui::gap * 2) / 3;
+    calibrationStartButton_.setBounds(calibrationRow.removeFromLeft(calibrationButtonWidth));
+    calibrationRow.removeFromLeft(az::ui::gap);
+    calibrationEndButton_.setBounds(calibrationRow.removeFromLeft(calibrationButtonWidth));
+    calibrationRow.removeFromLeft(az::ui::gap);
+    calibrationReadout_.setBounds(calibrationRow);
     rail.removeFromTop(az::ui::gap * 2);
 
     devicePanel_.setBounds(rail.removeFromTop(kDevicePanelHeight));
