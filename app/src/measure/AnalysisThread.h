@@ -264,6 +264,15 @@ private:
     /// output, and is out of scope here.
     std::vector<std::unique_ptr<Analyser>> analysers_;
     std::uint64_t lastEpoch_ = 0;
+    /// Station-4 fix round (PR #31, round 3, verifier finding 1, MEDIUM):
+    /// the epoch the CURRENT SPL session (state and/or log) was started at,
+    /// recorded by applyPendingSplRequest() every time it runs. feedSpl()
+    /// compares this against `lastEpoch_` and freezes the instant they
+    /// differ -- see AnalysisThreadSpl.cpp's own comments on both functions
+    /// for why a poll-driven composition root (up to 500 ms, MainComponentSpl
+    /// .cpp) cannot be trusted to react to a device reconfiguration before
+    /// more audio arrives at the new rate.
+    std::uint64_t splSessionEpoch_ = 0;
 
     /// One hop's worth of scratch PER CHANNEL, allocated once here rather
     /// than per drain call (T-4: the analysis thread may allocate, but there

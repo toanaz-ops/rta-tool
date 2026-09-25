@@ -204,6 +204,12 @@ add_executable(rtatool_routing_live_tests
     # only a live thread can prove is that AnalysisThread wires the two
     # together correctly.
     test_spl_log_wiring.cpp
+    # test_spl_epoch_freeze.cpp: station-4 fix round, PR #31, round 3,
+    # verifier finding 1 (MEDIUM, the epoch race) -- a real AnalysisThread
+    # over a real CaptureBus, proving feedSpl() freezes the instant
+    # CaptureBus::prepare() bumps the epoch, with no second
+    # enableSplLogging() call to rescue it. Same shape as test_spl_drain.cpp.
+    test_spl_epoch_freeze.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------
     # The SPL feed AnalysisThread.cpp now calls: its own split-off half, the

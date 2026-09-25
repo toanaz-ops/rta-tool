@@ -45,6 +45,14 @@ static_assert(AnalysisThread::kMaxSplMetricWindows == SplConfig::kMaxMetrics,
 void AnalysisThread::applyPendingSplRequest() {
     if (!splRequestPending_.exchange(false, std::memory_order_acquire)) return;
 
+    // Station-4 fix round (PR #31, round 3, finding 1, MEDIUM: the epoch
+    // race). `rebuildAnalysersIfEpochChanged()` always runs before `drain()`
+    // (and so before this function) in the same tick -- AnalysisThread.cpp's
+    // own runBody() -- so `lastEpoch_` is never stale relative to here.
+    // Capturing it NOW is what lets feedSpl() tell "this session's own
+    // epoch" apart from "the bus reconfigured out from under it since".
+    splSessionEpoch_ = lastEpoch_;
+
     // The lock is taken only on the tick a request actually arrived, never on
     // every drain -- and never from the audio callback, which cannot reach
     // this function at all.
@@ -138,6 +146,19 @@ void AnalysisThread::applyPendingSplRequest() {
 }
 
 void AnalysisThread::feedSpl(int channel) {
+    // Station-4 fix round (PR #31, round 3, finding 1, MEDIUM: the epoch
+    // race). A device reconfiguration bumps `lastEpoch_` (via
+    // rebuildAnalysersIfEpochChanged(), always run before this on the same
+    // tick) well before MainComponentSpl.cpp's 2 Hz poll notices and calls
+    // enableSplLogging again -- up to 500 ms in which this session's own
+    // SplSession/SplChannelState/SplLogPipeline are still sized and clocked
+    // for the OLD rate. Freezing here, on the very first feedSpl() call
+    // after the epoch changes, is what stops a mixed-rate block from ever
+    // closing; there is no Gap to flag it otherwise (CaptureBus::prepare()
+    // zeroes the drop counter). The freeze lifts the moment
+    // applyPendingSplRequest() next runs with a real request -- disable then
+    // EnableFresh, from the poll -- and re-captures splSessionEpoch_.
+    if (splSessionEpoch_ != lastEpoch_) return;
     if (!splSession_.logsChannel(channel)) return;
 
     // The bus's own cumulative drop count, read BEFORE the hop is fed, so a
