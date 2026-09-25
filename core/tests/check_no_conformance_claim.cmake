@@ -9,8 +9,8 @@
 # ubuntu-latest job went red on 2026-09-06 while windows and macos passed --
 # same script, different CMake, different policy defaults. Keep this line.
 cmake_minimum_required(VERSION 3.22)
-# Fails if the weighting/meter track's OWN files claim IEC 61672-1 "Class 1"
-# (or "Class 0") conformance. Modelled on check_no_framework_deps.cmake.
+# Fails if the weighting/meter track's OWN files claim IEC 61672-1 "Class 1",
+# "Class 2" (or "Class 0") conformance. Modelled on check_no_framework_deps.cmake.
 #
 # Why this exists: docs/dsp/2026-08-27-weighting-and-meters.md records that
 # the analytic weighting curve is verified within 0.05 dB of IEC 61672-1
@@ -29,9 +29,12 @@ cmake_minimum_required(VERSION 3.22)
 # cosmetic: a purchaser acting on the guard's own wording would buy against
 # the wrong reference.
 # (20 Hz / 1 kHz / 10 kHz / 16 kHz) are corroborated. Until that table is
-# sourced, no "Class 1" claim may appear in this track's files -- not as an
-# identifier, a comment, a doc string, or a test name -- because it would be
-# an unverifiable claim shipping as if it were a proven one.
+# sourced, no "Class 1" or "Class 2" claim may appear in this track's files --
+# not as an identifier, a comment, a doc string, or a test name -- because it
+# would be an unverifiable claim shipping as if it were a proven one. "Class
+# 2" is in scope by the same reasoning as "Class 1" (plan "Build sequence and
+# acceptance gate": "Any Class 1 or Class 2 claim, anywhere, in any
+# artefact"); "Class 0" was already covered.
 #
 # Scope is deliberately narrow -- dsp/Weighting.*, meter/*, and this track's
 # three test files -- and NOT all of core/: the filter-bank track's
@@ -147,7 +150,7 @@ foreach(file IN LISTS sources)
     foreach(exemption IN LISTS self_reference_exemptions)
         string(REPLACE "${exemption}" "" content_to_scan "${content_to_scan}")
     endforeach()
-    if(content_to_scan MATCHES "[Cc][Ll][Aa][Ss][Ss][ \t_-]*[01]")
+    if(content_to_scan MATCHES "[Cc][Ll][Aa][Ss][Ss][ \t_-]*[012]")
         list(APPEND violations "${file}")
     endif()
 endforeach()
@@ -159,9 +162,10 @@ endif()
 
 if(violations)
     message(FATAL_ERROR
-        "${SCOPE_LABEL} must not claim IEC 61672-1 Class 1/Class 0 conformance -- the "
-        "full Table 3 tolerance envelope is not sourced yet. See "
-        "docs/dsp/2026-08-27-weighting-and-meters.md. Offending files:\n"
+        "${SCOPE_LABEL} must not claim IEC 61672-1 Class 0/Class 1/Class 2 "
+        "conformance -- the full Table 3 tolerance envelope is not sourced "
+        "yet. See docs/dsp/2026-08-27-weighting-and-meters.md. Offending "
+        "files:\n"
         "  ${violations}")
 endif()
 

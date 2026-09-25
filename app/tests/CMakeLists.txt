@@ -508,7 +508,7 @@ add_test(NAME measure_has_no_framework_deps
 # argument as check_no_conformance_claim.cmake's own core/ scope comment).
 #
 # SPL-R10: SplReportStyle.h's CSS intentionally contains no selector shaped
-# like "class" + separator + 0/1 (A8) -- Task G shows this guard red on a
+# like "class" + separator + 0/1/2 (A8) -- Task G shows this guard red on a
 # deliberately-added `.class-1 {}` rule and green after reverting it.
 add_test(NAME report_makes_no_class_1_claim
     COMMAND ${CMAKE_COMMAND}
