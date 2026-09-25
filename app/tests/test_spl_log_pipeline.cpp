@@ -205,7 +205,38 @@ TEST_CASE("pushBlock is allocation-free after enable(), pushing 10x queue capaci
     params.queueCapacityBlocks = 64;
 
     SplLogPipeline pipeline;
+
+    // Station-4 fix round (PR #31, finding 4) moved SplLogWriter's own
+    // construction -- opening the file, writing the header, an internal
+    // stream buffer allocation -- off enable() and onto the writer thread's
+    // own first act (setupWriters()). AllocationProbe is a GLOBAL, process-
+    // wide counter (its whole point: catch an allocation from ANY thread,
+    // memory/an-allocation-the-optimiser-removed-reads-as-zero-bytes.md), so
+    // if that setup is still running when the probe scope below starts, its
+    // allocations get charged to pushBlock() even though they are the
+    // writer thread's own one-time setup, not the producer. Wait for setup
+    // to finish (this same injection seam test_spl_log_pipeline.cpp's own
+    // "opens the log file on the writer thread" case already uses) BEFORE
+    // opening the probe scope -- caught intermittently on ubuntu-latest CI
+    // (32 bytes over 640 pushBlock calls) once finding 4 made the timing
+    // possible; it did not reproduce locally on Windows, consistent with a
+    // race whose odds differ by OS scheduler.
+    std::atomic<bool> writerReady{ false };
+    pipeline.setWriterFactoryForTest(
+        [&](const std::string& basePath, const SplConfig& config,
+            const rta::splexport::SplLogHeaderInfo& info, std::uint64_t segmentBlocks) {
+            auto writer = std::make_unique<rta::splexport::SplLogWriter>(basePath, config, info,
+                                                                         segmentBlocks);
+            writerReady.store(true, std::memory_order_release);
+            return writer;
+        });
     pipeline.enable(params);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (!writerReady.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(writerReady.load(std::memory_order_acquire));
 
     std::size_t bytes = 0;
     {
