@@ -343,6 +343,32 @@ TEST_CASE("closed-form: headroom uses the MOST RECENT windowBlocks-1 blocks, not
     CHECK_THAT(*alarm.report().headroomDb, WithinAbs(expected, 1e-9));
 }
 
+// PR #26 round-3 fix, item 2: SplAlarmSpec::windowBlocks defaults to 1
+// (SplConfig.h). windowBlocks == 1 means the window is FULL after the very
+// first block, but "the most recent windowBlocks-1 blocks" is then an EMPTY
+// span -- combineBlocks({}) has no samples, so its leqDb is absent, and the
+// existing full-window branch's `if (recentResult.leqDb.has_value())` guard
+// never fires. Headroom stayed nullopt forever for the tool's own default
+// configuration. The identity itself says otherwise: at t=0, `spent = t *
+// 10^(Lt/10)` is exactly 0 regardless of L_t, so the correct answer is
+// exactly limitDb.
+TEST_CASE("closed-form: windowBlocks == 1 (the SplAlarmSpec default) gives headroom == limitDb",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 100.0;
+    // spec.windowBlocks left at its SplConfig.h default of 1.
+    SplAlarm alarm(spec);
+    SplHistory history(4);
+
+    std::vector<Block> blocks;
+    blocks.push_back(blockAtLevel(0, 48000, 40.0));  // level is irrelevant: spent == 0 at t=0
+    alarm.update(blocks, 48000.0, 1.0, 0.0, 0, history);
+
+    REQUIRE(alarm.report().headroomDb.has_value());
+    CHECK_THAT(*alarm.report().headroomDb, WithinAbs(spec.limitDb, 1e-9));
+}
+
 TEST_CASE("closed-form (c): when the recent window already exceeds budget, headroom is absent",
          "[spl_alarms]") {
     SplAlarm alarm(fullWindowSpec());

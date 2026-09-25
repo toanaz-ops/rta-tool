@@ -85,13 +85,22 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
         }
     } else if (spec_.windowBlocks > 0) {
         const auto recent = tail.subspan(1, spec_.windowBlocks - 1);
-        const auto recentResult = rta::meter::combineBlocks(recent, sampleRate, referenceOffsetDb,
-                                                            spec_.windowBlocks - 1);
-        if (recentResult.leqDb.has_value()) {
-            const double windowSeconds = static_cast<double>(spec_.windowBlocks) * blockSeconds;
-            const double tSeconds = windowSeconds - blockSeconds;
-            headroomDb_ = rta::meter::headroomDb(windowSeconds, tSeconds, *recentResult.leqDb,
-                                                spec_.limitDb);
+        if (recent.empty()) {
+            // windowBlocks == 1 (the SplAlarmSpec default, SplConfig.h) means
+            // "the most recent windowBlocks-1 blocks" is empty -- there is no
+            // recomputed Leq to feed the identity. But an empty recent window
+            // is exactly t = 0, and at t = 0 `spent = t * 10^(Lt/10)` is 0
+            // regardless of L_t, so the identity's answer is exactly limitDb.
+            headroomDb_ = rta::meter::headroomDb(blockSeconds, 0.0, 0.0, spec_.limitDb);
+        } else {
+            const auto recentResult = rta::meter::combineBlocks(recent, sampleRate, referenceOffsetDb,
+                                                                spec_.windowBlocks - 1);
+            if (recentResult.leqDb.has_value()) {
+                const double windowSeconds = static_cast<double>(spec_.windowBlocks) * blockSeconds;
+                const double tSeconds = windowSeconds - blockSeconds;
+                headroomDb_ = rta::meter::headroomDb(windowSeconds, tSeconds, *recentResult.leqDb,
+                                                    spec_.limitDb);
+            }
         }
     }
 
