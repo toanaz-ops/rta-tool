@@ -70,6 +70,30 @@ void feedAndDrive(SplSession& session, SplChannelState& state, int channel,
     state.feedLnTicks(session.newlyTickedLnLevelsDb(channel, rta::dsp::WeightingType::A));
 }
 
+/// The same alternating high/low sine used by the 100-ms-clock case above,
+/// but as a single flat buffer -- so it can be fed through `feedHop` in ANY
+/// hop size, including one that does not evenly divide the 100 ms tick
+/// period, without changing a single sample value. Amplitude switches at
+/// exact `samplesPerPhase` sample boundaries, in absolute sample time, same
+/// as the loop this factors out of.
+std::vector<float> alternatingSignal(double freqHz, double highAmp, double lowAmp,
+                                     std::size_t samplesPerPhase, int cycles, double fs) {
+    std::vector<float> x(static_cast<std::size_t>(cycles) * 2 * samplesPerPhase);
+    std::uint64_t sampleIndex = 0;
+    std::size_t pos = 0;
+    for (int cycle = 0; cycle < cycles; ++cycle) {
+        for (int phase = 0; phase < 2; ++phase) {
+            const double amp = (phase == 0) ? highAmp : lowAmp;
+            for (std::size_t t = 0; t < samplesPerPhase; ++t) {
+                const double time = static_cast<double>(sampleIndex) / fs;
+                x[pos++] = static_cast<float>(amp * std::sin(kTwoPi * freqHz * time));
+                ++sampleIndex;
+            }
+        }
+    }
+    return x;
+}
+
 }  // namespace
 
 TEST_CASE("Ln is fed at the 100 ms detector sampling rate, not the block clock",
@@ -161,12 +185,37 @@ TEST_CASE("Ln is fed at the 100 ms detector sampling rate, not the block clock",
     REQUIRE(expectedL10.has_value());
     REQUIRE(expectedL90.has_value());
 
-    // A margin for the ONE thing the closed form above does not model: the
-    // A-weighting biquad cascade's own (much faster than 125 ms) transient
-    // at the amplitude step, plus the histogram's own half-bin quantisation
-    // (0.05 dB, this project's established bound -- test_spl_channel_
-    // state.cpp's "c" case).
-    constexpr double kFilterTransientMarginDb = 1.0;
+    // --- The tolerance, DERIVED, not typed (round-4 item 6) ----------------
+    //
+    // (a) The Fast exponential's OWN closed-form settling residual, at the
+    // LAST tick of a phase -- the tick the bulk of that phase's histogram
+    // mass sits nearest, since kPhaseSeconds/kTau = 16 time constants. By
+    // `ticksPerPhase` ticks the recursive state has decayed toward its
+    // target by `decayPerTick^ticksPerPhase` of the ORIGINAL high/low gap
+    // (the same exact discrete recursion `expected` above already computes,
+    // evaluated at its own fixed point). That linear-domain residual is
+    // converted to a dB bound via the standard small-signal estimate
+    // d(10*log10 x) ~= (10/ln10) * dx/x -- evaluated at the SMALLER of the
+    // two targets (meanSquareLow), because the same absolute linear residual
+    // reads as a LARGER dB delta there than it would at the bigger target,
+    // which is what makes this an upper bound rather than a typical case.
+    const double linearGapFraction =
+        std::pow(decayPerTick, static_cast<double>(ticksPerPhase));
+    const double worstCaseLinearResidual =
+        linearGapFraction * std::fabs(meanSquareHigh - meanSquareLow);
+    const double settlingResidualDb =
+        (10.0 / std::log(10.0)) * worstCaseLinearResidual / meanSquareLow;
+
+    // (b) The histogram's own quantisation: no percentile it reports can sit
+    // closer than half a bin to the true continuous value (LevelHistogram.h's
+    // own `percentileDb` comment; this project's established bound --
+    // test_spl_channel_state.cpp's "c" case).
+    const double histogramQuantizationDb = rta::meter::LevelHistogram::kBinWidthDb / 2.0;
+
+    const double kFilterTransientMarginDb = settlingResidualDb + histogramQuantizationDb;
+    INFO("settlingResidualDb = " << settlingResidualDb
+                                  << ", histogramQuantizationDb = " << histogramQuantizationDb
+                                  << ", derived margin = " << kFilterTransientMarginDb);
     CHECK_THAT(*view.lnDb[2], WithinAbs(*expectedL10, kFilterTransientMarginDb));
     CHECK_THAT(*view.lnDb[4], WithinAbs(*expectedL90, kFilterTransientMarginDb));
 
@@ -175,5 +224,103 @@ TEST_CASE("Ln is fed at the 100 ms detector sampling rate, not the block clock",
     // block's max-held Fast reading is the block's own loud half, so EVERY
     // Ln -- L1 through L95 -- would collapse to the same ~0 dBFS number
     // (verifier repro: "every Ln reads ~90.95" at a +90.95 dB offset).
+    CHECK(*view.lnDb[2] - *view.lnDb[4] > 20.0);
+}
+
+// --- round-4 item 6: a hop size that does NOT evenly divide the tick -------
+// period, so a tick-phase bug (reset-per-hop, an off-by-one tick period, tau
+// confused with the sampling period) has somewhere to show up. The fixture
+// above uses hop == tick == 4800 samples, so every hop boundary coincides
+// with a tick boundary and a phase bug is invisible to it.
+
+TEST_CASE("Ln ticks stay phase-correct when the hop size does not divide the tick period",
+         "[spl_ln_ticks]") {
+    constexpr double kFreqHz = 1000.0;
+    constexpr double kHighAmp = 1.0;
+    constexpr double kLowAmp = 0.01;
+    constexpr double kPhaseSeconds = 2.0;
+    constexpr double kTau = 0.125;
+    constexpr int kCycles = 8;
+    // 1024 does NOT divide 4800 (the tick period at 48 kHz): 4800 / 1024 is
+    // not an integer, so successive hops land at a DIFFERENT phase within
+    // the tick period every time, and only a persistent (never per-hop-
+    // reset) sample counter tracking the correct 100 ms period can still
+    // land every tick on its true 100 ms boundary.
+    constexpr std::size_t kHopSamples = 1024;
+
+    SplConfig config;
+    config.blockSeconds = 1.0;
+    config.logSpanSeconds = 200.0;
+
+    SplSession session;
+    const int channels[] = {0};
+    session.start(config, kFs, channels);
+    SplChannelState state(config, kFs);
+
+    const auto samplesPerTick = static_cast<std::size_t>(0.1 * kFs + 0.5);
+    const auto samplesPerPhase = static_cast<std::size_t>(kPhaseSeconds * kFs + 0.5);
+    REQUIRE(samplesPerPhase % samplesPerTick == 0);  // fixture sanity, as above
+    REQUIRE(samplesPerPhase % kHopSamples != 0);     // the property this case needs
+    const std::size_t ticksPerPhase = samplesPerPhase / samplesPerTick;
+
+    const auto signal =
+        alternatingSignal(kFreqHz, kHighAmp, kLowAmp, samplesPerPhase, kCycles, kFs);
+    REQUIRE(signal.size() % kHopSamples == 0);  // clean chunking, no partial last hop
+
+    std::uint64_t totalTicks = 0;
+    for (std::size_t off = 0; off < signal.size(); off += kHopSamples) {
+        const std::span<const float> chunk(signal.data() + off, kHopSamples);
+        feedAndDrive(session, state, 0, chunk);
+        // Read AFTER feedAndDrive already forwarded this hop's ticks to
+        // `state` -- the span itself is untouched until the NEXT push().
+        totalTicks += session.newlyTickedLnLevelsDb(0, rta::dsp::WeightingType::A).size();
+    }
+
+    // EXACT integer identity: 10 ticks/second at the true 100 ms period,
+    // over the fixture's whole duration -- never a tolerance.
+    const double totalSeconds =
+        static_cast<double>(signal.size()) / kFs;
+    REQUIRE_THAT(totalSeconds, WithinAbs(32.0, 1e-9));  // kCycles*2*kPhaseSeconds
+    CHECK(totalTicks == static_cast<std::uint64_t>(10.0 * totalSeconds));
+
+    // L10/L90 must still land where the SAME closed form (as the 100-ms-hop
+    // case above) predicts, with hops that do not align to tick boundaries.
+    SplBlockView view;
+    state.fillPublish(view);
+    REQUIRE(view.lnDb[2].has_value());
+    REQUIRE(view.lnDb[4].has_value());
+
+    const double decayPerTick = std::exp(-0.1 / kTau);
+    const double meanSquareHigh = kHighAmp * kHighAmp / 2.0;
+    const double meanSquareLow = kLowAmp * kLowAmp / 2.0;
+
+    rta::meter::LevelHistogram expected(config.histogramBaseDb());
+    double simMeanSquare = 0.0;
+    for (int cycle = 0; cycle < kCycles; ++cycle) {
+        for (int phase = 0; phase < 2; ++phase) {
+            const double target = (phase == 0) ? meanSquareHigh : meanSquareLow;
+            for (std::size_t k = 0; k < ticksPerPhase; ++k) {
+                simMeanSquare = target + (simMeanSquare - target) * decayPerTick;
+                expected.add(10.0 * std::log10(simMeanSquare) + config.referenceOffsetDb);
+            }
+        }
+    }
+    const auto expectedL10 = expected.percentileDb(10.0);
+    const auto expectedL90 = expected.percentileDb(90.0);
+    REQUIRE(expectedL10.has_value());
+    REQUIRE(expectedL90.has_value());
+
+    // Same derivation as the 100-ms-hop case above: settling residual at the
+    // last tick of a phase, plus half a histogram bin.
+    const double linearGapFraction = std::pow(decayPerTick, static_cast<double>(ticksPerPhase));
+    const double worstCaseLinearResidual =
+        linearGapFraction * std::fabs(meanSquareHigh - meanSquareLow);
+    const double settlingResidualDb =
+        (10.0 / std::log(10.0)) * worstCaseLinearResidual / meanSquareLow;
+    const double marginDb =
+        settlingResidualDb + rta::meter::LevelHistogram::kBinWidthDb / 2.0;
+
+    CHECK_THAT(*view.lnDb[2], WithinAbs(*expectedL10, marginDb));
+    CHECK_THAT(*view.lnDb[4], WithinAbs(*expectedL90, marginDb));
     CHECK(*view.lnDb[2] - *view.lnDb[4] > 20.0);
 }
