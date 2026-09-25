@@ -40,10 +40,36 @@ cmake_minimum_required(VERSION 3.22)
 # the octave-band filters, a different standard this guard has no business
 # policing. "No claim ... produced by this work" (the plan's own wording)
 # means this track's files, not every file under core/.
-if(NOT DEFINED CORE_DIR)
-    message(FATAL_ERROR "CORE_DIR is not set")
+#
+# SPL-R9: two ways to select what gets scanned, mirroring
+# check_no_framework_deps.cmake's CORE_DIR/GLOBS split -- exactly one of
+# CORE_DIR or GLOBS must be given:
+#   CORE_DIR   this track's fixed list under core/ (unchanged below).
+#   GLOBS      an explicit, semicolon-separated file list for a layer with no
+#              such directory convention -- app/'s report/export templates,
+#              named by app/tests/CMakeLists.txt rather than core/tests/, so a
+#              change to one scope's file list cannot silently shrink the
+#              other's. Pass TEST_NAME and SCOPE_LABEL alongside it: without
+#              them the messages below would say "core_makes_no_class_1_claim"
+#              and "core/" while scanning app/, which is what SPL-R9 calls out
+#              by name as wrong.
+if(NOT DEFINED CORE_DIR AND NOT DEFINED GLOBS)
+    message(FATAL_ERROR "Neither CORE_DIR nor GLOBS is set")
+endif()
+if(DEFINED CORE_DIR AND DEFINED GLOBS)
+    message(FATAL_ERROR "Both CORE_DIR and GLOBS are set -- pass exactly one")
 endif()
 
+if(NOT DEFINED TEST_NAME)
+    set(TEST_NAME "core_makes_no_class_1_claim")
+endif()
+if(NOT DEFINED SCOPE_LABEL)
+    set(SCOPE_LABEL "core/")
+endif()
+
+if(DEFINED GLOBS)
+    file(GLOB sources ${GLOBS})
+else()
 file(GLOB sources
     "${CORE_DIR}/include/rta/dsp/Weighting.h"
     "${CORE_DIR}/src/dsp/Weighting.cpp"
@@ -79,26 +105,51 @@ file(GLOB sources
     "${CORE_DIR}/tests/DoseTableFixtures.h"
     "${CORE_DIR}/tests/BlockFixtures.h"
 )
+endif()
+
+# SPL-R10 / memory/a-naming-grep-that-bans-a-word-bans-its-own-justification.md:
+# this guard's own two ctest names -- "core_makes_no_class_1_claim" and
+# "report_makes_no_class_1_claim" -- each contain the literal shape
+# "class_1" or "class_1_claim" that the regex below hunts for. A file that
+# explains *why* a false positive exists (SplReportStyle.h's SPL-R10 comment,
+# for one) must name the guard it is talking about, and naming it in a
+# backtick-quoted comment is not a conformance claim. Strip just these two
+# known self-references before matching -- not comments in general, because
+# an actual "Class 1" claim written INSIDE a comment is exactly the shape
+# this guard exists to catch (its own docstring above: "not as an
+# identifier, a comment, a doc string, or a test name"), so blanket
+# comment-stripping would open a hole in the guard it is supposed to be
+# closing. If this list ever stops matching anything in the scanned corpus,
+# that is a sign the guard's own name changed and this list is stale --
+# re-check it rather than assuming it is still needed.
+set(self_reference_exemptions
+    "core_makes_no_class_1_claim"
+    "report_makes_no_class_1_claim"
+)
 
 set(violations "")
 foreach(file IN LISTS sources)
     file(READ "${file}" content)
-    if(content MATCHES "[Cc][Ll][Aa][Ss][Ss][ \t_-]*[01]")
+    set(content_to_scan "${content}")
+    foreach(exemption IN LISTS self_reference_exemptions)
+        string(REPLACE "${exemption}" "" content_to_scan "${content_to_scan}")
+    endforeach()
+    if(content_to_scan MATCHES "[Cc][Ll][Aa][Ss][Ss][ \t_-]*[01]")
         list(APPEND violations "${file}")
     endif()
 endforeach()
 
 list(LENGTH sources n_sources)
 if(n_sources EQUAL 0)
-    message(FATAL_ERROR "No sources found under ${CORE_DIR} -- check is not actually running")
+    message(FATAL_ERROR "No sources found for ${TEST_NAME} (scope: ${SCOPE_LABEL}) -- check is not actually running")
 endif()
 
 if(violations)
     message(FATAL_ERROR
-        "core/ must not claim IEC 61672-1 Class 1/Class 0 conformance -- the "
+        "${SCOPE_LABEL} must not claim IEC 61672-1 Class 1/Class 0 conformance -- the "
         "full Table 3 tolerance envelope is not sourced yet. See "
         "docs/dsp/2026-08-27-weighting-and-meters.md. Offending files:\n"
         "  ${violations}")
 endif()
 
-message(STATUS "core_makes_no_class_1_claim: OK (${n_sources} files scanned)")
+message(STATUS "${TEST_NAME}: OK (${n_sources} files scanned)")
