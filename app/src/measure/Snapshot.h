@@ -280,6 +280,14 @@ struct SplBlockView {
     std::uint32_t droppedSamples = 0;
 
     std::vector<SplAlarmReading> alarms;
+    /// How many `SplHistory::addMarker` calls this channel's marker ring
+    /// dropped because `SplHistory::kMaxMarkers` was already reached (fix
+    /// round 2026-09-25, PR #29 round-3 step 4). Normally 0 -- mirrors
+    /// `refusedMetrics` above: `SplHistory::overflowedMarkers()` already
+    /// existed and nothing published it, so an operator whose alarms
+    /// transitioned often enough to fill a 4096-marker ring had no way to
+    /// see that markers past it were silently gone.
+    std::uint32_t markersOverflowed = 0;
 
     /// ABSENT, never 0.0 %. A zero dose reads as "measured, and there was no
     /// exposure"; these are absent through Wave 0 because the accumulators

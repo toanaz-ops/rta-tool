@@ -139,6 +139,12 @@ void SplChannelState::feedLnTicks(std::span<const double> aChainTickLevelsDb) {
 }
 
 void SplChannelState::fillPublish(SplBlockView& view) const {
+    // PR #29 round-3 step 4: overflowedMarkers() already existed on
+    // SplHistory; nothing read it. Published unconditionally -- it is a
+    // plain uint64->uint32 count, never absent the way an alarm/dose/Ln
+    // reading can be, so there is no "not yet produced" state to preserve.
+    view.markersOverflowed = static_cast<std::uint32_t>(history_.overflowedMarkers());
+
     view.alarms.clear();
     for (const auto& group : alarmGroups_) {
         const auto reports = group.alarms.reports();

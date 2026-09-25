@@ -340,6 +340,38 @@ TEST_CASE("two metric ids sharing a 31-char prefix produce DISTINGUISHABLE alarm
     CHECK(indices == std::vector<std::size_t>{0, 1});
 }
 
+// --- PR #29 round-3 fix pass step 4: publish the marker overflow count -----
+
+TEST_CASE("a forced marker overflow reaches the published view", "[spl_channel_state]") {
+    // SplHistory::overflowedMarkers() already existed (SplHistory.h's own
+    // kMaxMarkers comment); nothing published it. fillPublish now carries
+    // it unconditionally on SplBlockView::markersOverflowed.
+    SplConfig config;
+    config.blockSeconds = 1.0;
+    config.logSpanSeconds = 100.0;
+
+    SplChannelState state(config, 48000.0);
+
+    SplBlockView before;
+    state.fillPublish(before);
+    CHECK(before.markersOverflowed == 0);
+
+    // Directly at the ring, bypassing alarm computation -- this fixture's
+    // own subject is the PUBLISH path, not how a marker comes to exist.
+    const std::size_t pushed = rta::measure::SplHistory::kMaxMarkers + 100;
+    for (std::size_t i = 0; i < pushed; ++i) {
+        rta::measure::SplMarker marker;
+        marker.blockIndex = i;
+        marker.kind = rta::measure::SplMarkerKind::Note;
+        state.history().addMarker(marker);
+    }
+    REQUIRE(state.history().overflowedMarkers() == 100);
+
+    SplBlockView after;
+    state.fillPublish(after);
+    CHECK(after.markersOverflowed == 100);
+}
+
 // --- windowAtClose: the pure reconstruction, including the underflow fix --
 
 TEST_CASE("windowAtClose reconstructs the window ending at each block, never underflowing",
