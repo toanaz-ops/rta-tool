@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// PR #28 fix round: cases for the independent verifier's six HIGH/MEDIUM
+// findings. Split out of test_spl_report.cpp to keep that file clear of
+// the 400-line hard cap; shared fixtures live in SplReportTestSupport.h.
+#include "export/SplReport.h"
+#include "SplReportTestSupport.h"
+#include "view/Readouts.h"
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <cstdint>
+#include <string>
+
+using namespace rta::splexport;
+using rta::splexport::test::extractSection;
+using rta::splexport::test::minimalPayload;
+
+// Fix round (PR #28 verifier, HIGH): the record sec.12 constraint-2
+// "untested for the viewer" sentence lived only in renderViewerShell(),
+// which the product never emits -- the owner decision says that sentence
+// goes in the REPORT.
+TEST_CASE("the frozen report itself states the viewer rounding constraint is untested",
+         "[spl_report]") {
+    const auto html = renderReport(minimalPayload());
+    CHECK(html.find("untested for the viewer") != std::string::npos);
+}
+
+// Fix round (PR #28 verifier, MEDIUM): record sec.9 item 4 wants "dose
+// preset with L_c, T_c, q and threshold" in Settings, and none of the
+// four appeared. `minimalPayload()`'s default-constructed `config.dose`
+// already carries the real NIOSH REL / OSHA PEL presets
+// (SplConfig::dose's own default), so this needs no fixture beyond that.
+TEST_CASE("Settings prints each dose preset's L_c, q and threshold", "[spl_report]") {
+    const auto html = renderReport(minimalPayload());
+    const auto settings = extractSection(html, "settings");
+    const auto& niosh = ReportPayload{}.config.dose[0];  // 85.0 dB, q=9.9657843..., 80.0 dB
+    const auto& osha = ReportPayload{}.config.dose[1];   // 90.0 dB, q=16.6096405..., 90.0 dB
+    CHECK(settings.find(rta::view::formatTrim(niosh.criterionLevelDb)) != std::string::npos);
+    CHECK(settings.find(rta::view::formatTrim(niosh.thresholdDb)) != std::string::npos);
+    CHECK(settings.find(rta::view::formatTrim(osha.criterionLevelDb)) != std::string::npos);
+    CHECK(settings.find(rta::view::formatTrim(osha.thresholdDb)) != std::string::npos);
+    // q is a dimensionless exchange-rate denominator, not a dB value --
+    // rendered as a plain one-decimal number, never through formatTrim
+    // (which would print a false "dB" unit on it).
+    CHECK(settings.find("10.0</td>") != std::string::npos);  // 9.9657843... at 1 decimal
+    CHECK(settings.find("16.6</td>") != std::string::npos);  // 16.6096405... at 1 decimal
+}
+
+// Fix round (PR #28 verifier, MEDIUM): ReportDoseResult's percent/
+// projectedPercent/twaDb/exposureLevel8hDb had no optionals, so a preset
+// with nothing accumulated yet rendered "0.0 % ... 0.0 dB" -- indistinguishable
+// from a preset that measured exactly zero dose
+// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+TEST_CASE("a dose preset with nothing accumulated prints absent, never 0.0",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    payload.dose[0].label = "NIOSH REL";
+    // percent/projectedPercent/twaDb/exposureLevel8hDb all left absent.
+    const auto html = renderReport(payload);
+    const auto dose = extractSection(html, "dose");
+    CHECK(dose.find("NIOSH REL") != std::string::npos);
+    CHECK(dose.find("absent") != std::string::npos);
+    CHECK(dose.find("0.0 %") == std::string::npos);
+    CHECK(dose.find("0.0 dB") == std::string::npos);
+}
+
+// Fix round (PR #28 verifier, MEDIUM): the payload's SplAlarmState never
+// reached the rendered report at all. Filling gets record sec.15 A6's own
+// words -- it is NOT Clear, because Clear would claim "compared, and
+// under the limit" for a comparison that never ran
+// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+TEST_CASE("alarm state is rendered for all three states, with the existing state-* classes",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    ReportAlarmResult filling;
+    filling.metricId = "Main";
+    filling.limitDb = 100.0;
+    filling.windowBlocks = 900;
+    filling.state = rta::measure::SplAlarmState::Filling;
+    ReportAlarmResult clear = filling;
+    clear.metricId = "Clear metric";
+    clear.state = rta::measure::SplAlarmState::Clear;
+    ReportAlarmResult fired = filling;
+    fired.metricId = "Fired metric";
+    fired.state = rta::measure::SplAlarmState::Fired;
+    payload.alarms = {filling, clear, fired};
+
+    const auto html = renderReport(payload);
+    CHECK(html.find("state-filling") != std::string::npos);
+    CHECK(html.find("window not yet full, not compared") != std::string::npos);
+    CHECK(html.find("state-clear") != std::string::npos);
+    CHECK(html.find(">Clear<") != std::string::npos);
+    CHECK(html.find("state-fired") != std::string::npos);
+    CHECK(html.find(">Fired<") != std::string::npos);
+}
+
+// Fix round (PR #28 verifier, MEDIUM): mutant M11 (leaving `<` unescaped in
+// escapeHtml) survived the whole suite -- every payload string field IS
+// escaped in the source, but nothing exercised a string containing markup,
+// so nothing could have caught its removal.
+TEST_CASE("every escaped payload field defeats an embedded script tag", "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    const std::string xss = "<script>alert(1)</script>";
+    payload.notes = xss;
+    payload.config.alarms = {{xss, 100.0, 60}};
+    payload.validity.segmentPaths = {xss};
+
+    const auto html = renderReport(payload);
+    CHECK(html.find("&lt;script&gt;") != std::string::npos);
+    CHECK(html.find("<script>alert") == std::string::npos);
+}
+
+// Fix round (PR #28 verifier, MEDIUM): the marker x-scale must match the
+// trace's own -- both walk the SAME (idx-first)/span*width mapping, or an
+// alarm marker drawn on a >1000-block session lands nowhere near the
+// trace point it is supposed to annotate (28799 % 1000 == 799, nowhere
+// near the trace's own last-point x of 1000).
+TEST_CASE("a marker at the last block lands at the same x as the trace's last point",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    ReportHistorySeries series;
+    series.metricId = "Main";
+    series.points = {{0, 80.0}, {28799, 90.0}};  // longer than 1000 blocks
+    payload.history = {series};
+
+    rta::measure::SplMarker marker;
+    marker.blockIndex = 28799;
+    marker.kind = rta::measure::SplMarkerKind::Alarm;
+    payload.markers = {marker};
+
+    const auto html = renderReport(payload);
+    const auto history = extractSection(html, "history");
+
+    // Both the trace's last point and the marker sit at exactly the
+    // viewBox's right edge (idx == last, so (idx-first)/span*1000 == 1000)
+    // -- std::to_string(1000.0) is deterministic, so the same literal text
+    // must appear in both places.
+    const std::string lastPointX = "1000.000000,";
+    const std::string markerX = "x1=\"1000.000000\"";
+    CHECK(history.find(lastPointX) != std::string::npos);
+    CHECK(history.find(markerX) != std::string::npos);
+    // Mutant M14 (drop markers entirely) must go RED against this: no
+    // marker line at all means no x1 attribute of any kind.
+    CHECK(history.find("marker-alarm") != std::string::npos);
+}

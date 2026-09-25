@@ -240,6 +240,11 @@ add_executable(rtatool_analysis_tests
     # behaviour change.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplReportHash.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplReportSections.cpp
+    # test_spl_report_fixes.cpp: the independent verifier's six HIGH/MEDIUM
+    # findings on PR #28, split out of test_spl_report.cpp to keep that file
+    # clear of the 400-line hard cap. SplReportTestSupport.h is the shared
+    # fixture header both files include (the CodeLines.h precedent).
+    test_spl_report_fixes.cpp
     # --- end L6a Wave 4a -----------------------------------------------------
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
