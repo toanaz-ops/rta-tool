@@ -230,14 +230,20 @@ private:
         std::uint64_t droppedSamplesTotal = 0;
 
         /// THIS chain's blocks closed during the CURRENT `feedHop` call.
-        /// Reserved once, at `start()`, to
-        /// `rta::meter::BlockAccumulator::kReadyCapacity` -- the most a
-        /// single `push()` can ever complete (that class's own bound: `push`
-        /// stops consuming once `kReadyCapacity` blocks are waiting) -- so
-        /// draining it after every `feedHop` allocates nothing. PER CHAIN
-        /// (fix round 2026-09-25), not per channel: each weighting closes
-        /// its OWN block from the SAME hop, and a caller asking for one
-        /// weighting's blocks must never see another's.
+        /// Reserved once, at `start()`, to `SplMeter::kScratchSamples`
+        /// (round 4 item 1; NOT `BlockAccumulator::kReadyCapacity` (4) any
+        /// more). Round 3 made `SplMeter::push()` poll its accumulator
+        /// INSIDE the segment loop rather than only after `push()` returns,
+        /// so a single `push()` -- and therefore a single `feedHop` -- can
+        /// now close far more than `kReadyCapacity` blocks: every segment is
+        /// capped at `kScratchSamples` samples AND completes at most one
+        /// block, so `kScratchSamples` is the pigeonhole-safe bound on how
+        /// many blocks one hop can ever hand to `poll()` (mirrors
+        /// `SplMeter::readyBuffer_`'s own sizing and rationale, in
+        /// SplMeter.h). Draining it after every `feedHop` still allocates
+        /// nothing. PER CHAIN (fix round 2026-09-25), not per channel: each
+        /// weighting closes its OWN block from the SAME hop, and a caller
+        /// asking for one weighting's blocks must never see another's.
         std::vector<rta::meter::Block> newlyClosed;
     };
 

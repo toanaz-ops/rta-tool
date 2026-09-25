@@ -176,6 +176,53 @@ TEST_CASE("feedHop allocates nothing once the session has started", "[splsession
     CHECK(session.blockCount(9) == 20);
 }
 
+// PR #29 round-4 fix item 1: round 3 made SplMeter::push() poll the
+// accumulator INSIDE its segment loop, so ONE feedHop can now close far more
+// than `BlockAccumulator::kReadyCapacity` (4) blocks -- a small `blockSeconds`
+// relative to the hop size closes many blocks per push(). `Chain::newlyClosed`
+// was still reserved to the OLD 4-slot bound, so it must grow (allocate) once
+// a single feedHop closes more than 4 blocks on one channel.
+TEST_CASE("feedHop allocates nothing when one hop closes many blocks (round-4 item 1)",
+          "[splsession]") {
+    std::vector<float> hop(2048, 0.2f);
+
+    SECTION("blockSeconds = 0.005 (240 samples/block at 48 kHz) -- up to 8 blocks/push") {
+        SplConfig config = shortBlockConfig();
+        config.blockSeconds = 0.005;
+        SplSession session;
+        const int channels[] = {0};
+        session.start(config, kFs, channels);
+
+        std::size_t bytes = 0;
+        {
+            const rta::test::AllocationProbe probe;
+            for (int i = 0; i < 30; ++i) session.feedHop(0, hop);
+            bytes = probe.bytes();
+        }
+        INFO("bytes allocated by 30 feedHops at blockSeconds=0.005, hop=2048 = " << bytes);
+        CHECK(bytes == 0);
+        CHECK(session.blockCount(0) > 0);
+    }
+
+    SECTION("blockSeconds = 0.002 (96 samples/block at 48 kHz) -- up to 21 blocks/push") {
+        SplConfig config = shortBlockConfig();
+        config.blockSeconds = 0.002;
+        SplSession session;
+        const int channels[] = {0};
+        session.start(config, kFs, channels);
+
+        std::size_t bytes = 0;
+        {
+            const rta::test::AllocationProbe probe;
+            for (int i = 0; i < 30; ++i) session.feedHop(0, hop);
+            bytes = probe.bytes();
+        }
+        INFO("bytes allocated by 30 feedHops at blockSeconds=0.002, hop=2048 = " << bytes);
+        CHECK(bytes == 0);
+        CHECK(session.blockCount(0) > 0);
+    }
+}
+
 // --- PR #29 round-3 fix pass step 2: blockSecondsTooSmall is ADVISORY, ----
 // reported, and never silent --------------------------------------------
 
