@@ -70,6 +70,17 @@ public:
     /// caller that only wants unweighted energy is not a special case
     /// everywhere else.
     ///
+    /// AN A-WEIGHTED CHAIN ALWAYS EXISTS, auto-created here exactly like the
+    /// Z chain above when no metric already names one (fix round
+    /// 2026-09-25, orchestrator refinement). Dose (record §7) and the Ln
+    /// histogram (record §5) are both defined in dBA and both always
+    /// configured -- `SplConfig::dose` and `::lnPercents` carry defaults,
+    /// never an on/off flag -- so a correct A-weighted figure is worth more
+    /// than an absent one, and the chain costs one extra weighting filter.
+    /// This auto-chain is NOT a metric: it never touches `config_.metrics`,
+    /// `refusedMetrics_` or `SplConfig::kMaxMetrics`'s count, the same
+    /// exemption the Z chain already has.
+    ///
     /// `config.metrics` is TRUNCATED to `SplConfig::kMaxMetrics` and the
     /// number dropped is reported by `refusedMetrics()` below and published on
     /// `SplBlockView::refusedMetrics` (PR #17 verifier defect 1: an unbounded
@@ -90,6 +101,12 @@ public:
     /// How many of the caller's metrics `start` dropped, or 0. Never silent:
     /// this reaches the published `SplBlockView` as well.
     [[nodiscard]] std::size_t refusedMetrics() const noexcept { return refusedMetrics_; }
+
+    /// PR #29 round-3 fix pass step 2: true when `config.blockSeconds` fell
+    /// below `SplConfig::blockSecondsBelowRecommendedFloor`'s own advisory
+    /// floor at `start()`. Reported, never silent -- see that method's own
+    /// comment for why this does NOT refuse to start the session.
+    [[nodiscard]] bool blockSecondsTooSmall() const noexcept { return blockSecondsTooSmall_; }
 
     [[nodiscard]] bool running() const noexcept { return running_; }
     [[nodiscard]] bool logsChannel(int channel) const noexcept;
@@ -116,6 +133,46 @@ public:
     /// so a later clean block cannot erase a Gap that happened.
     [[nodiscard]] std::uint32_t flagsSeen(int channel) const noexcept;
     [[nodiscard]] std::uint64_t droppedSamplesTotal(int channel) const noexcept;
+
+    /// The chain running `weighting`'s blocks that closed during the most
+    /// recent `feedHop` call on `channel`, oldest first -- empty between
+    /// calls, when the hop just fed did not complete one, or when this
+    /// session has no chain for `weighting`. Cleared at the top of every
+    /// `feedHop`, so a caller that drains this right after `feedHop` sees
+    /// each block exactly once.
+    ///
+    /// PER CHAIN, not per channel (fix round 2026-09-25, verifier HIGH
+    /// finding: every consumer previously read the FIRST configured chain
+    /// regardless of which metric it was actually about -- an alarm on
+    /// `LAeq` read a configured `LCeq`'s numbers whenever C happened to be
+    /// listed first). Lane L6a task W2-E1: this is what `SplChannelState`
+    /// (history, alarms, dose, the Ln histogram) is fed from, on the
+    /// analysis thread, block by block -- never from a `Snapshot`, which is
+    /// a throttled copy for the message thread and can be built less often
+    /// than a block closes.
+    [[nodiscard]] std::span<const rta::meter::Block> newlyClosedBlocks(
+        int channel, rta::dsp::WeightingType weighting) const noexcept;
+
+    /// The A-weighted (or whichever `weighting` names) chain's own Ln ticks
+    /// recorded during the most recent `feedHop` call, oldest first -- a
+    /// thin forward onto `SplMeter::newlyTickedLnLevelsDb`, cleared at the
+    /// TOP of that meter's own `push()` (fix round 2026-09-25: record §5's
+    /// Ln feed samples the Fast detector every 100 ms, independent of block
+    /// closure -- see `SplChannelState::feedLnTicks`). An empty span when
+    /// this session has no chain for `weighting`.
+    [[nodiscard]] std::span<const double> newlyTickedLnLevelsDb(
+        int channel, rta::dsp::WeightingType weighting) const noexcept;
+
+    /// How many 100 ms Ln ticks the chain running `weighting` has had to drop
+    /// because `SplMeter::lnTicks_`'s own fixed buffer filled during a
+    /// `push()` call (round 4 item 3) -- a thin forward onto
+    /// `SplMeter::overflowedLnTicks()`, mirroring `newlyTickedLnLevelsDb`
+    /// just above. 0 when this session has no chain for `weighting`, which
+    /// is indistinguishable from "no overflow yet" -- exactly like that
+    /// method's own empty-span convention, because a channel with no such
+    /// chain was never going to overflow it either.
+    [[nodiscard]] std::uint64_t overflowedLnTicks(
+        int channel, rta::dsp::WeightingType weighting) const noexcept;
 
     /// The latest block on `channel`'s FIRST chain -- the one `Snapshot`'s
     /// held maxima and sampled peak are read from.
@@ -182,6 +239,23 @@ private:
         std::uint64_t blocks = 0;
         std::uint32_t flagsSeen = 0;
         std::uint64_t droppedSamplesTotal = 0;
+
+        /// THIS chain's blocks closed during the CURRENT `feedHop` call.
+        /// Reserved once, at `start()`, to `SplMeter::kScratchSamples`
+        /// (round 4 item 1; NOT `BlockAccumulator::kReadyCapacity` (4) any
+        /// more). Round 3 made `SplMeter::push()` poll its accumulator
+        /// INSIDE the segment loop rather than only after `push()` returns,
+        /// so a single `push()` -- and therefore a single `feedHop` -- can
+        /// now close far more than `kReadyCapacity` blocks: every segment is
+        /// capped at `kScratchSamples` samples AND completes at most one
+        /// block, so `kScratchSamples` is the pigeonhole-safe bound on how
+        /// many blocks one hop can ever hand to `poll()` (mirrors
+        /// `SplMeter::readyBuffer_`'s own sizing and rationale, in
+        /// SplMeter.h). Draining it after every `feedHop` still allocates
+        /// nothing. PER CHAIN (fix round 2026-09-25), not per channel: each
+        /// weighting closes its OWN block from the SAME hop, and a caller
+        /// asking for one weighting's blocks must never see another's.
+        std::vector<rta::meter::Block> newlyClosed;
     };
 
     struct ChannelState {
@@ -200,6 +274,7 @@ private:
     /// has storage for. `config()` returns this one, not the caller's.
     SplConfig config_;
     std::size_t refusedMetrics_ = 0;
+    bool blockSecondsTooSmall_ = false;
     double sampleRate_ = 0.0;
     bool running_ = false;
     std::size_t windowCapacity_ = 1;

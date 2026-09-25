@@ -12,6 +12,11 @@ SplSession::Chain::Chain(const SplConfig& config, rta::dsp::WeightingType w, dou
     , meter(config, w, sampleRate) {
     // Reserved ONCE, here, on the message thread. feedHop never grows it.
     window.reserve(windowCapacity);
+    // W2-E1 (fix round 2026-09-25: PER CHAIN, not per channel), revised
+    // round 4 item 1: reserved once, here -- feedHop below never grows it
+    // (see the member's own comment for why the bound is
+    // SplMeter::kScratchSamples, not BlockAccumulator::kReadyCapacity).
+    newlyClosed.reserve(SplMeter::kScratchSamples);
 }
 
 void SplSession::start(const SplConfig& config, double sampleRate,
@@ -31,6 +36,13 @@ void SplSession::start(const SplConfig& config, double sampleRate,
         config_.metrics.resize(SplConfig::kMaxMetrics);
     }
 
+    // PR #29 round-3 fix pass step 2: advisory only -- see
+    // SplConfig::blockSecondsBelowRecommendedFloor's own comment for why
+    // this reports rather than refuses.
+    blockSecondsTooSmall_ = config_.blockSecondsBelowRecommendedFloor(
+        sampleRate, static_cast<double>(SplMeter::kScratchSamples),
+        static_cast<double>(rta::meter::BlockAccumulator::kReadyCapacity));
+
     // The distinct weightings the metrics named, in first-seen order. A config
     // with no metrics gets one Z chain, so a caller that only wants unweighted
     // energy is not a special case everywhere else.
@@ -41,6 +53,18 @@ void SplSession::start(const SplConfig& config, double sampleRate,
         }
     }
     if (weightings_.empty()) weightings_.push_back(rta::dsp::WeightingType::Z);
+
+    // Dose (record §7) and the Ln histogram (record §5) are always
+    // configured (SplConfig::dose/lnPercents carry defaults, never an
+    // on/off flag) and both are defined in dBA -- so an A-weighted chain
+    // always exists, auto-created here exactly like the Z chain above when
+    // no metric already named one (fix round 2026-09-25, orchestrator
+    // refinement). NOT a metric: does not touch config_.metrics,
+    // refusedMetrics_ or SplConfig::kMaxMetrics.
+    if (std::find(weightings_.begin(), weightings_.end(), rta::dsp::WeightingType::A) ==
+        weightings_.end()) {
+        weightings_.push_back(rta::dsp::WeightingType::A);
+    }
 
     // The window holds the longest metric's own span, so every metric can be
     // recomputed from it, bounded by kMaxWindowBlocks so a misconfigured
@@ -67,6 +91,7 @@ void SplSession::stop() noexcept {
     for (auto& state : channels_) state.reset();
     weightings_.clear();
     refusedMetrics_ = 0;
+    blockSecondsTooSmall_ = false;
     running_ = false;
 }
 
@@ -126,11 +151,17 @@ void SplSession::feedHop(int channel, std::span<const float> hop) noexcept {
     if (s == nullptr) return;
 
     for (Chain& c : s->chains) {
+        // W2-E1 (fix round 2026-09-25): cleared per chain, here, so a caller
+        // draining `newlyClosedBlocks(channel, w)` right after this call
+        // sees exactly the blocks THIS hop closed on chain `w`, never a
+        // leftover from the previous hop and never another chain's blocks.
+        c.newlyClosed.clear();
         c.meter.push(hop);
         while (auto block = c.meter.poll()) {
             ++c.blocks;
             c.flagsSeen |= block->flags;
             c.droppedSamplesTotal += block->droppedSamples;
+            c.newlyClosed.push_back(*block);
 
             if (c.window.size() < c.window.capacity()) {
                 c.window.push_back(*block);
@@ -174,6 +205,27 @@ std::uint64_t SplSession::droppedSamplesTotal(int channel) const noexcept {
     // report it `chainCount()` times over and make a reconstructed timestamp
     // LATE instead of early -- the same defect in the other direction.
     return s->chains.front().droppedSamplesTotal;
+}
+
+std::span<const rta::meter::Block> SplSession::newlyClosedBlocks(
+    int channel, rta::dsp::WeightingType weighting) const noexcept {
+    const Chain* c = chain(channel, weighting);
+    if (c == nullptr) return {};
+    return c->newlyClosed;
+}
+
+std::span<const double> SplSession::newlyTickedLnLevelsDb(
+    int channel, rta::dsp::WeightingType weighting) const noexcept {
+    const Chain* c = chain(channel, weighting);
+    if (c == nullptr) return {};
+    return c->meter.newlyTickedLnLevelsDb();
+}
+
+std::uint64_t SplSession::overflowedLnTicks(
+    int channel, rta::dsp::WeightingType weighting) const noexcept {
+    const Chain* c = chain(channel, weighting);
+    if (c == nullptr) return 0;
+    return c->meter.overflowedLnTicks();
 }
 
 std::optional<rta::meter::Block> SplSession::latestBlock(int channel) const noexcept {

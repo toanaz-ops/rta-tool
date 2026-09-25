@@ -7,11 +7,13 @@
 
 #include "rta/dsp/Weighting.h"
 #include "rta/meter/Block.h"
+#include "rta/meter/Detector.h"
 
 #include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace rta::measure {
 
@@ -103,6 +105,36 @@ public:
     [[nodiscard]] static double blockLevelDb(const rta::meter::Block& block,
                                              double referenceOffsetDb) noexcept;
 
+    /// Record §5: Ln is fed "the time-weighted level... at the detector
+    /// sampling rate", Fast, 100 ms -- NEVER `Block::maxFastDb`, which is a
+    /// max-HELD-per-BLOCK quantity and reads the loudest moment of an entire
+    /// block regardless of how quiet the rest of it was (fix round
+    /// 2026-09-25). This is a SECOND `rta::meter::Detector` (Fast), fed the
+    /// SAME weighted `main` scratch span `push()` already computes for the
+    /// accumulator -- a deliberate duplicate of the Fast detector state
+    /// already running inside `BlockAccumulator` (which is private): feeding
+    /// it the identical sample sequence in the identical order makes it
+    /// bit-identical, and this keeps the sampling concern out of core's
+    /// generic `BlockAccumulator`.
+    ///
+    /// Ticks recorded since the START of the MOST RECENT `push()` call --
+    /// cleared at the TOP of `push()` (mirrors `SplSession::feedHop` already
+    /// clearing `c.newlyClosed` before `c.meter.push(hop)`, except the clear
+    /// happens INSIDE this class so every caller of `push()` gets a fresh
+    /// view automatically). NO offset applied -- the same convention
+    /// `Block::maxFastDb` already used; the caller adds `referenceOffsetDb`,
+    /// exactly like the old `aChain->block.maxFastDb + referenceOffsetDb_`
+    /// line did.
+    [[nodiscard]] std::span<const double> newlyTickedLnLevelsDb() const noexcept {
+        return lnTicks_;
+    }
+
+    /// How many 100 ms ticks this meter had to drop because the fixed tick
+    /// buffer (sized from `SplConfig::blockSeconds` at construction) filled
+    /// during one `push()` call -- COUNTED, never silent, mirroring
+    /// `SplHistory::kMaxMarkers`/`overflowedMarkers()`'s own pattern.
+    [[nodiscard]] std::uint64_t overflowedLnTicks() const noexcept { return overflowedLnTicks_; }
+
 private:
     rta::dsp::WeightingType weightingType_;
     double sampleRate_;
@@ -133,6 +165,61 @@ private:
 
     std::array<float, kScratchSamples> mainScratch_{};
     std::array<float, kScratchSamples> peakScratch_{};
+
+    /// Record §5's Ln feed: a second Fast detector over the SAME weighted
+    /// stream the accumulator sees, sampled every 100 ms on a persistent
+    /// (never block-reset) sample counter.
+    rta::meter::Detector lnDetector_;
+    std::uint64_t lnSampleCounter_ = 0;
+    std::uint64_t lnSamplesPerTick_;
+
+    /// Fixed at construction from `config.blockSeconds`: `ticksPerBlock =
+    /// max(1, round(blockSeconds / 0.1))`; capacity =
+    /// `max(16, (kReadyCapacity + 2) * ticksPerBlock)` -- generous against
+    /// how many ticks one `push()` call (at most one hop) can produce,
+    /// mirroring the sizing logic `SplSession::Chain::newlyClosed` already
+    /// uses for its own per-hop buffer. Reserved once, here; `push()` never
+    /// grows it -- a `push()` that would tick past capacity COUNTS the
+    /// overflow (`overflowedLnTicks_`) and drops the tick rather than
+    /// allocating or blocking.
+    std::vector<double> lnTicks_;
+    std::uint64_t overflowedLnTicks_ = 0;
+
+    // --- fix round 2026-09-25 step 2: the sample-loss fix ------------------
+    //
+    // `rta::meter::BlockAccumulator::kReadyCapacity` (4) bounds how many
+    // completed blocks the ACCUMULATOR holds BETWEEN drains, not how many
+    // can complete within one `push(hop)` call: a hop spanning several
+    // `kScratchSamples`-sized segments can complete many more than 4 blocks
+    // before this class ever calls `accumulator_.poll()`, and the old code
+    // only polled AFTER `push()` returned -- so the accumulator's own cap
+    // silently stopped consuming partway through a hop and the remainder
+    // was counted as `Dropped`, losing REAL, MEASURED samples rather than
+    // excluding them by policy (violates record §15 A1's
+    // Sigma(blockSamples+droppedSamples) == total-pushed invariant).
+    //
+    // Fix: `push()` now polls `accumulator_` INSIDE the segment loop,
+    // immediately after every `accumulator_.push()` call, into THIS
+    // buffer -- so the accumulator's own `readyCount_` is drained back to 0
+    // before the next segment and its cap is never reached within one
+    // push() call. `poll()` drains from this buffer first; a caller sees
+    // no difference except that far fewer samples are ever lost.
+    //
+    // SIZED AT kScratchSamples (1024) blocks: each segment is capped at
+    // kScratchSamples samples AND completes AT MOST ONE block (`room`,
+    // below, bounds a segment to the space remaining in the block currently
+    // being filled) -- 1024 is therefore the pigeonhole-safe bound for any
+    // blockSamples >= 1 within a single segment. A hop far longer than
+    // kScratchSamples combined with a pathologically small blockSamples
+    // could in principle still exceed it; that residual case falls back to
+    // the SAME counted-`Dropped` behaviour this class always had, moved
+    // from a threshold of 4 to a threshold of 1024 -- more than 40x
+    // headroom over the verifier's own repro (blockSeconds = 0.002, an
+    // 2048-sample hop, 8 of 21 blocks lost).
+    static constexpr std::size_t kReadyBufferCapacity = kScratchSamples;
+    std::array<rta::meter::Block, kReadyBufferCapacity> readyBuffer_{};
+    std::size_t readyHead_ = 0;
+    std::size_t readyCount_ = 0;
 };
 
 }  // namespace rta::measure

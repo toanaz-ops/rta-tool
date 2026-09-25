@@ -58,7 +58,14 @@ struct SplProxyWindow {
 /// already carries that decision (record §6); this class only feeds it.
 class SplAlarm {
 public:
-    explicit SplAlarm(SplAlarmSpec spec) : spec_(std::move(spec)) {}
+    /// @param metricIndex  the resolved index of `spec.metricId` into
+    ///     `SplConfig::metrics` (fix round 2026-09-25, PR #29 round-3 step
+    ///     3), or `nullopt` when it named no configured metric. Stored on
+    ///     every fired/cleared `SplMarker` as `SplMarker::metricIndex` --
+    ///     the collision-proof identity `MarkerQuantity`'s 31-char
+    ///     truncation cannot provide.
+    explicit SplAlarm(SplAlarmSpec spec, std::optional<std::size_t> metricIndex = std::nullopt)
+        : spec_(std::move(spec)), metricIndex_(metricIndex) {}
 
     /// Recomputes the sliding window ending at the newest block in `blocks`
     /// (the tail of `spec_.windowBlocks`, or the whole span if shorter) and
@@ -82,6 +89,7 @@ public:
 
 private:
     SplAlarmSpec spec_;
+    std::optional<std::size_t> metricIndex_;
     rta::meter::AlarmLatch latch_;
     SplAlarmState state_ = SplAlarmState::Filling;
     // True from the first update where a FULL window actually YIELDS A VALUE
@@ -102,7 +110,15 @@ private:
 /// Every configured alarm for one session, updated together each block.
 class SplAlarms {
 public:
-    explicit SplAlarms(std::vector<SplAlarmSpec> specs);
+    /// @param specs          one spec per alarm.
+    /// @param metricIndices  parallel to `specs` (fix round 2026-09-25, PR
+    ///     #29 round-3 step 3) -- entry `i` is `specs[i]`'s own resolved
+    ///     metric index (see `SplAlarm`'s own constructor comment). Shorter
+    ///     than `specs`, or omitted entirely, is `nullopt` for the missing
+    ///     entries -- kept optional so a caller with no metric list to
+    ///     resolve against (a direct unit test, say) still compiles.
+    explicit SplAlarms(std::vector<SplAlarmSpec> specs,
+                        std::vector<std::optional<std::size_t>> metricIndices = {});
 
     void update(std::span<const rta::meter::Block> blocks, double sampleRate, double blockSeconds,
                double referenceOffsetDb, std::uint64_t currentBlockIndex, SplHistory& history);

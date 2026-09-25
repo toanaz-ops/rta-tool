@@ -13,11 +13,14 @@ std::uint64_t SplHistory::capacityBlocks(double spanSeconds, double blockSeconds
 
 SplHistory::SplHistory(std::uint64_t capacityBlocks)
     : capacity_(capacityBlocks), ring_(capacityBlocks) {
-    // The ONE allocation: `ring_(capacityBlocks)` above sizes the vector in
-    // the member-initializer list. Nothing past this constructor ever calls
-    // resize/reserve/push_back on `ring_` -- `push` below always writes
-    // through an existing index -- so W2-A1's counting-allocator fixture
-    // reads 0 bytes for every push after construction.
+    // TWO allocations, both here: `ring_(capacityBlocks)` above sizes the
+    // block ring in the member-initializer list, and `markers_.reserve`
+    // below sizes the marker store. Nothing past this constructor ever
+    // grows either -- `push` always writes through an existing ring index,
+    // and `addMarker` below never exceeds `kMaxMarkers` -- so W2-A1's
+    // counting-allocator fixture reads 0 bytes for every push/addMarker
+    // after construction.
+    markers_.reserve(kMaxMarkers);
 }
 
 void SplHistory::push(const rta::meter::Block& block) {
@@ -25,6 +28,15 @@ void SplHistory::push(const rta::meter::Block& block) {
     if (pushedCount_ == 0) firstIndex_ = block.blockIndex;
     ring_[pushedCount_ % capacity_] = block;
     ++pushedCount_;
+}
+
+void SplHistory::addMarker(SplMarker marker) {
+    if (markers_.size() >= kMaxMarkers) {
+        // COUNTED AND DROPPED, never silent -- kMaxMarkers's own comment.
+        ++overflowedMarkers_;
+        return;
+    }
+    markers_.push_back(std::move(marker));
 }
 
 std::optional<std::uint64_t> SplHistory::oldestBlockIndex() const noexcept {

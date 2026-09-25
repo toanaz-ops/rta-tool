@@ -13,6 +13,7 @@
 #include "measure/Analyser.h"
 #include "measure/AverageGroup.h"
 #include "measure/RoutingPlan.h"
+#include "measure/SplChannelState.h"
 #include "measure/SplConfig.h"
 
 #include "rta/meter/Block.h"
@@ -61,6 +62,23 @@ struct SplPublishInput {
     /// straight to `SplBlockView::refusedMetrics` so the drop is visible
     /// rather than inferred from a short list (PR #17 verifier defect 1).
     std::size_t refusedMetrics = 0;
+    /// PR #29 round-4 item 3: the A-weighted chain's own
+    /// `SplMeter::overflowedLnTicks()`, carried straight to
+    /// `SplBlockView::lnTicksOverflowed` -- a live per-meter counter, not
+    /// channel-state (`SplChannelState` never sees it), so it is filled here
+    /// alongside `refusedMetrics` rather than inside `fillPublish`.
+    std::uint64_t overflowedLnTicks = 0;
+    /// PR #29 round-4 item 4: `SplSession::blockSecondsTooSmall()`, carried
+    /// straight to `SplBlockView::blockSecondsBelowRecommendedFloor`.
+    /// ADVISORY ONLY -- see that method's own comment.
+    bool blockSecondsTooSmall = false;
+    /// Lane L6a task W2-E1: the channel's own accumulated alarm/dose/Ln
+    /// state, or nullptr. `buildSplBlockView` fills `alarms`, `dosePercent`,
+    /// `doseProjected` and `lnDb` from this when it is present, and leaves
+    /// them absent otherwise -- never a placeholder zero. A raw, non-owning
+    /// pointer: `AnalysisThread` owns the `SplChannelState` for the life of
+    /// the session, and this struct is rebuilt fresh on every publish.
+    const SplChannelState* channelState = nullptr;
 };
 
 /// Builds the published SPL view, or `std::nullopt` when nothing is logging.

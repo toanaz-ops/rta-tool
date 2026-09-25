@@ -176,6 +176,91 @@ TEST_CASE("feedHop allocates nothing once the session has started", "[splsession
     CHECK(session.blockCount(9) == 20);
 }
 
+// PR #29 round-4 fix item 1: round 3 made SplMeter::push() poll the
+// accumulator INSIDE its segment loop, so ONE feedHop can now close far more
+// than `BlockAccumulator::kReadyCapacity` (4) blocks -- a small `blockSeconds`
+// relative to the hop size closes many blocks per push(). `Chain::newlyClosed`
+// was still reserved to the OLD 4-slot bound, so it must grow (allocate) once
+// a single feedHop closes more than 4 blocks on one channel.
+TEST_CASE("feedHop allocates nothing when one hop closes many blocks (round-4 item 1)",
+          "[splsession]") {
+    std::vector<float> hop(2048, 0.2f);
+
+    SECTION("blockSeconds = 0.005 (240 samples/block at 48 kHz) -- up to 8 blocks/push") {
+        SplConfig config = shortBlockConfig();
+        config.blockSeconds = 0.005;
+        SplSession session;
+        const int channels[] = {0};
+        session.start(config, kFs, channels);
+
+        std::size_t bytes = 0;
+        {
+            const rta::test::AllocationProbe probe;
+            for (int i = 0; i < 30; ++i) session.feedHop(0, hop);
+            bytes = probe.bytes();
+        }
+        INFO("bytes allocated by 30 feedHops at blockSeconds=0.005, hop=2048 = " << bytes);
+        CHECK(bytes == 0);
+        CHECK(session.blockCount(0) > 0);
+    }
+
+    SECTION("blockSeconds = 0.002 (96 samples/block at 48 kHz) -- up to 21 blocks/push") {
+        SplConfig config = shortBlockConfig();
+        config.blockSeconds = 0.002;
+        SplSession session;
+        const int channels[] = {0};
+        session.start(config, kFs, channels);
+
+        std::size_t bytes = 0;
+        {
+            const rta::test::AllocationProbe probe;
+            for (int i = 0; i < 30; ++i) session.feedHop(0, hop);
+            bytes = probe.bytes();
+        }
+        INFO("bytes allocated by 30 feedHops at blockSeconds=0.002, hop=2048 = " << bytes);
+        CHECK(bytes == 0);
+        CHECK(session.blockCount(0) > 0);
+    }
+}
+
+// --- PR #29 round-3 fix pass step 2: blockSecondsTooSmall is ADVISORY, ----
+// reported, and never silent --------------------------------------------
+
+TEST_CASE("blockSecondsTooSmall reports, but does not refuse, an under-floor config",
+         "[splsession]") {
+    SplSession session;
+    const int channels[] = {0};
+
+    SECTION("the shipped 1 s default is comfortably above the floor") {
+        session.start(shortBlockConfig(), kFs, channels);
+        CHECK_FALSE(session.blockSecondsTooSmall());
+        CHECK(session.running());
+    }
+
+    SECTION("blockSeconds = 0.002 at 48 kHz is BELOW the advisory floor, and still runs") {
+        SplConfig config = shortBlockConfig();
+        config.blockSeconds = 0.002;
+        session.start(config, kFs, channels);
+        CHECK(session.blockSecondsTooSmall());
+        // Advisory, not a refusal: the session still runs, and still logs
+        // the channel -- SplMeter's own (generously oversized) ready buffer
+        // is what actually protects sample accounting, proven directly by
+        // test_spl_meter.cpp's own Sigma(blockSamples+droppedSamples) case.
+        CHECK(session.running());
+        CHECK(session.logsChannel(0));
+    }
+
+    SECTION("stop() clears the flag for the next start()") {
+        SplConfig tooSmall = shortBlockConfig();
+        tooSmall.blockSeconds = 0.002;
+        session.start(tooSmall, kFs, channels);
+        REQUIRE(session.blockSecondsTooSmall());
+        session.stop();
+        session.start(shortBlockConfig(), kFs, channels);
+        CHECK_FALSE(session.blockSecondsTooSmall());
+    }
+}
+
 // --- one chain per DISTINCT weighting, and the reason it is not optional --
 
 TEST_CASE("a C-weighted metric is served C-weighted numbers, not A-weighted ones",
@@ -278,134 +363,8 @@ TEST_CASE("a gap rides every chain exactly once, never chainCount times",
     CHECK(session.droppedSamplesTotal(0) == 12000);
 }
 
-// --- the metric cap, and the hole it used to open above 16 ---------------
-
-namespace {
-
-/// `count` metrics, the LAST of which is C-weighted and every earlier one
-/// A-weighted -- so a cap that drops the tail, or a fill that gives up and
-/// lets the publish fall back, shows up as the C metric reading A numbers.
-SplConfig manyMetrics(std::size_t count) {
-    SplConfig config;
-    config.blockSeconds = 0.1;
-    for (std::size_t i = 0; i < count; ++i) {
-        const bool last = (i + 1 == count);
-        config.metrics.push_back(rta::measure::SplMetricSpec{
-            last ? "LCeq_last" : ("LAeq_" + std::to_string(i)),
-            last ? rta::dsp::WeightingType::C : rta::dsp::WeightingType::A,
-            rta::meter::TimeWeighting::Fast, 4});
-    }
-    return config;
-}
-
-/// A 100 Hz sine, where A and C weighting differ by about 19 dB -- far more
-/// than any tolerance question can blur.
-std::vector<float> lowSine(std::size_t count) {
-    std::vector<float> x(count);
-    for (std::size_t n = 0; n < count; ++n) {
-        const double t = static_cast<double>(n) / kFs;
-        x[n] = static_cast<float>(0.5 * std::sin(2.0 * 3.14159265358979323846 * 100.0 * t));
-    }
-    return x;
-}
-
-}  // namespace
-
-TEST_CASE("the metric list is capped at construction, and the refusal is COUNTED",
-          "[splsession]") {
-    // DEFECT 1 FROM THE PR #17 VERIFIER. `SplConfig::metrics` was an unbounded
-    // vector validated nowhere, while the publish path's per-metric window
-    // storage is a fixed array of kMaxMetrics. At 17 metrics
-    // `fillMetricWindows` returned 0 -- all-or-nothing -- so `metricWindows`
-    // arrived EMPTY and every metric fell back to the first chain: the
-    // C-weighted metric was published A-weighted numbers under a C label,
-    // 18.8 dB wrong. That is e35f121's defect re-opened one index above the
-    // array bound.
-    //
-    // Fixed three ways at once, and each one closes it alone:
-    //   (a) the config is TRUNCATED to kMaxMetrics here, so the publish path
-    //       cannot be handed more metrics than it has storage for;
-    //   (b) fillMetricWindows fills the FIRST N instead of giving up; and
-    //   (c) buildSplBlockView no longer falls back when metricWindows is
-    //       non-empty but short -- a missing entry is ABSENCE.
-    // Three layers because the failure was silent and 18.8 dB wide.
-    SplSession session;
-    const int channels[] = {0};
-
-    SECTION("exactly at the cap: everything is accepted") {
-        session.start(manyMetrics(SplConfig::kMaxMetrics), kFs, channels);
-        REQUIRE(session.config() != nullptr);
-        CHECK(session.config()->metrics.size() == SplConfig::kMaxMetrics);
-        CHECK(session.refusedMetrics() == 0);
-    }
-
-    SECTION("one over the cap: TRUNCATED, and the count is published") {
-        // TRUNCATION, not refusal of the whole session, and the choice is
-        // deliberate: a misconfiguration that silenced SPL logging outright
-        // would lose a show's evidence, which is worse than logging the first
-        // sixteen. It is only acceptable BECAUSE the count is reported --
-        // `refusedMetrics()` here, and `SplBlockView::refusedMetrics` in the
-        // published snapshot, so nothing is dropped silently.
-        session.start(manyMetrics(SplConfig::kMaxMetrics + 1), kFs, channels);
-        REQUIRE(session.config() != nullptr);
-        CHECK(session.config()->metrics.size() == SplConfig::kMaxMetrics);
-        CHECK(session.refusedMetrics() == 1);
-        // The dropped one is the LAST, and it is the C-weighted one -- so the
-        // chain for C is not built either, and no surviving metric can be
-        // handed C numbers or a C label by accident.
-        for (const auto& spec : session.config()->metrics) {
-            CHECK(spec.weighting == rta::dsp::WeightingType::A);
-            CHECK(spec.id != "LCeq_last");
-        }
-    }
-
-    SECTION("far over the cap") {
-        session.start(manyMetrics(64), kFs, channels);
-        REQUIRE(session.config() != nullptr);
-        CHECK(session.config()->metrics.size() == SplConfig::kMaxMetrics);
-        CHECK(session.refusedMetrics() == 64 - SplConfig::kMaxMetrics);
-    }
-}
-
-TEST_CASE("fillMetricWindows fills the first N and says how many, never all-or-nothing",
-          "[splsession]") {
-    // The all-or-nothing return was the mechanism: a 0 meant "no per-metric
-    // windows", which the publish path read as "single weighting, use the
-    // shared window".
-    SplSession session;
-    const int channels[] = {0};
-    session.start(manyMetrics(SplConfig::kMaxMetrics), kFs, channels);
-    REQUIRE(session.config()->metrics.size() == SplConfig::kMaxMetrics);
-
-    const auto hop = lowSine(4800);
-    for (int i = 0; i < 6; ++i) session.feedHop(0, hop);
-
-    SECTION("storage exactly the right size") {
-        std::array<std::span<const rta::meter::Block>, SplConfig::kMaxMetrics> windows{};
-        CHECK(session.fillMetricWindows(0, windows) == SplConfig::kMaxMetrics);
-        // The last metric is C-weighted and must get the C chain, which is a
-        // DIFFERENT buffer from the A chain the other fifteen share.
-        const auto aWindow = session.window(0, rta::dsp::WeightingType::A);
-        const auto cWindow = session.window(0, rta::dsp::WeightingType::C);
-        REQUIRE_FALSE(aWindow.empty());
-        REQUIRE_FALSE(cWindow.empty());
-        CHECK(aWindow.data() != cWindow.data());
-        CHECK(windows[0].data() == aWindow.data());
-        CHECK(windows[SplConfig::kMaxMetrics - 1].data() == cWindow.data());
-    }
-
-    SECTION("storage SHORTER than the metric list fills what it can and reports it") {
-        std::array<std::span<const rta::meter::Block>, 4> tooSmall{};
-        CHECK(session.fillMetricWindows(0, tooSmall) == 4);
-        const auto aWindow = session.window(0, rta::dsp::WeightingType::A);
-        for (const auto& w : tooSmall) CHECK(w.data() == aWindow.data());
-    }
-
-    SECTION("a channel nothing logs fills nothing") {
-        std::array<std::span<const rta::meter::Block>, SplConfig::kMaxMetrics> windows{};
-        CHECK(session.fillMetricWindows(7, windows) == SplConfig::kMaxMetrics);
-        // Filled, but with EMPTY spans: the count says how many rows were
-        // written, not that any of them has data.
-        for (const auto& w : windows) CHECK(w.empty());
-    }
-}
+// The metric-cap / fillMetricWindows cases (PR #17 verifier defect 1) that
+// used to follow here moved to test_spl_session_metric_cap.cpp, and the
+// newlyClosedBlocks-per-chain / fix round 2026-09-25 item 4 / M5 cases to
+// test_spl_session_newly_closed.cpp (PR #29 round-3 fix pass step 6,
+// 400-line hard cap).

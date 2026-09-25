@@ -22,33 +22,10 @@ constexpr std::uint32_t kMinPublishIntervalMs = 50;
 
 }  // namespace
 
-// THE WINDOW ARRAY'S BOUND IS A GATE, NOT A CONVENTION (round-2 verifier).
-//
-// `publishIfDue` below declares its per-metric window storage as
-// `std::array<..., kMaxSplMetricWindows>`, and that header constant is written
-// as `= SplConfig::kMaxMetrics`. Written that way it is only a CONVENTION: a
-// literal 16 there with `kMaxMetrics` raised to 24 compiles, every test stays
-// green, and the eight metrics past the array's end silently lose their
-// windows -- which `buildSplBlockView`'s no-fallback rule then publishes as
-// ABSENT readings. This assertion is in THIS translation unit, beside the
-// array it guards, so the drift fails the BUILD rather than a test somebody
-// has to think to write.
-//
-// The behavioural half is `app/tests_juce/test_spl_drain.cpp`'s D5, which
-// sizes its own buffer from THIS constant and asserts every configured metric
-// gets a window -- measured red under the same mutation, reading
-// "kMaxSplMetricWindows = 16, kMaxMetrics = 24, metrics = 24, filled = 16".
-//
-// NOTE, because it is easy to assume otherwise: the OFF-build case
-// `app/tests/test_spl_publish.cpp` "every metric the config can express gets a
-// PRESENT reading" does NOT catch this drift. `AnalysisThread.h` includes
-// JUCE, so that file cannot name this constant, and it sizes its buffer from
-// `SplConfig::kMaxMetrics` instead -- measured, it stays GREEN under the
-// literal-16 mutation. So this assertion and D5 are the only two guards on the
-// relationship, and the one CI runs is this one, at compile time.
-static_assert(AnalysisThread::kMaxSplMetricWindows == SplConfig::kMaxMetrics,
-              "the per-metric window array must be sized by SplConfig::kMaxMetrics -- a "
-              "smaller array silently drops the metrics past its end to ABSENT readings");
+// THE WINDOW ARRAY'S BOUND IS A GATE, NOT A CONVENTION (round-2 verifier) --
+// the static_assert itself, beside `kMaxSplMetricWindows`'s own declaration,
+// lives in AnalysisThreadSpl.cpp now (moved there under this file's 400-line
+// cap by lane L6a task W2-E1; the SPL half is that file's whole subject).
 
 AnalysisThread::AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::Config& config)
     : juce::Thread("rta AnalysisThread")
