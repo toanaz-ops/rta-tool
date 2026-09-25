@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Lane L6a task W4a-A (docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md;
+// Lane L6a task W4a-A / W3-C (docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md;
 // record docs/dsp/2026-09-16-spl-pro-l6a.md sec.9, sec.11, sec.13 Q6/Q9).
 #include "export/SplReport.h"
 #include "export/SplReportScript.h"
@@ -16,6 +16,10 @@
 #include <vector>
 
 using namespace rta::splexport;
+using rta::measure::calibrationLevel;
+using rta::measure::CalibrationReportFields;
+using rta::measure::CalibrationSession;
+using rta::measure::CalibrationVerdict;
 
 namespace {
 
@@ -46,6 +50,26 @@ ReportMetricResult mainMetric() {
     m.lnPercents = {1.0, 5.0, 10.0, 50.0, 90.0, 95.0};
     m.lnDb = {102.0, 98.0, 95.0, 88.0, 80.0, std::nullopt};
     return m;
+}
+
+CalibrationReportFields performedCalibration() {
+    CalibrationReportFields f;
+    f.performed = true;
+    // 94.5 dB is not one of IEC 60942's own two nominal levels, so
+    // CalibrationLevel::operatorSupplied is true -- exercising plan A4's
+    // "any other value is accepted but recorded as operator-supplied".
+    f.start.level = calibrationLevel(94.5);
+    f.start.measuredLevelDb = -6.0;
+    f.start.offsetDb = 100.0;
+    f.start.unixMs = 1000;
+    f.end.level = calibrationLevel(94.5);
+    f.end.measuredLevelDb = -5.7;
+    f.end.offsetDb = 100.3;
+    f.end.unixMs = 7200000;
+    f.driftDb = 0.3;
+    f.verdict = CalibrationVerdict::Pass;
+    f.clause = CalibrationSession::kClause;
+    return f;
 }
 
 /// Every load-time and run-time fetch shape A1 names, defect 9's own list.
@@ -226,13 +250,35 @@ TEST_CASE("the rendered report stays small even over a long session", "[spl_repo
     CHECK(html.size() < 3'000'000);
 }
 
-// --- calibration section (W3-C fills in the performed==true branch later) --
+// --- W3-C: calibration in the report ---------------------------------------
 
-TEST_CASE("calibration section prints the not-performed fallback (Wave 3 cut default)",
+TEST_CASE("W3-C not performed prints the fallback sentence and never a verdict",
          "[spl_report]") {
-    const auto html = renderReport(minimalPayload());
+    ReportPayload payload = minimalPayload();
+    payload.calibration = CalibrationReportFields{};  // performed == false
+    const auto html = renderReport(payload);
     const auto calibration = extractSection(html, "calibration");
     CHECK(calibration.find("calibration check not performed") != std::string::npos);
+    // The mutation the plan prescribes: "print Pass when not performed" ->
+    // this must go RED against it.
     CHECK(calibration.find("Pass") == std::string::npos);
     CHECK(calibration.find("Fail") == std::string::npos);
+}
+
+TEST_CASE("W3-C performed prints the pair, the drift, the nominal and the clause",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    payload.calibration = performedCalibration();
+    const auto html = renderReport(payload);
+    const auto calibration = extractSection(html, "calibration");
+
+    CHECK(calibration.find(rta::view::formatTrim(-6.0)) != std::string::npos);
+    CHECK(calibration.find(rta::view::formatTrim(-5.7)) != std::string::npos);
+    CHECK(calibration.find(rta::view::formatTrim(0.3)) != std::string::npos);
+    CHECK(calibration.find(rta::view::formatTrim(94.5)) != std::string::npos);
+    CHECK(calibration.find("operator-supplied") != std::string::npos);
+    CHECK(calibration.find("ISO 1996-2:2017 cl. 5.2") != std::string::npos);
+    CHECK(calibration.find("Pass") != std::string::npos);
+    CHECK(calibration.find("1000") != std::string::npos);
+    CHECK(calibration.find("7200000") != std::string::npos);
 }

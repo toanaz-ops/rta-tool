@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Part of RTA Tool -- app/src/export. No JUCE: enforced by the
 // measure_has_no_framework_deps ctest.
-// Lane L6a task W4a-A (docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md;
+// Lane L6a task W4a-A / W3-C (docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md;
 // record docs/dsp/2026-09-16-spl-pro-l6a.md sec.9, sec.11).
 #include "export/SplReport.h"
 #include "export/SplReportScript.h"
@@ -197,12 +197,29 @@ std::string renderInstrument(const ReportPayload& p) {
     return section("instrument", "Instrument", body);
 }
 
-// W4a-A baseline: Wave 3 (calibration) is not wired in yet, so this section
-// always prints the record sec.9 item 3 fallback sentence -- task W3-C
-// (next commit) makes this conditional on `ReportPayload::calibration.
-// performed` and fills in the pre/post pair.
-std::string renderCalibration(const ReportPayload&) {
-    return section("calibration", "Calibration", "<p>calibration check not performed.</p>");
+// W3-C: record sec.9 item 3. `performed` gates first -- `verdict` is
+// std::optional, never a Pass-defaulted placeholder, mirroring
+// CalibrationSession's own optionality exactly.
+std::string renderCalibration(const ReportPayload& p) {
+    const auto& c = p.calibration;
+    std::string body;
+    if (!c.performed) {
+        body += "<p>calibration check not performed.</p>";
+        return section("calibration", "Calibration", body);
+    }
+    body += kv("Pre-check level", escapeHtml(formatTrim(c.start.measuredLevelDb)));
+    body += kv("Pre-check time (ms, Unix epoch)", std::to_string(c.start.unixMs));
+    body += kv("Post-check level", escapeHtml(formatTrim(c.end.measuredLevelDb)));
+    body += kv("Post-check time (ms, Unix epoch)", std::to_string(c.end.unixMs));
+    body += kv("Drift", escapeHtml(formatTrim(c.driftDb)));
+    body += kv("Calibrator nominal level",
+              escapeHtml(formatTrim(c.start.level.nominalDb)) +
+                  (c.start.level.operatorSupplied ? " (operator-supplied)" : ""));
+    body += kv("Compared against", escapeHtml(std::string(c.clause)));
+    if (c.verdict) {
+        body += kv("Verdict", *c.verdict == rta::measure::CalibrationVerdict::Pass ? "Pass" : "Fail");
+    }
+    return section("calibration", "Calibration", body);
 }
 
 std::string renderSettings(const ReportPayload& p) {
