@@ -70,6 +70,17 @@ public:
     /// caller that only wants unweighted energy is not a special case
     /// everywhere else.
     ///
+    /// AN A-WEIGHTED CHAIN ALWAYS EXISTS, auto-created here exactly like the
+    /// Z chain above when no metric already names one (fix round
+    /// 2026-09-25, orchestrator refinement). Dose (record §7) and the Ln
+    /// histogram (record §5) are both defined in dBA and both always
+    /// configured -- `SplConfig::dose` and `::lnPercents` carry defaults,
+    /// never an on/off flag -- so a correct A-weighted figure is worth more
+    /// than an absent one, and the chain costs one extra weighting filter.
+    /// This auto-chain is NOT a metric: it never touches `config_.metrics`,
+    /// `refusedMetrics_` or `SplConfig::kMaxMetrics`'s count, the same
+    /// exemption the Z chain already has.
+    ///
     /// `config.metrics` is TRUNCATED to `SplConfig::kMaxMetrics` and the
     /// number dropped is reported by `refusedMetrics()` below and published on
     /// `SplBlockView::refusedMetrics` (PR #17 verifier defect 1: an unbounded
@@ -117,17 +128,24 @@ public:
     [[nodiscard]] std::uint32_t flagsSeen(int channel) const noexcept;
     [[nodiscard]] std::uint64_t droppedSamplesTotal(int channel) const noexcept;
 
-    /// The FIRST chain's blocks that closed during the most recent `feedHop`
-    /// call on `channel`, oldest first -- empty between calls, or when the
-    /// hop just fed did not complete one. Cleared at the top of every
+    /// The chain running `weighting`'s blocks that closed during the most
+    /// recent `feedHop` call on `channel`, oldest first -- empty between
+    /// calls, when the hop just fed did not complete one, or when this
+    /// session has no chain for `weighting`. Cleared at the top of every
     /// `feedHop`, so a caller that drains this right after `feedHop` sees
     /// each block exactly once.
     ///
-    /// Lane L6a task W2-E1: this is what `SplChannelState` (history, alarms,
-    /// dose, the Ln histogram) is fed from, on the analysis thread, block by
-    /// block -- never from a `Snapshot`, which is a throttled copy for the
-    /// message thread and can be built less often than a block closes.
-    [[nodiscard]] std::span<const rta::meter::Block> newlyClosedBlocks(int channel) const noexcept;
+    /// PER CHAIN, not per channel (fix round 2026-09-25, verifier HIGH
+    /// finding: every consumer previously read the FIRST configured chain
+    /// regardless of which metric it was actually about -- an alarm on
+    /// `LAeq` read a configured `LCeq`'s numbers whenever C happened to be
+    /// listed first). Lane L6a task W2-E1: this is what `SplChannelState`
+    /// (history, alarms, dose, the Ln histogram) is fed from, on the
+    /// analysis thread, block by block -- never from a `Snapshot`, which is
+    /// a throttled copy for the message thread and can be built less often
+    /// than a block closes.
+    [[nodiscard]] std::span<const rta::meter::Block> newlyClosedBlocks(
+        int channel, rta::dsp::WeightingType weighting) const noexcept;
 
     /// The latest block on `channel`'s FIRST chain -- the one `Snapshot`'s
     /// held maxima and sampled peak are read from.
@@ -194,6 +212,17 @@ private:
         std::uint64_t blocks = 0;
         std::uint32_t flagsSeen = 0;
         std::uint64_t droppedSamplesTotal = 0;
+
+        /// THIS chain's blocks closed during the CURRENT `feedHop` call.
+        /// Reserved once, at `start()`, to
+        /// `rta::meter::BlockAccumulator::kReadyCapacity` -- the most a
+        /// single `push()` can ever complete (that class's own bound: `push`
+        /// stops consuming once `kReadyCapacity` blocks are waiting) -- so
+        /// draining it after every `feedHop` allocates nothing. PER CHAIN
+        /// (fix round 2026-09-25), not per channel: each weighting closes
+        /// its OWN block from the SAME hop, and a caller asking for one
+        /// weighting's blocks must never see another's.
+        std::vector<rta::meter::Block> newlyClosed;
     };
 
     struct ChannelState {
@@ -201,14 +230,6 @@ private:
         std::vector<Chain> chains;
         std::uint64_t lastBusDropCount = 0;
         bool dropBaselineSet = false;
-
-        /// The FIRST chain's blocks closed during the CURRENT `feedHop` call.
-        /// Reserved once, at `start()`, to
-        /// `rta::meter::BlockAccumulator::kReadyCapacity` -- the most a
-        /// single `push()` can ever complete (that class's own bound: `push`
-        /// stops consuming once `kReadyCapacity` blocks are waiting) -- so
-        /// draining it after every `feedHop` allocates nothing.
-        std::vector<rta::meter::Block> newlyClosed;
     };
 
     [[nodiscard]] ChannelState* state(int channel) noexcept;

@@ -12,6 +12,10 @@ SplSession::Chain::Chain(const SplConfig& config, rta::dsp::WeightingType w, dou
     , meter(config, w, sampleRate) {
     // Reserved ONCE, here, on the message thread. feedHop never grows it.
     window.reserve(windowCapacity);
+    // W2-E1 (fix round 2026-09-25: PER CHAIN, not per channel): reserved
+    // once, here -- feedHop below never grows it (see the member's own
+    // comment for the kReadyCapacity bound).
+    newlyClosed.reserve(rta::meter::BlockAccumulator::kReadyCapacity);
 }
 
 void SplSession::start(const SplConfig& config, double sampleRate,
@@ -42,6 +46,18 @@ void SplSession::start(const SplConfig& config, double sampleRate,
     }
     if (weightings_.empty()) weightings_.push_back(rta::dsp::WeightingType::Z);
 
+    // Dose (record §7) and the Ln histogram (record §5) are always
+    // configured (SplConfig::dose/lnPercents carry defaults, never an
+    // on/off flag) and both are defined in dBA -- so an A-weighted chain
+    // always exists, auto-created here exactly like the Z chain above when
+    // no metric already named one (fix round 2026-09-25, orchestrator
+    // refinement). NOT a metric: does not touch config_.metrics,
+    // refusedMetrics_ or SplConfig::kMaxMetrics.
+    if (std::find(weightings_.begin(), weightings_.end(), rta::dsp::WeightingType::A) ==
+        weightings_.end()) {
+        weightings_.push_back(rta::dsp::WeightingType::A);
+    }
+
     // The window holds the longest metric's own span, so every metric can be
     // recomputed from it, bounded by kMaxWindowBlocks so a misconfigured
     // metric cannot ask for an eight-hour vector in Wave 0.
@@ -58,9 +74,6 @@ void SplSession::start(const SplConfig& config, double sampleRate,
         for (const auto w : weightings_) {
             s->chains.emplace_back(config_, w, sampleRate, windowCapacity_);
         }
-        // W2-E1: reserved once, here, on the message thread -- feedHop below
-        // never grows it (see ChannelState::newlyClosed's own comment).
-        s->newlyClosed.reserve(rta::meter::BlockAccumulator::kReadyCapacity);
         channels_[static_cast<std::size_t>(channel)] = std::move(s);
     }
     running_ = true;
@@ -128,19 +141,18 @@ void SplSession::feedHop(int channel, std::span<const float> hop) noexcept {
     ChannelState* s = state(channel);
     if (s == nullptr) return;
 
-    // W2-E1: cleared here so a caller draining `newlyClosedBlocks` right
-    // after this call sees exactly the blocks THIS hop closed, never a
-    // leftover from the previous one.
-    s->newlyClosed.clear();
-
     for (Chain& c : s->chains) {
-        const bool isFirstChain = &c == &s->chains.front();
+        // W2-E1 (fix round 2026-09-25): cleared per chain, here, so a caller
+        // draining `newlyClosedBlocks(channel, w)` right after this call
+        // sees exactly the blocks THIS hop closed on chain `w`, never a
+        // leftover from the previous hop and never another chain's blocks.
+        c.newlyClosed.clear();
         c.meter.push(hop);
         while (auto block = c.meter.poll()) {
             ++c.blocks;
             c.flagsSeen |= block->flags;
             c.droppedSamplesTotal += block->droppedSamples;
-            if (isFirstChain) s->newlyClosed.push_back(*block);
+            c.newlyClosed.push_back(*block);
 
             if (c.window.size() < c.window.capacity()) {
                 c.window.push_back(*block);
@@ -186,10 +198,11 @@ std::uint64_t SplSession::droppedSamplesTotal(int channel) const noexcept {
     return s->chains.front().droppedSamplesTotal;
 }
 
-std::span<const rta::meter::Block> SplSession::newlyClosedBlocks(int channel) const noexcept {
-    const ChannelState* s = state(channel);
-    if (s == nullptr) return {};
-    return s->newlyClosed;
+std::span<const rta::meter::Block> SplSession::newlyClosedBlocks(
+    int channel, rta::dsp::WeightingType weighting) const noexcept {
+    const Chain* c = chain(channel, weighting);
+    if (c == nullptr) return {};
+    return c->newlyClosed;
 }
 
 std::optional<rta::meter::Block> SplSession::latestBlock(int channel) const noexcept {

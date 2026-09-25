@@ -409,3 +409,147 @@ TEST_CASE("fillMetricWindows fills the first N and says how many, never all-or-n
         for (const auto& w : windows) CHECK(w.empty());
     }
 }
+
+// --- fix round 2026-09-25 item 4 / M5: newlyClosedBlocks is PER CHAIN ------
+//
+// The verifier found no test anywhere referenced `newlyClosedBlocks` at all
+// -- the literal M5 mutant ("feed `newlyClosed` from every chain") had
+// nothing to fail against. These cases exercise the accessor directly.
+
+TEST_CASE("newlyClosedBlocks reads one chain's own blocks, never another chain's",
+          "[splsession]") {
+    SplConfig config;
+    config.blockSeconds = 0.1;
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 4});
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 4});
+
+    SplSession session;
+    const int channels[] = {0};
+    session.start(config, kFs, channels);
+    REQUIRE(session.chainCount() == 2);
+
+    const auto hop = lowSine(4800);  // exactly one 4800-sample block
+    session.feedHop(0, hop);
+
+    const auto aClosed = session.newlyClosedBlocks(0, rta::dsp::WeightingType::A);
+    const auto cClosed = session.newlyClosedBlocks(0, rta::dsp::WeightingType::C);
+    REQUIRE(aClosed.size() == 1);
+    REQUIRE(cClosed.size() == 1);
+    // Same blockIndex (both chains close in lockstep on the same hop) but
+    // DIFFERENT energy -- the M5 mutant ("feed newlyClosed from every
+    // chain", i.e. every chain reporting chain 0's own blocks) cannot pass
+    // this: it would make the two spans equal.
+    CHECK(aClosed[0].blockIndex == cClosed[0].blockIndex);
+    CHECK(aClosed[0].sumSquares != cClosed[0].sumSquares);
+
+    // A weighting this session never configured returns an EMPTY span, never
+    // a silent alias onto a configured chain's blocks.
+    CHECK(session.newlyClosedBlocks(0, rta::dsp::WeightingType::Z).empty());
+}
+
+TEST_CASE("a hop that closes several blocks reports each newly-closed block exactly once",
+          "[splsession]") {
+    SplSession session;
+    const int channels[] = {0};
+    session.start(shortBlockConfig(4), kFs, channels);  // 4800-sample blocks
+
+    // 4 blocks, not more: rta::meter::BlockAccumulator::kReadyCapacity (its
+    // own header comment) bounds how many blocks a SINGLE push() can ever
+    // complete without an intervening poll() -- a 5th block's worth in the
+    // same hop would hit that bound and be flagged Dropped instead of
+    // closed, which is BlockAccumulator's own documented behaviour, not
+    // this fixture's subject (per-chain `newlyClosedBlocks` reporting).
+    std::vector<float> bigHop(4800 * 4, 0.2f);  // 4 blocks in ONE hop/drain
+    session.feedHop(0, bigHop);
+
+    const auto closed = session.newlyClosedBlocks(0, rta::dsp::WeightingType::A);
+    REQUIRE(closed.size() == 4);
+    for (std::size_t i = 0; i < closed.size(); ++i) {
+        CHECK(closed[i].blockIndex == i);
+    }
+    CHECK(session.blockCount(0) == 4);
+
+    // A later hop that closes nothing (a partial block) reports an EMPTY
+    // span -- not the previous hop's blocks left over.
+    std::vector<float> smallHop(100, 0.2f);
+    session.feedHop(0, smallHop);
+    CHECK(session.newlyClosedBlocks(0, rta::dsp::WeightingType::A).empty());
+}
+
+TEST_CASE("48 hops crossing exactly one block boundary close it exactly once",
+          "[splsession]") {
+    // The coordinator's own "once-per-block" fixture: many small hops
+    // accumulate toward ONE block boundary, and newlyClosedBlocks must show
+    // it exactly once at the hop that crosses it -- never fewer, never
+    // twice.
+    SplSession session;
+    const int channels[] = {0};
+    session.start(shortBlockConfig(4), kFs, channels);  // 4800-sample blocks
+
+    std::vector<float> hop(100, 0.2f);
+    int closedCount = 0;
+    bool sawClose = false;
+    std::uint64_t seenIndex = 0;
+    for (int i = 0; i < 48; ++i) {  // 48 * 100 = 4800 samples = exactly 1 block
+        session.feedHop(0, hop);
+        const auto closed = session.newlyClosedBlocks(0, rta::dsp::WeightingType::A);
+        if (!closed.empty()) {
+            REQUIRE(closed.size() == 1);
+            CHECK_FALSE(sawClose);  // never reported twice
+            sawClose = true;
+            seenIndex = closed[0].blockIndex;
+            ++closedCount;
+        }
+    }
+    CHECK(closedCount == 1);
+    CHECK(seenIndex == 0);
+    CHECK(session.blockCount(0) == 1);
+}
+
+TEST_CASE("reconfiguring (stop then start) leaves no stale newlyClosed from the old session",
+          "[splsession]") {
+    SplSession session;
+    const int channels[] = {0};
+    session.start(shortBlockConfig(4), kFs, channels);
+
+    std::vector<float> block(4800, 0.2f);
+    session.feedHop(0, block);
+    REQUIRE(session.newlyClosedBlocks(0, rta::dsp::WeightingType::A).size() == 1);
+
+    session.stop();
+    session.start(shortBlockConfig(4), kFs, channels);
+    // A fresh session, before any feedHop: nothing closed yet -- not the
+    // previous session's leftover block.
+    CHECK(session.newlyClosedBlocks(0, rta::dsp::WeightingType::A).empty());
+    CHECK(session.blockCount(0) == 0);
+
+    session.feedHop(0, block);
+    const auto closed = session.newlyClosedBlocks(0, rta::dsp::WeightingType::A);
+    REQUIRE(closed.size() == 1);
+    CHECK(closed[0].blockIndex == 0);  // block indices restart, not continue at 1
+}
+
+TEST_CASE("newlyClosedBlocks works per-weighting on a channel past kMaxTransferFunctions",
+          "[splsession]") {
+    SplConfig config;
+    config.blockSeconds = 0.1;
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LAeq", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 4});
+    config.metrics.push_back(rta::measure::SplMetricSpec{
+        "LCeq", rta::dsp::WeightingType::C, rta::meter::TimeWeighting::Fast, 4});
+
+    SplSession session;
+    const int channels[] = {9};  // route position 8, past kMaxTransferFunctions
+    session.start(config, kFs, channels);
+
+    std::vector<float> block(4800, 0.2f);
+    session.feedHop(9, block);
+
+    const auto aClosed = session.newlyClosedBlocks(9, rta::dsp::WeightingType::A);
+    const auto cClosed = session.newlyClosedBlocks(9, rta::dsp::WeightingType::C);
+    REQUIRE(aClosed.size() == 1);
+    REQUIRE(cClosed.size() == 1);
+    CHECK(session.newlyClosedBlocks(0, rta::dsp::WeightingType::A).empty());  // channel 0 untouched
+}
