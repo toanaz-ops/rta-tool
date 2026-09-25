@@ -195,6 +195,26 @@ TEST_CASE("an alarm with no headroom reading renders absent, never 0.0 dB",
          std::string::npos);
 }
 
+// Fix round (PR #28 round-3 fix, pre-existing defect): `cfg.blockSeconds`
+// is a duration in seconds, not a sound level, but Settings printed it
+// through `formatTrim` -- the dB formatter -- so the default 1.0 s block
+// interval read "1.0 dB" in the report. `intervalText` is not the right
+// fix either: it rounds to the nearest WHOLE second (`static_cast<long
+// long>(seconds + 0.5)`), which would silently floor a sub-second block
+// interval like 0.125 s to "0s". Block interval needs its own formatter:
+// decimal precision, "s" unit, never dB.
+TEST_CASE("Settings prints the block interval in seconds, not decibels",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    payload.config.blockSeconds = 1.0;  // SplConfig's own default
+    const auto html = renderReport(payload);
+    const auto settings = extractSection(html, "settings");
+    CHECK(settings.find(
+              R"(<span class="label">Block interval</span><span class="value">1.0 s</span>)") !=
+         std::string::npos);
+    CHECK(settings.find("1.0 dB") == std::string::npos);
+}
+
 // Fix round (PR #28 round-3 fix, LOW, M09): a single-block session has
 // `first == last`, so the span computation's `*last > *first` branch is
 // false and the fallback value is what actually divides every x. Changing

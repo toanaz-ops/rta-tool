@@ -95,6 +95,13 @@ std::string oneDecimal(double value) {
 
 std::string percentDisplay(double percent) { return oneDecimal(percent) + " %"; }
 
+// Round-3 fix (pre-existing defect): `blockSeconds` is a duration, not a
+// sound level -- printing it through `formatTrim` gave the default 1.0 s
+// interval a false "dB" unit. `intervalText` is also wrong here: it rounds
+// to the nearest WHOLE second, which would floor a sub-second block
+// interval (e.g. 0.125 s) to "0s". One decimal, its own "s" unit.
+std::string secondsDisplay(double seconds) { return oneDecimal(seconds) + " s"; }
+
 std::string exchangeRateDisplay(double q) { return std::format("{:.7f}", q); }
 
 std::string percentOrAbsent(std::optional<double> value) {
@@ -183,7 +190,7 @@ std::string renderCalibration(const ReportPayload& p) {
 std::string renderSettings(const ReportPayload& p) {
     const auto& cfg = p.config;
     std::string body;
-    body += kv("Block interval", escapeHtml(formatTrim(cfg.blockSeconds)));
+    body += kv("Block interval", escapeHtml(secondsDisplay(cfg.blockSeconds)));
     body += kv("Reference offset", escapeHtml(formatTrim(cfg.referenceOffsetDb)));
     body += kv("Calibrated", cfg.calibrated ? "yes" : "no");
     body += kv("Log span", escapeHtml(intervalText(cfg.logSpanSeconds)));

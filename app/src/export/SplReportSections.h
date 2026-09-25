@@ -39,6 +39,10 @@ namespace rta::splexport::detail {
 // Dose is a percentage that can exceed 100, NOT the 0..1 ratio
 // `formatAgreement` means.
 [[nodiscard]] std::string percentDisplay(double percent);
+// Round-3 fix: a bare duration in seconds, one decimal, its own "s" unit --
+// never `formatTrim` (dB) and never `intervalText` (rounds to the nearest
+// whole second, wrong for a sub-second block interval).
+[[nodiscard]] std::string secondsDisplay(double seconds);
 // Seven decimals, matching record sec.7's own table -- round-3 fix: one
 // decimal printed NIOSH's computed q (9.9657843...) as "10.0", textually
 // the SAME as the q=10 OSHA-shaped constant the record spends a page
