@@ -217,6 +217,26 @@ TEST_CASE("A5 the integrity hash reproduces bitwise and moves on one byte", "[sp
     CHECK(html3.find(expected) == std::string::npos);
 }
 
+// --- Dose: absence, never a placeholder zero --------------------------------
+
+// Fix round (PR #28 verifier, MEDIUM): ReportDoseResult's percent/
+// projectedPercent/twaDb/exposureLevel8hDb had no optionals, so a preset
+// with nothing accumulated yet rendered "0.0 % ... 0.0 dB" -- indistinguishable
+// from a preset that measured exactly zero dose
+// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+TEST_CASE("a dose preset with nothing accumulated prints absent, never 0.0",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    payload.dose[0].label = "NIOSH REL";
+    // percent/projectedPercent/twaDb/exposureLevel8hDb all left absent.
+    const auto html = renderReport(payload);
+    const auto dose = extractSection(html, "dose");
+    CHECK(dose.find("NIOSH REL") != std::string::npos);
+    CHECK(dose.find("absent") != std::string::npos);
+    CHECK(dose.find("0.0 %") == std::string::npos);
+    CHECK(dose.find("0.0 dB") == std::string::npos);
+}
+
 // --- A6: Ln labels carry all four parts ------------------------------------
 
 TEST_CASE("A6 Ln labels are the full ISO 1996-1 form, never a bare LNN", "[spl_report]") {

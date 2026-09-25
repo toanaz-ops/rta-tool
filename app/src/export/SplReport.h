@@ -60,11 +60,17 @@ struct ReportMetricResult {
 struct ReportDoseResult {
     std::string label;
     rta::meter::DoseSettings settings;
-    double percent = 0.0;
-    double projectedPercent = 0.0;
+    /// ABSENT, never 0.0 (fix round, PR #28 verifier): a preset with
+    /// nothing accumulated yet and a preset that measured exactly zero
+    /// dose are different facts, and a placeholder zero erases which one
+    /// this is (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+    std::optional<double> percent;
+    std::optional<double> projectedPercent;
+    /// Always known once a session has started -- unlike the four above,
+    /// this is never a dose RESULT, so it stays a plain value.
     double elapsedSeconds = 0.0;
-    double twaDb = 0.0;
-    double exposureLevel8hDb = 0.0;  ///< L_EX,8h, record sec.7's exposureLevelDb()
+    std::optional<double> twaDb;
+    std::optional<double> exposureLevel8hDb;  ///< L_EX,8h, record sec.7's exposureLevelDb()
 };
 
 /// Record sec.9 item 8 plus record sec.15 A2's five-way count -- every block

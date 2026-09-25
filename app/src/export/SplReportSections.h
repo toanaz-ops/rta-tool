@@ -40,6 +40,7 @@ namespace rta::splexport::detail {
 // Dose is a percentage that can exceed 100, NOT the 0..1 ratio
 // `formatAgreement` means.
 [[nodiscard]] std::string percentDisplay(double percent);
+[[nodiscard]] std::string percentOrAbsent(std::optional<double> value);
 
 [[nodiscard]] std::string renderIdentification(const ReportPayload& p);
 [[nodiscard]] std::string renderInstrument(const ReportPayload& p);

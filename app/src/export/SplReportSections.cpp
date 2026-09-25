@@ -94,6 +94,10 @@ std::string oneDecimal(double value) {
 
 std::string percentDisplay(double percent) { return oneDecimal(percent) + " %"; }
 
+std::string percentOrAbsent(std::optional<double> value) {
+    return value ? escapeHtml(percentDisplay(*value)) : absentSpan("no data");
+}
+
 std::string renderIdentification(const ReportPayload& p) {
     std::string body;
     body += kv("Venue", escapeHtml(p.venue));
@@ -228,11 +232,11 @@ std::string renderDose(const ReportPayload& p) {
                        "<th>Elapsed</th><th>Criterion</th><th>TWA</th><th>L_EX,8h</th></tr>";
     for (const auto& d : p.dose) {
         if (d.label.empty()) continue;
-        body += "<tr><td>" + escapeHtml(d.label) + "</td><td>" + escapeHtml(percentDisplay(d.percent)) +
-                "</td><td>" + escapeHtml(percentDisplay(d.projectedPercent)) + "</td><td>" +
+        body += "<tr><td>" + escapeHtml(d.label) + "</td><td>" + percentOrAbsent(d.percent) +
+                "</td><td>" + percentOrAbsent(d.projectedPercent) + "</td><td>" +
                 escapeHtml(intervalText(d.elapsedSeconds)) + "</td><td>" +
                 escapeHtml(intervalText(d.settings.criterionSeconds)) + "</td><td>" +
-                escapeHtml(formatTrim(d.twaDb)) + "</td><td>" + escapeHtml(formatTrim(d.exposureLevel8hDb)) +
+                dbOrAbsent(d.twaDb) + "</td><td>" + dbOrAbsent(d.exposureLevel8hDb) +
                 "</td></tr>";
     }
     body += "</table>";
