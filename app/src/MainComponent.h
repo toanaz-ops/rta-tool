@@ -14,6 +14,7 @@
 #include "api/ApiSettings.h"
 #include "measure/AnalysisThread.h"
 #include "measure/Analyser.h"
+#include "measure/CalibrationSession.h"
 #include "measure/SyntheticInput.h"
 #include "rta/dsp/DelayPolicy.h"
 #include "rta/platform/AudioIo.h"
@@ -107,6 +108,15 @@ private:
     void pollLocatePipeline();
     void updateDelayReadout();
 
+    /// L6a Wave 3 (record §8): the calibration flow's UI half, defined in
+    /// MainComponentCalibration.cpp. Reuses AnalysisThread's raw-capture
+    /// accumulator rather than a second bus reader -- route 0's measurement
+    /// channel, raw, is what a calibrator on that mic delivers.
+    void calibrationStartClicked();
+    void calibrationEndClicked();
+    void pollCalibrationPipeline();
+    void updateCalibrationReadout();
+
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
     /// the poll timer while in LIVE mode (a device can be opened, closed or
@@ -157,6 +167,18 @@ private:
     std::shared_ptr<const rta::measure::LocateCapture> lastHandledCapture_;
     std::optional<rta::dsp::DelaySuggestion> delaySuggestion_;
     // ------------------------------------------------------------------------
+
+    // --- L6a Wave 3: the calibration flow --------------------------------
+    juce::TextButton calibrationStartButton_{"CAL START"};
+    juce::TextButton calibrationEndButton_{"CAL END"};
+    juce::Label calibrationReadout_;
+    rta::measure::CalibrationSession calibrationSession_;
+    /// Guards the one shared capture accumulator against Locate and
+    /// Calibration both arming it at once.
+    bool calibrationCaptureArmed_ = false;
+    bool calibrationCaptureIsStart_ = false;
+    std::shared_ptr<const rta::measure::LocateCapture> lastHandledCalibrationCapture_;
+    // ----------------------------------------------------------------------
 
     rta::view::DevicePanel devicePanel_;
     rta::view::ChannelRoleTable channelRoleTable_;

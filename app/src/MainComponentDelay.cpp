@@ -13,7 +13,10 @@
 #include "rta/gen/Prng.h"
 
 void MainComponent::locateClicked() {
-    if (locateWaitingForSettle_ || locateCaptureArmed_) {
+    // L6a Wave 3: calibrationCaptureArmed_ shares the SAME accumulator
+    // (MainComponentCalibration.cpp's own comment) -- refuse rather than
+    // stomp on an in-flight calibration capture.
+    if (locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_) {
         return;  // one Locate at a time, matching DelayLocator's own shape
     }
     // A fresh seed every click rather than a fixed one: two Locates back to
