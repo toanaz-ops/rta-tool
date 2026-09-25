@@ -239,8 +239,15 @@ TEST_CASE("1c onBlockClosed no longer feeds Ln at all -- feedLnTicks is the only
     // blocks but never calls feedLnTicks must see Ln stay ABSENT -- proof
     // the two paths are actually decoupled, not merely that the old wrong
     // value stopped appearing. The "feed maxFastDb again" mutant (reverting
-    // this fix) makes Ln PRESENT here, at ~80 dB, failing every CHECK_FALSE
+    // this fix) makes Ln PRESENT here, at ~60 dB, failing every CHECK_FALSE
     // below.
+    //
+    // round-4 item 5 fix: the fixture used to feed 80.0 dB, which is
+    // AboveSpan for the default histogram [-120, +80) (EXCLUSIVE top) --
+    // both correct code (nothing fed, absent) and the M8 mutant (80.0 dB
+    // fed, but out of span, also absent) publish ABSENT, so the test could
+    // not tell them apart. 60.0 dB is clearly IN span, so the mutant now
+    // publishes a PRESENT reading and the fixed test catches it.
     SplConfig config;
     config.blockSeconds = 1.0;
     config.logSpanSeconds = 200.0;
@@ -248,7 +255,7 @@ TEST_CASE("1c onBlockClosed no longer feeds Ln at all -- feedLnTicks is the only
     SplChannelState state(config, 48000.0);
     std::vector<Block> aWindow;
     for (std::uint64_t i = 0; i < 20; ++i) {
-        feedOneChain(state, aWindow, blockAtLevel(i, 48000, 80.0));
+        feedOneChain(state, aWindow, blockAtLevel(i, 48000, 60.0));
     }
 
     SplBlockView view;
