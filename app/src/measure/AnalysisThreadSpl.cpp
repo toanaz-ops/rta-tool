@@ -275,6 +275,11 @@ void AnalysisThread::fillSplPublishInput(
     input.latestBlock = latest;
     input.window = splSession_.window(channel);
     input.refusedMetrics = splSession_.refusedMetrics();
+    // Round-4 items 3/4: the A-weighted chain's own tick-overflow count and
+    // the session's advisory blockSeconds-floor flag, neither of which
+    // SplChannelState ever sees.
+    input.overflowedLnTicks = splSession_.overflowedLnTicks(channel, rta::dsp::WeightingType::A);
+    input.blockSecondsTooSmall = splSession_.blockSecondsTooSmall();
     // PER-METRIC windows: metric i's weighting decides which chain it is
     // averaged over, and without this an A-weighted and a C-weighted metric
     // would read the same numbers.

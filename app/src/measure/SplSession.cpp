@@ -12,10 +12,11 @@ SplSession::Chain::Chain(const SplConfig& config, rta::dsp::WeightingType w, dou
     , meter(config, w, sampleRate) {
     // Reserved ONCE, here, on the message thread. feedHop never grows it.
     window.reserve(windowCapacity);
-    // W2-E1 (fix round 2026-09-25: PER CHAIN, not per channel): reserved
-    // once, here -- feedHop below never grows it (see the member's own
-    // comment for the kReadyCapacity bound).
-    newlyClosed.reserve(rta::meter::BlockAccumulator::kReadyCapacity);
+    // W2-E1 (fix round 2026-09-25: PER CHAIN, not per channel), revised
+    // round 4 item 1: reserved once, here -- feedHop below never grows it
+    // (see the member's own comment for why the bound is
+    // SplMeter::kScratchSamples, not BlockAccumulator::kReadyCapacity).
+    newlyClosed.reserve(SplMeter::kScratchSamples);
 }
 
 void SplSession::start(const SplConfig& config, double sampleRate,
@@ -218,6 +219,13 @@ std::span<const double> SplSession::newlyTickedLnLevelsDb(
     const Chain* c = chain(channel, weighting);
     if (c == nullptr) return {};
     return c->meter.newlyTickedLnLevelsDb();
+}
+
+std::uint64_t SplSession::overflowedLnTicks(
+    int channel, rta::dsp::WeightingType weighting) const noexcept {
+    const Chain* c = chain(channel, weighting);
+    if (c == nullptr) return 0;
+    return c->meter.overflowedLnTicks();
 }
 
 std::optional<rta::meter::Block> SplSession::latestBlock(int channel) const noexcept {

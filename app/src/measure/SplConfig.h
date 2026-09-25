@@ -204,6 +204,19 @@ struct SplConfig {
     /// scratch chunk serves no real measurement purpose either way, and an
     /// operator who typed one gets told rather than left to wonder why the
     /// block clock looks odd.
+    ///
+    /// WHY ADVISORY AND NOT A REFUSAL (round-4 item 4, spelled out because a
+    /// future reader will be tempted to make it a hard gate): correctness
+    /// does not depend on this number. Sample accounting is EXACT for any
+    /// `blockSeconds` >= one sample, proven directly by
+    /// test_spl_meter.cpp's own Sigma(blockSamples+droppedSamples) case and
+    /// by the round-4 item 2 eviction fix -- this floor is a UX
+    /// RECOMMENDATION ("this configuration is finer than any real
+    /// measurement needs and may just be a typo"), never a correctness
+    /// requirement, and refusing to start a session over a UX opinion would
+    /// lose a show's evidence for no measurement reason at all. Published on
+    /// `SplBlockView::blockSecondsBelowRecommendedFloor` (round-4 item 4) so
+    /// the operator is told rather than left to wonder.
     [[nodiscard]] bool blockSecondsBelowRecommendedFloor(double sampleRate, double scratchSamples,
                                                           double readyCapacity) const noexcept {
         if (!(sampleRate > 0.0) || !(blockSeconds > 0.0) || !(readyCapacity > 0.0)) return true;

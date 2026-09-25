@@ -247,6 +247,11 @@ add_executable(rtatool_analysis_tests
     # operating systems; only the caller (AnalysisThread) is JUCE.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogPipeline.cpp
     test_spl_log_pipeline.cpp
+    # test_spl_publish_round4.cpp: PR #29 round-4 fix pass items 3/4 -- a NEW
+    # file rather than growing test_spl_publish.cpp (already over the
+    # 400-line cap pre-existing this round) -- SplBlockView::lnTicksOverflowed
+    # and ::blockSecondsBelowRecommendedFloor actually reach the publish.
+    test_spl_publish_round4.cpp
     # --- end L6a Wave 2 -----------------------------------------------------
     # --- L6a Wave 3 task W3-A (record §8, §13 Q2) --------------------------
     # test_calibration.cpp + CalibrationSession.cpp: calibration as a flow --
