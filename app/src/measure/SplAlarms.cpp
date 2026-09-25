@@ -58,50 +58,63 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
 
     if (windowed.leqDb.has_value()) valueDb_ = static_cast<float>(*windowed.leqDb);
 
-    // headroomDb (record §15 A6, fix round item 4). The identity itself
-    // (Alarm.h) never changes; only WHICH (t, L_t) pair it is fed does, and
-    // that pair is continuous across the fill->full transition -- neither
-    // side introduces a new constant.
+    // headroomDb (record §15 A6, fix round item 4; exclusion rule, fix round
+    // item 3). The identity itself (Alarm.h) never changes; only WHICH (t,
+    // T, L_t) triple it is fed does, and that triple is continuous across
+    // the fill->full transition -- neither side introduces a new constant.
+    // `T` in BOTH branches is, by construction, THE DIVISOR THE NEXT
+    // COMPLIANCE WINDOW WILL ACTUALLY HAVE: what the compliance Leq itself
+    // divides by is combineBlocks' MEASURED seconds, which drops excluded
+    // blocks, so an exclusion must shrink `T` exactly as far as it shrinks
+    // `t` -- never one without the other, or the identity is answering a
+    // question about a window that cannot occur.
     //
-    //   FILLING (window not yet full): t = elapsed seconds, T = window
-    //   seconds, L_t = the Leq of whatever partial tail exists -- this is
+    //   FILLING (window not yet full): t = elapsed MEASURED seconds
+    //   (`windowed.seconds`, already exclusion-aware), T = the nominal
+    //   window seconds LESS whatever has already been excluded from it --
+    //   the divisor the first full window will have if nothing more is
+    //   excluded. L_t = the Leq of whatever partial tail exists -- this is
     //   asking "what can the block that completes THIS window be".
     //
-    //   FULL: t = T - Delta (Delta = one block's duration), L_t = the Leq of
-    //   the MOST RECENT windowBlocks-1 blocks -- once the window is full,
-    //   there is no "next slot in this window" left to fill, so the question
-    //   becomes "what can the FIRST block of the NEXT sliding window be":
-    //   that window drops the current oldest block and keeps the current
-    //   newest windowBlocks-1, which is exactly `tail` with its first (oldest)
-    //   entry removed. Recomputed as a fresh energy sum over those blocks
-    //   (record §3's own "recomputed over current membership" rule) -- never
-    //   carried from a running total.
+    //   FULL: once the window is full, there is no "next slot in this
+    //   window" left to fill, so the question becomes "what can the FIRST
+    //   block of the NEXT sliding window be": that window drops the current
+    //   oldest block and keeps the current newest windowBlocks-1, which is
+    //   exactly `tail` with its first (oldest) entry removed. Recomputed as
+    //   a fresh energy sum over those blocks (record §3's own "recomputed
+    //   over current membership" rule) -- never carried from a running
+    //   total. `s` = combineBlocks' measured seconds of that kept span (so
+    //   an excluded block among them drops out of `s` too), and `T = s +
+    //   Delta`, Delta being one block's duration: the next window is
+    //   exactly those kept blocks plus one new one. With no exclusions,
+    //   `s == windowBlocks-1 blocks worth of seconds` and this reduces to
+    //   the original `t = T - Delta` unconditionally.
+    //
+    //   An EMPTY recent span (windowBlocks == 1, the SplAlarmSpec default)
+    //   falls out of the same formula for free: `s = 0`, `T = Delta`, and at
+    //   t = 0 `spent = t * 10^(Lt/10)` is 0 regardless of L_t, so the answer
+    //   is exactly limitDb without a separate special case.
     headroomDb_ = std::nullopt;
     if (!windowFull) {
         if (windowed.leqDb.has_value()) {
             const double windowSeconds = static_cast<double>(spec_.windowBlocks) * blockSeconds;
-            headroomDb_ = rta::meter::headroomDb(windowSeconds, windowed.seconds, *windowed.leqDb,
-                                                spec_.limitDb);
+            const double excludedSecondsSoFar =
+                static_cast<double>(windowed.excludedBlocks) * blockSeconds;
+            const double T = windowSeconds - excludedSecondsSoFar;
+            headroomDb_ = rta::meter::headroomDb(T, windowed.seconds, *windowed.leqDb, spec_.limitDb);
         }
     } else if (spec_.windowBlocks > 0) {
         const auto recent = tail.subspan(1, spec_.windowBlocks - 1);
-        if (recent.empty()) {
-            // windowBlocks == 1 (the SplAlarmSpec default, SplConfig.h) means
-            // "the most recent windowBlocks-1 blocks" is empty -- there is no
-            // recomputed Leq to feed the identity. But an empty recent window
-            // is exactly t = 0, and at t = 0 `spent = t * 10^(Lt/10)` is 0
-            // regardless of L_t, so the identity's answer is exactly limitDb.
-            headroomDb_ = rta::meter::headroomDb(blockSeconds, 0.0, 0.0, spec_.limitDb);
-        } else {
-            const auto recentResult = rta::meter::combineBlocks(recent, sampleRate, referenceOffsetDb,
-                                                                spec_.windowBlocks - 1);
-            if (recentResult.leqDb.has_value()) {
-                const double windowSeconds = static_cast<double>(spec_.windowBlocks) * blockSeconds;
-                const double tSeconds = windowSeconds - blockSeconds;
-                headroomDb_ = rta::meter::headroomDb(windowSeconds, tSeconds, *recentResult.leqDb,
-                                                    spec_.limitDb);
-            }
-        }
+        const auto recentResult = rta::meter::combineBlocks(
+            recent, sampleRate, referenceOffsetDb, static_cast<std::uint64_t>(recent.size()));
+        // `recentResult.leqDb` is absent only when `recent` has no samples at
+        // all (empty span, or every block in it excluded) -- in that case
+        // `recentResult.seconds` is also exactly 0, so `spent` below is 0
+        // regardless of the placeholder 0.0 fed as L_t.
+        const double sRecent = recentResult.seconds;
+        const double recentLeqDb = recentResult.leqDb.value_or(0.0);
+        headroomDb_ = rta::meter::headroomDb(sRecent + blockSeconds, sRecent, recentLeqDb,
+                                            spec_.limitDb);
     }
 
     // The latch is NOT evaluated until the window actually holds

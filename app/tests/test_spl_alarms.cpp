@@ -19,6 +19,7 @@ using rta::measure::SplHistory;
 using rta::measure::SplMarkerKind;
 using rta::measure::SplProxyWindow;
 using rta::meter::Block;
+using rta::meter::BlockFlag;
 
 namespace {
 
@@ -384,6 +385,86 @@ TEST_CASE("closed-form (c): when the recent window already exceeds budget, headr
         alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
     }
     CHECK_FALSE(alarm.report().headroomDb.has_value());
+}
+
+// PR #26 round-3 fix, item 3 (orchestrator decision): the filling branch
+// already used MEASURED seconds (`windowed.seconds`, which combineBlocks
+// computes only over non-excluded blocks) for `t`, so an exclusion inside a
+// filling window silently vanished from `t` but NOT from the nominal `T` --
+// the divisor stayed a flat `windowBlocks * blockSeconds` regardless. The
+// full branch used a nominal `T - Delta` unconditionally, ignoring
+// exclusions on both sides. Both are wrong for the same reason: `T` must be
+// the divisor the NEXT compliance window will actually have, which is
+// `windowSeconds` minus whatever has already been excluded (filling), or
+// `s_recent + Delta` where `s_recent` is the MEASURED seconds of the kept
+// "most recent windowBlocks-1 blocks" (full). With no exclusions, both
+// reduce exactly to the pre-fix code, which is why every earlier test in
+// this file is untouched.
+TEST_CASE("closed-form: an excluded block inside a FULL window is dropped from both s and T",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 100.0;
+    spec.windowBlocks = 5;
+    SplAlarm alarm(spec);
+    SplHistory history(10);
+
+    std::vector<Block> blocks;
+    // Oldest (rolls off once full) -- irrelevant to headroom either way.
+    blocks.push_back(blockAtLevel(0, 48000, 90.0));
+    // The "most recent windowBlocks-1" span is blocks[1..4]. One of THOSE is
+    // excluded, so the kept seconds/energy for the identity come from the
+    // other three: index 1 is dropped, 2..4 (3 blocks, 3.0 s) at 70 dB.
+    Block excluded = blockAtLevel(1, 48000, 130.0);
+    excluded.flags |= static_cast<std::uint32_t>(BlockFlag::CalibrationInvalid);
+    blocks.push_back(excluded);
+    blocks.push_back(blockAtLevel(2, 48000, 70.0));
+    blocks.push_back(blockAtLevel(3, 48000, 70.0));
+    blocks.push_back(blockAtLevel(4, 48000, 70.0));
+    for (std::uint64_t i = 0; i < blocks.size(); ++i) {
+        std::vector<Block> soFar(blocks.begin(), blocks.begin() + static_cast<std::ptrdiff_t>(i) + 1);
+        alarm.update(soFar, 48000.0, 1.0, 0.0, i, history);
+    }
+
+    const double sRecent = 3.0;   // 3 kept blocks * 1 s, the excluded one dropped
+    const double delta = 1.0;     // one block's duration
+    const double recentLevelDb = 70.0;
+    const double expected = 10.0 * std::log10(
+        ((sRecent + delta) * std::pow(10.0, spec.limitDb / 10.0) -
+         sRecent * std::pow(10.0, recentLevelDb / 10.0)) / delta);
+    REQUIRE(alarm.report().headroomDb.has_value());
+    CHECK_THAT(*alarm.report().headroomDb, WithinAbs(expected, 1e-9));
+}
+
+TEST_CASE("closed-form: an excluded block inside a FILLING window shrinks T, not just t",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 100.0;
+    spec.windowBlocks = 5;  // window is NOT full at 3 blocks
+    SplAlarm alarm(spec);
+    SplHistory history(10);
+
+    Block excluded = blockAtLevel(0, 48000, 130.0);
+    excluded.flags |= static_cast<std::uint32_t>(BlockFlag::CalibrationInvalid);
+    std::vector<Block> blocks;
+    blocks.push_back(excluded);
+    blocks.push_back(blockAtLevel(1, 48000, 80.0));
+    blocks.push_back(blockAtLevel(2, 48000, 80.0));
+    for (std::uint64_t i = 0; i < blocks.size(); ++i) {
+        std::vector<Block> soFar(blocks.begin(), blocks.begin() + static_cast<std::ptrdiff_t>(i) + 1);
+        alarm.update(soFar, 48000.0, 1.0, 0.0, i, history);
+    }
+
+    const double windowSeconds = 5.0;   // windowBlocks * blockSeconds
+    const double excludedSecondsSoFar = 1.0;  // one excluded block so far
+    const double T = windowSeconds - excludedSecondsSoFar;
+    const double t = 2.0;  // measured seconds of the 2 kept blocks
+    const double levelDb = 80.0;
+    const double expected = 10.0 * std::log10(
+        (T * std::pow(10.0, spec.limitDb / 10.0) - t * std::pow(10.0, levelDb / 10.0)) / (T - t));
+    REQUIRE(alarm.report().headroomDb.has_value());
+    CHECK_THAT(*alarm.report().headroomDb, WithinAbs(expected, 1e-9));
 }
 
 TEST_CASE("B4 SplAlarms updates every configured alarm and collects their reports", "[spl_alarms]") {
