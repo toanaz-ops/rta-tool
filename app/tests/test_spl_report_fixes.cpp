@@ -258,3 +258,24 @@ TEST_CASE("the validity section states alarm transition markers are not recorded
     const auto validity = extractSection(html, "validity");
     CHECK(validity.find("transition markers are not recorded") != std::string::npos);
 }
+
+// Task W2-E2b fix round (LOW finding, mutant M4): the renderer dropping the
+// "Ln / dose / alarm source" or "Bytes discarded" row went uncaught because
+// the only prior assertions were on the PAYLOAD's booleans
+// (`ReportValidity::lnDoseAlarmFromLiveSession`/`bytesDiscarded`), never on
+// what `renderValidity` actually wrote out. Asserted on the rendered TEXT.
+TEST_CASE("the validity section renders the Ln/dose/alarm source and bytes-discarded rows",
+         "[spl_report]") {
+    ReportPayload live = minimalPayload();
+    live.validity.lnDoseAlarmFromLiveSession = true;
+    const auto htmlLive = renderReport(live);
+    const auto validityLive = extractSection(htmlLive, "validity");
+    CHECK(validityLive.find("live session, read at export time") != std::string::npos);
+
+    ReportPayload notLive = minimalPayload();  // lnDoseAlarmFromLiveSession defaults false
+    notLive.validity.bytesDiscarded = 283;
+    const auto htmlNotLive = renderReport(notLive);
+    const auto validityNotLive = extractSection(htmlNotLive, "validity");
+    CHECK(validityNotLive.find("unavailable -- session was not live") != std::string::npos);
+    CHECK(validityNotLive.find("283") != std::string::npos);
+}
