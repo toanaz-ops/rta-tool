@@ -84,13 +84,15 @@ private:
     SplAlarmSpec spec_;
     rta::meter::AlarmLatch latch_;
     SplAlarmState state_ = SplAlarmState::Filling;
-    // True from the first update where the window holds windowBlocks blocks
-    // onward. AlarmLatch's own Transition enum has no "coming out of
-    // Filling" case -- its `active_` starts false, so a COMPLIANT first
-    // window matches it and reports Transition::None, the same value it
-    // reports for "nothing changed" on every later window. This flag is what
-    // lets SplAlarm::update tell those two None cases apart (record §15 A6,
-    // round 4).
+    // True from the first update where a FULL window actually YIELDS A VALUE
+    // onward -- not merely "the window holds windowBlocks blocks" (round 4's
+    // version), since an all-excluded window is full but leqDb-absent, and
+    // AlarmLatch::update returns Transition::None for that too, identically
+    // to "nothing changed" on every later window and to "compared, and
+    // matched active_'s already-false default". This flag plus a
+    // `leqDb.has_value()` check at the call site (round 5, record §15 A6) is
+    // what lets SplAlarm::update tell those cases apart and defer the
+    // Filling->{Clear,Fired} promotion to the next window that has content.
     bool windowEverFull_ = false;
     std::optional<std::uint64_t> sinceBlock_;
     std::optional<double> headroomDb_;

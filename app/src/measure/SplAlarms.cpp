@@ -130,18 +130,25 @@ void SplAlarm::update(std::span<const rta::meter::Block> blocks, double sampleRa
     const rta::meter::WindowResult forLatch = windowFull ? windowed : rta::meter::WindowResult{};
     const auto transition = latch_.update(forLatch, spec_.limitDb);
 
-    // Filling -> {Clear, Fired} happens exactly once, the instant the window
-    // first holds windowBlocks blocks (record §15 A6, round 4). This is
+    // Filling -> {Clear, Fired} happens exactly once, the instant a window
+    // FIRST YIELDS A VALUE (record §15 A6, round 5 correction). This is
     // SEPARATE from the `transition != None` branch below: AlarmLatch's
     // `active_` starts false, so a COMPLIANT first window matches it
     // (over == active_ == false) and AlarmLatch reports Transition::None --
     // the identical value it reports for "nothing changed" on every later
-    // window. Left alone, `state_` would stay at its Filling placeholder
-    // forever on a first window that never exceeds the limit. Filling->Clear
-    // writes NO marker here (it is not an alarm transition, B3's own
-    // wording); Filling->Fired's marker is the ordinary Fired transition
-    // handled below, unchanged.
-    if (windowFull && !windowEverFull_) {
+    // window, AND the value it reports when `leqDb` is absent (Alarm.h's own
+    // "an absent leqDb is not compared at all"). The round-4 version of this
+    // gate keyed the promotion on `windowFull` alone, so an all-excluded
+    // first full window (leqDb absent) flipped Filling->Clear as if it had
+    // been judged compliant, when nothing was ever compared -- the verifier's
+    // probes P1 (windowBlocks==1, the one block excluded) and P2 (W=3, all
+    // three excluded). Gating on `windowed.leqDb.has_value()` too means the
+    // promotion simply waits for the NEXT full window that actually has a
+    // value, rather than firing on the first one regardless of content.
+    // Filling->Clear writes NO marker here (it is not an alarm transition,
+    // B3's own wording); Filling->Fired's marker is the ordinary Fired
+    // transition handled below, unchanged.
+    if (windowFull && !windowEverFull_ && windowed.leqDb.has_value()) {
         windowEverFull_ = true;
         if (transition == rta::meter::AlarmLatch::Transition::None) {
             state_ = SplAlarmState::Clear;

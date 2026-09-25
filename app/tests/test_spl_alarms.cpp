@@ -199,6 +199,86 @@ TEST_CASE("the latch fires only once the window actually holds windowBlocks bloc
     REQUIRE(history.markers().size() == 1);
 }
 
+// PR #26 round-5 fix: an all-excluded first full window must NOT flip
+// Filling->Clear. `AlarmLatch::update` returns Transition::None both for "no
+// comparison happened because leqDb is absent" (Alarm.h's own contract) and
+// for "compared, and matched the latch's own already-false active_" -- the
+// Filling->Clear promotion in SplAlarm::update was keyed on `transition ==
+// None` alone, so it could not tell those two None cases apart, and an
+// all-excluded window (leqDb absent) flipped to Clear as if it had been
+// judged compliant. Record §15 A6 (20254ef): it must stay Filling until a
+// window actually yields a value.
+
+// Verifier probe P1: windowBlocks == 1 (the SplAlarmSpec default), the one
+// and only block CalibrationInvalid.
+TEST_CASE("an all-excluded window at windowBlocks==1 stays Filling (round-5, P1)",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 90.0;
+    // spec.windowBlocks left at its SplConfig.h default of 1.
+    SplAlarm alarm(spec);
+    SplHistory history(10);
+
+    Block excluded = blockAtLevel(0, 480, 130.0);
+    excluded.flags |= static_cast<std::uint32_t>(BlockFlag::CalibrationInvalid);
+    std::vector<Block> blocks{excluded};
+    alarm.update(blocks, 48000.0, 1.0, 0.0, 0, history);
+
+    CHECK(alarm.report().state == rta::measure::SplAlarmState::Filling);
+    CHECK(history.markers().empty());
+}
+
+// Verifier probe P2: windowBlocks == 3, all three blocks CalibrationInvalid.
+TEST_CASE("an all-excluded full window at windowBlocks==3 stays Filling (round-5, P2)",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 90.0;
+    spec.windowBlocks = 3;
+    SplAlarm alarm(spec);
+    SplHistory history(10);
+
+    std::vector<Block> blocks;
+    for (std::uint64_t i = 0; i < 3; ++i) {
+        Block excluded = blockAtLevel(i, 480, 130.0);
+        excluded.flags |= static_cast<std::uint32_t>(BlockFlag::CalibrationInvalid);
+        blocks.push_back(excluded);
+        alarm.update(blocks, 48000.0, 1.0, 0.0, i, history);
+    }
+
+    CHECK(alarm.report().state == rta::measure::SplAlarmState::Filling);
+    CHECK(history.markers().empty());
+}
+
+// The window AFTER an all-excluded full window, once it actually yields a
+// value, still moves Filling->Clear or Filling->Fired correctly -- the fix
+// must not disable the promotion forever, only defer it past a valueless
+// window.
+TEST_CASE("the window after an all-excluded one still resolves Filling correctly (round-5)",
+         "[spl_alarms]") {
+    SplAlarmSpec spec;
+    spec.metricId = "LAeq,Fast";
+    spec.limitDb = 90.0;
+    // windowBlocks == 1: every update is its own full window, so the very
+    // NEXT block (a real one) is the first window that ever yields a value.
+    SplAlarm alarm(spec);
+    SplHistory history(10);
+
+    Block excluded = blockAtLevel(0, 480, 130.0);
+    excluded.flags |= static_cast<std::uint32_t>(BlockFlag::CalibrationInvalid);
+    std::vector<Block> blocks{excluded};
+    alarm.update(blocks, 48000.0, 1.0, 0.0, 0, history);
+    REQUIRE(alarm.report().state == rta::measure::SplAlarmState::Filling);  // sanity, per P1
+
+    // A real, LOUD block: over the limit, so the first-ever real comparison
+    // fires.
+    blocks.push_back(blockAtLevel(1, 480, 130.0));
+    alarm.update(blocks, 48000.0, 1.0, 0.0, 1, history);
+    CHECK(alarm.report().state == rta::measure::SplAlarmState::Fired);
+    REQUIRE(history.markers().size() == 1);
+}
+
 // --- B4: headroomDb travels with the state ----------------------------------
 
 TEST_CASE("B4 SplAlarmReading carries state, limitDb, windowBlocks, sinceBlock and headroomDb",
