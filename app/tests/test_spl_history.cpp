@@ -188,3 +188,63 @@ TEST_CASE("A5 SplHistory markers carry Smaart's four kinds and their fields", "[
     CHECK(history.markers()[2].kind == SplMarkerKind::Note);
     CHECK(history.markers()[3].kind == SplMarkerKind::Reset);
 }
+
+// --- fix round 2026-09-25 item 2: markers are allocation-free ---------------
+//
+// An unreserved `markers_.push_back` measured 8128 B across 40 alarm
+// transitions (a Fired/Cleared marker on each), breaking this ring's own
+// "allocated once, never grown" rule the moment anything actually called
+// addMarker. `MarkerQuantity` removed the string; `kMaxMarkers` plus a
+// constructor-time `reserve` removes the vector growth.
+
+TEST_CASE("markers are allocated once at construction and never again", "[spl_history]") {
+    std::optional<SplHistory> history;
+    {
+        rta::test::AllocationProbe probe;
+        history.emplace(10);
+        // Constructing must allocate SOMETHING (the block ring plus the
+        // reserved marker store) -- a reading of zero would mean the
+        // allocation was elided, not that it is free.
+        CHECK(probe.bytes() > 0);
+    }
+
+    SplMarker marker;
+    marker.kind = SplMarkerKind::Alarm;
+    marker.quantity = "LAeq,Fast";
+
+    rta::test::AllocationProbe probe;
+    for (std::uint64_t i = 0; i < 100; ++i) {
+        marker.blockIndex = i;
+        history->addMarker(marker);
+    }
+    const std::size_t bytes = probe.bytes();
+    INFO("bytes allocated by 100 addMarker calls = " << bytes);
+    CHECK(bytes == 0);
+    // Non-elidable: read the escaped result right after the probe scope.
+    REQUIRE(history->markers().size() == 100);
+    CHECK(history->overflowedMarkers() == 0);
+}
+
+TEST_CASE("a marker past kMaxMarkers is counted and dropped, never silently and never allocated",
+          "[spl_history]") {
+    SplHistory history(10);
+    SplMarker marker;
+    marker.kind = SplMarkerKind::Note;
+
+    for (std::uint64_t i = 0; i < SplHistory::kMaxMarkers; ++i) {
+        marker.blockIndex = i;
+        history.addMarker(marker);
+    }
+    REQUIRE(history.markers().size() == SplHistory::kMaxMarkers);
+    CHECK(history.overflowedMarkers() == 0);
+
+    rta::test::AllocationProbe probe;
+    marker.blockIndex = SplHistory::kMaxMarkers;
+    history.addMarker(marker);  // ONE past capacity
+    CHECK(probe.bytes() == 0);
+
+    // Dropped, not grown: the store stays at its reserved capacity...
+    CHECK(history.markers().size() == SplHistory::kMaxMarkers);
+    // ...and the drop is COUNTED, never silent (this class's own contract).
+    CHECK(history.overflowedMarkers() == 1);
+}

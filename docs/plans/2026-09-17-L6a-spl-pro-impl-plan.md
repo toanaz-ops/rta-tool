@@ -589,6 +589,73 @@ struct LogReadResult { std::vector<rta::meter::Block> blocks; std::size_t bytesD
 
 - [ ] **Accept:** OFF and ON ctest rise; GLOBS **+1** — only `SplStrip.h` is added (`PaneRegistry.h` is already listed, `test_spl_strip.cpp` is a `.cpp` and is not globbed, and the ON files must never be added). **Commit:** `feat(app): an SPL pane -- a headless strip model, the three existing formatters, and an offscreen specimen`
 
+### W2-E — the wiring nobody was assigned (amendment 2026-09-25, orchestrator; found by PR #27's verifier)
+
+**Why this task exists.** This plan builds every SPL part and tests each one
+alone, but it assigns **no task** to connect those parts to the running app.
+Four facts, each measured at `main` 8f8df27:
+
+1. `grep -rn enableSplLogging app/src` finds only the declaration and the
+   definition. **Nothing calls them.** So `Snapshot::spl` is `nullopt` in
+   every running session.
+2. `AnalysisPublish.cpp:229` says `alarms`, `dosePercent`, `doseProjected` and
+   `lnDb` "stay EMPTY/ABSENT through Wave 0". No later task in this plan names
+   the publish fold, so they stay empty for good.
+3. `SplHistory`, `SplAlarms` and `SplLogWriter` (W2-A..C) have no caller in
+   `app/src`.
+4. Nothing sets `BlockFlag::CalibrationInvalid`, and nothing applies
+   `CalibrationSession::referenceOffsetDb()` to a live `SplConfig`. W3-A A3 is
+   therefore true only in its unit test.
+
+`docs/HANDOFF.md` said "the caller is Wave 2", but W2-D's file list never
+named `MainComponent`. A duty that sits in a handoff sentence and in no
+task's file list is a duty nobody holds.
+
+**Split in two, along the real-time line.**
+
+#### W2-E1 — the analysis thread owns the per-channel SPL state and publishes it (app, OFF where the state is pure)
+
+- For each logged channel, the SPL session state holds its `SplHistory`,
+  `SplAlarms`, `LevelHistogram` and the two `Dose` accumulators. **All of it
+  is allocated at `enable` time and never grows afterwards.** Prove that with
+  the shared `AllocationProbe`: after `enable`, pushing 10× the history
+  capacity allocates 0 bytes.
+- The state is updated **once per closed block**, on the analysis thread, from
+  the same `Block` the session just closed. It is never updated from a
+  snapshot.
+- The publish fold fills `alarms`, `dosePercent`, `doseProjected` and `lnDb`
+  from that state. Any value that has no result yet stays **absent**, never
+  0.0. Headroom and the `Filling` state follow record §15 A6.
+- Dose follows W1-D's preset table. The Ln slots follow W1-A's absent-outside-
+  span rule.
+- Tests (OFF where the state object is JUCE-free): a closed-form Leq and a
+  closed-form dose over a synthetic block stream, both reaching the published
+  view. Plus an absence case for every slot.
+
+#### W2-E2 — the log thread, the composition root, calibration applied (app, ON)
+
+- **The log is never written from the analysis thread and never from the
+  message thread.** The analysis thread pushes each closed `Block` into a
+  fixed-capacity single-producer/single-consumer queue. A dedicated writer
+  thread drains that queue into `SplLogWriter`.
+  - When the queue is full, the block is **counted as dropped-from-log and the
+    count is published**. The writer never blocks the producer.
+  - Why not the message thread: `Snapshot::spl` carries only the *latest*
+    block, so a UI stall longer than one block loses blocks without anyone
+    seeing it.
+- `MainComponent` calls `enableSplLogging` with `SplConfig`'s defaults for the
+  measurement channel(s) when a device opens, and `disableSplLogging` when it
+  closes. There is no preferences store (SPL-R11), so it uses defaults.
+- When calibration ends, the new `referenceOffsetDb` is applied **by starting
+  a new log** (W2-C C4: settings never change mid-log).
+- When drift > 0.5 dB, `CalibrationInvalid` is set on the blocks of the span
+  the pair brackets, and the log is kept (W3-A A3).
+- `SplView` shows the live `Snapshot::spl`.
+- The calibration capture timeout moves to a monotonic clock (PR #27
+  round-2 verifier, LOW).
+- The specimen still renders. `MainComponent.cpp` stays under 400 lines, or
+  its SPL wiring moves to a new `MainComponentSpl.cpp`.
+
 ---
 
 ## Wave 3 — the calibration flow (app + core, OFF; record §8, §13 Q2) — **SCOPE DEFAULT: BUILD**

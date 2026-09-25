@@ -7,10 +7,11 @@
 
 #include "rta/meter/Block.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <string>
+#include <string_view>
 #include <vector>
 
 namespace rta::measure {
@@ -20,17 +21,74 @@ namespace rta::measure {
 /// event in a session lands, not just alarm transitions.
 enum class SplMarkerKind { Alarm, Overload, Note, Reset };
 
+/// A marker's quantity label, with NO heap allocation, ever -- fix round
+/// 2026-09-25: `SplMarker::quantity` was a `std::string`, and an unreserved
+/// `std::vector<SplMarker>` beside it together measured 8128 B across 40
+/// alarm transitions (a Fired/Cleared marker on every one), which broke the
+/// ring's own "allocated once, never grown" rule the moment anything actually
+/// called `addMarker`. Truncates rather than allocates -- 31 characters is
+/// long enough for every metric id this project actually configures
+/// (`"LAeq,Fast"` is 9 of 31; `test_spl_history.cpp` A5 pins the shape).
+class MarkerQuantity {
+public:
+    static constexpr std::size_t kCapacity = 32;  // 31 chars + NUL
+
+    constexpr MarkerQuantity() noexcept : buf_{} {}
+    MarkerQuantity(std::string_view s) noexcept { assign(s); }
+    MarkerQuantity& operator=(std::string_view s) noexcept {
+        assign(s);
+        return *this;
+    }
+
+    [[nodiscard]] const char* c_str() const noexcept { return buf_.data(); }
+    [[nodiscard]] std::string_view view() const noexcept { return std::string_view(buf_.data()); }
+    [[nodiscard]] bool empty() const noexcept { return buf_[0] == '\0'; }
+
+    [[nodiscard]] friend bool operator==(const MarkerQuantity& a, const MarkerQuantity& b) noexcept {
+        return a.view() == b.view();
+    }
+    [[nodiscard]] friend bool operator==(const MarkerQuantity& a, std::string_view b) noexcept {
+        return a.view() == b;
+    }
+    [[nodiscard]] friend bool operator==(std::string_view a, const MarkerQuantity& b) noexcept {
+        return a == b.view();
+    }
+
+private:
+    void assign(std::string_view s) noexcept {
+        const std::size_t n = s.size() < (kCapacity - 1) ? s.size() : (kCapacity - 1);
+        for (std::size_t i = 0; i < n; ++i) buf_[i] = s[i];
+        buf_[n] = '\0';
+    }
+    std::array<char, kCapacity> buf_;
+};
+
 /// One annotated event on the ring's own block clock. `direction` is +1 for a
 /// rising / fired transition and -1 for a falling / cleared one; 0 where a
 /// kind has no direction (a plain `Note`). `quantity` names WHAT the marker is
 /// about (a metric id, or empty); `window` and `value` are the windowed
 /// reading that caused it, so a marker is self-contained without a second
 /// lookup into the log.
+///
+/// `metricIndex` is the marker's REAL identity (fix round 2026-09-25, PR
+/// #29 round-3 step 3): `quantity` truncates at `MarkerQuantity::kCapacity`
+/// (31 chars), so two configured metric ids sharing a 31-char prefix
+/// collide under it -- `quantity == quantity` cannot tell them apart. The
+/// index into `SplConfig::metrics` cannot collide (it is the metric's own
+/// position, resolved once at `SplChannelState`/`SplAlarms` construction,
+/// the same place the weighting-routing lookup already happens in
+/// `buildAlarmGroups`), so any IDENTITY comparison between markers must use
+/// THIS field, never `quantity`. `nullopt` for a marker with no associated
+/// metric (an alarm whose `metricId` named no configured metric; Overload/
+/// Reset/Note kinds). `quantity` itself stays -- a bounded string display
+/// buffer is still useful for rendering -- but it must never be trusted for
+/// identity.
 struct SplMarker {
     std::uint64_t blockIndex = 0;
     SplMarkerKind kind = SplMarkerKind::Note;
     int direction = 0;
-    std::string quantity;
+    MarkerQuantity quantity;
+    std::optional<std::size_t> metricIndex;
     std::uint64_t window = 0;
     double value = 0.0;
 };
@@ -64,7 +122,25 @@ public:
     /// does not end.
     void push(const rta::meter::Block& block);
 
-    void addMarker(SplMarker marker) { markers_.push_back(std::move(marker)); }
+    /// Markers are ALLOCATED ONCE, at construction, and never grown --
+    /// `markers_` is reserved to `kMaxMarkers` in the constructor and never
+    /// past it. Fix round 2026-09-25 found the unreserved vector's own
+    /// growth was the dominant allocator on the alarm-transition path
+    /// (8128 B / 40 transitions); this ring is sized generously against real
+    /// transition rates -- record §6's "no invented hysteresis, no invented
+    /// debounce" means transitions track the signal, not manufactured
+    /// flicker, so thousands of them in one session would itself be a
+    /// misconfigured alarm, not normal operation.
+    ///
+    /// PAST CAPACITY, THE MARKER IS COUNTED AND DROPPED, never silently: the
+    /// coordinator's own preference over a silently-rolling ring, because a
+    /// marker (unlike a block) has no other record of its own -- the log
+    /// writer (W2-C) reads blocks, not markers, so a rolled-off marker would
+    /// be gone from every consumer, not just this ring's own accessor.
+    /// `overflowedMarkers()` is the count.
+    static constexpr std::size_t kMaxMarkers = 4096;
+
+    void addMarker(SplMarker marker);
 
     [[nodiscard]] std::uint64_t capacity() const noexcept { return capacity_; }
     [[nodiscard]] std::uint64_t size() const noexcept {
@@ -83,6 +159,9 @@ public:
     [[nodiscard]] std::optional<rta::meter::Block> at(std::uint64_t blockIndex) const noexcept;
 
     [[nodiscard]] const std::vector<SplMarker>& markers() const noexcept { return markers_; }
+    /// How many `addMarker` calls were dropped because `kMaxMarkers` was
+    /// already reached. Never silent -- see `kMaxMarkers`'s own comment.
+    [[nodiscard]] std::uint64_t overflowedMarkers() const noexcept { return overflowedMarkers_; }
 
 private:
     std::uint64_t capacity_;
@@ -91,6 +170,7 @@ private:
     std::uint64_t firstIndex_ = 0;  ///< blockIndex of the very first block pushed
 
     std::vector<SplMarker> markers_;
+    std::uint64_t overflowedMarkers_ = 0;
 };
 
 }  // namespace rta::measure
