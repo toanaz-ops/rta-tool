@@ -320,3 +320,53 @@ TEST_CASE("the logged chain is A-weighted, not Z, at a frequency where the "
     // agree for this test to mean what it says.
     CHECK(fileText.find("weighting=A") != std::string::npos);
 }
+
+// --- station-4 fix round (PR #31, round 3, LOW finding 4): the
+// splLogWriteFailed_ mirror is reset on disable, same as splLogDroppedBlocks_
+
+TEST_CASE("splLogWriteFailed() clears after disableSplLogging(), not just "
+         "splLogDroppedBlocks()",
+         "[spl_log_wiring]") {
+    // A directory that was never created makes every segment open underneath
+    // it fail (SplLogWriter's own "does-not-exist" idiom, test_spl_log.cpp
+    // and test_spl_log_pipeline.cpp both use it) -- the simplest way to force
+    // splLogWriteFailed_ to true without touching disk permissions.
+    const auto missingDir = std::filesystem::temp_directory_path() / "rta-test-spllogwiring" /
+                            "does-not-exist-6a2f9";
+    std::filesystem::remove_all(missingDir);
+
+    CaptureBus bus(4096);
+    REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
+    bus.prepare(48000.0, 1);
+    bus.setActive(true);
+
+    AnalysisThread thread(bus, fastConfig());
+    const std::array<int, 1> channels{ 0 };
+    thread.enableSplLogging(splConfig(48000.0), channels, missingDir.string());
+
+    pushBlocks(bus, 1, 16, 64);
+    REQUIRE(waitForSplBlocks(thread, 0, 16, 3000));  // blocks close regardless
+
+    // The mirror is only refreshed FROM feedSpl(), which only runs when
+    // there is a new hop to drain -- so, unlike waitForSplBlocks above (a
+    // one-shot condition, once true forever), this poll must keep feeding
+    // hops the whole time, the same "keep pushing while waiting" shape
+    // waitForSplLoggingOff already uses below. Without this, the check
+    // races the writer thread's own setupWriters() (a brand new
+    // std::thread's first OS time-slice) rather than the FIX under test.
+    const auto deadline = juce::Time::getMillisecondCounter() + 3000;
+    while (juce::Time::getMillisecondCounter() < deadline && !thread.splLogWriteFailed(0)) {
+        pushBlocks(bus, 1, 16, 1);
+        juce::Thread::sleep(5);
+    }
+    REQUIRE(thread.splLogWriteFailed(0));
+
+    thread.disableSplLogging();
+    REQUIRE(waitForSplLoggingOff(thread, bus, 0, 3000));
+
+    // THE FIX: without resetting splLogWriteFailed_ alongside
+    // splLogDroppedBlocks_ in applyPendingSplRequest(), this stays true
+    // forever -- a channel disabled after one bad session would show "LOG
+    // WRITE FAILED" even once nothing is logging at all.
+    CHECK_FALSE(thread.splLogWriteFailed(0));
+}

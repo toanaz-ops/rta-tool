@@ -143,6 +143,13 @@ void AnalysisThread::applyPendingSplRequest() {
     for (auto& flags : splFlagsSeen_) flags.store(0, std::memory_order_relaxed);
     for (auto& dropped : splDroppedSamples_) dropped.store(0, std::memory_order_relaxed);
     for (auto& dropped : splLogDroppedBlocks_) dropped.store(0, std::memory_order_relaxed);
+    // Station-4 fix round (PR #31, round 3, LOW finding 4): this mirror was
+    // missing from the reset above -- a channel whose PREVIOUS session ever
+    // failed to write kept reporting splLogWriteFailed()==true forever after
+    // a disable(), because nothing refreshes this mirror once feedSpl() stops
+    // being called for that channel. Same shape as splLogDroppedBlocks_ just
+    // above.
+    for (auto& failed : splLogWriteFailed_) failed.store(false, std::memory_order_relaxed);
 }
 
 void AnalysisThread::feedSpl(int channel) {
