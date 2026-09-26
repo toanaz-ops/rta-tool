@@ -4,11 +4,14 @@ NOT try to answer itself, split out here (fix round 1, verifier, F8 and the
 TEST HOOK category) to keep orphan_check.py under this repo's 400-line cap:
 
   1. Is this candidate's file even part of the `rtatool` target this tool
-     built and read the .map for -- or of `rtatool_snapshot` instead, or of
-     NEITHER? See `rtatool_target_sources`, `rtatool_snapshot_sources`,
-     `not_in_target_reason` and `not_in_any_target_reason` --
-     orphan_check.py's own module docstring has the full "NOT IN TARGET"
-     rationale.
+     built and read the .map for? Only `app/src/dev/preview/**` is a
+     legitimate, deliberate exclusion (`not_in_target_reason`) -- a
+     production-directory `.cpp` compiled into `rtatool_snapshot` instead,
+     or into NEITHER target, is a real, failing orphan
+     (`not_in_any_target_reason`), never silently exempted. See
+     `rtatool_target_sources`/`rtatool_snapshot_sources` for the two source
+     lists this reads, and orphan_check.py's own module docstring for the
+     full "NOT IN TARGET" rationale.
   2. Is an otherwise-unreachable `*ForTest` candidate actually a deliberate
      test seam, proven live by a real reference under app/tests* on THIS run?
      See `test_hook_is_referenced` -- the module docstring's own "TEST HOOK"
@@ -34,6 +37,13 @@ from cpp_text import strip_comments, strip_string_and_char_literals
 # line 19 of rtatool_snapshot_sources.cmake), so it genuinely IS part of the
 # rtatool target; excluding the whole `dev/` directory would have made this
 # fix invent exactly the false-NOT-IN-TARGET report it exists to prevent.
+#
+# fix round 3 (verifier), MEDIUM-1: this is the ONLY legitimate NOT IN
+# TARGET case. A production-directory `.cpp` (anything outside dev/preview/)
+# that is compiled into rtatool_snapshot but never rtatool is NOT exempt --
+# that is the L6a shape itself (built for the dev preview tool, never wired
+# into the real app) -- see `not_in_any_target_reason`, which reports it as
+# a failing orphan instead of letting `not_in_target_reason` wave it through.
 EXCLUDED_DIRECTORIES = ("app/src/dev/preview/",)
 _CMAKE_SOURCE_PATH_RE = re.compile(r"\bsrc/[\w./-]+\.\w+")
 
@@ -44,6 +54,19 @@ _TESTS_DIR_GLOB = "app/tests*"
 _TEST_FILE_SUFFIXES = (".cpp", ".h", ".hpp")
 
 
+def _normalize_path(path: str) -> str:
+    """Case- and separator-normalised form of a repo-relative path, for
+    membership/prefix comparisons ONLY -- never printed. Fix round 3
+    (verifier), LOW-4: NTFS is case-insensitive, so a `.cmake` source list
+    entry and a candidate's own path (as `git diff` spells it, whatever case
+    the committer used) can differ only in case on a Windows checkout; a
+    case-SENSITIVE Python `in`/`startswith` would then treat a genuinely
+    compiled file as absent from its own source list -- exactly the false
+    NOT-COMPILED report this whole module exists to avoid inventing.
+    """
+    return path.replace("\\", "/").lower()
+
+
 def _cmake_source_list(cmake_path: Path) -> set[str] | None:
     """Every `app/src/...` path literally listed in a `set(..._SOURCES ...)`
     CMake file -- comment-stripped first (CMake's `#` line comment, not
@@ -51,7 +74,9 @@ def _cmake_source_list(cmake_path: Path) -> set[str] | None:
     regex over the whole file rather than a real CMake parse: these files
     are a plain source list each (see their own header comments), and every
     entry is a bare `src/...` path token -- nothing here needs conditionals,
-    generator expressions, or variable expansion.
+    generator expressions, or variable expansion. Entries are normalised
+    (see `_normalize_path`) so later membership checks are case/separator
+    insensitive.
 
     Returns None, not {}, when the file does not exist -- true for every
     commit before 9a2862a (2026-09-26), which split rtatool's list (and
@@ -66,7 +91,7 @@ def _cmake_source_list(cmake_path: Path) -> set[str] | None:
         return None
     text = cmake_path.read_text(encoding="utf-8")
     no_comments = re.sub(r"#.*", "", text)
-    return {f"app/{m}" for m in _CMAKE_SOURCE_PATH_RE.findall(no_comments)}
+    return {_normalize_path(f"app/{m}") for m in _CMAKE_SOURCE_PATH_RE.findall(no_comments)}
 
 
 def rtatool_target_sources(source_dir: Path) -> set[str] | None:
@@ -85,50 +110,43 @@ def rtatool_snapshot_sources(source_dir: Path) -> set[str] | None:
     return _cmake_source_list(source_dir / "app" / "cmake" / "rtatool_snapshot_sources.cmake")
 
 
-def not_in_target_reason(
-    path: str, target_sources: set[str] | None, snapshot_sources: set[str] | None
-) -> str | None:
-    """None if `path` is part of the rtatool target this tool actually
-    built and checked; otherwise, if it is a LEGITIMATE absence (compiled
-    into some OTHER target instead), why. `target_sources`/
-    `snapshot_sources` of None means this run's checkout predates the
-    source-list split (see `_cmake_source_list`) -- the directory exclusion
-    below still applies (it is a source fact about that directory, not
-    about either cmake file), but the "listed in the other target instead"
-    check is skipped rather than misjudging every .cpp file.
+def not_in_target_reason(path: str) -> str | None:
+    """None unless `path` sits under the ONE legitimate, deliberate
+    exclusion this tool recognises: `app/src/dev/preview/**`, real code
+    compiled only into `rtatool_snapshot` by design (SplPreview.cpp/.h is
+    the concrete example) and never meant to be reachable from `rtatool`
+    itself.
 
-    fix round 2 (verifier), F-A: this function used to also cover "absent
-    from rtatool_sources.cmake AND absent from every other list", which
-    silently exempted a `.cpp` that is not compiled into ANYTHING at all --
-    exactly the L6a shape (SplHistory.cpp/SplAlarms.cpp had no caller and so
-    were never added to a source list either). That case is NOT a
-    legitimate NOT IN TARGET any more; see `not_in_any_target_reason`, which
-    reports it as a real, failing orphan instead.
+    fix round 3 (verifier), MEDIUM-1: this function used to ALSO exempt any
+    other `.cpp` compiled only into `rtatool_snapshot` (i.e. listed in
+    `rtatool_snapshot_sources.cmake` but not `rtatool_sources.cmake`) as
+    non-failing NOT IN TARGET. That was itself a bypass: a PRODUCTION file
+    (outside dev/preview/) wired only into the dev snapshot tool is exactly
+    the L6a shape this tool exists to catch -- built and previewed, never
+    wired into the real app (`measure/CrossoverTopology.cpp`,
+    `measure/SyntheticSnapshot.cpp`, `trace/VirtualTrace.cpp`,
+    `view/CrossoverSurface.cpp` are the four real, current examples). See
+    `not_in_any_target_reason`, which now reports that case as a failing
+    orphan instead.
     """
-    if path.startswith(EXCLUDED_DIRECTORIES):
+    if _normalize_path(path).startswith(EXCLUDED_DIRECTORIES):
         return "compiled only into rtatool_snapshot, never rtatool (app/src/dev/preview/ exclusion)"
-    if (
-        target_sources is not None
-        and snapshot_sources is not None
-        and path.endswith(".cpp")
-        and path not in target_sources
-        and path in snapshot_sources
-    ):
-        return "compiled only into rtatool_snapshot, never rtatool (listed only in rtatool_snapshot_sources.cmake)"
     return None
 
 
 def not_in_any_target_reason(
     path: str, target_sources: set[str] | None, snapshot_sources: set[str] | None
 ) -> str | None:
-    """None unless `path` is a `.cpp` this tool can PROVE is compiled into
-    NEITHER `rtatool` nor `rtatool_snapshot` -- i.e. never compiled at all,
-    which means the linker never even got a chance to discard it. That is a
-    stronger, more direct defect than an ordinary orphan (the function was
-    written but nothing ever asked the compiler to build it), so it is
-    reported as an orphan with its own explicit reason, never silently as
-    NOT IN TARGET (fix round 2, F-A -- see `not_in_target_reason`'s own
-    docstring for the bug this replaces).
+    """None unless `path` is a `.cpp` OUTSIDE `app/src/dev/preview/` that
+    this tool can PROVE is not compiled into `rtatool` -- whether or not it
+    is compiled into `rtatool_snapshot` instead. Both shapes are a real,
+    failing orphan (fix round 3, MEDIUM-1 -- see `not_in_target_reason`'s
+    own docstring for the bypass this replaces):
+      - never compiled into ANY target at all: "not compiled into any
+        target" (the L6a shape a `.cpp` with no caller lands in -- never
+        added to a source list either, at the commit before its wiring).
+      - compiled only into `rtatool_snapshot`: "compiled only into
+        rtatool_snapshot" (built and previewed, never wired into the app).
 
     Requires BOTH source lists to be readable (not None) to fire: an
     unreadable list means this run cannot tell "not compiled anywhere" apart
@@ -138,11 +156,16 @@ def not_in_any_target_reason(
     """
     if target_sources is None or snapshot_sources is None:
         return None
-    if path.startswith(EXCLUDED_DIRECTORIES):
+    normalized = _normalize_path(path)
+    if normalized.startswith(EXCLUDED_DIRECTORIES):
         return None  # a deliberate, legitimate exclusion -- not a defect
-    if path.endswith(".cpp") and path not in target_sources and path not in snapshot_sources:
-        return "not compiled into any target"
-    return None
+    if not normalized.endswith(".cpp"):
+        return None
+    if normalized in target_sources:
+        return None
+    if normalized in snapshot_sources:
+        return "compiled only into rtatool_snapshot, never rtatool"
+    return "not compiled into any target"
 
 
 def test_hook_is_referenced(name: str, source_dir: Path) -> bool:

@@ -89,11 +89,16 @@ def test_excluded_directory_is_not_in_target_not_an_orphan(tmp_path, capsys):
     assert "orphan_check: found component" not in out
 
 
-def test_cpp_listed_only_in_snapshot_is_not_in_target(tmp_path, capsys):
-    # A .cpp genuinely compiled into rtatool_snapshot (listed there) but
-    # absent from rtatool's own list is a LEGITIMATE NOT IN TARGET, not an
-    # orphan -- this is the SplPreview.cpp shape, generalised beyond the
-    # dev/preview/ directory exclusion.
+def test_cpp_listed_only_in_snapshot_is_an_orphan_not_exempted(tmp_path, capsys):
+    # fix round 3 (verifier), MEDIUM-1. A .cpp OUTSIDE app/src/dev/preview/
+    # that is compiled into rtatool_snapshot but absent from rtatool's own
+    # list is NOT a legitimate NOT IN TARGET -- it is the L6a shape itself
+    # (built and previewed, never wired into the real app; the four real
+    # examples today are measure/CrossoverTopology.cpp,
+    # measure/SyntheticSnapshot.cpp, trace/VirtualTrace.cpp and
+    # view/CrossoverSurface.cpp). Fix round 2's looser check exempted this
+    # case as non-failing NOT IN TARGET, which the round-3 verifier caught
+    # as a bypass -- must exit 1 as an ordinary orphan.
     repo = tmp_path / "repo"
     (repo / "app" / "src" / "measure").mkdir(parents=True)
     (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
@@ -111,7 +116,44 @@ def test_cpp_listed_only_in_snapshot_is_not_in_target(tmp_path, capsys):
         rtatool=["src/measure/Existing.cpp"],
         snapshot=["src/measure/Existing.cpp", "src/measure/PreviewOnly.cpp"],
     )
-    _commit_all(repo, "add a .cpp compiled only into the snapshot target")
+    _commit_all(repo, "add a production .cpp compiled only into the snapshot target")
+
+    build_dir = tmp_path / "build"
+    _write_fixture_map(build_dir, "Release", ["?unrelated@@YAXXZ"])
+    exit_code = oc.main(
+        ["--base", base_sha, "--build-dir", str(build_dir), "--source-dir", str(repo), "--skip-build"]
+    )
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "NOT IN TARGET" not in out
+    assert "compiled only into rtatool_snapshot" in out
+    assert "previewOnlyThing" in out
+
+
+def test_dev_preview_directory_is_still_not_in_target(tmp_path, capsys):
+    # The ONE case MEDIUM-1 keeps as a legitimate, non-failing exclusion:
+    # app/src/dev/preview/** itself (SplPreview.cpp/.h's own shape), even
+    # though it is ALSO only listed in rtatool_snapshot_sources.cmake --
+    # the directory exclusion, not the snapshot listing, is what exempts it.
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "measure").mkdir(parents=True)
+    (repo / "app" / "src" / "dev" / "preview").mkdir(parents=True)
+    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
+    _write_both_source_lists(
+        repo, rtatool=["src/measure/Existing.cpp"], snapshot=["src/measure/Existing.cpp"]
+    )
+    _init_repo(repo)
+    _commit_all(repo, "base")
+    base_sha = _head(repo)
+    (repo / "app" / "src" / "dev" / "preview" / "Preview.cpp").write_text(
+        "namespace rta {\nvoid previewOnlyThing() {\n}\n}\n", encoding="utf-8"
+    )
+    _write_both_source_lists(
+        repo,
+        rtatool=["src/measure/Existing.cpp"],
+        snapshot=["src/measure/Existing.cpp", "src/dev/preview/Preview.cpp"],
+    )
+    _commit_all(repo, "add a dev/preview .cpp compiled only into the snapshot target")
 
     build_dir = tmp_path / "build"
     _write_fixture_map(build_dir, "Release", ["?unrelated@@YAXXZ"])
@@ -155,6 +197,77 @@ def test_cpp_absent_from_every_source_list_is_an_orphan(tmp_path, capsys):
     assert exit_code == 1
     assert "not compiled into any target" in out
     assert "neverCalled" in out
+    assert "NOT IN TARGET" not in out
+
+
+def test_body_only_edit_to_an_unlisted_cpp_still_fails(tmp_path, capsys):
+    # fix round 3 (verifier), LOW-3. The not-compiled-into-rtatool check used
+    # to run only per CANDIDATE (a function-shaped declaration
+    # find_candidates recognised) -- a body-only edit inside an EXISTING
+    # function (no new declaration at all) produces zero candidates and zero
+    # UNCHECKABLE entries, so the file-unwired check never even looked at
+    # this file's path under the old code, and the run wrongly exited 0.
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "measure").mkdir(parents=True)
+    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
+    _write_both_source_lists(
+        repo, rtatool=["src/measure/Existing.cpp"], snapshot=["src/measure/Existing.cpp"]
+    )
+    (repo / "app" / "src" / "measure" / "Old.cpp").write_text(
+        "namespace rta {\nvoid run() {\n    doThing();\n}\n}\n", encoding="utf-8"
+    )
+    _init_repo(repo)
+    _commit_all(repo, "base, Old.cpp already unwired and unlisted")
+    base_sha = _head(repo)
+    (repo / "app" / "src" / "measure" / "Old.cpp").write_text(
+        "namespace rta {\nvoid run() {\n    doOtherThing();\n}\n}\n", encoding="utf-8"
+    )
+    _commit_all(repo, "body-only edit inside Old.cpp -- no new declaration at all")
+
+    build_dir = tmp_path / "build"
+    _write_fixture_map(build_dir, "Release", ["?unrelated@@YAXXZ"])
+    exit_code = oc.main(
+        ["--base", base_sha, "--build-dir", str(build_dir), "--source-dir", str(repo), "--skip-build"]
+    )
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "not compiled into any target" in out
+
+
+def test_source_list_case_mismatch_still_counts_as_listed(tmp_path, capsys):
+    # fix round 3 (verifier), LOW-4. NTFS is case-insensitive, so a Windows
+    # build accepts a .cmake source-list entry whose case does not exactly
+    # match the file's own path as git spells it -- a case-SENSITIVE `in`
+    # check would then treat a genuinely compiled file as absent from its
+    # own source list, inventing a false "not compiled into any target"
+    # orphan for perfectly wired, live code.
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "Measure").mkdir(parents=True)
+    (repo / "app" / "src" / "Measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
+    # The .cmake list spells the directory "measure" (lowercase); the file on
+    # disk (and in git) is "Measure" (capital M) -- a real, if unusual, case
+    # mismatch NTFS does not care about.
+    _write_both_source_lists(
+        repo,
+        rtatool=["src/measure/Existing.cpp", "src/measure/Thing.cpp"],
+        snapshot=["src/measure/Existing.cpp"],
+    )
+    _init_repo(repo)
+    _commit_all(repo, "base")
+    base_sha = _head(repo)
+    (repo / "app" / "src" / "Measure" / "Thing.cpp").write_text(
+        "namespace rta {\nvoid liveThing() {\n}\n}\n", encoding="utf-8"
+    )
+    _commit_all(repo, "add Thing.cpp, listed under a different case than its own path")
+
+    build_dir = tmp_path / "build"
+    _write_fixture_map(build_dir, "Release", ["?liveThing@rta@@YAXXZ"])
+    exit_code = oc.main(
+        ["--base", base_sha, "--build-dir", str(build_dir), "--source-dir", str(repo), "--skip-build"]
+    )
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "not compiled into any target" not in out
     assert "NOT IN TARGET" not in out
 
 

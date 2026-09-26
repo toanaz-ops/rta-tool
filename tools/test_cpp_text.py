@@ -94,6 +94,45 @@ def test_strip_string_and_char_literals_respects_an_escaped_quote():
     assert "int after;" in result
 
 
+def test_digit_separator_does_not_open_a_char_literal():
+    # fix round 3 (verifier), MEDIUM-2. The real fixture:
+    # app/tests/test_spl_session_folder_name.cpp:19's
+    # `constexpr std::time_t kInstant = 1'700'000'000;` -- THREE `'`
+    # (a digit separator, never a char literal), the odd count that used to
+    # leave the scan "inside a literal" for the rest of the file and erase a
+    # real ForTest call site further down.
+    text = (
+        "constexpr std::time_t kInstant = 1'700'000'000;\n"
+        "void run() { thing.enableSplLoggingForTest(); }\n"
+    )
+    result = cpp_text.strip_string_and_char_literals(text)
+    assert "1'700'000'000" in result
+    assert "enableSplLoggingForTest" in result
+
+
+def test_odd_digit_separator_count_does_not_erase_the_rest_of_the_file():
+    # A single separator (`48'000`) is ALSO an odd count -- the bug did not
+    # need three quotes, one was already enough to desynchronise the scan.
+    text = "int rate = 48'000;\nvoid run() { thing.enableSplLoggingForTest(); }\n"
+    result = cpp_text.strip_string_and_char_literals(text)
+    assert "enableSplLoggingForTest" in result
+
+
+def test_raw_string_with_an_odd_number_of_quotes_is_skipped_as_one_unit():
+    # fix round 3 (verifier), MEDIUM-2 (raw strings). The real shape:
+    # app/src/export/SplReportScript.h's `R"JS(...)JS"` -- embedded content
+    # with an ODD number of `"` would otherwise close the naive string scan
+    # early and desynchronise everything after it, hiding a real ForTest
+    # call further down the file.
+    text = (
+        'constexpr auto kBlob = R"JS(var x = "one quote here)JS";\n'
+        "void run() { thing.enableSplLoggingForTest(); }\n"
+    )
+    result = cpp_text.strip_string_and_char_literals(text)
+    assert "one quote here" not in result
+    assert "enableSplLoggingForTest" in result
+
+
 if __name__ == "__main__":
     import pytest
 

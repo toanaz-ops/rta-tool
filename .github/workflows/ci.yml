@@ -82,6 +82,14 @@ jobs:
   # step on the `core` matrix: the suite is pure Python with no C++ toolchain
   # dependency, so running it three times (once per OS) would triple the cost
   # for zero extra coverage.
+  #
+  # fix round 3 (verifier), LOW-5: both the interpreter and pytest itself are
+  # now pinned rather than left as "3.x" / whatever `pip install pytest`
+  # resolves to that day -- an unpinned floating version can go green or red
+  # on a date with no code change in this repo at all, which is exactly the
+  # kind of drift a merge gate must not have. Versions match what this fix
+  # round was developed and verified against locally (Python 3.14.6, pytest
+  # 9.1.1); bump both together, deliberately, when there is a reason to.
   tools-tests:
     name: tools (pytest)
     runs-on: ubuntu-latest
@@ -90,10 +98,10 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.14"
 
       - name: Install pytest
-        run: pip install pytest
+        run: pip install pytest==9.1.1
 
       - name: Run tools test suite
         run: python -m pytest tools -q

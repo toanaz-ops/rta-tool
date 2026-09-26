@@ -49,12 +49,13 @@ EXIT CODES. 0 nothing orphaned. 1 orphan(s) found (UNCHECKABLE entries alone
 never trigger this). 2 a tool or build error (bad --base, configure/build
 failure, no .map file produced).
 
-TWO LIVENESS CAVEATS (fix round 1, verifier, F7) -- both make the linker say
-LIVE for a function that a human would call dead, never the other direction,
-so they can only hide a real orphan, never invent a false one:
+TWO LIVENESS CAVEATS (fix round 1, verifier, F7; intro corrected fix round 3,
+LOW-1 -- the original wording claimed both point the same way, which its own
+second bullet already contradicted). These two point in OPPOSITE directions:
   - A never-called VIRTUAL OVERRIDE of an INSTANTIATED class reads live
-    through the vtable. The vtable itself is a reference the linker sees (it
-    is data, emitted whenever the class is instantiated), and every override
+    through the vtable -- a FALSE LIVE that can HIDE a real orphan, never
+    invent one. The vtable itself is a reference the linker sees (it is
+    data, emitted whenever the class is instantiated), and every override
     slot in it is a target that reference keeps alive -- whether or not
     anything ever actually DISPATCHES to that particular override at
     runtime. This tool cannot distinguish "reachable because something calls
@@ -69,30 +70,38 @@ Both are documented limitations of asking the OPTIMISED BINARY the question,
 not bugs in this tool's own fragment matching -- see app/CMakeLists.txt's own
 comment on the RTA_ORPHAN_LINKMAP option for the build-flag side of this.
 
-NOT IN TARGET (fix round 1, verifier, F8; corrected in fix round 2, F-A). A
-file this tool would otherwise scan is not necessarily compiled into
-`rtatool` at all -- `app/src/dev/preview/**` is an explicit per-directory
-exclusion (its own separate preview tooling, compiled only into
-`rtatool_snapshot`; see app/cmake/rtatool_sources.cmake vs.
+NOT IN TARGET (fix round 1, verifier, F8; corrected fix round 2, F-A;
+narrowed further fix round 3, MEDIUM-1). A file this tool would otherwise
+scan is not necessarily compiled into `rtatool` at all, but there is now
+exactly ONE legitimate, non-failing reason for that: `app/src/dev/preview/**`
+is an explicit per-directory exclusion (its own separate preview tooling,
+compiled only into `rtatool_snapshot` by design; SplPreview.cpp/.h is the
+concrete example -- see app/cmake/rtatool_sources.cmake vs.
 rtatool_snapshot_sources.cmake -- NOTE this is `dev/preview/`, not all of
-`dev/`: `src/dev/SpecimenComponent.cpp` is genuinely in BOTH targets). A
-`.cpp` genuinely compiled into `rtatool_snapshot` but absent from
-`rtatool_sources.cmake` is ALSO reported NOT IN TARGET (a third,
-non-failing category alongside orphan and UNCHECKABLE) -- but a `.cpp`
-absent from BOTH source lists is NOT in this category: it was never
-compiled into ANY target, which is the L6a defect this whole tool exists to
-catch (SplHistory.cpp/SplAlarms.cpp had no caller and so were never added to
-a source list either, at the commit before their wiring landed), so it is
-reported as an ordinary, FAILING orphan with reason "not compiled into any
-target" -- see orphan_targets.not_in_target_reason and
-orphan_targets.not_in_any_target_reason for the exact checks. Fix round 1's
-first cut treated any unlisted `.cpp` as non-failing NOT IN TARGET, which
-silently defeated exactly the case this paragraph now calls out; the
-verifier's `cpp_only_unlisted_false_clean` fixture is the regression test.
+`dev/`: `src/dev/SpecimenComponent.cpp` is genuinely in BOTH targets).
+EVERYTHING ELSE absent from `rtatool_sources.cmake` is a real, FAILING
+orphan, whether or not it happens to be compiled into `rtatool_snapshot`
+instead: a PRODUCTION-directory `.cpp` wired only into the dev snapshot tool
+is the L6a shape itself (built and previewed, never wired into the real app
+-- `measure/CrossoverTopology.cpp`, `measure/SyntheticSnapshot.cpp`,
+`trace/VirtualTrace.cpp` and `view/CrossoverSurface.cpp` are the four real,
+current examples fix round 2's looser check would have silently exempted),
+and a `.cpp` in NEITHER list was never compiled at all (SplHistory.cpp/
+SplAlarms.cpp had no caller and so were never added to a source list either,
+at the commit before their wiring landed) -- see
+orphan_targets.not_in_target_reason and orphan_targets.not_in_any_target_reason
+for the exact checks and their two distinct orphan reasons ("compiled only
+into rtatool_snapshot, never rtatool" vs. "not compiled into any target").
+Both fix round 1's first cut (any unlisted `.cpp` was non-failing) and fix
+round 2's narrower one (only a TRULY unlisted `.cpp` failed; a
+snapshot-listed one was still exempted) silently defeated some version of
+this case; the verifier's `cpp_only_unlisted_false_clean` fixture is the
+regression test for the first, `test_cpp_listed_only_in_snapshot_is_not_in_target`
+(now asserting orphan/exit 1, not NOT IN TARGET) for the second.
 A checkout older than 2026-09-26 has no rtatool_sources.cmake to read at all
-(it predates that file's split from app/CMakeLists.txt); both checks are
-then skipped for that run (candidates fall through to the ordinary liveness
-check instead), not treated as "nothing is in the target".
+(it predates that file's split from app/CMakeLists.txt); the source-list-
+based checks are then skipped for that run (candidates fall through to the
+ordinary liveness check instead), not treated as "nothing is in the target".
 
 TEST HOOK (fix round 1, verifier). A candidate whose name ends in `ForTest`
 is never orphaned outright the way an ordinary candidate is: if it is
@@ -249,19 +258,23 @@ def main(argv: list[str] | None = None) -> int:
     # reads as NOT IN TARGET rather than as two different, both-technically-
     # true classifications.
     #
-    # fix round 2 (verifier), F-A: a `.cpp` compiled into NEITHER target is
-    # NOT a legitimate NOT IN TARGET -- it is an ordinary, failing orphan
-    # with its own explicit reason, checked and appended BEFORE the
-    # not-in-target partition below so it can never be shadowed by it.
+    # fix round 2 (verifier), F-A; narrowed fix round 3, MEDIUM-1: a `.cpp`
+    # outside app/src/dev/preview/ that is compiled into NEITHER rtatool NOR
+    # rtatool_snapshot, OR into rtatool_snapshot ONLY, is NOT a legitimate
+    # NOT IN TARGET -- it is an ordinary, failing orphan with its own
+    # explicit reason, checked and appended BEFORE the not-in-target
+    # partition below so it can never be shadowed by it.
     not_in_target: dict[str, list[str]] = {}
     orphans: dict[str, list[str]] = {}
+    flagged_by_file_check: set[str] = set()
     in_target_candidates = []
     for c in candidates:
         never_compiled = not_in_any_target_reason(c.path, target_sources, snapshot_sources)
         if never_compiled:
             orphans.setdefault(c.path, []).append(f"{c.name}  ({never_compiled})")
+            flagged_by_file_check.add(c.path)
             continue
-        reason = not_in_target_reason(c.path, target_sources, snapshot_sources)
+        reason = not_in_target_reason(c.path)
         if reason:
             not_in_target.setdefault(c.path, []).append(f"{c.name}  ({reason})")
         else:
@@ -269,12 +282,28 @@ def main(argv: list[str] | None = None) -> int:
 
     in_target_uncheckable = []
     for u in uncheckable:
-        reason = u.path and not_in_target_reason(u.path, target_sources, snapshot_sources)
+        reason = u.path and not_in_target_reason(u.path)
         if reason:
             not_in_target.setdefault(u.path, []).append(f"{u.name}  ({reason})")
         else:
             in_target_uncheckable.append(u)
     uncheckable = in_target_uncheckable
+
+    # fix round 3 (verifier), LOW-3: the check above only ever ran against a
+    # CANDIDATE (a function-shaped declaration `find_candidates` recognised).
+    # A `.cpp` this diff touches only with a body-only edit (no new
+    # declaration at all) or whose added declarations are ALL UNCHECKABLE
+    # never produced one, so it silently skipped the not-compiled-into-
+    # rtatool check entirely -- checked here once per FILE this diff added
+    # any line to, independent of what candidates that file did or didn't
+    # yield, and only for a path this loop hasn't already flagged above.
+    touched_cpp_paths = sorted({a.path for a in added_lines if a.path.endswith(".cpp")})
+    for path in touched_cpp_paths:
+        if path in flagged_by_file_check:
+            continue
+        never_compiled = not_in_any_target_reason(path, target_sources, snapshot_sources)
+        if never_compiled:
+            orphans.setdefault(path, []).append(f"(file has no checked candidate)  ({never_compiled})")
 
     # Test hooks: an otherwise-unreachable `*ForTest` candidate is proven
     # live by a real reference under app/tests* on THIS run, not by its name
