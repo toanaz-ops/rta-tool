@@ -7,6 +7,7 @@
 // hand-copied fixture) with the properties specific to XOVER: it needs a
 // TraceLibrary with real entries to show anything at all, which none of the
 // other three buttons do.
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "MainComponent.h"
@@ -40,18 +41,23 @@ juce::Button* findButtonByText(juce::Component& root, const juce::String& text) 
 
 /// A minimal magnitude+phase capture -- enough for `VirtualTrace::fromTrace`
 /// to accept it (it refuses a magnitude-only trace: VirtualTrace.h's own
-/// class comment). The actual shape drawn does not matter to any assertion
-/// below; only IDENTITY (which two ids the pane's model received) does.
-rta::trace::Trace makeTestTrace(const std::string& id) {
+/// class comment). `magnitudeDb` is a FLAT, DISTINCT constant per caller
+/// (e.g. -6.0 for one trace, -18.0 for the other) so a test can pin WHICH
+/// trace's DATA the model actually used, not only which id string got
+/// recorded -- a mutant that feeds `surface_` the swapped trace while still
+/// reporting the correct ids (CrossoverPaneView.cpp's `highId_`/`lowId_` and
+/// its `VirtualTrace::fromTrace` calls are two separate statements) would
+/// pass an id-only check.
+rta::trace::Trace makeTestTrace(const std::string& id, float magnitudeDb) {
     rta::trace::CaptureMeta meta;
     meta.id = id;
     meta.sampleRate = 48000.0;
     meta.fftSize = 64;  // pointCountFor(64) = 33: small and exact, no rounding to check.
 
     const std::size_t points = rta::trace::pointCountFor(meta.fftSize);
-    std::vector<float> magnitudeDb(points, -6.0f);
+    std::vector<float> magnitude(points, magnitudeDb);
     std::vector<float> phase(points, 0.0f);
-    auto trace = rta::trace::Trace::make(meta, std::move(magnitudeDb));
+    auto trace = rta::trace::Trace::make(meta, std::move(magnitude));
     REQUIRE(trace.has_value());
     REQUIRE(trace->setPhase(std::move(phase)));
     return std::move(*trace);
@@ -95,7 +101,7 @@ TEST_CASE("with fewer than two stored traces the crossover pane's model has none
     MainComponent component;
     component.setSyntheticMode(true);
     auto& library = MainComponentTestAccess::library(component);
-    library.add(makeTestTrace("solo"), "Solo", "default");
+    library.add(makeTestTrace("solo", -6.0f), "Solo", "default");
 
     component.selectPaneView(PaneSelectorButton::Xover);
 
@@ -108,11 +114,18 @@ TEST_CASE("with fewer than two stored traces the crossover pane's model has none
 
 TEST_CASE("with two stored traces the crossover pane's model receives exactly those two",
          "[main_component_panes_xover]") {
+    // Distinct magnitudes (see makeTestTrace's own comment): -6.0 for the
+    // trace added FIRST, -18.0 for the one added SECOND -- checkable against
+    // which one lands in surface_.highSideDb() vs lowSideDb(), independent
+    // of the id bookkeeping below.
+    constexpr float kHighMagnitudeDb = -6.0f;
+    constexpr float kLowMagnitudeDb = -18.0f;
+
     MainComponent component;
     component.setSyntheticMode(true);
     auto& library = MainComponentTestAccess::library(component);
-    const std::string highId = library.add(makeTestTrace("main-hp"), "Main HP", "default");
-    const std::string lowId = library.add(makeTestTrace("sub-lp"), "Sub LP", "default");
+    const std::string highId = library.add(makeTestTrace("main-hp", kHighMagnitudeDb), "Main HP", "default");
+    const std::string lowId = library.add(makeTestTrace("sub-lp", kLowMagnitudeDb), "Sub LP", "default");
     REQUIRE_FALSE(highId.empty());
     REQUIRE_FALSE(lowId.empty());
 
@@ -128,10 +141,15 @@ TEST_CASE("with two stored traces the crossover pane's model receives exactly th
     // to add() ever mangled them.
     CHECK(xoverPane->highTraceId() == highId);
     CHECK(xoverPane->lowTraceId() == lowId);
-    // Not just "two ids recorded" -- the model surface_ actually holds them,
-    // via the one observable CrossoverSurface exposes that a synthetic trace
-    // with no window/pending ops still populates: point count.
-    CHECK(xoverPane->surface().pointCount() > 0);
+    // The DATA itself, not just the id label: catches a mutant that feeds
+    // surface_ the swapped trace (or the wrong one entirely) while the id
+    // bookkeeping above still happens to read correct -- CrossoverPaneView.h's
+    // own "the model receives exactly those two" contract is about the
+    // SURFACE's content, not a side-channel string.
+    REQUIRE(xoverPane->surface().highSideDb().size() > 1);
+    REQUIRE(xoverPane->surface().lowSideDb().size() > 1);
+    CHECK(xoverPane->surface().highSideDb()[1] == Catch::Approx(kHighMagnitudeDb).margin(0.05));
+    CHECK(xoverPane->surface().lowSideDb()[1] == Catch::Approx(kLowMagnitudeDb).margin(0.05));
 }
 
 TEST_CASE("a third stored trace does not change which two the crossover pane reads",
@@ -141,9 +159,9 @@ TEST_CASE("a third stored trace does not change which two the crossover pane rea
     MainComponent component;
     component.setSyntheticMode(true);
     auto& library = MainComponentTestAccess::library(component);
-    const std::string highId = library.add(makeTestTrace("main-hp"), "Main HP", "default");
-    const std::string lowId = library.add(makeTestTrace("sub-lp"), "Sub LP", "default");
-    library.add(makeTestTrace("extra"), "Extra", "default");
+    const std::string highId = library.add(makeTestTrace("main-hp", -6.0f), "Main HP", "default");
+    const std::string lowId = library.add(makeTestTrace("sub-lp", -18.0f), "Sub LP", "default");
+    library.add(makeTestTrace("extra", -30.0f), "Extra", "default");
 
     component.selectPaneView(PaneSelectorButton::Xover);
 
@@ -151,6 +169,10 @@ TEST_CASE("a third stored trace does not change which two the crossover pane rea
     REQUIRE(xoverPane != nullptr);
     CHECK(xoverPane->highTraceId() == highId);
     CHECK(xoverPane->lowTraceId() == lowId);
+    REQUIRE(xoverPane->surface().highSideDb().size() > 1);
+    REQUIRE(xoverPane->surface().lowSideDb().size() > 1);
+    CHECK(xoverPane->surface().highSideDb()[1] == Catch::Approx(-6.0f).margin(0.05));
+    CHECK(xoverPane->surface().lowSideDb()[1] == Catch::Approx(-18.0f).margin(0.05));
 }
 
 TEST_CASE("selectPaneView keeps all four selector buttons' toggle state in sync",
