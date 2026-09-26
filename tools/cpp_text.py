@@ -16,30 +16,51 @@ literal, char literal) rather than a single regex -- a regex cannot express
 handle escaped quotes correctly.
 
 WHAT THIS DOES NOT HANDLE (`strip_comments` only -- `strip_string_and_char_
-literals` below handles raw strings and digit separators, added fix round 3):
-trigraphs, and a line-comment whose `//` is itself escaped across a line
-continuation backslash. Neither appears in this codebase's own sources, so
-the extra complexity to parse them was not added; if one is ever introduced,
-the affected line degrades to being treated as unstripped code rather than
-silently corrupting the scan, which is the safe direction for a haystack
-(worst case: a would-be reference site is missed inside a real comment and a
-real orphan is FALSE-negatived away by that one line, which is exactly the
-same class of imprecision this whole tool already accepts elsewhere and
-documents in orphan_check.py's own docstring).
+literals` below handles raw strings, added fix round 3; BOTH functions now
+share the digit-separator rule, fix round 4): a raw string's embedded `"`
+can still confuse `strip_comments`' own naive string-skip (it does not parse
+`R"delim(...)delim"` at all, unlike `strip_string_and_char_literals`);
+trigraphs; and a line-comment whose `//` is itself escaped across a line
+continuation backslash. None of those degrade silently -- the affected
+region is treated as unstripped code rather than corrupting the rest of the
+scan, which is the safe direction for a haystack (worst case: a would-be
+reference site is missed inside a real comment and a real orphan is
+FALSE-negatived away, which is exactly the same class of imprecision this
+whole tool already accepts elsewhere and documents in orphan_check.py's own
+docstring).
 
-CORRECTION (fix round 3, LOW-2): this docstring used to also claim "zero raw
-string literals outside external/" -- false. `R"JS(` and `R"CSS(` are real,
-committed literals in `app/src/export/SplReportScript.h` and
-`SplReportStyle.h`, and two more raw strings appear under `app/tests/`. That
-claim was never load-bearing for `strip_comments` itself (which still does
-not specially parse a raw string -- an embedded `"` inside one can still
-confuse ITS naive string-skip, same as before), but it WAS the premise fix
-round 2 built `strip_string_and_char_literals` on, which is why that
-function gained real raw-string handling this round rather than repeating
-the false premise.
+CORRECTION (fix round 3, LOW-2; recorrected fix round 4, F3): this docstring
+used to claim "zero raw string literals outside external/" -- false, and the
+round-3 correction UNDERCOUNTED it too. The real count: 6 raw string
+literals across 2 files under `app/tests/` (`test_spl_report.cpp`,
+`test_spl_report_fixes.cpp`), 2 more in `app/src/export/`
+(`SplReportScript.h`'s `R"JS(`, `SplReportStyle.h`'s `R"CSS(`), and one more
+in `app/src/api/ApiSerialise.cpp:77`. `app/tests/CodeLines.h:87` merely
+MENTIONS the `R"(...)"` syntax inside a `///` doc comment -- not a real raw
+string literal, and not counted above.
 """
 
 from __future__ import annotations
+
+
+def _is_digit_separator_quote(text: str, index: int) -> bool:
+    """True if the `'` at `index` is a C++14 DIGIT SEPARATOR
+    (`1'700'000'000`, `0xFF'FF'FF`) rather than the opening quote of a real
+    char literal. A real char literal is never preceded by a digit, a
+    letter, or another `'` -- only a digit separator is.
+
+    Fix round 4 (verifier): round 3 gave this exact rule to
+    `strip_string_and_char_literals` alone. `strip_comments` still opened a
+    char-literal scan at EVERY `'`, so an odd separator count
+    (`app/tests/test_spl_session_folder_name.cpp:19`'s `1'700'000'000`,
+    `app/tests/test_api_serialise.cpp:127`'s `20'000`) left ITS scan "inside
+    a literal" too -- swallowing every `//` comment up to the next `'`,
+    which let a comment merely NAMING a `*ForTest` hook read as if it were
+    code, undoing `strip_comments`' own whole reason to exist. Shared here so
+    the two scanners' char-literal rule cannot drift apart a third time.
+    """
+    prev = text[index - 1] if index > 0 else ""
+    return prev.isalnum() or prev == "'"
 
 
 def strip_comments(text: str) -> str:
@@ -70,6 +91,10 @@ def strip_comments(text: str) -> str:
             i = j + 2
             continue
         c = text[i]
+        if c == "'" and _is_digit_separator_quote(text, i):
+            out.append(c)
+            i += 1
+            continue
         if c == '"' or c == "'":
             j = i + 1
             while j < n:
@@ -180,11 +205,12 @@ def strip_string_and_char_literals(text: str) -> str:
                 i = j
             continue
         if c == "'":
-            prev = text[i - 1] if i > 0 else ""
-            if prev.isalnum() or prev == "'":
+            if _is_digit_separator_quote(text, i):
                 # A C++14 digit separator (`1'700'000'000`, `0xFF'FF'FF`),
                 # never a char literal's OWN opening quote -- pass it
                 # through unchanged rather than starting a literal scan.
+                # Shared rule with strip_comments -- see
+                # _is_digit_separator_quote's own docstring (fix round 4).
                 out.append(c)
                 i += 1
                 continue

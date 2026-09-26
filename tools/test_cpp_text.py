@@ -133,6 +133,43 @@ def test_raw_string_with_an_odd_number_of_quotes_is_skipped_as_one_unit():
     assert "enableSplLoggingForTest" in result
 
 
+def test_strip_comments_does_not_swallow_a_comment_after_a_digit_separator():
+    # fix round 4 (verifier), MEDIUM. Round 3 gave the digit-separator rule
+    # to strip_string_and_char_literals ALONE -- strip_comments still opened
+    # a char-literal scan at the first `'` of `1'700'000'000`, closed it at
+    # the second (dropping "700" as if it were the literal's contents), then
+    # opened ANOTHER at the third `'`, which never finds a closing `'`
+    # anywhere in this short text -- so it swallows the REST OF THE FILE,
+    # comment and all, meaning the `// see enableSplLoggingForTest` comment
+    # (which SHOULD be stripped as a comment, but is instead passed through
+    # untouched as if it were inside a string) reads as if it were real code
+    # once concatenated with strip_string_and_char_literals -- exactly the
+    # real shape in app/tests/test_spl_session_folder_name.cpp:19. Through
+    # the REAL pipeline both functions are actually used in
+    # (orphan_targets.test_hook_is_referenced), the name must be ABSENT.
+    text = "int r = 1'700'000'000;\n// see enableSplLoggingForTest\nvoid run() {}\n"
+    result = cpp_text.strip_string_and_char_literals(cpp_text.strip_comments(text))
+    assert "enableSplLoggingForTest" not in result
+    assert "1'700'000'000" in result
+    assert "void run() {}" in result
+
+
+def test_strip_comments_does_not_swallow_several_comments_after_a_separator():
+    # The other real repo instance: app/tests/test_api_serialise.cpp:127's
+    # `20'000` (ONE separator, still an odd count), followed here by several
+    # comment lines rather than just one, to prove the fix does not merely
+    # get lucky on a single trailing line.
+    text = (
+        "int rate = 20'000;\n"
+        "// first comment mentions enableSplLoggingForTest\n"
+        "// second comment, still just prose\n"
+        "void run() { thing.enableSplLoggingForTest(); }\n"
+    )
+    result = cpp_text.strip_string_and_char_literals(cpp_text.strip_comments(text))
+    assert result.count("enableSplLoggingForTest") == 1
+    assert "void run()" in result
+
+
 if __name__ == "__main__":
     import pytest
 
