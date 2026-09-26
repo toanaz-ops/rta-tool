@@ -99,3 +99,28 @@ TEST_CASE("the validity section states the excluded block range, or none", "[spl
     ReportPayload noRange = minimalPayload();  // excludedBlockRange absent
     CHECK(extractSection(renderReport(noRange), "validity").find(">none<") != std::string::npos);
 }
+
+// Fix round 3 (verifier MEDIUM, upgraded from LOW): a channel-mismatch (or
+// no-measurement-channel) refusal must render its OWN reason, not a
+// drift/verdict pair comparing two checks that were never comparable.
+TEST_CASE("a channel-mismatch refusal renders instead of a drift/verdict", "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    payload.calibration.performed = true;
+    payload.calibrationChannelRefusal = CalibrationRecordRefusal::ChannelMismatch;
+
+    const auto html = renderReport(payload);
+    const auto calibration = extractSection(html, "calibration");
+    CHECK(calibration.find("Calibration refused") != std::string::npos);
+    CHECK(calibration.find("DIFFERENT channels") != std::string::npos);
+    CHECK(calibration.find("Drift") == std::string::npos);
+}
+
+TEST_CASE("a no-measurement-channel refusal states its own distinct reason", "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    payload.calibration.performed = true;
+    payload.calibrationChannelRefusal = CalibrationRecordRefusal::NoMeasurementChannel;
+
+    const auto calibration = extractSection(renderReport(payload), "calibration");
+    CHECK(calibration.find("Calibration refused") != std::string::npos);
+    CHECK(calibration.find("no measurement channel could be resolved") != std::string::npos);
+}

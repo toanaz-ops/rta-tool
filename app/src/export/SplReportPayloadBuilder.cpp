@@ -199,6 +199,7 @@ SplReportBuildResult buildReportPayload(const SplReportBuildRequest& request) {
     // that value with no branch needed here.
     if (calibrationRecord.has_value()) {
         payload.calibration = calibrationRecord->fields;
+        payload.calibrationChannelRefusal = calibrationRecord->refusal;
     }
 
     std::vector<std::string> allSegmentBytes;

@@ -278,6 +278,25 @@ private:
     /// is what every channel-indexed `AnalysisThread` call already treats as
     /// a safe no-op.
     int calibrationChannel_ = -1;
+    /// Fix round 3 (verifier MEDIUM, upgraded from LOW): `calibrationChannel_`
+    /// above is overwritten every time a capture completes -- START AND END
+    /// alike -- so by itself it cannot tell "the END check resolved to a
+    /// different channel than the START check did" (an operator can
+    /// reassign `ChannelRoleTable` roles in between, one click away). Set
+    /// ONLY when `calibrationCaptureIsStart_` is true, in
+    /// `pollCalibrationPipeline()`, and never touched at the END check --
+    /// `writeCalibrationRecordAndUpdateInvalidFlag()` compares it against
+    /// the freshly-resolved `calibrationChannel_` via
+    /// `rta::measure::decideCalibrationRecordChannel` before writing
+    /// anything.
+    int calibrationStartChannel_ = -1;
+    /// True after the most recent END check was REFUSED (channel mismatch,
+    /// or no measurement channel resolved either time) -- read by
+    /// `updateCalibrationReadout()` so the operator sees why no drift/verdict
+    /// appeared, live, the same fact `SplCalibrationRecord.h`'s own
+    /// `CalibrationRecordRefusal` states in the written record and the
+    /// report's Calibration section states in the export.
+    bool calibrationChannelRefused_ = false;
     // ----------------------------------------------------------------------
 
     // --- L6a task W2-E2a: SPL logging follows the bus, not a button --------

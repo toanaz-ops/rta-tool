@@ -22,6 +22,22 @@
 
 namespace rta::splexport {
 
+/// Fix round 3 (verifier MEDIUM, upgraded from LOW): why a record carries no
+/// `channel`/block range/verdict. `None` (default) is the normal case.
+/// `ChannelMismatch`: the START and END checks resolved to different
+/// channels (an operator can change `ChannelRoleTable` roles between the two
+/// checks, one click away) -- comparing their levels would compare readings
+/// from different signal paths, not a drift. `NoMeasurementChannel`: EITHER
+/// check never resolved to a real channel at all (`calibrationMeasurementChannel`
+/// returned `nullopt` -- an empty routing plan, the calibrator-only-rig
+/// case) -- there is no log this record could even apply to. Either way the
+/// raw per-check measurements are still written (a human can read what was
+/// measured), but no channel, no block range, and no verdict: the record
+/// says WHY it refuses one rather than writing a channel=-1 that reads like
+/// a real (if odd) channel number, or a Pass/Fail comparing incomparable
+/// checks.
+enum class CalibrationRecordRefusal { None, ChannelMismatch, NoMeasurementChannel };
+
 /// The one fact `CalibrationSession` cannot know (it has no channel and no
 /// log): which blocks, in THIS session's own log, the start/end pair
 /// brackets. Everything else is `CalibrationSession::reportFields()`'s own
@@ -29,9 +45,13 @@ namespace rta::splexport {
 /// re-declared field by field a second time.
 struct SplCalibrationRecordInfo {
     rta::measure::CalibrationReportFields fields;
-    /// The channel calibration was measured against (kCalibrationRouteIndex
-    /// at the composition root) -- the log this range applies to. A report
-    /// builder reading a DIFFERENT channel's log must not apply this range.
+    /// The channel calibration was measured against
+    /// (`MainComponent::calibrationStartChannel_` at the composition root,
+    /// fix round 3 -- the START check's own channel, never the route index
+    /// and never re-resolved at the END check) -- the log this range applies
+    /// to. A report builder reading a DIFFERENT channel's log must not apply
+    /// this range. Meaningless when `refusal != None` (not written then --
+    /// see that enum's own comment).
     int channel = 0;
     /// The bracketed span, inclusive both ends, in the log this record sits
     /// beside. In production this is always [0, N] because starting the
@@ -42,6 +62,7 @@ struct SplCalibrationRecordInfo {
     /// and so a test can probe a non-zero start directly.
     std::uint64_t startBlockIndex = 0;
     std::uint64_t endBlockIndex = 0;
+    CalibrationRecordRefusal refusal = CalibrationRecordRefusal::None;
 };
 
 namespace detail {
@@ -60,6 +81,9 @@ inline constexpr std::string_view kCalKeyEndUnixMs = "endUnixMs";
 inline constexpr std::string_view kCalKeyDriftDb = "driftDb";
 inline constexpr std::string_view kCalKeyVerdict = "verdict";
 inline constexpr std::string_view kCalKeyClause = "clause";
+inline constexpr std::string_view kCalKeyRefusal = "refusalReason";
+inline constexpr std::string_view kCalRefusalChannelMismatch = "channelMismatch";
+inline constexpr std::string_view kCalRefusalNoMeasurementChannel = "noMeasurementChannel";
 }  // namespace detail
 
 /// `# key=value` lines, the SplLog.h / SplSessionHeader.h convention, through
@@ -87,9 +111,19 @@ inline constexpr std::string_view kCalKeyClause = "clause";
     numeric(out, detail::kCalKeyPerformed, info.fields.performed ? std::uint64_t{1} : std::uint64_t{0});
     if (!info.fields.performed) return out;
 
-    numeric(out, detail::kCalKeyChannel, static_cast<std::int64_t>(info.channel));
-    numeric(out, detail::kCalKeyStartBlockIndex, info.startBlockIndex);
-    numeric(out, detail::kCalKeyEndBlockIndex, info.endBlockIndex);
+    // Fix round 3: a REFUSED record writes no channel, no block range, and
+    // no verdict -- see CalibrationRecordRefusal's own comment for why. The
+    // raw per-check measurements below are written either way.
+    if (info.refusal == CalibrationRecordRefusal::None) {
+        numeric(out, detail::kCalKeyChannel, static_cast<std::int64_t>(info.channel));
+        numeric(out, detail::kCalKeyStartBlockIndex, info.startBlockIndex);
+        numeric(out, detail::kCalKeyEndBlockIndex, info.endBlockIndex);
+    } else {
+        line(out, detail::kCalKeyRefusal,
+            info.refusal == CalibrationRecordRefusal::ChannelMismatch
+                ? detail::kCalRefusalChannelMismatch
+                : detail::kCalRefusalNoMeasurementChannel);
+    }
     numeric(out, detail::kCalKeyStartMeasuredLevelDb, info.fields.start.measuredLevelDb);
     numeric(out, detail::kCalKeyStartNominalLevelDb, info.fields.start.level.nominalDb);
     numeric(out, detail::kCalKeyStartOperatorSupplied,
@@ -100,11 +134,14 @@ inline constexpr std::string_view kCalKeyClause = "clause";
     numeric(out, detail::kCalKeyEndOperatorSupplied,
            info.fields.end.level.operatorSupplied ? std::uint64_t{1} : std::uint64_t{0});
     numeric(out, detail::kCalKeyEndUnixMs, info.fields.end.unixMs);
-    numeric(out, detail::kCalKeyDriftDb, info.fields.driftDb);
-    line(out, detail::kCalKeyVerdict,
-        (info.fields.verdict.has_value() && *info.fields.verdict == rta::measure::CalibrationVerdict::Pass)
-            ? "pass"
-            : "fail");
+    if (info.refusal == CalibrationRecordRefusal::None) {
+        numeric(out, detail::kCalKeyDriftDb, info.fields.driftDb);
+        line(out, detail::kCalKeyVerdict,
+            (info.fields.verdict.has_value() &&
+             *info.fields.verdict == rta::measure::CalibrationVerdict::Pass)
+                ? "pass"
+                : "fail");
+    }
     line(out, detail::kCalKeyClause, info.fields.clause);
     return out;
 }
@@ -178,6 +215,10 @@ inline constexpr std::string_view kCalKeyClause = "clause";
         } else if (key == detail::kCalKeyVerdict) {
             info.fields.verdict = (value == "pass") ? rta::measure::CalibrationVerdict::Pass
                                                     : rta::measure::CalibrationVerdict::Fail;
+        } else if (key == detail::kCalKeyRefusal) {
+            info.refusal = (value == detail::kCalRefusalChannelMismatch)
+                               ? CalibrationRecordRefusal::ChannelMismatch
+                               : CalibrationRecordRefusal::NoMeasurementChannel;
         }
         // kCalKeyClause: written for a human reader, deliberately not parsed
         // back -- see this function's own doc comment.

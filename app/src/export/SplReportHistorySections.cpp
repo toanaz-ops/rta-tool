@@ -26,6 +26,14 @@ using rta::view::formatTrim;
 // W3-C: record sec.9 item 3. `performed` gates first -- `verdict` is
 // std::optional, never a Pass-defaulted placeholder, mirroring
 // CalibrationSession's own optionality exactly.
+//
+// Fix round 3 (verifier MEDIUM, upgraded from LOW): a calibration whose
+// START and END checks resolved to different channels (or to no channel at
+// all) carries `p.calibrationChannelRefusal != None` -- no channel, no block
+// range, and no verdict were written to the record in that case
+// (SplCalibrationRecord.h's own comment), so this renders the refusal
+// reason INSTEAD of a Drift/Verdict row that would otherwise silently show
+// "0.0 dB" / nothing, indistinguishable from a real zero-drift measurement.
 std::string renderCalibration(const ReportPayload& p) {
     const auto& c = p.calibration;
     std::string body;
@@ -37,11 +45,25 @@ std::string renderCalibration(const ReportPayload& p) {
     body += kv("Pre-check time (ms, Unix epoch)", std::to_string(c.start.unixMs));
     body += kv("Post-check level", escapeHtml(formatTrim(c.end.measuredLevelDb)));
     body += kv("Post-check time (ms, Unix epoch)", std::to_string(c.end.unixMs));
-    body += kv("Drift", escapeHtml(formatTrim(c.driftDb)));
     body += kv("Calibrator nominal level",
               escapeHtml(formatTrim(c.start.level.nominalDb)) +
                   (c.start.level.operatorSupplied ? " (operator-supplied)" : ""));
     body += kv("Compared against", escapeHtml(std::string(c.clause)));
+
+    if (p.calibrationChannelRefusal != CalibrationRecordRefusal::None) {
+        const std::string reason =
+            p.calibrationChannelRefusal == CalibrationRecordRefusal::ChannelMismatch
+                ? "the start and end checks were measured on DIFFERENT channels "
+                  "(a role was reassigned between them) -- no drift verdict is "
+                  "meaningful between two different signal paths."
+                : "no measurement channel could be resolved for this calibration "
+                  "(an empty routing plan, or a calibrator-only rig) -- no drift "
+                  "verdict is written.";
+        body += "<p class=\"honesty\">Calibration refused: " + reason + "</p>";
+        return section("calibration", "Calibration", body);
+    }
+
+    body += kv("Drift", escapeHtml(formatTrim(c.driftDb)));
     if (c.verdict) {
         body += kv("Verdict", *c.verdict == rta::measure::CalibrationVerdict::Pass ? "Pass" : "Fail");
     }

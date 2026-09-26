@@ -45,4 +45,27 @@ namespace rta::measure {
     return plan.routes[static_cast<std::size_t>(routeIndex)].measurementChannel;
 }
 
+/// Fix round 3 (verifier MEDIUM, upgraded from LOW): `calibrationMeasurementChannel`
+/// is resolved TWICE per calibration -- once when the START check completes,
+/// once when the END check does -- and nothing stopped an operator from
+/// reassigning Measurement/Reference roles in `ChannelRoleTable` in between.
+/// Comparing a START check on channel 1 against an END check on channel 0
+/// is not a drift measurement of anything: the two numbers describe
+/// different signal paths. `Write` only when both checks resolved to the
+/// SAME non-negative channel; `-1` (this header's own "no channel" sentinel,
+/// matching every `AnalysisThread` channel API) on either side is
+/// `RefuseNoMeasurementChannel`, never silently treated as "channel -1".
+enum class CalibrationChannelDecision { Write, RefuseChannelMismatch, RefuseNoMeasurementChannel };
+
+[[nodiscard]] constexpr CalibrationChannelDecision decideCalibrationRecordChannel(
+    int startChannel, int endChannel) noexcept {
+    if (startChannel < 0 || endChannel < 0) {
+        return CalibrationChannelDecision::RefuseNoMeasurementChannel;
+    }
+    if (startChannel != endChannel) {
+        return CalibrationChannelDecision::RefuseChannelMismatch;
+    }
+    return CalibrationChannelDecision::Write;
+}
+
 }  // namespace rta::measure

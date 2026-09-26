@@ -13,6 +13,7 @@
 // disagree with the log that is its own evidence.
 #pragma once
 
+#include "export/SplCalibrationRecord.h"  // CalibrationRecordRefusal
 #include "measure/CalibrationSession.h"
 #include "measure/SplConfig.h"
 #include "measure/SplHistory.h"
@@ -158,6 +159,11 @@ struct ReportPayload {
     // 3. Calibration (item 3, task W3-C). `performed == false` prints
     // "calibration check not performed" -- Wave 3's own cut fallback.
     rta::measure::CalibrationReportFields calibration;
+    /// Fix round 3: mirrors the calibration record's own `refusal` field
+    /// (`SplCalibrationRecord.h`) -- `renderCalibration` states WHY no
+    /// channel/block-range/verdict came with `calibration` above, instead of
+    /// silently printing an absent drift/verdict as if nothing had run.
+    CalibrationRecordRefusal calibrationChannelRefusal = CalibrationRecordRefusal::None;
     // 4. Settings (item 4), plus the alarms' live verdict (fix round).
     rta::measure::SplConfig config;
     std::vector<ReportAlarmResult> alarms;

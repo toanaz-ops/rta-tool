@@ -10,6 +10,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 using rta::measure::calibrationMeasurementChannel;
+using rta::measure::CalibrationChannelDecision;
+using rta::measure::decideCalibrationRecordChannel;
 using rta::measure::RoutingPlan;
 using rta::measure::TransferRoute;
 
@@ -51,4 +53,39 @@ TEST_CASE("calibrationMeasurementChannel is absent for an out-of-range route ind
     plan.routes.push_back(TransferRoute{0, 1, 2});
     CHECK_FALSE(calibrationMeasurementChannel(plan, 1).has_value());
     CHECK_FALSE(calibrationMeasurementChannel(plan, -1).has_value());
+}
+
+// Fix round 3 (verifier MEDIUM, upgraded from LOW): an operator can
+// reassign ChannelRoleTable roles between CAL START and CAL END, so the two
+// checks' resolved channels are not guaranteed equal. This is the pure
+// decision `writeCalibrationRecordAndUpdateInvalidFlag` calls before writing
+// anything.
+TEST_CASE("decideCalibrationRecordChannel writes only when both checks resolved "
+         "to the SAME channel",
+         "[calibration_channel]") {
+    CHECK(decideCalibrationRecordChannel(1, 1) == CalibrationChannelDecision::Write);
+    CHECK(decideCalibrationRecordChannel(0, 0) == CalibrationChannelDecision::Write);
+}
+
+TEST_CASE("decideCalibrationRecordChannel refuses a channel mismatch between "
+         "start and end",
+         "[calibration_channel]") {
+    // The exact scenario the verifier named: an operator swaps Measurement
+    // from channel 1 to channel 0 (or vice versa) between the two checks.
+    CHECK(decideCalibrationRecordChannel(1, 0) == CalibrationChannelDecision::RefuseChannelMismatch);
+    CHECK(decideCalibrationRecordChannel(0, 1) == CalibrationChannelDecision::RefuseChannelMismatch);
+}
+
+TEST_CASE("decideCalibrationRecordChannel refuses when either side never resolved "
+         "a channel, even when the OTHER side matches -1's own value",
+         "[calibration_channel]") {
+    // -1 is this header's own "no channel" sentinel (calibrationMeasurementChannel's
+    // value_or(-1)) -- an empty routing plan must never be treated as "channel
+    // -1", agreeing with itself.
+    CHECK(decideCalibrationRecordChannel(-1, -1) ==
+         CalibrationChannelDecision::RefuseNoMeasurementChannel);
+    CHECK(decideCalibrationRecordChannel(-1, 2) ==
+         CalibrationChannelDecision::RefuseNoMeasurementChannel);
+    CHECK(decideCalibrationRecordChannel(3, -1) ==
+         CalibrationChannelDecision::RefuseNoMeasurementChannel);
 }

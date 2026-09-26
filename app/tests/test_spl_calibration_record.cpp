@@ -21,6 +21,7 @@ using rta::measure::CalibrationLevel;
 using rta::measure::CalibrationReportFields;
 using rta::measure::CalibrationVerdict;
 using rta::splexport::calibrationRecordText;
+using rta::splexport::CalibrationRecordRefusal;
 using rta::splexport::parseCalibrationRecord;
 using rta::splexport::SplCalibrationRecordInfo;
 using rta::splexport::writeCalibrationRecordFile;
@@ -140,4 +141,55 @@ TEST_CASE("writeCalibrationRecordFile writes bytes readWholeFile/parseCalibratio
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
+}
+
+// Fix round 3 (verifier MEDIUM, upgraded from LOW): a refused record (start
+// and end checks resolved to different channels, or to no channel at all)
+// must write no channel, no block range, and no verdict -- writing
+// `channel=-1` reads like a real (if odd) channel number, and writing a
+// Pass/Fail verdict claims a comparison that never validly happened.
+TEST_CASE("a channel-mismatch refusal writes no channel, no block range, and no verdict",
+         "[spl_calibration_record]") {
+    auto info = passingRecord();
+    info.refusal = CalibrationRecordRefusal::ChannelMismatch;
+    const auto text = calibrationRecordText(info);
+
+    CHECK(text.find("channel=") == std::string::npos);
+    CHECK(text.find("startBlockIndex=") == std::string::npos);
+    CHECK(text.find("endBlockIndex=") == std::string::npos);
+    CHECK(text.find("driftDb=") == std::string::npos);
+    CHECK(text.find("verdict=") == std::string::npos);
+    CHECK(text.find("refusalReason=channelMismatch") != std::string::npos);
+    // The raw per-check measurements ARE still written -- a human can still
+    // read what was measured, even though no verdict follows from it.
+    CHECK(text.find("startMeasuredLevelDb=") != std::string::npos);
+
+    const auto parsed = parseCalibrationRecord(text);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->fields.performed);
+    CHECK(parsed->refusal == CalibrationRecordRefusal::ChannelMismatch);
+    CHECK_FALSE(parsed->fields.verdict.has_value());
+    CHECK_THAT(parsed->fields.start.measuredLevelDb, WithinAbs(info.fields.start.measuredLevelDb, 1e-12));
+}
+
+TEST_CASE("a no-measurement-channel refusal round-trips distinctly from a channel mismatch",
+         "[spl_calibration_record]") {
+    auto info = passingRecord();
+    info.refusal = CalibrationRecordRefusal::NoMeasurementChannel;
+    const auto text = calibrationRecordText(info);
+    CHECK(text.find("refusalReason=noMeasurementChannel") != std::string::npos);
+
+    const auto parsed = parseCalibrationRecord(text);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->refusal == CalibrationRecordRefusal::NoMeasurementChannel);
+}
+
+TEST_CASE("a normal (non-refused) record still round-trips its channel, blocks, and verdict",
+         "[spl_calibration_record]") {
+    // Regression lock: the refusal branch above must not have disturbed the
+    // ordinary path any of the other TEST_CASEs in this file already cover
+    // end to end -- this one asserts `refusal` itself stays `None`.
+    const auto parsed = parseCalibrationRecord(calibrationRecordText(passingRecord()));
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->refusal == CalibrationRecordRefusal::None);
 }
