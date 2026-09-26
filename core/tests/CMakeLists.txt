@@ -217,5 +217,6 @@ add_test(NAME source_files_are_under_400_lines
     COMMAND ${CMAKE_COMMAND}
             "-DDIRS=${CMAKE_SOURCE_DIR}/core;${CMAKE_SOURCE_DIR}/app;${CMAKE_SOURCE_DIR}/platform;${CMAKE_SOURCE_DIR}/ui"
             -DTOOLS_DIR=${CMAKE_SOURCE_DIR}/tools
+            "-DEXTRA_FILES=${CMAKE_SOURCE_DIR}/CMakeLists.txt"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_file_length.cmake
 )

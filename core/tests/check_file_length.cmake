@@ -18,6 +18,12 @@ cmake_minimum_required(VERSION 3.22)
 # scanned for *.cpp ONLY: tools/ is mostly *.py generator/probe scripts this
 # guard does not govern (they are not C++ and were never in scope here).
 #
+# EXTRA_FILES (optional): semicolon-separated exact file paths scanned in
+# addition to DIRS/TOOLS_DIR -- for a file that lives outside every scanned
+# directory, such as the root CMakeLists.txt (a sibling of core/app/platform/
+# ui, not inside any of them, and otherwise invisible to this guard: fix
+# round 1, item L4). Each path MUST exist or this script FATAL_ERRORs.
+#
 # EXCLUDES (optional): semicolon-separated file(GLOB_RECURSE) patterns exempt
 # from the cap -- for external/, vendored third-party sources, or a file whose
 # split is judged not worth the risk (with a dated expiry comment at the
@@ -64,6 +70,15 @@ if(DEFINED TOOLS_DIR)
     endif()
     file(GLOB_RECURSE TOOLS_FOUND "${TOOLS_DIR}/*.cpp")
     list(APPEND SOURCES ${TOOLS_FOUND})
+endif()
+
+if(DEFINED EXTRA_FILES)
+    foreach(EXTRA ${EXTRA_FILES})
+        if(NOT EXISTS "${EXTRA}")
+            message(FATAL_ERROR "file-length guard: EXTRA_FILES entry '${EXTRA}' does not exist")
+        endif()
+        list(APPEND SOURCES "${EXTRA}")
+    endforeach()
 endif()
 
 if(SOURCES)
