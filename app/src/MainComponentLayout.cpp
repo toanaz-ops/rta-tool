@@ -109,18 +109,43 @@ void MainComponent::resized() {
     exportReportReadout_.setBounds(exportRow);
     rail.removeFromTop(az::ui::gap * 2);
 
-    devicePanel_.setBounds(rail.removeFromTop(kDevicePanelHeight));
-    rail.removeFromTop(az::ui::gap * 2);
+    // Fix round PRs #36/#37 item 4: devicePanel_ (kDevicePanelHeight) +
+    // routingMatrix_ (kRoutingMatrixHeight) + channelRoleTable_ used to share
+    // whatever was left of `rail` after the three button rows above -- fine
+    // at a tall window, but at 1280x800 (and worse at 1100x760) that
+    // leftover ran out INSIDE devicePanel_'s own budget: routingMatrix_ was
+    // clamped to a sliver of its 220px (its GridPanel divides whatever
+    // height it gets across 9 rows with no minimum -- see kRoutingMatrixHeight's
+    // own comment -- so the rows' text overlapped each other) and
+    // channelRoleTable_ was left exactly zero pixels (clipped away
+    // entirely). Both widgets show a ROLE column, which is what made the
+    // squeezed routing matrix read as "the channel-role table" in review.
+    //
+    // Fix: devicePanel_/routingMatrix_/channelRoleTable_ now live inside
+    // railScrollContent_, sized to their combined NATURAL height (never
+    // less), and railScrollView_ scrolls that content within `rail` -- so
+    // all three always get their full, non-degenerate size, and a short
+    // window scrolls instead of squeezing one of them to nothing.
+    constexpr int kChannelRoleTableMinHeight = 150;  // header + ~4 rows: enough to read, not to dominate
+    const int railContentHeight = kDevicePanelHeight + az::ui::gap * 2 + kRoutingMatrixHeight +
+                                  az::ui::gap * 2 + kChannelRoleTableMinHeight;
+    railScrollView_.setBounds(rail);
+    const int contentWidth = rail.getWidth() - railScrollView_.getScrollBarThickness();
+    railScrollContent_.setSize(contentWidth, juce::jmax(rail.getHeight(), railContentHeight));
 
+    auto content = railScrollContent_.getLocalBounds();
+    devicePanel_.setBounds(content.removeFromTop(kDevicePanelHeight));
+    content.removeFromTop(az::ui::gap * 2);
     // Fixed height for kMaxTransferFunctions rows plus a header row --
     // RoutingMatrix has no dynamic resize the way channelRoleTable_'s
     // ListBox does, so it gets a fixed slice rather than "whatever is left".
-    routingMatrix_.setBounds(rail.removeFromTop(kRoutingMatrixHeight));
-    rail.removeFromTop(az::ui::gap * 2);
+    routingMatrix_.setBounds(content.removeFromTop(kRoutingMatrixHeight));
+    content.removeFromTop(az::ui::gap * 2);
 
-    // Fills whatever is left of the rail -- a shrunk window trims rows off
-    // the bottom of the channel list before it ever touches the plot.
-    channelRoleTable_.setBounds(rail);
+    // Fills whatever is left of railScrollContent_ -- always at least
+    // kChannelRoleTableMinHeight, more when the rail itself is taller than
+    // the natural stack (railContentHeight above).
+    channelRoleTable_.setBounds(content);
 
     // Owner decision 2026-09-26: RTA/TRANSFER/SPL sits above the workspace,
     // in the main content area -- not the rail, which is already full.

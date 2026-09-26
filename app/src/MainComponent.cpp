@@ -78,9 +78,14 @@ MainComponent::MainComponent()
     exportReportReadout_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(exportReportReadout_);
 
-    addAndMakeVisible(devicePanel_);
-    addAndMakeVisible(channelRoleTable_);
-    addAndMakeVisible(routingMatrix_);
+    // Fix round item 4: these three are children of railScrollContent_, not
+    // of this class -- railScrollView_ is what actually sits in the rail
+    // (MainComponentLayout.cpp's own comment on why).
+    railScrollContent_.addAndMakeVisible(devicePanel_);
+    railScrollContent_.addAndMakeVisible(channelRoleTable_);
+    railScrollContent_.addAndMakeVisible(routingMatrix_);
+    railScrollView_.setViewedComponent(&railScrollContent_, false);
+    addAndMakeVisible(railScrollView_);
 
     // Owner decision 2026-09-26: the pane selector (MainComponentPanes.cpp).
     wirePaneSelectorButtons();

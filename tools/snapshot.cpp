@@ -260,16 +260,35 @@ int main (int argc, char** argv)
         component.setSyntheticMode (true);
         juce::Thread::sleep (800);
 
+        // `SplConfig{}` alone -- what MainComponentSpl.cpp's own
+        // `startFreshSplLog` still passes, SPL-R11's "no preferences store"
+        // -- configures NO metrics at all (SplConfig.h: `metrics` defaults
+        // empty), so `SplView.cpp` would draw a bare ROLE/AVG-free panel
+        // with nothing in it: not the placeholder, but not "a metric row
+        // shows a level" either. One metric, the same shape every SPL test
+        // in this tree configures by hand (e.g. app/tests_juce/
+        // test_spl_drain.cpp's own `splConfig()`), so the specimen has
+        // something to show. `blockSeconds` shortened from the 1 s
+        // production default (SplConfig.h's own comment) so this block
+        // closes in well under a second of real wall time instead of
+        // needing a full one -- SyntheticInput paces its writes in real
+        // time (SyntheticInput.cpp's own `wait(waitMs_)`), so a 1 s block
+        // would need a 1 s wait here for no benefit to what the picture shows.
+        rta::measure::SplConfig splConfig;
+        splConfig.blockSeconds = 0.1;
+        splConfig.metrics.push_back(rta::measure::SplMetricSpec{
+            "L", rta::dsp::WeightingType::A, rta::meter::TimeWeighting::Fast, 1});
+
         const std::array<int, 1> splChannels{{0}};
         MainComponentTestAccess::analysisThread (component)
-            .enableSplLogging (rta::measure::SplConfig{}, splChannels, /*logDirectory=*/"");
+            .enableSplLogging (splConfig, splChannels, /*logDirectory=*/"");
 
         // Deterministic drive, not a fixed guess: poll splBlockCount() the
         // same way app/tests_juce's own waitForSplBlocks() helpers do (e.g.
         // test_spl_drain.cpp) rather than sleeping for an arbitrary interval
         // and hoping a block closed inside it.
         for (int waitedMs = 0;
-             waitedMs < 3000 &&
+             waitedMs < 5000 &&
                  MainComponentTestAccess::analysisThread (component).splBlockCount (0) < 1;
              waitedMs += 10)
             juce::Thread::sleep (10);

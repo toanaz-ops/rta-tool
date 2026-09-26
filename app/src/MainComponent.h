@@ -97,9 +97,8 @@ public:
     [[nodiscard]] rta::view::PaneView currentPaneView() const noexcept { return currentPaneView_; }
 
 private:
-    friend struct MainComponentTestAccess;  // fix round #36/#37 item 2: the only caller of the trio below
-    // Test-only trio: the real pane makePaneFactory built, SPL logging, and
-    // the trace library panes should be wired to (pin `setLibrary`'s target).
+    friend struct MainComponentTestAccess;  // fix round item 2: only caller of the trio below
+    // Test-only trio: the real pane makePaneFactory built, SPL logging, and the trace library panes should be wired to.
     [[nodiscard]] const juce::Component& paneComponentForTest() const { return *workspace_->getChildComponent(0); }
     [[nodiscard]] rta::measure::AnalysisThread& analysisThreadForTest() noexcept { return analysisThread_; }
     [[nodiscard]] const rta::trace::TraceLibrary& libraryForTest() const noexcept { return library_; }
@@ -374,6 +373,8 @@ private:
     /// to anyway.
     rta::view::RoutingMatrix routingMatrix_;
 
+    juce::Component railScrollContent_;  // fix round item 4 (see MainComponentLayout.cpp); order per trap T-1
+    juce::Viewport railScrollView_;
     // Pane selector: a radio group. Not persisted (SPL-R11) -- starts at Rta.
     juce::TextButton paneRtaButton_{"RTA"};
     juce::TextButton paneTransferButton_{"TRANSFER"};
