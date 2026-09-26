@@ -844,17 +844,20 @@ phát hiện, không mục nào chặn gì đã ship.*
 *Sáu PR #35–#40 đã merge (xem `docs/HANDOFF.md` mục đầu). Các mục dưới không
 chặn gì đã ship.*
 
-- [ ] **Quyết định: wire 16 file `.cpp` chưa vào `rtatool`, hay xếp vào phase
-  nạp session?** `tools/orphan_check.py` (PR #39) cho thấy 12 file chỉ compile
-  vào test target (`EqSession`, `EqVerify`, `AlignmentWizard`(+`Signals`),
-  `DelayLocator`, `CaptureSequencer`, `SessionCodec`, `SessionDecode`,
-  `SessionStore`, `TraceBlobCodec`, `FirTextWriter`, `FirWavWriter`) và 4 file
-  chỉ vào `rtatool_snapshot` (`CrossoverTopology`, `SyntheticSnapshot`,
-  `VirtualTrace`, `CrossoverSurface`). **Được** nếu wire sớm: các lane L4/L7
-  thật sự tới tay operator. **Giá** nếu để: mọi PR chạm các file này bị
-  orphan_check fail (đúng thiết kế) cho tới khi wire, nên sửa chúng phải kèm
-  wiring. **Khuyến nghị**: gom vào phase nạp session (SessionStore/Codec là
-  điều kiện của phần lớn các file còn lại).
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat) — 16 file `.cpp` chưa vào
+  `rtatool`.** *Đính chính: bản trước của mục này khuyến nghị "gom vào phase
+  nạp session" và gọi SessionStore/Codec là "điều kiện của phần lớn các file
+  còn lại". Cả hai sai: không có phase nạp session nào trong plan, và không
+  có phụ thuộc compile như vậy. Orchestrator đã viết mà chưa đọc plan của các
+  lane đó.* Tra theo plan thật: cả 16 file đều được lane của chúng hoãn wire
+  có chủ đích ("a follow-up that has not started",
+  `docs/plans/MASTER-EXECUTION-PLAN.md`), rồi không ai mở lại. Chủ nhân chốt
+  như sau (bảng đầy đủ ở mục "Wiring debt" của master plan):
+  - wire ngay Session Save/Open và pane XOVER (đảo ALIGN-R8);
+  - xoá DelayLocator;
+  - dời SyntheticSnapshot ra khỏi `app/src`;
+  - EQ+FIR và AlignmentWizard mở thành lane ngay sau đợt này;
+  - CaptureSequencer hoãn nhưng có lịch.
 - [ ] **Dead code thật, xoá hay wire:** `AnalysisThread::isSplLoggingEnabled`
   và `MainComponent::currentPaneView` — 0 caller cả production lẫn test.
 - [ ] **LOW còn lại từ các vòng review (gom vào PR LOW kế tiếp):**
