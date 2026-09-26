@@ -72,6 +72,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -165,6 +166,14 @@ def run_mutant(
 
         with log_path.open("a", encoding="utf-8") as log:
             log.write(f"\n=== mutant {rel}:{lineno}: {deleted!r} (target {target}) ===\n")
+            # fix round 2, F8: the subprocess below writes to this file's fd
+            # directly (stdout=log), bypassing Python's own text buffer for
+            # the header line just written above. Without a flush, the OS
+            # can (and did) land the build's output on disk BEFORE the
+            # header that is supposed to introduce it, once the header line
+            # was still sitting in Python's buffer when the child wrote.
+            log.flush()
+            os.fsync(log.fileno())
             if _run_build(build_dir, config, target, log) != 0:
                 return MutantResult(rel, lineno, "NO-BUILD", target, detail=deleted.strip())
 
@@ -302,6 +311,8 @@ def main(argv: list[str] | None = None) -> int:
     if touched_targets:
         with log_path.open("a", encoding="utf-8") as log:
             log.write("\n=== final rebuild of touched targets (restore exe to HEAD) ===\n")
+            log.flush()  # fix round 2, F8 -- see run_mutant's own comment
+            os.fsync(log.fileno())
             for target in sorted(touched_targets):
                 _run_build(build_dir, args.config, target, log)
 
