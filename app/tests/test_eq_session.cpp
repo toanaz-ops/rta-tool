@@ -6,8 +6,8 @@
 // working residual share, and what it means to mark a filter applied. The
 // session lifecycle (decline, re-measure, export) is in
 // test_eq_session_lifecycle.cpp; the coherence mask and the text format are in
-// test_eq_trust_export.cpp. JUCE-free like OutputPolicy/DelayLocator, so the
-// whole file is provable with no device and no GUI.
+// test_eq_trust_export.cpp. JUCE-free like OutputPolicy/CaptureSequencer, so
+// the whole file is provable with no device and no GUI.
 
 #include "EqSessionFixture.h"
 

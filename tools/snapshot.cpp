@@ -35,7 +35,7 @@
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 #include "measure/SplConfig.h"
-#include "measure/SyntheticSnapshot.h"
+#include "dev-support/SyntheticSnapshot.h"
 #include "trace/Workspace.h"
 #include "view/PaneRegistry.h"
 #include "view/RtaView.h"

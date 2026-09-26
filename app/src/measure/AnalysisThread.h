@@ -119,7 +119,8 @@ public:
     /// Overwrites any capture already in progress or already published and
     /// not yet read: a second Locate before the first is consumed simply
     /// restarts it, no queue -- this thread runs exactly one Locate at a
-    /// time, matching `DelayLocator`'s own one-shot shape.
+    /// time, the same one-shot shape MainComponentDelay.cpp's caller relies
+    /// on.
     void armLocateCapture(int routeIndex, std::size_t length) noexcept;
 
     /// The most recently COMPLETED capture, or nullptr before the first one

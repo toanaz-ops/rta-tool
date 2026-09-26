@@ -166,7 +166,12 @@ juce_add_console_app(rtatool_snapshot
 include(cmake/rtatool_snapshot_sources.cmake)
 target_sources(rtatool_snapshot PRIVATE ${RTATOOL_SNAPSHOT_SOURCES})
 
-target_include_directories(rtatool_snapshot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(rtatool_snapshot PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    # app/dev-support: SyntheticSnapshot.h/.cpp's home (moved out of
+    # app/src/measure -- it is never part of the shipped app, only this
+    # offline snapshot tool and the test suites; see its own header comment).
+    ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_compile_definitions(rtatool_snapshot PRIVATE
     JUCE_WEB_BROWSER=0

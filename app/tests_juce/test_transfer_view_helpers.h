@@ -11,7 +11,7 @@
 
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
-#include "measure/SyntheticSnapshot.h"
+#include "dev-support/SyntheticSnapshot.h"
 #include "view/TransferView.h"
 
 #include <algorithm>

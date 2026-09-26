@@ -43,11 +43,13 @@ set(RTA_BASE_TEST_SOURCES
     # docs/dsp/2026-09-06-l7-fir-export.md Sec.5) -- JUCE-free, so it lives
     # here beside test_session_codec.cpp rather than in app/tests_juce.
     test_fir_text.cpp
-    # test_delay_locator.cpp: lane L7-DELAY task F1 (record docs/dsp/
-    # 2026-09-06-l7-auto-delay.md sec.11) -- the raw-capture accumulator and
-    # the Locate state machine over rta::platform::OutputEngine, JUCE-free
-    # like OutputPolicy/CaptureSequencer, so it lives here.
-    test_delay_locator.cpp
+    # test_raw_capture_buffer.cpp: RawCaptureBuffer's own unit coverage
+    # (exact accumulation order, no mid-capture allocation), split out of
+    # test_delay_locator.cpp when DelayLocator (lane L7-DELAY task F1) was
+    # deleted as superseded -- RawCaptureBuffer itself was NOT DelayLocator-
+    # only (AnalysisThread::armLocateCapture owns one too), so its direct
+    # coverage stays even though DelayLocator's own tests went with it.
+    test_raw_capture_buffer.cpp
     # test_analysis_publish.cpp: task F2's wiring of AverageGroup into
     # AnalysisThread's publish path (record §6) -- the pure, JUCE-free half
     # of it (syncAverageGroupMembership/publishAverageGroup), exercised with
@@ -63,7 +65,7 @@ set(RTA_BASE_TEST_SOURCES
     # test_eq_session.cpp: lane L7-EQ task E (record docs/dsp/
     # 2026-09-06-l7-auto-eq.md sec.2, sec.7) -- the app session model, the
     # coherence trust mask and the FilterSpec text export, all JUCE-free like
-    # OutputPolicy/DelayLocator, so they live here rather than in
+    # OutputPolicy/CaptureSequencer, so they live here rather than in
     # app/tests_juce.
     test_eq_session.cpp
     # test_eq_session_lifecycle.cpp: task E's decline / re-measure / export
@@ -75,8 +77,8 @@ set(RTA_BASE_TEST_SOURCES
     # split out of test_eq_session.cpp when that file grew past one job.
     test_eq_trust_export.cpp
     # test_eq_verify.cpp: lane L7-EQ task F (record sec.8) -- VERIFY over a
-    # real rta::platform::OutputEngine with no device, same shape as
-    # test_delay_locator.cpp.
+    # real rta::platform::OutputEngine with no device, JUCE-free like
+    # test_output_policy.cpp/test_capture_sequencer.cpp.
     test_eq_verify.cpp
     # test_crossover_topology.cpp: lane L7-ALIGN task D (record docs/dsp/
     # 2026-09-06-l7-alignment-wizard.md Sec.3, Sec.10.2) -- the topology to
