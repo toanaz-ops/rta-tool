@@ -92,8 +92,13 @@ set(RTA_SPL_TEST_SOURCES
     test_spl_history.cpp
     # test_spl_alarms.cpp + SplAlarms.cpp: task W2-B -- alarms over a sliding
     # windowed Leq, with a proxy window whose offset is the operator's.
+    # test_spl_alarms_headroom.cpp: the closed-form headroomDb derivation was
+    # split out (process-tooling PR, 400-line file cap) -- both files share
+    # the [spl_alarms] Catch2 tag and this one target, so `ctest -R
+    # spl_alarms` is unaffected by the split.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SplAlarms.cpp
     test_spl_alarms.cpp
+    test_spl_alarms_headroom.cpp
     # test_spl_log.cpp + SplLogWriter.cpp: task W2-C -- the append-only SPL
     # log (SplLog.h is header-only, the EqTextExport.h precedent).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogWriter.cpp

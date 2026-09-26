@@ -125,7 +125,32 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DRTA_BUILD_TESTS=ON -DRTA_BUILD_APP=ON \
-            -DFETCHCONTENT_SOURCE_DIR_JUCE="$(pwd)/juce-cache/juce-src"
+            -DFETCHCONTENT_SOURCE_DIR_JUCE="$(pwd)/juce-cache/juce-src" \
+            2>&1 | tee configure.log
+
+      # Fix round PRs #36/#37 item 5: this job's own Configure step used to
+      # be the visible half of the gap -- run 36229646563 (PR #36) printed
+      # exactly one `CMake Warning`, from JUCEUtils.cmake:1798, because
+      # `rtatool_snapshot`'s BUNDLE_ID defaulted to "com.AZ Soundtech.
+      # rtatool_snapshot" (the space in COMPANY_NAME riding straight
+      # through). app/CMakeLists.txt now gives that target an explicit,
+      # space-free BUNDLE_ID, so this gate should start at 0 -- verified
+      # against that same run before the fix (1 match) and re-checked by
+      # this PR's own CI run after it. Same pattern and same shape as
+      # ci.yml's own "Configure warnings" step, copied rather than
+      # reimplemented so the two gates cannot quietly drift apart -- see
+      # that step's own comment for fix round PR #40 LOW F5 (`CMake
+      # Deprecation Warning` is a distinct message class a plain `CMake
+      # Warning` grep misses).
+      - name: Configure warnings
+        shell: bash
+        run: |
+          count=$(grep -cE "CMake (Deprecation )?Warning" configure.log || true)
+          echo "CMake warnings (windows-latest, app ON): $count"
+          if [ "$count" != "0" ]; then
+            grep -nE "CMake (Deprecation )?Warning" -A3 configure.log
+            exit 1
+          fi
 
       # Same --parallel 4 cap and the same reasoning as ci.yml's Build step:
       # an unbounded `--parallel` forks one compiler per ready translation
