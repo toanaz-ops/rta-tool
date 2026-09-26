@@ -13,10 +13,13 @@
 #include "rta/meter/Block.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
 #include <cstdint>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
 
 using rta::measure::CalibrationReportFields;
 using rta::measure::CalibrationVerdict;
@@ -87,6 +90,28 @@ TEST_CASE("an Overload block flag produces an Overload marker", "[spl_report_pay
         return m.kind == rta::measure::SplMarkerKind::Overload && m.blockIndex == 2;
     });
     REQUIRE(it != markers.end());
+}
+
+// Fix round 3 (verifier LOW, mutant M6 survived): valueDb's own formula
+// (`appendHistoryAndMarkers`) adds `referenceOffsetDb`, but every prior
+// fixture logged with offset 0.0, so dropping that term entirely would not
+// have failed a single assertion. Block 0's raw mean-square is 1.0
+// (eightBlockFixture's own comment), so its dB before any offset is exactly
+// 0.0 -- a non-zero offset must appear in valueDb unchanged.
+TEST_CASE("the time history's valueDb carries the log's own referenceOffsetDb",
+         "[spl_report_payload_builder]") {
+    TempDir dir("history-offset");
+    constexpr double kOffsetDb = 12.3;
+    writeChannelLog(dir.path, 0, eightBlockFixture(), kOffsetDb);
+
+    rta::splexport::SplReportBuildRequest request;
+    request.sessionDir = dir.path.string();
+    request.channels = {0};
+    const auto result = rta::splexport::buildReportPayload(request);
+    REQUIRE(result.payload.has_value());
+    REQUIRE(result.payload->history.size() == 1);
+    REQUIRE_FALSE(result.payload->history[0].points.empty());
+    CHECK_THAT(result.payload->history[0].points[0].valueDb, WithinAbs(kOffsetDb, 1e-9));
 }
 
 TEST_CASE("a Gap block flag produces a Gap marker", "[spl_report_payload_builder]") {
