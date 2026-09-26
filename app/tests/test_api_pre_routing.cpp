@@ -59,14 +59,17 @@ TEST_CASE("control 2: the Host allowlist refuses a forged Host, independent of t
     CHECK(decidePreRoutingRefusal(in, ApiSettings{}) == PreRoutingRefusal::HostNotAllowed);
 }
 
-TEST_CASE("control 2 runs BEFORE control 1's count check would matter: order is host, "
-         "not accumulated failures",
+TEST_CASE("control 2: the Host allowlist also refuses a right-literal, wrong-port Host",
          "[api][pre_routing]") {
-    // A single, well-formed Host header naming an address the allowlist
-    // refuses -- confirms HostNotAllowed is reachable on its own, not merely
-    // as a side effect of a bad count (the case above already proves count
-    // alone triggers control 1; this proves control 2 triggers independently
-    // when count is fine).
+    // Fix-round rename (was "control 2 runs BEFORE control 1's count check
+    // would matter" but never set hostHeaderCount past 1, so it never
+    // exercised any interaction with control 1 at all -- see the "the order
+    // is 1, 2, 3, 4, 5" chain test below for what actually pins that
+    // ordering). This case's real, distinct value: a Host header that is
+    // well-formed and single (count == 1, passes control 1) but wrong for a
+    // DIFFERENT reason than the "control 2" case above (a forged literal) --
+    // the right loopback literal with the wrong port -- covering a second
+    // branch of hostIsAllowed's own comparison.
     auto in = passingInputs();
     in.hostHeaderCount = 1;
     in.hostHeaderValue = "[::1]:9999";  // right literal, wrong port
@@ -118,28 +121,57 @@ TEST_CASE("control 5: a declared body past the cap refuses before the body is re
     CHECK(decidePreRoutingRefusal(atCap, settings) == PreRoutingRefusal::None);
 }
 
-TEST_CASE("the order is 1, 2, 3, 4, 5: a request failing several controls reports the "
-         "FIRST one",
+TEST_CASE("the order is 1, 2, 3, 4, 5: fixing one control at a time reveals the next",
           "[api][pre_routing]") {
-    // Fails controls 2 (bad Host), 3 (bad method), 4 (no token supplied
-    // against a set one) and 5 (body over cap) all at once -- the shipped
-    // ORDER (host allowlist before method before Bearer before body) is what
-    // this asserts, not merely "some refusal happened".
+    // Fix-round widening: the previous version of this test only fixed the
+    // Host and stopped, which pins 2-before-3 but leaves 1<->2 and 4<->5
+    // unpinned -- both mutants survived (verifier finding, PR #33 fix
+    // round). Starts failing ALL FIVE controls at once and fixes them one at
+    // a time, in the shipped order, asserting the NEXT reported refusal at
+    // every step. Each assertion is adversarial in the same way: every
+    // control AFTER the one just fixed is still failing, so the refusal
+    // reported can only be explained by the control immediately checked
+    // NEXT actually running next -- a swap of ANY adjacent pair changes
+    // which refusal comes back at that step.
     ApiSettings settings;
     settings.token = "s3cr3t";
     settings.maxRequestBodyBytes = 1024;
 
     PreRoutingInputs in;
-    in.hostHeaderCount = 1;
-    in.hostHeaderValue = "attacker.example:4736";
+    in.hostHeaderCount = 2;                        // fails control 1
+    in.hostHeaderValue = "attacker.example:4736";  // fails control 2
     in.boundPort = 4736;
-    in.method = Method::Other;
-    in.authorizationHeader = "";
-    in.declaredBodyBytes = 4096;
+    in.method = Method::Other;         // fails control 3
+    in.authorizationHeader = "";       // fails control 4 (token is set)
+    in.declaredBodyBytes = 4096;       // fails control 5 (cap is 1024)
+
+    // Step 1: count > 1 AND a forged host both fail -- MultipleHostHeaders
+    // only follows if control 1 runs before control 2 (a 1<->2 swap would
+    // report HostNotAllowed here instead, since a swapped control 2 would
+    // see the forged host first).
+    CHECK(decidePreRoutingRefusal(in, settings) == PreRoutingRefusal::MultipleHostHeaders);
+
+    // Step 2: fix the count. Host is still forged, method/token/body all
+    // still fail -- HostNotAllowed.
+    in.hostHeaderCount = 1;
     CHECK(decidePreRoutingRefusal(in, settings) == PreRoutingRefusal::HostNotAllowed);
 
-    // Fixing the Host but nothing else: the NEXT control in order (method)
-    // now reports, not a jump straight to body.
+    // Step 3: fix the Host. Method/token/body still fail -- MethodNotAllowed.
     in.hostHeaderValue = "127.0.0.1:4736";
     CHECK(decidePreRoutingRefusal(in, settings) == PreRoutingRefusal::MethodNotAllowed);
+
+    // Step 4: fix the method. Token and body both still fail -- Unauthorized
+    // only follows if control 4 runs before control 5 (a 4<->5 swap would
+    // report BodyTooLarge here instead, since a swapped control 5 would see
+    // the oversized body first).
+    in.method = Method::Get;
+    CHECK(decidePreRoutingRefusal(in, settings) == PreRoutingRefusal::Unauthorized);
+
+    // Step 5: fix the token. Body still over cap -- BodyTooLarge.
+    in.authorizationHeader = "Bearer s3cr3t";
+    CHECK(decidePreRoutingRefusal(in, settings) == PreRoutingRefusal::BodyTooLarge);
+
+    // Step 6: fix the body. Everything passes.
+    in.declaredBodyBytes = 1024;
+    CHECK(decidePreRoutingRefusal(in, settings) == PreRoutingRefusal::None);
 }
