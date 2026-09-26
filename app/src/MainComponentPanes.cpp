@@ -87,3 +87,26 @@ void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
     // calls repaint() rather than leaving the next timer tick to catch up.
     resized();
 }
+
+void MainComponent::restoreWorkspaceFromSession(std::vector<rta::trace::PaneSpec> panes) {
+    // Session Open's own rebuild: same machinery as selectPaneView above,
+    // but for a FULL (already-normalised, 1..3 pane) session-saved layout
+    // rather than always exactly one. The selector radio group has no way
+    // to express "more than one pane is showing" -- it is synced to the
+    // FIRST pane's resolved view, so it agrees with SOMETHING on screen
+    // rather than being left stale.
+    const auto firstView =
+        panes.empty() ? rta::view::PaneView::Rta : rta::view::resolvePaneView(panes.front().view).view;
+
+    workspace_ = std::make_unique<rta::view::WorkspaceView>(std::move(panes), makePaneFactory(analysisThread_));
+    workspace_->setLibrary(&library_);
+    addAndMakeVisible(*workspace_);
+    currentPaneView_ = firstView;
+
+    paneRtaButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Rta, juce::dontSendNotification);
+    paneTransferButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Transfer,
+                                       juce::dontSendNotification);
+    paneSplButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Spl, juce::dontSendNotification);
+
+    resized();
+}

@@ -29,7 +29,14 @@ MainComponent::MainComponent()
       // a session yet. The pane selector (`selectPaneView`) can rebuild this
       // to a different single pane; the shape it starts in is unchanged.
       workspace_(std::make_unique<rta::view::WorkspaceView>(
-          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_))) {
+          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_))),
+      // Session persistence: Save reads currentPaneView_ (this class's own
+      // member) through a callback rather than a stored pointer, matching
+      // makePaneFactory's own "hand over exactly the capability needed"
+      // shape; Open's rebuild is restoreWorkspaceFromSession (MainComponentPanes.cpp).
+      session_(
+          library_, [this] { return rta::trace::PaneSpec{rta::view::paneViewName(currentPaneView_), 1.0f}; },
+          [this](std::vector<rta::trace::PaneSpec> panes) { restoreWorkspaceFromSession(std::move(panes)); }) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };
@@ -75,6 +82,11 @@ MainComponent::MainComponent()
     exportReportReadout_.setText("export: no SPL session logged yet", juce::dontSendNotification);
     exportReportReadout_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(exportReportReadout_);
+
+    // Session persistence: the seam this task exists for -- SessionStore/
+    // SessionCodec were built and tested in lane L5a with no caller anywhere
+    // in app/src until now.
+    session_.attachTo(*this);
 
     rail_.attachTo(*this);
 

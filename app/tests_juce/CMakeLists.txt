@@ -360,6 +360,10 @@ add_executable(rtatool_main_component_tests
     test_main_component_panes.cpp
     # Fix round MEDIUM F1: item 4's rail-scroll fix had no test.
     test_main_component_rail_layout.cpp
+    # test_main_component_session.cpp: session persistence (SAVE SESSION /
+    # OPEN SESSION) against a real MainComponent -- see that file's own
+    # header comment.
+    test_main_component_session.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 
