@@ -792,8 +792,16 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
 
 ## Mục mới mở khi đóng lane L6a (2026-09-26)
 
-*Lane đã đóng — `docs/reports/009-spl-pro.md`. Ba mục dưới là việc closeout
+*Lane đã đóng — `docs/reports/009-spl-pro.md`. Các mục dưới là việc closeout
 phát hiện, không mục nào chặn gì đã ship.*
+
+- [ ] **App chưa có bộ chọn pane — pane SPL (và Transfer) không mở được
+  trong `rtatool.exe`.** `MainComponent.cpp:50-55` chỉ dựng một pane `rta`
+  mặc định và chưa có gì nạp session; khoảng trống này có từ trước L6a, không
+  phải regression. Hệ quả: operator thấy SPL qua log và `report.html`, không
+  thấy số live trên màn hình. **Khuyến nghị**: task nhỏ tiếp theo — một nút
+  chọn view (RTA / Transfer / SPL) đi qua `resolvePaneView`, không đổi schema
+  session. Chủ nhân chốt: làm ngay hay xếp vào phase nạp session.
 
 - [ ] **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ
   chạy `RTA_BUILD_APP=OFF` trên cả ba OS; toàn bộ code chỉ-ON (pane SPL,
