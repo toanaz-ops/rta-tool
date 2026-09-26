@@ -198,3 +198,112 @@ TEST_CASE("a write failure that only manifests on write(), never at open, is "
 
     pipeline.disable();
 }
+
+// --- LOW follow-up batch, item 10: mutant M6 -- a ROTATION-time openSegment()
+// failure, distinct from the M4 case above (which never rotates: a broken
+// stream forced before any write, at segment 0) ----------------------------
+
+TEST_CASE("a write failure at ROTATION to a later segment is caught by the drain",
+          "[spl_log_pipeline]") {
+    // The M4 case above proves drainOnce()'s check against a failure that
+    // happens at the FIRST write, with no rotation ever occurring --
+    // `SplLogWriter::write()`'s own `if (!stream_) writeFailed_ = true;`
+    // branch. This proves the SAME drainOnce() check against the OTHER
+    // branch that can set `writeFailed_`: `openSegment()`'s failed-`open()`
+    // check (SplLogWriter.cpp), reached from `write()`'s rotation path
+    // (`blocksInSegment_ >= segmentBlocks_`) rather than from the
+    // constructor's own first call -- `setupWriters()`'s check (which the
+    // "directory does not exist" fixture above depends on) only ever sees the
+    // FIRST segment's open, so it cannot be what catches this.
+    //
+    // Portable, no chmod/ACL trick needed: `SplLogWriter` names segment 1 as
+    // exactly `<basePath>.gen0.seg1.csv` (SplLogWriter.cpp's own
+    // `openSegment()`), so pre-creating THAT PATH AS A DIRECTORY makes
+    // `std::ofstream::open()` fail on it -- on every filesystem this project
+    // ships on -- while segment 0 (a different path) opens and writes fine.
+    TempDir dir("rotation-write-failure");
+
+    const std::string basePath = (dir.path / "ch0").string();
+    const std::string seg1Path = basePath + ".gen0.seg1.csv";
+    REQUIRE(std::filesystem::create_directory(seg1Path));
+
+    SplLogEnableParams params;
+    params.config = SplConfig{};
+    params.config.segmentBlocks = 1;  // rotate after exactly one block
+    params.channels = { channelSpec(dir.path, 0) };
+
+    SplLogPipeline pipeline;
+    pipeline.enable(params);
+
+    // Block 0 fills segment 0 (segmentBlocks == 1); block 1 is what triggers
+    // `write()`'s rotation to segment 1, where the pre-created directory
+    // makes `openSegment()` fail.
+    pipeline.pushBlock(0, distinguishableBlock(0));
+    pipeline.pushBlock(0, distinguishableBlock(1));
+
+    const auto rotationDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (!pipeline.writeFailed(0) && std::chrono::steady_clock::now() < rotationDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(pipeline.writeFailed(0));
+
+    pipeline.disable();
+    std::error_code ec;
+    std::filesystem::remove_all(seg1Path, ec);
+}
+
+// --- LOW follow-up batch, item 10: mutant M7 -- enable()'s lastWriteFailed_
+// reset, for a channel the NEW session does not even touch ------------------
+
+TEST_CASE("enable() clears a previous session's writeFailed for a channel the "
+         "new session does not include",
+         "[spl_log_pipeline]") {
+    // WHY THIS SHAPE, and not "the same channel, re-enabled": when the new
+    // session's `params.channels` DOES include the channel, `enable()`
+    // synchronously replaces `sinks_[channel]` with a brand new `ChannelSink`
+    // (default `writeFailed == false`) before it returns -- so `writeFailed()`
+    // reads that fresh sink, never `lastWriteFailed_`, and the mutant this
+    // proves against (dropping `enable()`'s
+    // `for (auto& failed : lastWriteFailed_) failed.store(false, ...);` loop)
+    // would be INVISIBLE to that case. The mutant is only observable for a
+    // channel the new session leaves untouched: `sinks_[channel]` then stays
+    // null (reset by the PREVIOUS session's own `writerLoop()` shutdown), so
+    // `writeFailed()` falls back to `lastWriteFailed_` -- exactly the stale
+    // flag `enable()`'s reset exists to clear (SplLogPipeline.h's own
+    // comment: "a fresh log's file has not been attempted yet, so it starts
+    // clean regardless of whether the PREVIOUS session ever failed").
+    const auto missingDir = std::filesystem::temp_directory_path() /
+                            "rta-test-spllogpipeline-writefailed" / "does-not-exist-6a2f9-m7";
+    std::filesystem::remove_all(missingDir);
+    TempDir freshDir("m7-fresh");
+
+    SplLogPipeline pipeline;
+
+    // Session 1: channel 0 fails to open (directory never created).
+    SplLogEnableParams failing;
+    failing.config = SplConfig{};
+    failing.channels = { channelSpec(missingDir, 0) };
+    pipeline.enable(failing);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (!pipeline.writeFailed(0) && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(pipeline.writeFailed(0));
+    pipeline.disable();
+    REQUIRE(pipeline.writeFailed(0));  // the post-disable snapshot, as above
+
+    // Session 2: a DIFFERENT channel, a real writable directory. Channel 0 is
+    // absent from `channels` entirely.
+    SplLogEnableParams fresh;
+    fresh.config = SplConfig{};
+    fresh.channels = { channelSpec(freshDir.path, 1) };
+    pipeline.enable(fresh);
+
+    // THE FIX, checked the instant enable() returns: the reset loop runs
+    // synchronously on the calling thread, before the writer thread is even
+    // started, so this needs no poll.
+    CHECK_FALSE(pipeline.writeFailed(0));
+
+    pipeline.disable();
+}
