@@ -795,7 +795,7 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
 *Lane đã đóng — `docs/reports/009-spl-pro.md`. Các mục dưới là việc closeout
 phát hiện, không mục nào chặn gì đã ship.*
 
-- [x] **ĐÃ ĐÓNG bởi PR #37 (nhánh `app/pane-selector`) — bộ chọn pane RTA /
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân: làm ngay) — ĐÃ ĐÓNG bởi PR #37 (nhánh `app/pane-selector`, merge 4cd5866) — bộ chọn pane RTA /
   TRANSFER / SPL đã ship.** Ba nút radio-group phía trên workspace
   (`MainComponentPanes.cpp`, `wirePaneSelectorButtons`/`selectPaneView`), đi
   qua đúng `resolvePaneView`/`makePaneFactory`/`WorkspaceView` mà session
@@ -812,19 +812,22 @@ phát hiện, không mục nào chặn gì đã ship.*
   hưởng bởi việc đổi pane. Specimen offscreen: `shots/main-live-spl.png`
   (`rtatool_snapshot`).
 
-- [ ] **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat): làm, chỉ Windows** — **ĐÃ ĐÓNG bởi PR #36** (merge 1928030; job `rtatool app (RTA_BUILD_APP=ON, windows-latest)` trong `.github/workflows/ci-app-on.yml`, cold ~25 phút, cache-hit ~19-23 phút, chạy mọi test ON + upload artifact `rtatool-snapshot-<run_number>`). **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ
   chạy `RTA_BUILD_APP=OFF` trên cả ba OS; toàn bộ code chỉ-ON (pane SPL,
   `MainComponent*.cpp`, mọi thứ dưới `RTA_BUILD_APP=ON`) không có CI nào phủ,
   và mỗi round build ON cục bộ tốn vài phút JUCE fetch/link. **Được**: code
   chỉ-ON có CI, vòng build cục bộ ngắn lại (cache JUCE giữa run). **Giá**:
   ~10-15 phút Actions Windows mỗi lần chạy, so với quota 2000 phút/tháng của
   gói private free hiện tại — một job ON mỗi PR có thể ăn hết quota nhanh hơn
-  các job OFF hiện có.
+  các job OFF hiện có. *(Đính chính 2026-09-26: repo đã **public**
+  (`gh api repos/toanaz-ops/rta-tool --jq .visibility` → `public`), nên phút
+  Actions trên runner chuẩn miễn phí; mối lo quota trên không còn đúng. Đo
+  thật trên PR #36: cold 25 phút, cache-hit 18,5 phút.)*
 - [ ] **Một lượt chạy trên phần cứng thật.** Calibrator + mic thật qua đúng
   đường export report ở `docs/HANDOFF.md` mục "L6a SPL-pro lane CLOSED" (d).
   Chưa phiên nào trong lane này cắm thiết bị thật — mọi số đo đến từ synthetic
   mode và fixture.
-- [ ] **Các đề xuất process-audit đang chờ duyệt.** Bốn đề xuất từ các phiên
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat): làm cả bảy** — PR `process/tooling` (diffmut, guard 400 dòng, orphan check) + PR `process/review-loop-docs` (review loop, rebuild theo phạm vi, cột production caller, cấm builder lồng agent, amendment viết sau code). **Các đề xuất process-audit đang chờ duyệt.** Bốn đề xuất từ các phiên
   verify/build của lane này, chưa cái nào được owner duyệt để áp dụng chung
   cho repo: (a) một script differential-mutation chạy hàng loạt thay vì viết
   tay từng mutant; (b) một ctest guard chặn file quá 400 dòng thay vì dựa vào

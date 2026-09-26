@@ -5,7 +5,8 @@ local `main` with `--no-ff` and `push` was a separate owner's word; the local
 `main` drifted up to 36 commits ahead of `origin/main` and CI on GitHub ran only
 on the occasional push. This document replaces that habit.*
 
-Remote: `https://github.com/toanaz-ops/rta-tool` (private). Default branch `main`.
+Remote: `https://github.com/toanaz-ops/rta-tool` (public since before 2026-09-26; see
+"What GitHub cannot enforce — and what it now can" below). Default branch `main`.
 
 ## The four rules
 
@@ -106,34 +107,95 @@ git -C "D:\DEV CAVE EP3\PRJ010-RTA-TOOL" pull --ff-only origin main
 If `--ff-only` refuses, someone merged locally again. Stop and reconcile; do not
 force.
 
-## What GitHub cannot enforce on this plan
+## What GitHub cannot enforce — and what it now can
 
-This repository is private on the free plan. Branch protection and rulesets
-return HTTP 403 ("Upgrade to GitHub Pro or make this repository public"). So the
-gate is procedural: the orchestrator does not run `gh pr merge` on a red or
-unverified PR, and this document is what the next session reads. Two repo
-settings the owner can flip by hand that make the procedure harder to skip:
+*Corrected 2026-09-26:* the repository is now **public**
+(`gh api repos/toanaz-ops/rta-tool --jq .visibility` → `public`). Two
+consequences that earlier text in this repo may still contradict:
+
+- **Actions minutes on standard GitHub-hosted runners are free** for a public
+  repository. A "2000 min/month quota" or "billing-blocked" claim is stale;
+  re-run the command above before citing one
+  (`memory/a-blocker-in-the-queue-has-a-date-too.md`).
+- **Branch protection is now available**. While the repo was private on the
+  free plan, it returned HTTP 403. Nobody has enabled it yet, so the gate is
+  still procedural: the orchestrator does not run `gh pr merge` on a red or
+  unverified PR. Requiring the CI checks in a branch rule is a settings change
+  for the owner to make.
+
+Two repo settings the owner can flip by hand that make the procedure harder
+to skip:
 
 - *Settings → General → Pull Requests → Allow auto-merge* — then
   `gh pr merge --auto --merge` queues the merge behind the CI checks.
 - *Settings → General → Pull Requests → Automatically delete head branches.*
 
-Making the repository public would enable branch protection outright; the
-licence (AGPL-3.0-or-later) already permits it. That is the owner's decision.
+## Verification before merge — the review loop (revised 2026-09-26)
 
-## Verification before merge, unchanged
+The PR replaces the local merge, not the verifier. The owner set this loop on
+2026-09-25/26 after L6a; the reasoning is in
+`memory/merge-when-no-high-or-medium-remains.md`.
 
-The PR replaces the local merge, not the verifier. The sequence is:
+1. **The builder self-checks before opening the PR**:
+   - Warnings are counted with CI's pattern `warning( [A-Z]+[0-9]+)?:`, never
+     MSVC's `warning C` alone.
+   - `tools/diffmut.py --base origin/main` shows no SURVIVED mutant on the
+     lines the PR adds, or each survivor is explained in the PR body.
+   - Every tolerance is derived in a comment.
+   - No fixture is shrunk to fit a limit. A limit that bites is a finding.
+   - Every file is under 400 lines. The `source_files_are_under_400_lines`
+     ctest enforces this.
+2. The builder pushes, opens the PR, and hands back **at push**. It does not
+   wait for CI: the verifier builds locally and does not need CI's result.
+   The orchestrator watches CI in parallel. A red CI result is sent back to
+   the builder as a finding. (Owner decision 2026-09-26: waiting for the
+   20–29 min ON job before starting review added about 25 min to every
+   round.)
+3. The orchestrator commits, then dispatches an independent verifier. The
+   verifier has no `Write`/`Edit`, checks out the PR head in its own worktree
+   under `.claude/worktrees/verify-*` (a Temp path is too long for MSVC's
+   FileTracker), re-measures, and tries to refute the load-bearing claims by
+   mutation. **Every finding is graded HIGH / MEDIUM / LOW by this rubric**
+   (owner decision 2026-09-26):
+   - **HIGH:** a wrong result on the current repo that ships a defect or
+     blocks a correct change today.
+   - **MEDIUM:** fails on the current repo, or on a realistic next change.
+     "Realistic" means the construct that triggers it already occurs in
+     the codebase, in a place the code reads. The verifier names that
+     instance.
+   - **LOW:** the trigger has zero instances in the codebase today, or the
+     finding is cosmetic or about docs.
+   Without this rubric, an edge-case-heavy tool (the C++ declaration reader
+   in `tools/orphan_check.py`) went through six rounds: each round's
+   verifier probed new zero-instance shapes and graded them MEDIUM.
+4. The fix round goes back to the same builder with the HIGH and MEDIUM
+   findings. LOW findings go on a lane-level list, fixed together in one PR
+   at the end of the lane.
+5. **After every fix round that changes behaviour, run another narrow
+   verifier round.** There is no cap on the number of rounds: stop when a
+   round finds no HIGH or MEDIUM. A fix round that touches only tests or
+   comments can be closed by the orchestrator reading the diff and CI.
+6. Merge once every CI check that ran is green and no HIGH or MEDIUM
+   remains. Merge on the
+   owner's word, or under a lane-level delegation the owner gave in the
+   conversation. Always run `gh pr checks N` first and merge with
+   `gh pr merge N --merge --match-head-commit <sha>`.
 
-1. Builder pushes branch, opens PR, iterates until the CI matrix is green.
-2. Orchestrator dispatches an independent verifier (no `Write`/`Edit`; commit
-   before dispatch — `memory/a-verifier-with-bash-can-git-checkout-your-uncommitted-fix.md`)
-   that checks out the PR head in its own worktree, rebuilds both configurations
-   with `--clean-first`, re-measures the tallies, and tries to refute the
-   load-bearing claims by mutation.
-3. Verifier verdict + CI status + tallies go in a PR comment (`gh pr comment`).
-4. Owner says "merge". Orchestrator merges, pulls `main`, updates
-   `docs/HANDOFF.md` to name the merge commit.
+**Rebuild what the change could have changed, not everything.**
+- **OFF** always.
+- **ON** only when the diff touches JUCE-side code: `app/src/*Main*`,
+  `app/src/view/`, `app/src/dev/`, `app/tests_juce/`, `platform/`, `ui/`, or
+  any file listed in the `rtatool` source lists. The Windows ON CI job covers
+  the rest. That job itself is skipped for a PR whose every changed file is
+  under `docs/`, `memory/`, `*.md`, `tools/**/*.py` or `tools/test_fixtures/`
+  (`paths-ignore` in `ci-app-on.yml`). Pushes to `main` always run it.
+- **The forced atomic fallback** (`-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON`)
+  only when the diff touches `AtomicSharedPtr`, `Snapshot` publication, or
+  any file matching `no_std_atomic_over_shared_ptr`'s scan.
+- **A verifier reuses the builder's build directories** for anything it does
+  not mutate, and builds fresh only where it mutates. A name-only diff decides
+  which of these applies (`memory/reverify-what-the-change-could-have-changed.md`).
+- The full three-config rebuild runs once, before the lane closes.
 
 ## Handoffs still name commits, now on GitHub
 

@@ -30,16 +30,26 @@
 #     file is one line to add there and one line to remove if this job
 #     is ever disabled without touching the OFF gate.
 #
-# Triggers match ci.yml exactly (same PRs and the same main-branch pushes
-# see both jobs; GitHub reports them as two separate required-looking
-# checks on the PR, which is what "the merge gate now includes the ON
-# job" in docs/GIT-WORKFLOW.md means in practice).
+# Triggers: every push to main runs this job. A pull request runs it
+# UNLESS every changed file is one the ON build cannot see: Python tools,
+# their fixtures, docs, memory, or Markdown (owner decision 2026-09-26: the
+# ~20-29 min job ran on tools-only and docs-only PRs for no information --
+# docs/GIT-WORKFLOW.md "Rebuild what the change could have changed").
+# `paths-ignore` skips the workflow only when ALL changed paths match, so
+# one C++/CMake/workflow file in the PR brings the job back. A skipped
+# workflow shows no check on the PR; that is expected for such a PR.
 name: CI (app ON)
 
 on:
   push:
     branches: [main]
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'memory/**'
+      - '**/*.md'
+      - 'tools/**/*.py'
+      - 'tools/test_fixtures/**'
 
 permissions:
   contents: read

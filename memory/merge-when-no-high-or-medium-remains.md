@@ -36,6 +36,19 @@ were all caught in rounds 1–2:
 - allocation in the analysis-thread feed,
 - `Clear` published for a comparison that never ran.
 
+**Speed-ups (owner, 2026-09-26),** after asking "why is everything slow?".
+A round was taking 1–1.5 h, and the uncalled-code checker took 6 rounds:
+- **The verifier starts at push.** The builder hands back without waiting
+  for CI; CI is watched in parallel, and merge still needs both.
+- **The Windows ON CI job is skipped** for a PR that only touches docs,
+  memory, Markdown or Python tools (`paths-ignore`).
+- **The grading rubric:**
+  - MEDIUM means it fails on the current repo, or the construct that
+    triggers it already occurs in the codebase. The verifier names that
+    instance.
+  - A trigger with zero instances today is LOW.
+  - The owner declined a cap on rounds; the rubric is what bounds them.
+
 **How to apply:**
 - Grade every verifier finding HIGH, MEDIUM or LOW before dispatching a fix
   round, and send the builder only the HIGH and MEDIUM ones.
