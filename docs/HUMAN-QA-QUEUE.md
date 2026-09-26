@@ -839,6 +839,40 @@ phát hiện, không mục nào chặn gì đã ship.*
 
 ---
 
+## Mục mới mở khi đóng process audit (2026-09-26)
+
+*Sáu PR #35–#40 đã merge (xem `docs/HANDOFF.md` mục đầu). Các mục dưới không
+chặn gì đã ship.*
+
+- [ ] **Quyết định: wire 16 file `.cpp` chưa vào `rtatool`, hay xếp vào phase
+  nạp session?** `tools/orphan_check.py` (PR #39) cho thấy 12 file chỉ compile
+  vào test target (`EqSession`, `EqVerify`, `AlignmentWizard`(+`Signals`),
+  `DelayLocator`, `CaptureSequencer`, `SessionCodec`, `SessionDecode`,
+  `SessionStore`, `TraceBlobCodec`, `FirTextWriter`, `FirWavWriter`) và 4 file
+  chỉ vào `rtatool_snapshot` (`CrossoverTopology`, `SyntheticSnapshot`,
+  `VirtualTrace`, `CrossoverSurface`). **Được** nếu wire sớm: các lane L4/L7
+  thật sự tới tay operator. **Giá** nếu để: mọi PR chạm các file này bị
+  orphan_check fail (đúng thiết kế) cho tới khi wire, nên sửa chúng phải kèm
+  wiring. **Khuyến nghị**: gom vào phase nạp session (SessionStore/Codec là
+  điều kiện của phần lớn các file còn lại).
+- [ ] **Dead code thật, xoá hay wire:** `AnalysisThread::isSplLoggingEnabled`
+  và `MainComponent::currentPaneView` — 0 caller cả production lẫn test.
+- [ ] **LOW còn lại từ các vòng review (gom vào PR LOW kế tiếp):**
+  - `tools/snapshot.cpp` luôn xuất `main-live*.png` ở 1280x800 bất kể tham số
+    `1100 760` trong CLAUDE.md "Seeing the GUI".
+  - Rail: nhánh không-cuộn (bỏ vạch scrollbar) chưa có test; test rail không
+    pin `railScrollView_.setBounds`/`addAndMakeVisible`; 220/150 là regression
+    lock chưa ghi nhãn; tham số `channelCount` đặt tên sai.
+  - `snapshot.cpp` fail do timeout SPL không xoá `main-live-spl.png` cũ.
+  - Wheel-scroll trong `ChannelRoleTable` lồng viewport: chưa kiểm được offscreen — thử tay.
+  - orphan_check known limits (0 instance hôm nay): template có default/variadic
+    một dòng, member ngoài lớp của class template, `decltype(auto)`,
+    `friend class`, định nghĩa `.cpp` 2 dòng chỉ thêm dòng tên, prefix `L'x'`,
+    overload chết cạnh overload sống; thông báo "not compiled into any target"
+    sai chữ cho file chỉ vào test target.
+  - `docs/HANDOFF.md` và plan L6a còn câu "Actions billing-blocked" lịch sử —
+    đúng tại thời điểm viết, không sửa.
+
 ## Từ phiên EP06 (2026-08-30)
 
 - [ ] **`[!]` ISO 3382-1 — mua, hay dựng từ nguồn mở? CHỦ NHÂN HOÃN CÓ CHỦ Ý.**

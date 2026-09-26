@@ -5,6 +5,71 @@
 
 ---
 
+# 2026-09-26 (tối) — **Process audit 1–7 + quyết định 1, 2, 4 XONG.** Sáu PR merge, main = `8f8326b`.
+
+*Owner, trong chat: "Làm từ 1 tới 7 tối ưu quy trình. Và 1-2-4 trong 4 qđ";
+sau đó, khi hỏi "sao chậm thế": chọn verify-at-push, bỏ ON job cho PR chỉ
+docs/tools, và rubric MEDIUM cần một instance thật trong repo (KHÔNG cap số
+vòng).*
+
+## PR đã merge
+
+| PR | merge | what |
+|---|---|---|
+| #36 | `1928030` | CI job `RTA_BUILD_APP=ON` trên windows-latest (`ci-app-on.yml`), JUCE cache dạng git clone; `permissions: contents: read` |
+| #37 | `4cd5866` | Bộ chọn pane RTA / TRANSFER / SPL — pane SPL giờ mở được live |
+| #38 | `67eda30` | `tools/diffmut.py` (differential mutation, sidecar crash recovery) + ctest `source_files_are_under_400_lines` |
+| #40 | `e06faa9` | LOW batch: `MainComponentRail` (rail cuộn, hết chồng chữ), `MainComponentTestAccess.h` (#error ngoài test), specimen SPL có số thật, CI gate `CMake (Deprecation )?Warning` |
+| #39 | `b562209` | `tools/orphan_check.py` v2 — liveness do **linker MSVC** quyết (`RTA_ORPHAN_LINKMAP`), không phải grep; CI job `tools (pytest)` |
+| #35 | `8f8326b` | Review loop mới trong `docs/GIT-WORKFLOW.md`, CLAUDE.md rule 5/6, builder không lồng sub-agent, speed-ups của owner |
+
+Tallies trên main (CI của #35 tại `abbada9`): OFF 1022 (3 OS), ON 1116,
+pytest tools 135, warning 0, CMake warning 0.
+
+## Người thử được gì, bằng cách nào
+
+1. **Cái đáng thử nhất — bộ chọn pane.** Build `rtatool` (ON), bấm SYNTHETIC,
+   rồi bấm **SPL** trên hàng nút phía trên đồ thị: workspace chuyển sang
+   `SplView`, thấy một dòng metric có mức dB và buffer fill. Bấm RTA/TRANSFER
+   để quay lại; log SPL đang chạy không bị ảnh hưởng. Rail trái giờ cuộn khi
+   cửa sổ thấp — không còn chữ chồng lên nhau ở 1280x800.
+2. **Artifact ảnh GUI trên mỗi PR:** tab Actions → run "CI (app ON)" → artifact
+   `rtatool-snapshot-<run_number>` (9 PNG, gồm `main-live-spl.png` có số thật).
+3. **orphan_check** (chạy khi đóng wave, ~2 phút lần đầu, ~10 s sau đó):
+   ```
+   python tools/orphan_check.py --base <wave start> --build-dir build-orphan --cmake-generator "Visual Studio 18 2026" --cmake-arch x64 --juce-path "D:/DEV CAVE EP3/PROJECT005-AZ-handsfree/external/JUCE"
+   ```
+   Exit 0 = mọi hàm mới đều reachable từ `rtatool`; exit 1 in danh sách
+   orphan. Hôm nay với `--base 411f1e7` (lane L6a) nó exit 1 — xem mục
+   "Product gap" dưới; đó là số thật, không phải lỗi tool.
+4. **diffmut:** `python tools/diffmut.py --base origin/main --build-dir <dir> --dry-run`
+   liệt kê mutant trên các dòng PR thêm; bỏ `--dry-run` để chạy.
+
+## Product gap orphan_check tìm ra (chờ owner xếp ưu tiên)
+
+16 file `.cpp` dưới `app/src` không được compile vào `rtatool`:
+- 12 chỉ vào test target: `FirTextWriter`, `FirWavWriter`, `AlignmentWizard`,
+  `AlignmentWizardSignals`, `CaptureSequencer`, `DelayLocator`, `EqSession`,
+  `EqVerify`, `SessionCodec`, `SessionDecode`, `SessionStore`, `TraceBlobCodec`.
+- 4 chỉ vào `rtatool_snapshot`: `CrossoverTopology`, `SyntheticSnapshot`,
+  `VirtualTrace`, `CrossoverSurface`.
+Đây là tính năng đã build + unit-test nhưng chưa wire (có lẽ thuộc phase nạp
+session). PR nào chạm tới chúng giờ sẽ bị orphan_check fail cho tới khi wire.
+Dead code thật (0 caller ở đâu cả): `AnalysisThread::isSplLoggingEnabled`,
+`MainComponent::currentPaneView`. Mục trong `docs/HUMAN-QA-QUEUE.md`.
+
+## Pitfalls phiên này
+
+| bẫy | cách đúng |
+|---|---|
+| grep không trả lời được "có ai gọi không" — v1 sai cả hai chiều sau 2 vòng vá | hỏi linker (`/OPT:REF /MAP`), `memory/reachability-is-the-linkers-question.md` |
+| Verifier chấm MEDIUM cho edge case 0 instance → vòng không hội tụ | rubric mới: MEDIUM phải có instance thật trong repo |
+| Builder đợi CI 20–29 phút rồi mới báo → mỗi vòng thêm ~25 phút | builder báo khi push; verifier chạy song song CI |
+| Orchestrator viết sai quy tắc NOT IN TARGET (snapshot-only được miễn) | verifier bắt ở vòng 3 — đúng việc của verifier; đọc lại rule theo mục đích của tool |
+| Builder claim billing quota 2000 phút | repo **public** — phút Actions miễn phí; chạy `gh api repos/toanaz-ops/rta-tool --jq .visibility` trước khi trích |
+
+---
+
 # 2026-09-26 — **L6a (SPL-pro) lane CLOSED.** Waves 0-3, 4a, Task G, W2-E BUILT và MERGED; Wave 4b (served web viewer) CẮT theo owner. Report [`docs/reports/009-spl-pro.md`](reports/009-spl-pro.md).
 
 *Owner decisions 2026-09-25, trong chat với orchestrator: (1) orchestrator được
