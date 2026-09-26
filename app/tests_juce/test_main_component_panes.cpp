@@ -19,6 +19,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "MainComponent.h"
+#include "MainComponentTestAccess.h"
 #include "measure/SplConfig.h"
 #include "view/RtaView.h"
 #include "view/SplView.h"
@@ -159,11 +160,11 @@ TEST_CASE("selecting SPL builds an SplView through the real factory path",
     component.selectPaneView(PaneSelectorButton::Spl);
 
     CHECK(component.currentPaneView() == PaneView::Spl);
-    CHECK(dynamic_cast<const SplView*>(&component.paneComponentForTest()) != nullptr);
+    CHECK(dynamic_cast<const SplView*>(&MainComponentTestAccess::pane(component)) != nullptr);
     // Never an RtaView masquerading as the SPL pane -- the exact PR #26 bug
     // makePaneFactory's own test already guards at the factory level; this
     // is the same property one layer up, through the real selector.
-    CHECK(dynamic_cast<const RtaView*>(&component.paneComponentForTest()) == nullptr);
+    CHECK(dynamic_cast<const RtaView*>(&MainComponentTestAccess::pane(component)) == nullptr);
 }
 
 TEST_CASE("selecting back to RTA restores an RtaView", "[main_component_panes]") {
@@ -174,13 +175,13 @@ TEST_CASE("selecting back to RTA restores an RtaView", "[main_component_panes]")
     component.selectPaneView(PaneSelectorButton::Rta);
 
     CHECK(component.currentPaneView() == PaneView::Rta);
-    const auto* rtaView = dynamic_cast<const RtaView*>(&component.paneComponentForTest());
+    const auto* rtaView = dynamic_cast<const RtaView*>(&MainComponentTestAccess::pane(component));
     REQUIRE(rtaView != nullptr);
     // Fix-round finding 3 (verifier): setLibrary(&library_) was deletable
     // green. library() is RtaView's own accessor for what it was last told
     // (RtaView.h) -- pinning it to the SAME library MainComponent owns, not
     // merely non-null, after a switch away and back.
-    CHECK(rtaView->library() == &component.libraryForTest());
+    CHECK(rtaView->library() == &MainComponentTestAccess::library(component));
 }
 
 TEST_CASE("selecting Transfer builds a TransferView", "[main_component_panes]") {
@@ -190,9 +191,9 @@ TEST_CASE("selecting Transfer builds a TransferView", "[main_component_panes]") 
     component.selectPaneView(PaneSelectorButton::Transfer);
 
     CHECK(component.currentPaneView() == PaneView::Transfer);
-    const auto* transferView = dynamic_cast<const TransferView*>(&component.paneComponentForTest());
+    const auto* transferView = dynamic_cast<const TransferView*>(&MainComponentTestAccess::pane(component));
     REQUIRE(transferView != nullptr);
-    CHECK(transferView->library() == &component.libraryForTest());
+    CHECK(transferView->library() == &MainComponentTestAccess::library(component));
 }
 
 TEST_CASE("switching panes does not stop or restart SPL logging",
@@ -203,21 +204,21 @@ TEST_CASE("switching panes does not stop or restart SPL logging",
 
     const rta::measure::SplConfig config;
     const std::array<int, 1> channels{0};
-    component.analysisThreadForTest().enableSplLogging(config, channels, tempDir.path.string());
-    REQUIRE(waitUntil([&] { return component.analysisThreadForTest().isSplLoggingEnabled(); }, 2000));
+    MainComponentTestAccess::analysisThread(component).enableSplLogging(config, channels, tempDir.path.string());
+    REQUIRE(waitUntil([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabled(); }, 2000));
 
     component.selectPaneView(PaneSelectorButton::Spl);
     // A mutant that adds a disable() call needs a moment for its OWN async
     // request to land -- staysTrueFor holds the assertion open across that
     // settle window instead of reading the flag once, immediately, which
     // would still read "true" a mutant would only flip a few ms later.
-    CHECK(staysTrueFor([&] { return component.analysisThreadForTest().isSplLoggingEnabled(); }, 200));
+    CHECK(staysTrueFor([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabled(); }, 200));
 
     component.selectPaneView(PaneSelectorButton::Rta);
-    CHECK(staysTrueFor([&] { return component.analysisThreadForTest().isSplLoggingEnabled(); }, 200));
+    CHECK(staysTrueFor([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabled(); }, 200));
 
-    component.analysisThreadForTest().disableSplLogging();
-    REQUIRE(waitUntil([&] { return !component.analysisThreadForTest().isSplLoggingEnabled(); }, 2000));
+    MainComponentTestAccess::analysisThread(component).disableSplLogging();
+    REQUIRE(waitUntil([&] { return !MainComponentTestAccess::analysisThread(component).isSplLoggingEnabled(); }, 2000));
 }
 
 // --- Fix round 1 (verifier NOT SOUND, 4 MEDIUM): the tests above all called
@@ -240,17 +241,17 @@ TEST_CASE("clicking each selector button in the component tree shows the matchin
     auto* splButton = findButtonByText(component, "SPL");
     REQUIRE(splButton != nullptr);
     splButton->setToggleState(true, juce::sendNotification);
-    CHECK(dynamic_cast<const SplView*>(&component.paneComponentForTest()) != nullptr);
+    CHECK(dynamic_cast<const SplView*>(&MainComponentTestAccess::pane(component)) != nullptr);
 
     auto* transferButton = findButtonByText(component, "TRANSFER");
     REQUIRE(transferButton != nullptr);
     transferButton->setToggleState(true, juce::sendNotification);
-    CHECK(dynamic_cast<const TransferView*>(&component.paneComponentForTest()) != nullptr);
+    CHECK(dynamic_cast<const TransferView*>(&MainComponentTestAccess::pane(component)) != nullptr);
 
     auto* rtaButton = findButtonByText(component, "RTA");
     REQUIRE(rtaButton != nullptr);
     rtaButton->setToggleState(true, juce::sendNotification);
-    CHECK(dynamic_cast<const RtaView*>(&component.paneComponentForTest()) != nullptr);
+    CHECK(dynamic_cast<const RtaView*>(&MainComponentTestAccess::pane(component)) != nullptr);
 }
 
 TEST_CASE("selectPaneView gives the new pane real bounds without waiting for a resize event",
@@ -264,7 +265,7 @@ TEST_CASE("selectPaneView gives the new pane real bounds without waiting for a r
 
     component.selectPaneView(PaneSelectorButton::Spl);
 
-    const auto& pane = component.paneComponentForTest();
+    const auto& pane = MainComponentTestAccess::pane(component);
     CHECK(pane.getWidth() > 0);
     CHECK(pane.getHeight() > 0);
 }
@@ -277,7 +278,7 @@ TEST_CASE("selectPaneView actually attaches the new workspace into the component
 
     component.selectPaneView(PaneSelectorButton::Spl);
 
-    const auto& pane = component.paneComponentForTest();
+    const auto& pane = MainComponentTestAccess::pane(component);
     CHECK(isDescendantOf(pane, component));
 
     // The pane's OWN visible flag is set unconditionally by WorkspaceView's
@@ -357,12 +358,12 @@ TEST_CASE("re-clicking the already-selected button leaves it lit and the pane un
     auto* splButton = findButtonByText(component, "SPL");
     REQUIRE(splButton != nullptr);
     REQUIRE(splButton->getToggleState());
-    const auto* before = &component.paneComponentForTest();
+    const auto* before = &MainComponentTestAccess::pane(component);
 
     simulateRealClick(*splButton);
 
     CHECK(splButton->getToggleState());
-    CHECK(&component.paneComponentForTest() == before);
+    CHECK(&MainComponentTestAccess::pane(component) == before);
 }
 
 TEST_CASE("selecting the pane already showing does not rebuild it", "[main_component_panes]") {
@@ -370,10 +371,10 @@ TEST_CASE("selecting the pane already showing does not rebuild it", "[main_compo
     component.setSyntheticMode(true);
 
     component.selectPaneView(PaneSelectorButton::Spl);
-    const auto* before = &component.paneComponentForTest();
+    const auto* before = &MainComponentTestAccess::pane(component);
 
     component.selectPaneView(PaneSelectorButton::Spl);  // already showing SPL
-    const auto* after = &component.paneComponentForTest();
+    const auto* after = &MainComponentTestAccess::pane(component);
 
     // Not merely "still an SplView" -- the SAME object, proving the early
     // return actually skipped the rebuild rather than building an

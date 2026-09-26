@@ -93,6 +93,15 @@ target_link_libraries(rtatool PRIVATE
 juce_add_console_app(rtatool_snapshot
     PRODUCT_NAME "RTA Tool Snapshot"
     COMPANY_NAME "AZ Soundtech"
+    # Fix round PRs #36/#37 item 5: with no BUNDLE_ID, JUCEUtils.cmake
+    # defaults it to "com.${COMPANY_NAME}.${target}" verbatim -- the space in
+    # "AZ Soundtech" rode straight through into "com.AZ Soundtech.
+    # rtatool_snapshot" and JUCEUtils.cmake's own `_juce_set_property_if_not_
+    # set` warns (message(WARNING ...), i.e. a `CMake Warning`) on a bundle id
+    # containing spaces. `rtatool` above never had this problem -- it already
+    # spells its own BUNDLE_ID out ("com.azsoundtech.rtatool"); this target
+    # just never had one. Same dotted-lowercase shape, `.snapshot` appended.
+    BUNDLE_ID     "com.azsoundtech.rtatool.snapshot"
 )
 
 include(cmake/rtatool_snapshot_sources.cmake)
@@ -105,6 +114,10 @@ target_compile_definitions(rtatool_snapshot PRIVATE
     JUCE_USE_CURL=0
     JUCE_STANDALONE_APPLICATION=1
     $<$<AND:$<BOOL:${WIN32}>,$<BOOL:${RTA_ENABLE_ASIO}>>:JUCE_ASIO=1>
+    # Fix round LOW F6: this target includes MainComponentTestAccess.h to
+    # drive analysisThread_ for main-live-spl.png -- see that header's own
+    # compile-time guard.
+    RTA_MAINCOMPONENT_TEST_ACCESS=1
 )
 
 if(WIN32 AND RTA_ENABLE_ASIO)

@@ -7,29 +7,6 @@
 
 namespace {
 
-// The legend gutter's own column, per Metrics.h: every panel that shares a
-// legend column starts its fields at az::ui::gutterWidth, but that figure
-// sizes a FIELD's legend, not a whole rail's width. This is the rail width
-// itself -- wide enough for DevicePanel's widest row (a device name combo
-// plus its gutter) and for ChannelRoleTable's index/name/role columns
-// without either one clipping.
-constexpr int kRailWidth = 360;
-
-// Tall enough for DevicePanel's own content (caption, four field rows, the
-// start/stop switch and the fault line -- see DevicePanel::resized()) with a
-// little breathing room below rather than a height computed to the pixel:
-// the panel fills whatever it is given and a hairline of empty panel face at
-// the bottom costs nothing.
-constexpr int kDevicePanelHeight = 300;
-
-// Task F2: az::ui::GridPanel divides whatever bounds it is given across its
-// header row plus rta::measure::kMaxTransferFunctions (8) data rows -- it
-// has no minimum-row-height floor of its own (GridPanel.h's own class
-// comment: "geometry only"), so this is a flat pixel budget rather than a
-// per-row metric multiplied out: comfortably readable for 9 rows (header +
-// 8 channels) without crowding channelRoleTable_ below it out of the rail.
-constexpr int kRoutingMatrixHeight = 220;
-
 // SyntheticInput has no device of its own to name channels after (a device
 // panel is not involved), so this class names them itself. Two names, not
 // one per role: SyntheticInput writes two channels regardless of which
@@ -45,9 +22,7 @@ const std::vector<std::string> kSyntheticChannelNames{"Synthetic L", "Synthetic 
 
 MainComponent::MainComponent()
     : analysisThread_(audioIo_.bus(), rta::measure::Analyser::Config{}),
-      devicePanel_(audioIo_),
-      channelRoleTable_(audioIo_.bus().config()),
-      routingMatrix_(audioIo_.bus().config(), rta::measure::kMaxTransferFunctions),
+      rail_(audioIo_, rta::measure::kMaxTransferFunctions),
       // The default workspace when none has been loaded: exactly one `rta`
       // pane, so the app's opening screen stays byte-for-byte what it was
       // before this task (task brief, step 3). Nothing in this class loads
@@ -101,9 +76,7 @@ MainComponent::MainComponent()
     exportReportReadout_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(exportReportReadout_);
 
-    addAndMakeVisible(devicePanel_);
-    addAndMakeVisible(channelRoleTable_);
-    addAndMakeVisible(routingMatrix_);
+    rail_.attachTo(*this);
 
     // Owner decision 2026-09-26: the pane selector (MainComponentPanes.cpp).
     wirePaneSelectorButtons();
@@ -160,7 +133,7 @@ void MainComponent::setSyntheticMode(bool enabled) {
         // Stop any live device first so the real callback and the synthetic
         // thread never race the same bus.
         audioIo_.stop();
-        devicePanel_.setEnabled(false);
+        rail_.setDevicePanelEnabled(false);
 
         // The synthetic knobs, ON: task 6 built `measurementDelaySamples` /
         // `measurementNoiseDb` and left both at their inert defaults, which
@@ -194,7 +167,7 @@ void MainComponent::setSyntheticMode(bool enabled) {
         audioIo_.bus().config().setRole(1, rta::platform::ChannelRole::Reference);
 
         lastChannelNames_ = kSyntheticChannelNames;
-        channelRoleTable_.setChannelNames(lastChannelNames_);
+        rail_.setChannelNames(lastChannelNames_);
         // routingMatrix_ caches cell TEXT rather than reading config_ live
         // at paint time the way channelRoleTable_'s ListBox does
         // (RoutingMatrix.h's own class comment: refreshFromConfig() is
@@ -202,7 +175,7 @@ void MainComponent::setSyntheticMode(bool enabled) {
         // automatically) -- without this, the two role assignments just
         // above would show as UNUSED here until the next timerCallback tick
         // or an operator's own click.
-        routingMatrix_.refreshFromConfig();
+        rail_.refreshFromConfig();
     } else {
         // Order matters: destroy the synthetic writer before re-enabling the
         // panel that lets a user start a real one, so there is never a
@@ -231,10 +204,10 @@ void MainComponent::setSyntheticMode(bool enabled) {
         audioIo_.bus().config().setRole(0, rta::platform::ChannelRole::Unused);
         audioIo_.bus().config().setRole(1, rta::platform::ChannelRole::Unused);
 
-        devicePanel_.setEnabled(true);
+        rail_.setDevicePanelEnabled(true);
         lastChannelNames_.clear();
         refreshChannelNamesFromDevice();
-        routingMatrix_.refreshFromConfig();
+        rail_.refreshFromConfig();
     }
 
     modeSwitch_.setToggleState(enabled, juce::dontSendNotification);
@@ -266,7 +239,7 @@ void MainComponent::timerCallback() {
     // anywhere OTHER than its own click -- channelRoleTable_'s clicks in
     // LIVE mode, chiefly. Cheap: kMaxTransferFunctions (8) cells, twice a
     // second.
-    routingMatrix_.refreshFromConfig();
+    rail_.refreshFromConfig();
     refreshMembershipFromSnapshot();
     pollLocatePipeline();
     pollCalibrationPipeline();
@@ -282,7 +255,7 @@ void MainComponent::refreshChannelNamesFromDevice() {
     auto names = audioIo_.currentState().inputChannelNames;
     if (names != lastChannelNames_) {
         lastChannelNames_ = names;
-        channelRoleTable_.setChannelNames(lastChannelNames_);
+        rail_.setChannelNames(lastChannelNames_);
     }
 }
 
@@ -298,103 +271,9 @@ void MainComponent::refreshMembershipFromSnapshot() {
     if (const auto snapshot = analysisThread_.latest()) {
         const auto plan =
             rta::measure::planRouting(audioIo_.bus().config(), rta::measure::kMaxTransferFunctions);
-        routingMatrix_.updateMembership(plan, snapshot->positions);
+        rail_.updateMembership(plan, snapshot->positions);
     }
 }
 
-void MainComponent::paint(juce::Graphics& g) {
-    g.fillAll(az::ui::background);
-
-    // Same two-piece masthead SpecimenComponent draws: the wordmark and its
-    // qualifier want different weights, and a one-piece title needs a
-    // non-ASCII dash, which is a source-encoding question this project has
-    // no reason to open.
-    auto masthead = mastheadArea_;
-    auto rule = masthead.removeFromBottom(2);
-
-    const auto brandFont = az::ui::legendFont(az::ui::switchFontSize, true, az::ui::trackingCaption);
-    g.setColour(az::ui::text);
-    g.setFont(brandFont);
-    g.drawText("RTA TOOL", masthead, juce::Justification::centredLeft);
-
-    masthead.removeFromLeft(static_cast<int>(az::ui::stringWidth(brandFont, "RTA TOOL")) + az::ui::gap * 3);
-    g.setColour(az::ui::dim);
-    g.setFont(az::ui::legendFont(az::ui::columnFontSize, false, az::ui::trackingColumn));
-    g.drawText("REAL-TIME ANALYSER", masthead, juce::Justification::centredLeft);
-
-    az::ui::drawEngravedDivider(g, rule);
-}
-
-void MainComponent::resized() {
-    // Station-4 fix F3: also called here, not only from the 2 Hz timer --
-    // see refreshMembershipFromSnapshot()'s own comment for why a caller
-    // driving this class with no message loop pumped (tools/snapshot.cpp)
-    // would otherwise never see the AVG column populated at all.
-    refreshMembershipFromSnapshot();
-
-    auto area = getLocalBounds().reduced(az::ui::gap * 2);
-
-    mastheadArea_ = area.removeFromTop(az::ui::transportHeight / 2);
-    area.removeFromTop(az::ui::gap * 2);
-
-    auto rail = area.removeFromLeft(kRailWidth);
-    area.removeFromLeft(az::ui::gap * 2);
-
-    modeSwitch_.setBounds(rail.removeFromTop(az::ui::buttonCellHeight));
-    rail.removeFromTop(az::ui::gap * 2);
-
-    // L7-DELAY task F2: one fixed row -- LOCATE, APPLY, and the readout
-    // sharing what's left of the row's width.
-    auto locateRow = rail.removeFromTop(az::ui::buttonCellHeight);
-    const int buttonWidth = (locateRow.getWidth() - az::ui::gap * 2) / 3;
-    locateButton_.setBounds(locateRow.removeFromLeft(buttonWidth));
-    locateRow.removeFromLeft(az::ui::gap);
-    applyButton_.setBounds(locateRow.removeFromLeft(buttonWidth));
-    locateRow.removeFromLeft(az::ui::gap);
-    delayReadout_.setBounds(locateRow);
-    rail.removeFromTop(az::ui::gap * 2);
-
-    // L6a Wave 3: one more fixed row, same shape as the Locate row above --
-    // CAL START, CAL END, and the readout sharing what's left.
-    auto calibrationRow = rail.removeFromTop(az::ui::buttonCellHeight);
-    const int calibrationButtonWidth = (calibrationRow.getWidth() - az::ui::gap * 2) / 3;
-    calibrationStartButton_.setBounds(calibrationRow.removeFromLeft(calibrationButtonWidth));
-    calibrationRow.removeFromLeft(az::ui::gap);
-    calibrationEndButton_.setBounds(calibrationRow.removeFromLeft(calibrationButtonWidth));
-    calibrationRow.removeFromLeft(az::ui::gap);
-    calibrationReadout_.setBounds(calibrationRow);
-    rail.removeFromTop(az::ui::gap * 2);
-
-    // Task W2-E2b part B: one more fixed row -- the export button and its
-    // readout sharing what's left, the same shape as the two rows above.
-    auto exportRow = rail.removeFromTop(az::ui::buttonCellHeight);
-    // "EXPORT REPORT" is wider text than "CAL START"/"CAL END" above it, so
-    // this row's button gets a bigger share (2/5 rather than that row's 1/3)
-    // -- otherwise the label truncates (measured against main-live.png).
-    const int exportButtonWidth = (exportRow.getWidth() - az::ui::gap) * 2 / 5;
-    exportReportButton_.setBounds(exportRow.removeFromLeft(exportButtonWidth));
-    exportRow.removeFromLeft(az::ui::gap);
-    exportReportReadout_.setBounds(exportRow);
-    rail.removeFromTop(az::ui::gap * 2);
-
-    devicePanel_.setBounds(rail.removeFromTop(kDevicePanelHeight));
-    rail.removeFromTop(az::ui::gap * 2);
-
-    // Fixed height for kMaxTransferFunctions rows plus a header row --
-    // RoutingMatrix has no dynamic resize the way channelRoleTable_'s
-    // ListBox does, so it gets a fixed slice rather than "whatever is left".
-    routingMatrix_.setBounds(rail.removeFromTop(kRoutingMatrixHeight));
-    rail.removeFromTop(az::ui::gap * 2);
-
-    // Fills whatever is left of the rail -- a shrunk window trims rows off
-    // the bottom of the channel list before it ever touches the plot.
-    channelRoleTable_.setBounds(rail);
-
-    // Owner decision 2026-09-26: RTA/TRANSFER/SPL sits above the workspace,
-    // in the main content area -- not the rail, which is already full.
-    auto paneSelectorRow = area.removeFromTop(az::ui::buttonCellHeight);
-    area.removeFromTop(az::ui::gap * 2);
-    layoutPaneSelectorRow(paneSelectorRow);
-
-    workspace_->setBounds(area);
-}
+// paint() / resized(): MainComponentLayout.cpp (this file's own 400-line-cap
+// split, fix round PRs #36/#37 item 3).

@@ -12,6 +12,7 @@
 // this composition root can name it at all (lane L-API Task I, D2).
 #include "api/ApiServer.h"
 #include "api/ApiSettings.h"
+#include "MainComponentRail.h"
 #include "measure/AnalysisThread.h"
 #include "measure/Analyser.h"
 #include "measure/CalibrationSession.h"
@@ -19,10 +20,7 @@
 #include "rta/dsp/DelayPolicy.h"
 #include "rta/platform/AudioIo.h"
 #include "trace/TraceLibrary.h"
-#include "view/ChannelRoleTable.h"
-#include "view/DevicePanel.h"
 #include "view/PaneSelectorDecision.h"
-#include "view/RoutingMatrix.h"
 #include "view/WorkspaceView.h"
 
 #include <cstdint>
@@ -96,13 +94,13 @@ public:
 
     [[nodiscard]] rta::view::PaneView currentPaneView() const noexcept { return currentPaneView_; }
 
-    // Test-only trio: the real pane makePaneFactory built, SPL logging, and
-    // the trace library panes should be wired to (pin `setLibrary`'s target).
+private:
+    friend struct MainComponentTestAccess;  // fix round item 2: only caller of the trio below
+    // Test-only trio: the real pane makePaneFactory built, SPL logging, and the trace library panes should be wired to.
     [[nodiscard]] const juce::Component& paneComponentForTest() const { return *workspace_->getChildComponent(0); }
     [[nodiscard]] rta::measure::AnalysisThread& analysisThreadForTest() noexcept { return analysisThread_; }
     [[nodiscard]] const rta::trace::TraceLibrary& libraryForTest() const noexcept { return library_; }
 
-private:
     void timerCallback() override;
     void modeSwitchClicked();
 
@@ -361,17 +359,10 @@ private:
     juce::Label exportReportReadout_;
     // ----------------------------------------------------------------------
 
-    rta::view::DevicePanel devicePanel_;
-    rta::view::ChannelRoleTable channelRoleTable_;
-    /// Task F2 (record §6, §7): assigns Measurement/Reference roles and a
-    /// transfer-function index per channel (`ChannelConfig::setRole` /
-    /// `setTransferFunction`, task B1) -- the two facts `planRouting`
-    /// resolves into the routes `AnalysisThread` averages. Fixed at
-    /// `rta::measure::kMaxTransferFunctions` rows (RoutingMatrix.h has no
-    /// dynamic resize API, task B7's own limit): routing more channels than
-    /// this app can hold live `Analyser`s for has no route to assign them
-    /// to anyway.
-    rta::view::RoutingMatrix routingMatrix_;
+    // Fix round LOW F3: device panel + routing matrix + channel role table +
+    // their scroll viewport (item 4), one member instead of five -- see
+    // MainComponentRail.h. RoutingMatrix rows are fixed at kMaxTransferFunctions.
+    MainComponentRail rail_;
 
     // Pane selector: a radio group. Not persisted (SPL-R11) -- starts at Rta.
     juce::TextButton paneRtaButton_{"RTA"};

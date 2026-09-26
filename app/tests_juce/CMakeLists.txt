@@ -358,6 +358,8 @@ list(TRANSFORM RTA_MAIN_COMPONENT_TEST_SOURCES PREPEND "${CMAKE_SOURCE_DIR}/app/
 
 add_executable(rtatool_main_component_tests
     test_main_component_panes.cpp
+    # Fix round MEDIUM F1: item 4's rail-scroll fix had no test.
+    test_main_component_rail_layout.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 
@@ -380,6 +382,9 @@ target_compile_definitions(rtatool_main_component_tests PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_STANDALONE_APPLICATION=1
+    # Fix round LOW F6: this target includes MainComponentTestAccess.h --
+    # see that header's own compile-time guard.
+    RTA_MAINCOMPONENT_TEST_ACCESS=1
 )
 
 catch_discover_tests(rtatool_main_component_tests TEST_PREFIX "main_component/")
