@@ -234,7 +234,20 @@ after L6a):
 5. **Every plan task names its production caller.** The station-3 plan's
    task table carries a "called from" column: the `app/src` file and function
    that uses what the task builds, or the later task that will. A wave closes
-   only when `tools/orphan_check.py --base <wave start>` is clean.
+   only when `tools/orphan_check.py` exits 0 for the wave's range:
+   `python tools/orphan_check.py --base <wave start> --build-dir build-orphan
+   --cmake-generator "Visual Studio 18 2026" --cmake-arch x64 --juce-path
+   "D:/DEV CAVE EP3/PROJECT005-AZ-handsfree/external/JUCE"` (about 2 min cold,
+   about 10 s incremental).
+   - The linker decides liveness. The tool builds `rtatool` with
+     `RTA_ORPHAN_LINKMAP=ON` and reads its map. Anything the app's entry point
+     cannot reach is an orphan, and a test caller does not count.
+   - It reports three non-failing categories:
+     - UNCHECKABLE: templates, operators, `constexpr` and similar.
+     - NOT IN TARGET: `app/src/dev/preview/`, or snapshot-only files.
+     - TEST HOOK: a `*ForTest` name that a test really references.
+   - A `.cpp` file in no source list is an orphan.
+   - Known limits are listed in the tool's docstring.
    - L6a's plan built and unit-tested every SPL component and gave no task the
      job of calling them. `enableSplLogging` had no caller for four waves,
      which cost three extra PRs to fix
