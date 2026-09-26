@@ -147,6 +147,67 @@ TEST_CASE("a PASSING calibration record brackets nothing -- every block still co
     CHECK(result.payload->validity.excludedBlocks == 0);
 }
 
+// Fix round (2026-09-26), MEDIUM finding on item 15: `payload.
+// calibrationOffsetApplied = calibrationRecord->offsetApplied;` had no test
+// at all -- deleting that one line survived every one of the 578 cases in
+// this suite. `record.offsetApplied` defaults to `true`
+// (SplCalibrationRecord.h), so a test that never sets it (every other
+// TEST_CASE above) cannot distinguish the mutant from the field's own
+// default; this one sets BOTH values explicitly.
+TEST_CASE("buildReportPayload copies calibrationOffsetApplied from the record, both ways",
+         "[spl_report_payload_builder]") {
+    constexpr double kOffset = 20.0;
+    CalibrationReportFields fields;
+    fields.performed = true;
+    fields.start.level = CalibrationLevel{94.0, false};
+    fields.end.level = CalibrationLevel{94.0, false};
+    fields.driftDb = 0.0;
+    fields.verdict = CalibrationVerdict::Pass;
+    fields.clause = rta::measure::CalibrationSession::kClause;
+
+    SECTION("offsetApplied = false") {
+        TempDir dir("offset-applied-false");
+        writeChannelLog(dir.path, 0, eightBlockFixture(), kOffset);
+
+        SplCalibrationRecordInfo record;
+        record.fields = fields;
+        record.channel = 0;
+        record.startBlockIndex = 3;
+        record.endBlockIndex = 6;
+        record.offsetApplied = false;
+        rta::splexport::writeCalibrationRecordFile((dir.path / "calibration.txt").string(), record);
+
+        rta::splexport::SplReportBuildRequest request;
+        request.sessionDir = dir.path.string();
+        request.channels = {0};
+
+        const auto result = rta::splexport::buildReportPayload(request);
+        REQUIRE(result.payload.has_value());
+        CHECK_FALSE(result.payload->calibrationOffsetApplied);
+    }
+
+    SECTION("offsetApplied = true") {
+        TempDir dir("offset-applied-true");
+        writeChannelLog(dir.path, 0, eightBlockFixture(), kOffset);
+
+        SplCalibrationRecordInfo record;
+        record.fields = fields;
+        record.channel = 0;
+        record.startBlockIndex = 3;
+        record.endBlockIndex = 6;
+        record.offsetApplied = true;
+        rta::splexport::writeCalibrationRecordFile((dir.path / "calibration.txt").string(), record);
+
+        rta::splexport::SplReportBuildRequest request;
+        request.sessionDir = dir.path.string();
+        request.channels = {0};
+
+        const auto result = rta::splexport::buildReportPayload(request);
+        REQUIRE(result.payload.has_value());
+        CHECK(result.payload->calibrationOffsetApplied);
+    }
+}
+
 TEST_CASE("a calibration record measured on a DIFFERENT channel brackets nothing here",
          "[spl_report_payload_builder]") {
     TempDir dir("bracket-wrong-channel");
