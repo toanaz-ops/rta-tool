@@ -1,0 +1,25 @@
+ rtatool
+
+ Timestamp is 68d5a1c0 (Fri Sep 26 12:00:00 2026)
+
+ Preferred load address is 0000000140000000
+
+ Start         Length     Name                   Class
+ 0001:00000000 0002ac30H .text$mn                CODE
+ 0001:0002ac30 00001a40H .text$mn$00             CODE
+ 0002:00000000 00004f10H .rdata                  DATA
+ 0003:00000000 00000210H .data                   DATA
+
+  Address         Publics by Value              Rva+Base       Lib:Object
+
+ 0000:00000000       ??0AnalysisThread@measure@rta@@QEAA@XZ 0000000140001000 rtatool_measure.obj
+ 0000:00000120       ?enableSplLogging@AnalysisThread@measure@rta@@QEAAXV?$span@$$CBM@std@@@Z 0000000140001120 rtatool_measure.obj
+ 0000:00000340       ?sessionFolderName@measure@rta@@YA?AVstring@std@@AEBUSplConfig@12@@Z 0000000140001340 rtatool_measure.obj
+ 0000:00000560       ?computeSomething@Helpers@measure@rta@@SAHXZ 0000000140001560 rtatool_measure.obj
+ 0000:00000780       ?main@@YAHHPEAPEAD@Z 0000000140001780 rtatool.obj
+
+ entry point at        0001:00000780
+
+ Static symbols
+
+ 0000:000009a0       ?writerLoop@SplLogWriter@export@rta@@AEAAXXZ 00000001400019a0 rtatool_export.obj
