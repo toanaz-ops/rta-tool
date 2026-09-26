@@ -81,6 +81,65 @@ target_link_libraries(rtatool PRIVATE
     juce::juce_recommended_warning_flags
 )
 
+# tools/orphan_check.py's linker-reachability mode (process/orphan-check-
+# linkmap): OFF by default, so it never touches the normal build's flags.
+# When ON, rtatool alone (not JUCE, not rta_core/rta_platform/az_ui -- the
+# call sites this tool cares about are only ever inside rtatool's own TUs or
+# reached through them) is compiled and linked so that a function the app's
+# entry point cannot reach is PROVABLY absent from the final image, not just
+# "no grep match for its spelling":
+#   /Ob0       disable inlining -- an inlined callee leaves no call-site
+#              relocation for the linker to see, so it would look identical
+#              to a genuinely dead function; every candidate must survive as
+#              its own out-of-line symbol for /OPT:REF to have anything to
+#              decide about.
+#   /Gy        function-level linking (COMDATs) -- /OPT:REF can only discard
+#              a function that the linker sees as its own separately
+#              addressable unit; without /Gy, MSVC may still emit an entire
+#              translation unit's code as one blob that keeps a dead
+#              function reachable in the map for a real reason (a live
+#              sibling in the same blob), a false negative.
+#   /OPT:REF   discard COMDATs nothing references, transitively from the
+#              entry point -- this is the reachability decision itself.
+#   /OPT:NOICF explicitly disable Identical COMDAT Folding. /OPT:REF turns
+#              ICF on by default in Release; ICF merges two functions with
+#              byte-identical generated code under ONE symbol in the map
+#              (usually the first alphabetically), which would silently
+#              erase the SECOND function's name from the map even though it
+#              is reachable -- exactly the kind of false orphan report this
+#              tool exists to avoid.
+#   /MAP       emit rtatool.map (Publics by Value + Static symbols), the
+#              file orphan_check.py reads to decide liveness.
+#
+# "Every candidate must survive as its own out-of-line symbol" is the goal
+# these flags aim for, not an absolute guarantee -- two liveness caveats this
+# build cannot remove (fix round 1, verifier, F7; both documented in full in
+# orphan_check.py's own module docstring, since they are properties of the
+# OPTIMISED BINARY, not of these flags):
+#   - a never-called virtual override of an instantiated class still reads
+#     live through the vtable itself, which the linker sees as a reference
+#     regardless of whether anything actually dispatches to that override;
+#   - the compiler can still delete a call whose callee is side-effect-free
+#     and whose result is discarded, which can make that callee's only call
+#     site vanish and the callee then read as unreachable even though the
+#     source genuinely calls it.
+# Both bias toward FALSE NEGATIVES (calling something live that a human would
+# call dead), never the reverse -- they can hide a real orphan, never invent
+# one that is not.
+option(RTA_ORPHAN_LINKMAP
+    "Build rtatool for linker-reachability analysis (tools/orphan_check.py); MSVC only, off by default"
+    OFF)
+if(RTA_ORPHAN_LINKMAP)
+    if(NOT MSVC)
+        message(FATAL_ERROR
+            "RTA_ORPHAN_LINKMAP uses MSVC-specific flags "
+            "(/Ob0 /Gy /OPT:REF /OPT:NOICF /MAP) and only makes sense with "
+            "the MSVC toolchain this repo builds with on Windows.")
+    endif()
+    target_compile_options(rtatool PRIVATE /Ob0 /Gy)
+    target_link_options(rtatool PRIVATE /OPT:REF /OPT:NOICF /MAP)
+endif()
+
 # --- Offscreen snapshot tool --------------------------------------------
 # Renders components to PNG with createComponentSnapshot so GUI work can be
 # reviewed without a screen. See tools/snapshot.cpp for why this beats
