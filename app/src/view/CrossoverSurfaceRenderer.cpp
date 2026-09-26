@@ -47,6 +47,19 @@ void drawDegreeLabels(juce::Graphics& g, const PlotGeometry& geometry) {
     }
 }
 
+/// One horizontal dashed target line at `radians`, in the phase pane's own
+/// degree axis. Factored out so the ambiguous case (two candidate lines,
+/// `ProcessorInversion::Unknown`) draws the identical line twice rather than
+/// keeping a second, drifting copy of the dash geometry.
+void drawTargetLine(juce::Graphics& g, const PlotGeometry& geometry, double radians) {
+    const double targetDeg = radians * 180.0 / kPi;
+    const float targetY = geometry.yForDb(targetDeg);
+    g.setColour(target);
+    for (float x = geometry.left; x < geometry.right; x += 6.0f) {
+        g.fillRect(x, targetY - 0.5f, 3.0f, 1.0f);
+    }
+}
+
 /// Strokes a dB series over the log-frequency axis, one bin per point.
 void strokeSeries(juce::Graphics& g, const PlotGeometry& geometry, const std::vector<float>& db,
                   double binWidthHz, juce::Colour colour, float thickness, bool dashed = false) {
@@ -104,13 +117,14 @@ void paintCrossoverPhase(juce::Graphics& g, juce::Rectangle<int> area,
     drawDegreeLabels(g, geometry);
 
     // THE ASKED LINE. Horizontal, at the offset record Sec.3 predicts for the
-    // topology the operator (or, on the live pane, this task's fixed
-    // default) NAMED -- nothing on this plot derived it.
-    const double targetDeg = surface.targetRadians() * 180.0 / kPi;
-    const float targetY = geometry.yForDb(targetDeg);
-    g.setColour(target);
-    for (float x = geometry.left; x < geometry.right; x += 6.0f) {
-        g.fillRect(x, targetY - 0.5f, 3.0f, 1.0f);
+    // topology and inversion answer the operator NAMED -- nothing on this
+    // plot derived it. `Unknown` inversion draws BOTH candidates (Sec.13.3):
+    // there are genuinely two lines an operator with that answer must read
+    // against, and picking one for them would be exactly the "maximise the
+    // sum" inference this pane's own header comment refuses.
+    drawTargetLine(g, geometry, surface.targetRadians());
+    if (surface.targetAmbiguous()) {
+        drawTargetLine(g, geometry, surface.alternativeTargetRadians());
     }
 
     juce::Path path;

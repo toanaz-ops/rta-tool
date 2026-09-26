@@ -12,14 +12,20 @@
 // the "maximise the sum" shape of inference the record's own ruling
 // (docs/dsp/2026-09-06-l7-alignment-wizard.md Sec.0 ruling 1, Sec.6) refuses
 // for a MEASUREMENT, applied here to a PICK: which capture is which side,
-// and what topology was built, are ASKED, never inferred from library
-// order. This header is the asking: three pickers -- the high-pass trace,
-// the low-pass trace, and the topology -- each starting in an explicit
-// "not asked" state, with no default. `AlignmentWizard` (the flow that
-// would ask the FOURTH question, inversion, and drive an actual solo
-// sequence) is still a separate, unwired lane -- this pane's `topology_`
-// picker asks only what §0 ruling 1 requires for THIS view: which one line
-// to draw.
+// what topology was built, and whether the processor already inverted one
+// output, are ASKED, never inferred from library order or hardcoded. This
+// header is the asking: four pickers -- the high-pass trace, the low-pass
+// trace, the topology, and the inversion -- each starting in an explicit
+// "not asked" state, with no default.
+//
+// PR #45 fix round 2 (verifier, MEDIUM B): the round-1 cut asked topology
+// but hardcoded `ProcessorInversion::No` at the call to `setAskedTopology`,
+// which is exactly the wizard question (c) the record (Sec.2(c), Sec.11)
+// says "must be ASKED, with three answers" -- silently answering it here
+// is the same defect Sec.11 names as "one topology question, no inversion
+// question". The fourth picker below answers it for real; `AlignmentWizard`
+// (the flow that would additionally drive an actual solo sequence) is still
+// a separate, unwired lane, but the ANSWER this pane reads is never assumed.
 #pragma once
 
 #include "measure/CrossoverTopology.h"
@@ -70,6 +76,13 @@ public:
     [[nodiscard]] juce::ComboBox& highTraceComboForTest() noexcept { return hpCombo_; }
     [[nodiscard]] juce::ComboBox& lowTraceComboForTest() noexcept { return lpCombo_; }
     [[nodiscard]] juce::ComboBox& topologyComboForTest() noexcept { return topologyCombo_; }
+    [[nodiscard]] juce::ComboBox& inversionComboForTest() noexcept { return inversionCombo_; }
+
+    /// Set by every `paint()` call: true iff the chart-drawing branch (not
+    /// the refusal branch) ran. A numeric assertion on `surfaceForTest()`
+    /// cannot tell a test whether `paint()` itself still gates on `ready_` --
+    /// this can (test gap D, PR #45 fix round 2).
+    [[nodiscard]] bool lastPaintDrewChartForTest() const noexcept { return lastPaintDrewChart_; }
 
 private:
     void timerCallback() override;
@@ -91,6 +104,7 @@ private:
     void hpComboChanged();
     void lpComboChanged();
     void topologyComboChanged();
+    void inversionComboChanged();
 
     void paintRefusal(juce::Graphics&, juce::Rectangle<int> area) const;
     [[nodiscard]] juce::String refusalMessage() const;
@@ -111,15 +125,23 @@ private:
     std::string hpId_;
     std::string lpId_;
     std::optional<rta::measure::Topology> topology_;
+    std::optional<rta::measure::ProcessorInversion> inversion_;
 
-    /// True only once all three are chosen AND both chosen ids still resolve
-    /// to a real, phase-bearing trace. Gates `paint()` between the refusal
-    /// message and the real chart -- there is no third, partial state.
+    /// True only once all four are chosen, the two trace ids are DISTINCT,
+    /// and both still resolve to a real, phase-bearing trace. Gates
+    /// `paint()` between the refusal message and the real chart -- there is
+    /// no third, partial state. (Round 2, MEDIUM A: distinctness was
+    /// missing, so the same trace id chosen on both sides -- or the only
+    /// eligible trace chosen on both sides -- read as complete.)
     bool ready_ = false;
+
+    /// Test-only, see `lastPaintDrewChartForTest()`.
+    bool lastPaintDrewChart_ = false;
 
     juce::ComboBox hpCombo_;
     juce::ComboBox lpCombo_;
     juce::ComboBox topologyCombo_;
+    juce::ComboBox inversionCombo_;
 
     juce::Rectangle<int> chartArea_;
     juce::Rectangle<int> phaseArea_;

@@ -320,8 +320,7 @@ int main (int argc, char** argv)
     }
 
     {
-        // main-live-xover.png: ALIGN-R8's live pane, PR #45 (F3/F4): drives
-        // the three real ComboBox widgets an operator would, via MainComponentTestAccess.
+        // main-live-xover.png: ALIGN-R8's live pane, PR #45 -- drives all four real ComboBox widgets an operator would, via MainComponentTestAccess.
         MainComponent component;
         component.setSyntheticMode (true);
         juce::Thread::sleep (800);
@@ -346,10 +345,11 @@ int main (int argc, char** argv)
         component.selectPaneView (rta::view::PaneSelectorButton::Xover);
         auto& xoverPane = dynamic_cast<rta::view::CrossoverPaneView&> (
             const_cast<juce::Component&> (MainComponentTestAccess::pane (component)));
-        // Items 1/2 = "main-hp"/"sub-lp"; topology item 2 is LR-4.
+        // Items 1/2 = "main-hp"/"sub-lp"; topology item 2 is LR-4; inversion item 1 is NOT INVERTED.
         xoverPane.highTraceComboForTest().setSelectedId (1, juce::sendNotificationSync);
         xoverPane.lowTraceComboForTest().setSelectedId (2, juce::sendNotificationSync);
         xoverPane.topologyComboForTest().setSelectedId (2, juce::sendNotificationSync);
+        xoverPane.inversionComboForTest().setSelectedId (1, juce::sendNotificationSync);
         if (! xoverPane.hasCompleteSelectionForTest())
         {
             std::printf ("FAILED: crossover pane refused -- main-live-xover.png would be the placeholder\n");

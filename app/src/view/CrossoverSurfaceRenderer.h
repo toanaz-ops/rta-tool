@@ -40,8 +40,12 @@ namespace rta::view {
 
 /// Grid, frequency/degree labels, the shaded fit-window band, the horizontal
 /// ASKED target line (dashed, at `surface.targetRadians()`) and the
-/// `arg(H_A conj H_B)` curve itself. Draws nothing else -- no legend, no
-/// chip: see this file's header comment for why that stays with the caller.
+/// `arg(H_A conj H_B)` curve itself. When `surface.targetAmbiguous()` --
+/// `ProcessorInversion::Unknown`, wizard question (c) answered "don't know"
+/// -- draws a SECOND dashed line at `surface.alternativeTargetRadians()`
+/// (record Sec.13.3) rather than picking one of the two candidates for the
+/// operator. Draws nothing else -- no legend, no chip: see this file's
+/// header comment for why that stays with the caller.
 void paintCrossoverPhase(juce::Graphics& g, juce::Rectangle<int> area,
                          const CrossoverSurface& surface);
 

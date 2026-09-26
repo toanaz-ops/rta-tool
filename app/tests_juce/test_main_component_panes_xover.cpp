@@ -100,6 +100,15 @@ void chooseFirstTopology(juce::ComboBox& topologyCombo) {
     topologyCombo.setSelectedId(1, juce::sendNotificationSync);
 }
 
+/// Picks the inversion combo's "NOT INVERTED" item (item 1, `kInversionChoices`
+/// in CrossoverPaneView.cpp) -- the fourth picker MEDIUM B (PR #45 fix round
+/// 2) added; every case that needs a COMPLETE selection but does not care
+/// which inversion answer picks this one, the same way `chooseFirstTopology`
+/// stands in for "some topology".
+void chooseNotInverted(juce::ComboBox& inversionCombo) {
+    inversionCombo.setSelectedId(1, juce::sendNotificationSync);
+}
+
 CrossoverPaneView& selectXoverPane(MainComponent& component) {
     component.selectPaneView(PaneSelectorButton::Xover);
     // MainComponentTestAccess::pane() returns a const ref (the pane's
@@ -235,6 +244,7 @@ TEST_CASE("after the operator picks a non-first pair, the model receives exactly
     chooseTraceById(pane.highTraceComboForTest(), pane.eligibleTraceIdsForTest(), highId);
     chooseTraceById(pane.lowTraceComboForTest(), pane.eligibleTraceIdsForTest(), lowId);
     chooseFirstTopology(pane.topologyComboForTest());
+    chooseNotInverted(pane.inversionComboForTest());
 
     REQUIRE(pane.hasCompleteSelectionForTest());
     CHECK(pane.chosenHighTraceIdForTest() == highId);
@@ -258,6 +268,7 @@ TEST_CASE("hiding the picked high-pass entry resets that picker to not asked",
     chooseTraceById(pane.highTraceComboForTest(), pane.eligibleTraceIdsForTest(), highId);
     chooseTraceById(pane.lowTraceComboForTest(), pane.eligibleTraceIdsForTest(), lowId);
     chooseFirstTopology(pane.topologyComboForTest());
+    chooseNotInverted(pane.inversionComboForTest());
     REQUIRE(pane.hasCompleteSelectionForTest());
 
     REQUIRE(library.setVisible(highId, false));
@@ -272,6 +283,11 @@ TEST_CASE("hiding the picked high-pass entry resets that picker to not asked",
     CHECK_FALSE(pane.hasCompleteSelectionForTest());
     // The low-pass pick, untouched by the high-pass hide, must survive.
     CHECK(pane.chosenLowTraceIdForTest() == lowId);
+    // Test gap D (PR #45 fix round 2): the surface that WAS complete must not
+    // survive the drop back to incomplete -- a stale surface is what let a
+    // `paint()` that forgot to check `ready_` draw a chart nobody asked for
+    // any more.
+    CHECK(pane.surfaceForTest().pointCount() == 0);
 }
 
 TEST_CASE("a library revision change is picked up by the pane's own timer",
@@ -289,6 +305,7 @@ TEST_CASE("a library revision change is picked up by the pane's own timer",
     chooseTraceById(pane.highTraceComboForTest(), pane.eligibleTraceIdsForTest(), highId);
     chooseTraceById(pane.lowTraceComboForTest(), pane.eligibleTraceIdsForTest(), lowId);
     chooseFirstTopology(pane.topologyComboForTest());
+    chooseNotInverted(pane.inversionComboForTest());
     REQUIRE(pane.hasCompleteSelectionForTest());
 
     // Change the library WITHOUT calling setLibrary again -- library.add

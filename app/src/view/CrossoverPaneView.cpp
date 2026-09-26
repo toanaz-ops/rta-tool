@@ -48,10 +48,30 @@ constexpr std::array<TopologyChoice, 7> kTopologyChoices{ {
 /// Centred at 1 kHz, 6 octaves either side -- outside the plotted 20 Hz-
 /// 20 kHz band both ways, so with no crossover frequency asked either, the
 /// relative-phase trace covers the whole visible band rather than a fit
-/// window centred on a frequency nobody has named.
+/// window centred on a frequency nobody has named. Named explicitly here
+/// (docs/dsp/2026-09-06-l7-alignment-wizard.md's amendment, PR #45 round 2)
+/// because this is the one number this pane fixes instead of asking: there
+/// is no fifth picker for it, only this comment and the amendment's own.
 constexpr PhaseWindow kDefaultWindow{ 1000.0, 6.0 };
 
 constexpr int kSummationHeight = 200;
+
+/// One entry in the inversion picker: wizard question (c)
+/// (CrossoverTopology.h's own comment on `ProcessorInversion`) -- "has the
+/// processor already inverted one output?" -- with all three answers a real
+/// operator can give, never just YES/NO. `Unknown` is not a refusal to
+/// answer: it is answered, and it means "draw both candidate lines" (Sec.13.3
+/// via `CrossoverSurface::targetAmbiguous()`), not "this pane doesn't know".
+struct InversionChoice {
+    rta::measure::ProcessorInversion inversion;
+    const char* label;
+};
+
+constexpr std::array<InversionChoice, 3> kInversionChoices{ {
+    { rta::measure::ProcessorInversion::No, "NOT INVERTED" },
+    { rta::measure::ProcessorInversion::Yes, "INVERTED" },
+    { rta::measure::ProcessorInversion::Unknown, "UNKNOWN -- SHOW BOTH" },
+} };
 
 }  // namespace
 
@@ -59,23 +79,29 @@ CrossoverPaneView::CrossoverPaneView() {
     hpCombo_.setTextWhenNothingSelected("CHOOSE HIGH-PASS TRACE");
     lpCombo_.setTextWhenNothingSelected("CHOOSE LOW-PASS TRACE");
     topologyCombo_.setTextWhenNothingSelected("CHOOSE TOPOLOGY (NOT INFERRED)");
+    inversionCombo_.setTextWhenNothingSelected("WAS THE OUTPUT INVERTED? (NOT INFERRED)");
     hpCombo_.setTextWhenNoChoicesAvailable("NO PHASE-BEARING TRACES STORED");
     lpCombo_.setTextWhenNoChoicesAvailable("NO PHASE-BEARING TRACES STORED");
 
-    // The topology list never changes -- fixed once, here, unlike the trace
-    // combos (rebuilt every refresh from whatever the library currently
-    // holds).
+    // The topology and inversion lists never change -- fixed once, here,
+    // unlike the trace combos (rebuilt every refresh from whatever the
+    // library currently holds).
     for (std::size_t i = 0; i < kTopologyChoices.size(); ++i) {
         topologyCombo_.addItem(kTopologyChoices[i].label, static_cast<int>(i) + 1);
+    }
+    for (std::size_t i = 0; i < kInversionChoices.size(); ++i) {
+        inversionCombo_.addItem(kInversionChoices[i].label, static_cast<int>(i) + 1);
     }
 
     hpCombo_.onChange = [this] { hpComboChanged(); };
     lpCombo_.onChange = [this] { lpComboChanged(); };
     topologyCombo_.onChange = [this] { topologyComboChanged(); };
+    inversionCombo_.onChange = [this] { inversionComboChanged(); };
 
     addAndMakeVisible(hpCombo_);
     addAndMakeVisible(lpCombo_);
     addAndMakeVisible(topologyCombo_);
+    addAndMakeVisible(inversionCombo_);
 
     startTimerHz(kTimerHz);
 }
@@ -135,23 +161,39 @@ void CrossoverPaneView::refreshFromLibrary() {
     rebuildTraceCombo(lpCombo_, lpId_);
 
     ready_ = false;
-    if (library_ != nullptr && !hpId_.empty() && !lpId_.empty() && topology_.has_value()) {
+    // MEDIUM A (PR #45 fix round 2): both ids must be chosen, DISTINCT, and
+    // there must be at least two eligible traces to choose distinctly from --
+    // without the distinctness check, the same trace picked as both HP and
+    // LP (or the one available trace picked twice when only one is eligible)
+    // read as a complete selection and fed `CrossoverSurface` a relative
+    // phase of exactly zero everywhere, which looks identical to a correctly
+    // aligned pair.
+    const bool distinctPick = !hpId_.empty() && !lpId_.empty() && hpId_ != lpId_;
+    if (library_ != nullptr && distinctPick && eligibleIds_.size() >= 2 && topology_.has_value() &&
+        inversion_.has_value()) {
         const auto* highTrace = library_->trace(hpId_);
         const auto* lowTrace = library_->trace(lpId_);
         if (highTrace != nullptr && lowTrace != nullptr) {
             auto highVirtual = rta::trace::VirtualTrace::fromTrace(*highTrace);
             auto lowVirtual = rta::trace::VirtualTrace::fromTrace(*lowTrace);
             if (highVirtual.has_value() && lowVirtual.has_value()) {
-                // ProcessorInversion::No: the fourth wizard question this
-                // pane does not ask (task scope -- AlignmentWizard's own
-                // lane asks it). Not a claim about the real rig, only the
-                // one this pane can draw without a fourth picker.
-                surface_.setAskedTopology(*topology_, rta::measure::ProcessorInversion::No);
+                // MEDIUM B (PR #45 fix round 2): the inversion picker's real
+                // answer, never a hardcoded one -- see this file's header
+                // comment and CrossoverTopology.h's `ProcessorInversion`.
+                surface_.setAskedTopology(*topology_, *inversion_);
                 surface_.setWindow(kDefaultWindow);
                 surface_.setSources(std::move(*highVirtual), std::move(*lowVirtual));
                 ready_ = true;
             }
         }
+    }
+    if (!ready_) {
+        // Test gap D (PR #45 fix round 2): a stale surface must not survive
+        // a selection that dropped out of completeness -- otherwise a hidden
+        // trace or a topology change while `!ready_` would leave the last
+        // complete surface's chart drawable by a `paint()` that forgot to
+        // check `ready_`, which is exactly mutant v1b.
+        surface_ = CrossoverSurface{};
     }
 }
 
@@ -182,6 +224,16 @@ void CrossoverPaneView::topologyComboChanged() {
     repaint();
 }
 
+void CrossoverPaneView::inversionComboChanged() {
+    const int id = inversionCombo_.getSelectedId();
+    inversion_ = (id >= 1 && static_cast<std::size_t>(id) <= kInversionChoices.size())
+                   ? std::optional<rta::measure::ProcessorInversion>(
+                         kInversionChoices[static_cast<std::size_t>(id) - 1].inversion)
+                   : std::nullopt;
+    refreshFromLibrary();
+    repaint();
+}
+
 juce::String CrossoverPaneView::refusalMessage() const {
     // With fewer than 2 eligible traces, say so with the TRUE eligible
     // count, not the library's total entry count -- an operator staring at
@@ -193,7 +245,13 @@ juce::String CrossoverPaneView::refusalMessage() const {
     }
     if (hpId_.empty()) return "CHOOSE THE HIGH-PASS TRACE";
     if (lpId_.empty()) return "CHOOSE THE LOW-PASS TRACE";
+    // MEDIUM A (PR #45 fix round 2): its own message, distinct from either
+    // "choose" message above -- both pickers DO hold a choice, so telling the
+    // operator to "choose" one again would read as a stuck UI, not as the
+    // real problem (one trace cannot align against itself).
+    if (hpId_ == lpId_) return "HIGH-PASS AND LOW-PASS ARE THE SAME TRACE";
     if (!topology_.has_value()) return "CHOOSE THE TOPOLOGY (NOT INFERRED)";
+    if (!inversion_.has_value()) return "WAS THE OUTPUT INVERTED? (NOT INFERRED)";
     return {};
 }
 
@@ -207,22 +265,26 @@ void CrossoverPaneView::paint(juce::Graphics& g) {
     g.fillAll(az::ui::background);
     if (!ready_) {
         paintRefusal(g, chartArea_);
+        lastPaintDrewChart_ = false;
         return;
     }
     paintCrossoverPhase(g, phaseArea_, surface_);
     paintCrossoverSummation(g, summationArea_, surface_);
+    lastPaintDrewChart_ = true;
 }
 
 void CrossoverPaneView::resized() {
     auto area = getLocalBounds().reduced(az::ui::gap);
 
     auto pickerRow = area.removeFromTop(az::ui::fieldHeight);
-    const int thirdWidth = (pickerRow.getWidth() - az::ui::gap * 2) / 3;
-    hpCombo_.setBounds(pickerRow.removeFromLeft(thirdWidth));
+    const int quarterWidth = (pickerRow.getWidth() - az::ui::gap * 3) / 4;
+    hpCombo_.setBounds(pickerRow.removeFromLeft(quarterWidth));
     pickerRow.removeFromLeft(az::ui::gap);
-    lpCombo_.setBounds(pickerRow.removeFromLeft(thirdWidth));
+    lpCombo_.setBounds(pickerRow.removeFromLeft(quarterWidth));
     pickerRow.removeFromLeft(az::ui::gap);
-    topologyCombo_.setBounds(pickerRow);
+    topologyCombo_.setBounds(pickerRow.removeFromLeft(quarterWidth));
+    pickerRow.removeFromLeft(az::ui::gap);
+    inversionCombo_.setBounds(pickerRow);
     area.removeFromTop(az::ui::gap);
 
     chartArea_ = area;
