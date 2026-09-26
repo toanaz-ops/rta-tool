@@ -5,7 +5,8 @@ local `main` with `--no-ff` and `push` was a separate owner's word; the local
 `main` drifted up to 36 commits ahead of `origin/main` and CI on GitHub ran only
 on the occasional push. This document replaces that habit.*
 
-Remote: `https://github.com/toanaz-ops/rta-tool` (private). Default branch `main`.
+Remote: `https://github.com/toanaz-ops/rta-tool` (public since before 2026-09-26; see
+"What GitHub cannot enforce — and what it now can" below). Default branch `main`.
 
 ## The four rules
 
@@ -83,20 +84,28 @@ git -C "D:\DEV CAVE EP3\PRJ010-RTA-TOOL" pull --ff-only origin main
 If `--ff-only` refuses, someone merged locally again. Stop and reconcile; do not
 force.
 
-## What GitHub cannot enforce on this plan
+## What GitHub cannot enforce — and what it now can
 
-This repository is private on the free plan. Branch protection and rulesets
-return HTTP 403 ("Upgrade to GitHub Pro or make this repository public"). So the
-gate is procedural: the orchestrator does not run `gh pr merge` on a red or
-unverified PR, and this document is what the next session reads. Two repo
-settings the owner can flip by hand that make the procedure harder to skip:
+*Corrected 2026-09-26:* the repository is now **public**
+(`gh api repos/toanaz-ops/rta-tool --jq .visibility` → `public`). Two
+consequences that earlier text in this repo may still contradict:
+
+- **Actions minutes on standard GitHub-hosted runners are free** for a public
+  repository. A "2000 min/month quota" or "billing-blocked" claim is stale;
+  re-run the command above before citing one
+  (`memory/a-blocker-in-the-queue-has-a-date-too.md`).
+- **Branch protection is now available**. While the repo was private on the
+  free plan, it returned HTTP 403. Nobody has enabled it yet, so the gate is
+  still procedural: the orchestrator does not run `gh pr merge` on a red or
+  unverified PR. Requiring the CI checks in a branch rule is a settings change
+  for the owner to make.
+
+Two repo settings the owner can flip by hand that make the procedure harder
+to skip:
 
 - *Settings → General → Pull Requests → Allow auto-merge* — then
   `gh pr merge --auto --merge` queues the merge behind the CI checks.
 - *Settings → General → Pull Requests → Automatically delete head branches.*
-
-Making the repository public would enable branch protection outright; the
-licence (AGPL-3.0-or-later) already permits it. That is the owner's decision.
 
 ## Verification before merge — the review loop (revised 2026-09-26)
 

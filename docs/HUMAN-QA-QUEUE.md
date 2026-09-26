@@ -810,7 +810,10 @@ phát hiện, không mục nào chặn gì đã ship.*
   chỉ-ON có CI, vòng build cục bộ ngắn lại (cache JUCE giữa run). **Giá**:
   ~10-15 phút Actions Windows mỗi lần chạy, so với quota 2000 phút/tháng của
   gói private free hiện tại — một job ON mỗi PR có thể ăn hết quota nhanh hơn
-  các job OFF hiện có.
+  các job OFF hiện có. *(Đính chính 2026-09-26: repo đã **public**
+  (`gh api repos/toanaz-ops/rta-tool --jq .visibility` → `public`), nên phút
+  Actions trên runner chuẩn miễn phí; mối lo quota trên không còn đúng. Đo
+  thật trên PR #36: cold 25 phút, cache-hit 18,5 phút.)*
 - [ ] **Một lượt chạy trên phần cứng thật.** Calibrator + mic thật qua đúng
   đường export report ở `docs/HANDOFF.md` mục "L6a SPL-pro lane CLOSED" (d).
   Chưa phiên nào trong lane này cắm thiết bị thật — mọi số đo đến từ synthetic
