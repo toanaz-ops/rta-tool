@@ -55,12 +55,23 @@ struct MainComponentTestAccess {
     }
 
     // Session persistence test seam: app/tests_juce/test_main_component_session.cpp.
-    // A non-const overload of library() above would change that existing
-    // caller's overload resolution, so this is a distinct name instead.
-    [[nodiscard]] static rta::trace::TraceLibrary& mutableLibrary(MainComponent& c) { return c.library_; }
-    static void saveSession(MainComponent& c, const juce::File& folder) { c.session_.performSave(folder); }
-    static void openSession(MainComponent& c, const juce::File& folder) { c.session_.performOpen(folder); }
-    [[nodiscard]] static juce::String sessionReadout(const MainComponent& c) {
+    // Every name below ends in `ForTest` and is referenced by that exact
+    // spelling from that test file -- tools/orphan_check.py's own TEST HOOK
+    // rule (a `*ForTest` candidate the linker discards from `rtatool` is
+    // exempted only when app/tests* really calls it by that name; see that
+    // script's own header comment). A non-const overload of library() above
+    // would change that existing caller's overload resolution, so this is a
+    // distinct name instead.
+    [[nodiscard]] static rta::trace::TraceLibrary& mutableLibraryForTest(MainComponent& c) {
+        return c.library_;
+    }
+    static void saveSessionForTest(MainComponent& c, const juce::File& folder) {
+        c.session_.performSave(folder);
+    }
+    static void openSessionForTest(MainComponent& c, const juce::File& folder) {
+        c.session_.performOpen(folder);
+    }
+    [[nodiscard]] static juce::String readoutForTest(const MainComponent& c) {
         return c.session_.readoutForTest();
     }
 };
