@@ -254,7 +254,8 @@ after L6a):
      which cost three extra PRs to fix
      (`memory/a-component-with-no-production-caller-is-not-shipped.md`).
    - Every plan task table also carries an "operator path" column naming the
-     button a human uses to produce the task's runtime input (decision 2); a
+     button a human uses to produce the task's runtime input (owner, see the
+     master plan's "Plan review — 2026-09-27" section); a
      task with no operator path must name the lane that will create one, or
      it cannot be marked BUILT (2026-09-27: STORE and Sweep→IR were missing;
      five lanes consumed traces or IRs that no button produced).

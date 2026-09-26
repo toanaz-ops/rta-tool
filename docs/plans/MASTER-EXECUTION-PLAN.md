@@ -17,10 +17,10 @@ consumes" — `orphan_check.py` only covers `app/src` reachability, so a
 | Lane | Input it needs | Who produces it today | Evidence |
 |---|---|---|---|
 | Save/Open (PR #43) | a saved trace in `TraceLibrary` | nobody — `TraceLibrary::add` has zero production callers | `app/src/trace/TraceLibrary.cpp:60` |
-| XOVER (PR #45) | a live measurement to cross over | no STORE/freeze button exists | full button list: `app/src/MainComponent.h:244-370` (SYNTHETIC, LOCATE, APPLY, CAL START/END, EXPORT REPORT, RTA/TRANSFER/SPL) |
-| L7-EQ-UI | a stored trace or IR | same — no STORE | as above |
-| L7-ALIGN-UI | a captured sweep/IR | no sweep/capture/deconvolve path in `app/src` outside `AlignmentWizard`, itself unreachable | `git grep -liE "rt60\|schroeder\|lundeby" origin/main -- app/src` → empty |
-| any RT60 UI | an IR from a captured sweep | sweep/IR/RT60 (P4, L4a+L4b) lives only in `core/`, no `app/` surface | `EqSession.h:9-10` says it is a dev-preview specimen, not a `MainComponent` binding |
+| XOVER (PR #45) | two stored traces (HP and LP) in `TraceLibrary` | nobody — no STORE/freeze button exists | full button list: `app/src/MainComponent.h:244-370` (SYNTHETIC, LOCATE, APPLY, CAL START/END, EXPORT REPORT, RTA/TRANSFER/SPL) |
+| L7-EQ-UI | a stored measured trace | nobody — no STORE; `EqSession` is not bound to `MainComponent` | `app/src/measure/EqSession.h:9-10` says it is a dev-preview specimen, not a `MainComponent` binding |
+| L7-ALIGN-UI | a captured IR pair | nobody — no sweep/capture/`deconvolve` path in `app/src` outside `AlignmentWizard`, itself unreachable | `AlignmentWizard(` is constructed nowhere in `app/src` outside its own file |
+| any RT60 UI | an IR from a captured sweep | nobody — sweep/IR/RT60 (P4, L4a+L4b) lives only in `core/`, no `app/` surface | `git grep -liE "rt60\|schroeder\|lundeby" origin/main -- app/src` → empty |
 
 **Two producer lanes are missing from the plan** and are not substitutable by
 any lane currently scheduled:
