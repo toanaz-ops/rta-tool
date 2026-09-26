@@ -420,14 +420,46 @@ excluded from the pickers outright, the same rule `StoredTraceLayer.cpp`
 already applies for what it draws). A pick is held by the entry's id, not
 its position, so an entry that is later hidden reverts that picker to "not
 asked" rather than silently pointing at whatever now sits at the old index.
-Until an operator has chosen all three, the pane draws a refusal message
-naming exactly what is missing (how many phase-bearing traces are stored
-and eligible, or which picker is still empty) — no target line, no
-designed-sum mark, no curve. `AlignmentWizard`, the flow that would ask the
-FOURTH question (inversion) and drive a real solo sequence, is still its own,
-unwired lane; this pane's topology picker offers a fixed list of seven
-common topologies (LR-2/4/8, BW-1..4) and assumes no processor inversion,
-which is stated in code (`CrossoverPaneView.cpp`) rather than asked.
+Until an operator has chosen all four (round 2 below), the pane draws a
+refusal message naming exactly what is missing (how many phase-bearing
+traces are stored and eligible, which picker is still empty, or — round
+2's own addition — that the same entry is picked on both sides) — no
+target line, no designed-sum mark, no curve; `refreshFromLibrary()` also
+resets `surface_` to its default the instant the selection drops back to
+incomplete, so a stale surface from a prior complete pick cannot be drawn
+by a later mistake. This pane's topology picker offers a fixed list of
+seven common topologies (LR-2/4/8, BW-1..4); an order this record's own
+closed form (§3, `expectedOffset`) can express but this list omits is a
+one-line addition to `kTopologyChoices`, never a reason to invent a
+default. The relative-phase window is `PhaseWindow{1000.0, 6.0}` (named
+`kDefaultWindow`, `CrossoverPaneView.cpp`) — 1 kHz centre, 6 octaves either
+side, chosen because it sits outside the plotted 20 Hz-20 kHz band both
+ways, so with no crossover frequency asked either, the curve covers the
+whole visible band rather than a fit window centred on a frequency nobody
+named; this is the one number the pane fixes instead of asking.
+
+**Round 2 (PR #45 fix round, verifier MEDIUM A/B): distinctness, and the
+FOURTH question is now asked too.** Round 1 left two gaps. First,
+`ready_` did not require the two trace picks to be DISTINCT, nor that at
+least two eligible traces existed to pick distinctly from — the same
+trace chosen as both high-pass and low-pass (or the sole eligible trace
+chosen on both sides) fed `CrossoverSurface` a relative phase of exactly
+zero everywhere, on-screen indistinguishable from a correctly aligned
+pair; both shapes now refuse, the same-entry case by a message naming it.
+Second, round 1 hardcoded `ProcessorInversion::No` at the call to
+`setAskedTopology`, which answers wizard question (c) — "has the
+processor already inverted one output?" — FOR the operator, exactly the
+"one topology question, no inversion question" shape §11 rules out. A
+fourth picker (inversion: NOT INVERTED / INVERTED / UNKNOWN, starting not
+asked) is now required for `ready_`, and its real answer, never a
+hardcoded one, is what reaches `setAskedTopology`. Choosing UNKNOWN is not
+a refusal to answer — `CrossoverSurface::targetAmbiguous()` reads true and
+`CrossoverSurfaceRenderer::paintCrossoverPhase` draws BOTH candidate
+target lines (`targetRadians()` and `alternativeTargetRadians()`, §13.3),
+rather than this pane picking one of the two for the operator, which would
+be the same "maximise the sum" inference §6 refuses, wearing a different
+hat. `AlignmentWizard`, the flow that would additionally drive a real solo
+sequence, remains its own, unwired lane.
 
 ## 7. Decision: ρ is a bounded, unwhitened same-system similarity; across a crossover no time-domain sign is authoritative, and the intercept is
 
@@ -676,13 +708,18 @@ Closed forms first; one consistency lock, labelled; no new golden vector.
    and whether ±1 octave is the right window on a real 24 dB/oct pair, need
    a person with a rack and a microphone. Same category as the EDT floor and
    the MTW fill question already open in `docs/HANDOFF.md`.
-3. **Question (c)'s "unknown" branch.** When the operator does not know
-   whether the processor inverts, the wizard can show both candidate lines
-   (0° and 180°) and let the measured intercept sit on one — which *looks*
-   like inferring. This record's reading is that it is not (the operator
-   still chooses which line to believe and the wizard says so), but it is the
-   one place the ruling's edge is close, and the owner should see it before
-   it is built.
+3. **Question (c)'s "unknown" branch — BUILT in PR #45 fix round 2, flagged
+   here for the owner to see it now that it exists rather than before.** The
+   G18 live pane (§6's amendment) draws both candidate lines when the
+   operator answers "unknown" (`CrossoverSurface::targetAmbiguous()`/
+   `alternativeTargetRadians()`, `CrossoverPaneView`'s inversion picker) --
+   this item's own text asked that the owner see the shape before it was
+   built, and the PR #45 fix round's verifier instructed exactly this shape
+   without that sign-off having happened first. This record's reading
+   stands unchanged (the operator still chooses which line to believe, and
+   the pane states both are candidates rather than picking one) but the
+   owner should confirm that reading now, against the shipped pane, not the
+   description.
 4. **The ρ ruling in `HUMAN-QA-QUEUE.md`.** Fold-in was relayed, not
    recorded. The closeout writes the line; the owner confirms it says what
    was meant.
