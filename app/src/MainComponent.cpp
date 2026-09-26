@@ -51,9 +51,10 @@ MainComponent::MainComponent()
       // The default workspace when none has been loaded: exactly one `rta`
       // pane, so the app's opening screen stays byte-for-byte what it was
       // before this task (task brief, step 3). Nothing in this class loads
-      // a session yet -- that is a different seam -- so this is the only
-      // workspace shape MainComponent ever builds today.
-      workspace_({rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_)) {
+      // a session yet. The pane selector (`selectPaneView`) can rebuild this
+      // to a different single pane; the shape it starts in is unchanged.
+      workspace_(std::make_unique<rta::view::WorkspaceView>(
+          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_))) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };
@@ -104,10 +105,13 @@ MainComponent::MainComponent()
     addAndMakeVisible(channelRoleTable_);
     addAndMakeVisible(routingMatrix_);
 
-    addAndMakeVisible(workspace_);
+    // Owner decision 2026-09-26: the pane selector (MainComponentPanes.cpp).
+    wirePaneSelectorButtons();
+
+    addAndMakeVisible(*workspace_);
     // The seam this whole task exists for (docs/HANDOFF.md): a library was
     // built in L5a, a view could draw one, and nothing ever called this.
-    workspace_.setLibrary(&library_);
+    workspace_->setLibrary(&library_);
 
     refreshChannelNamesFromDevice();
 
@@ -386,5 +390,11 @@ void MainComponent::resized() {
     // the bottom of the channel list before it ever touches the plot.
     channelRoleTable_.setBounds(rail);
 
-    workspace_.setBounds(area);
+    // Owner decision 2026-09-26: RTA/TRANSFER/SPL sits above the workspace,
+    // in the main content area -- not the rail, which is already full.
+    auto paneSelectorRow = area.removeFromTop(az::ui::buttonCellHeight);
+    area.removeFromTop(az::ui::gap * 2);
+    layoutPaneSelectorRow(paneSelectorRow);
+
+    workspace_->setBounds(area);
 }

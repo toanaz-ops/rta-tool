@@ -795,15 +795,24 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
 *Lane đã đóng — `docs/reports/009-spl-pro.md`. Các mục dưới là việc closeout
 phát hiện, không mục nào chặn gì đã ship.*
 
-- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat): làm ngay** — PR `app/pane-selector`. **App chưa có bộ chọn pane — pane SPL (và Transfer) không mở được
-  trong `rtatool.exe`.** `MainComponent.cpp:50-55` chỉ dựng một pane `rta`
-  mặc định và chưa có gì nạp session; khoảng trống này có từ trước L6a, không
-  phải regression. Hệ quả: operator thấy SPL qua log và `report.html`, không
-  thấy số live trên màn hình. **Khuyến nghị**: task nhỏ tiếp theo — một nút
-  chọn view (RTA / Transfer / SPL) đi qua `resolvePaneView`, không đổi schema
-  session. Chủ nhân chốt: làm ngay hay xếp vào phase nạp session.
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân: làm ngay) — ĐÃ ĐÓNG bởi PR #37 (nhánh `app/pane-selector`, merge 4cd5866) — bộ chọn pane RTA /
+  TRANSFER / SPL đã ship.** Ba nút radio-group phía trên workspace
+  (`MainComponentPanes.cpp`, `wirePaneSelectorButtons`/`selectPaneView`), đi
+  qua đúng `resolvePaneView`/`makePaneFactory`/`WorkspaceView` mà session
+  loader sẽ dùng — không đổi `SessionCodec` schema, không persist lựa chọn
+  (SPL-R11), mặc định vẫn mở ở `rta`. **Cách thử**: build `rtatool`, bấm
+  SYNTHETIC rồi bấm SPL trên hàng nút mới phía trên đồ thị — workspace
+  chuyển sang `SplView` sống khi có phiên log đang chạy: mỗi metric cấu hình
+  hiện id, mức hiện tại (dB) và % buffer Leq đã đầy; mỗi alarm hiện
+  filling/clear/FIRED theo màu; và hai banner LOG WRITE FAILED / CALIBRATION
+  INVALID khi xảy ra (fix round 2, verifier: `SplView.cpp:72-110` KHÔNG vẽ
+  dose/Ln/headroom — ba số đó có trong `SplBlockView` và được log/report,
+  nhưng live view chưa vẽ, câu "Cách thử" cũ nói sai). Bấm RTA/TRANSFER để
+  quay lại, CAL START/END/EXPORT REPORT và log SPL đang chạy không bị ảnh
+  hưởng bởi việc đổi pane. Specimen offscreen: `shots/main-live-spl.png`
+  (`rtatool_snapshot`).
 
-- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat): làm, chỉ Windows** — PR `ci/app-on-windows`. **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat): làm, chỉ Windows** — **ĐÃ ĐÓNG bởi PR #36** (merge 1928030; job `rtatool app (RTA_BUILD_APP=ON, windows-latest)` trong `.github/workflows/ci-app-on.yml`, cold ~25 phút, cache-hit ~19-23 phút, chạy mọi test ON + upload artifact `rtatool-snapshot-<run_number>`). **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ
   chạy `RTA_BUILD_APP=OFF` trên cả ba OS; toàn bộ code chỉ-ON (pane SPL,
   `MainComponent*.cpp`, mọi thứ dưới `RTA_BUILD_APP=ON`) không có CI nào phủ,
   và mỗi round build ON cục bộ tốn vài phút JUCE fetch/link. **Được**: code

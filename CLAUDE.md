@@ -57,10 +57,11 @@ Windows SDK 10.0.26100, CMake 4.3.2, Ninja 1.13.2, Python 3.14.6.
 ## Git: GitHub is the record
 
 `origin/main` is the truth; nothing lands on `main` except through a pull
-request whose three-OS CI matrix is green and whose PR body carries measured
-tallies. Local `--no-ff` merges into `main` are retired. "Merge" is still the
-owner's word in the current conversation; it now means `gh pr merge`.
-Full procedure: `docs/GIT-WORKFLOW.md`.
+request whose three-OS CI matrix and the Windows `RTA_BUILD_APP=ON` job are
+both green, and whose PR body carries measured tallies. Local `--no-ff`
+merges into `main` are retired. "Merge" is still the owner's word in the
+current conversation; it now means `gh pr merge`. Full procedure:
+`docs/GIT-WORKFLOW.md`.
 
 ## Conventions
 
