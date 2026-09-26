@@ -145,13 +145,29 @@ The PR replaces the local merge, not the verifier. The owner set this loop on
    - No fixture is shrunk to fit a limit. A limit that bites is a finding.
    - Every file is under 400 lines. The `source_files_are_under_400_lines`
      ctest enforces this.
-2. The builder pushes, opens the PR, and iterates until CI is green (the OFF
-   matrix on three OSes, plus the Windows ON job).
+2. The builder pushes, opens the PR, and hands back **at push**. It does not
+   wait for CI: the verifier builds locally and does not need CI's result.
+   The orchestrator watches CI in parallel. A red CI result is sent back to
+   the builder as a finding. (Owner decision 2026-09-26: waiting for the
+   20–29 min ON job before starting review added about 25 min to every
+   round.)
 3. The orchestrator commits, then dispatches an independent verifier. The
    verifier has no `Write`/`Edit`, checks out the PR head in its own worktree
    under `.claude/worktrees/verify-*` (a Temp path is too long for MSVC's
    FileTracker), re-measures, and tries to refute the load-bearing claims by
-   mutation. **Every finding is graded HIGH / MEDIUM / LOW.**
+   mutation. **Every finding is graded HIGH / MEDIUM / LOW by this rubric**
+   (owner decision 2026-09-26):
+   - **HIGH:** a wrong result on the current repo that ships a defect or
+     blocks a correct change today.
+   - **MEDIUM:** fails on the current repo, or on a realistic next change.
+     "Realistic" means the construct that triggers it already occurs in
+     the codebase, in a place the code reads. The verifier names that
+     instance.
+   - **LOW:** the trigger has zero instances in the codebase today, or the
+     finding is cosmetic or about docs.
+   Without this rubric, an edge-case-heavy tool (the C++ declaration reader
+   in `tools/orphan_check.py`) went through six rounds: each round's
+   verifier probed new zero-instance shapes and graded them MEDIUM.
 4. The fix round goes back to the same builder with the HIGH and MEDIUM
    findings. LOW findings go on a lane-level list, fixed together in one PR
    at the end of the lane.
@@ -159,7 +175,8 @@ The PR replaces the local merge, not the verifier. The owner set this loop on
    verifier round.** There is no cap on the number of rounds: stop when a
    round finds no HIGH or MEDIUM. A fix round that touches only tests or
    comments can be closed by the orchestrator reading the diff and CI.
-6. Merge once CI is 3/3 green and no HIGH or MEDIUM remains. Merge on the
+6. Merge once every CI check that ran is green and no HIGH or MEDIUM
+   remains. Merge on the
    owner's word, or under a lane-level delegation the owner gave in the
    conversation. Always run `gh pr checks N` first and merge with
    `gh pr merge N --merge --match-head-commit <sha>`.
@@ -169,7 +186,9 @@ The PR replaces the local merge, not the verifier. The owner set this loop on
 - **ON** only when the diff touches JUCE-side code: `app/src/*Main*`,
   `app/src/view/`, `app/src/dev/`, `app/tests_juce/`, `platform/`, `ui/`, or
   any file listed in the `rtatool` source lists. The Windows ON CI job covers
-  the rest.
+  the rest. That job itself is skipped for a PR whose every changed file is
+  under `docs/`, `memory/`, `*.md`, `tools/**/*.py` or `tools/test_fixtures/`
+  (`paths-ignore` in `ci-app-on.yml`). Pushes to `main` always run it.
 - **The forced atomic fallback** (`-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON`)
   only when the diff touches `AtomicSharedPtr`, `Snapshot` publication, or
   any file matching `no_std_atomic_over_shared_ptr`'s scan.
