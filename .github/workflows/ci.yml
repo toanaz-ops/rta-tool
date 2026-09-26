@@ -33,13 +33,20 @@ jobs:
       # ubuntu-latest/macos-latest/windows-latest here, so this gate starts
       # with nothing to exclude -- unlike the ON job's Configure step, which
       # is not this clean (see ci-app-on.yml's own comment).
+      #
+      # Fix round PR #40 LOW F5: `CMake Warning` alone misses
+      # `CMake Deprecation Warning` (a distinct message class CMake emits for
+      # e.g. a `cmake_minimum_required` below the running version) -- neither
+      # word appears inside the other, so the plain-string grep passed it
+      # through silently. `-E` + `(Deprecation )?` catches both; still 0 on
+      # this PR's own configure output (verified locally and in this PR's CI).
       - name: Configure warnings
         shell: bash
         run: |
-          count=$(grep -c "CMake Warning" configure.log || true)
+          count=$(grep -cE "CMake (Deprecation )?Warning" configure.log || true)
           echo "CMake warnings (${{ matrix.os }}): $count"
           if [ "$count" != "0" ]; then
-            grep -n "CMake Warning" -A3 configure.log
+            grep -nE "CMake (Deprecation )?Warning" -A3 configure.log
             exit 1
           fi
 

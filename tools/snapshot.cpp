@@ -287,15 +287,33 @@ int main (int argc, char** argv)
         // same way app/tests_juce's own waitForSplBlocks() helpers do (e.g.
         // test_spl_drain.cpp) rather than sleeping for an arbitrary interval
         // and hoping a block closed inside it.
-        for (int waitedMs = 0;
-             waitedMs < 5000 &&
+        constexpr int kSplBlockTimeoutMs = 5000;
+        int waitedMs = 0;
+        for (; waitedMs < kSplBlockTimeoutMs &&
                  MainComponentTestAccess::analysisThread (component).splBlockCount (0) < 1;
              waitedMs += 10)
             juce::Thread::sleep (10);
 
-        component.selectPaneView (rta::view::PaneSelectorButton::Spl);
-        if (! renderComponent (component, outDir, "main-live-spl.png", 1280, 800))
+        // Fix round MEDIUM F2: a timeout here used to fall straight through
+        // to render(), which produces a PERFECTLY VALID PNG -- the "NO SPL
+        // SESSION" placeholder SplView.cpp draws when snapshot->spl has no
+        // value (item 1's own defect, back from the dead) -- and `failures`
+        // never saw it, so this tool exited 0 and CI's ON job stayed green
+        // while the specimen quietly stopped proving anything. Loud and
+        // counted, the same as `renderComponent`'s own FAILED path below.
+        if (MainComponentTestAccess::analysisThread (component).splBlockCount (0) < 1)
+        {
+            std::printf ("FAILED: no SPL block closed on channel 0 within %d ms -- "
+                         "main-live-spl.png would be the \"NO SPL SESSION\" placeholder, "
+                         "not a real reading\n", kSplBlockTimeoutMs);
             ++failures;
+        }
+        else
+        {
+            component.selectPaneView (rta::view::PaneSelectorButton::Spl);
+            if (! renderComponent (component, outDir, "main-live-spl.png", 1280, 800))
+                ++failures;
+        }
     }
 
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-

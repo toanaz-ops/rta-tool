@@ -11,6 +11,11 @@ set(RTATOOL_SOURCES
     # item 3's own 400-line-cap split, same shape as MainComponentDelay.cpp
     # below.
     src/MainComponentLayout.cpp
+    # MainComponentRail.cpp: fix round LOW F3's own split -- the device
+    # panel/routing matrix/channel role table trio and their scroll
+    # viewport (item 4), grouped out of MainComponent.h/.cpp to give both
+    # room under the 400-line cap.
+    src/MainComponentRail.cpp
     src/MainComponentDelay.cpp
     # MainComponentPanes.cpp: owner decision 2026-09-26's pane selector --
     # MainComponent.cpp's own 400-line-cap split, same shape as

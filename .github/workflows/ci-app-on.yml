@@ -138,14 +138,17 @@ jobs:
       # against that same run before the fix (1 match) and re-checked by
       # this PR's own CI run after it. Same pattern and same shape as
       # ci.yml's own "Configure warnings" step, copied rather than
-      # reimplemented so the two gates cannot quietly drift apart.
+      # reimplemented so the two gates cannot quietly drift apart -- see
+      # that step's own comment for fix round PR #40 LOW F5 (`CMake
+      # Deprecation Warning` is a distinct message class a plain `CMake
+      # Warning` grep misses).
       - name: Configure warnings
         shell: bash
         run: |
-          count=$(grep -c "CMake Warning" configure.log || true)
+          count=$(grep -cE "CMake (Deprecation )?Warning" configure.log || true)
           echo "CMake warnings (windows-latest, app ON): $count"
           if [ "$count" != "0" ]; then
-            grep -n "CMake Warning" -A3 configure.log
+            grep -nE "CMake (Deprecation )?Warning" -A3 configure.log
             exit 1
           fi
 

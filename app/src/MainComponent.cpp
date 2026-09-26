@@ -22,9 +22,7 @@ const std::vector<std::string> kSyntheticChannelNames{"Synthetic L", "Synthetic 
 
 MainComponent::MainComponent()
     : analysisThread_(audioIo_.bus(), rta::measure::Analyser::Config{}),
-      devicePanel_(audioIo_),
-      channelRoleTable_(audioIo_.bus().config()),
-      routingMatrix_(audioIo_.bus().config(), rta::measure::kMaxTransferFunctions),
+      rail_(audioIo_, rta::measure::kMaxTransferFunctions),
       // The default workspace when none has been loaded: exactly one `rta`
       // pane, so the app's opening screen stays byte-for-byte what it was
       // before this task (task brief, step 3). Nothing in this class loads
@@ -78,14 +76,7 @@ MainComponent::MainComponent()
     exportReportReadout_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(exportReportReadout_);
 
-    // Fix round item 4: these three are children of railScrollContent_, not
-    // of this class -- railScrollView_ is what actually sits in the rail
-    // (MainComponentLayout.cpp's own comment on why).
-    railScrollContent_.addAndMakeVisible(devicePanel_);
-    railScrollContent_.addAndMakeVisible(channelRoleTable_);
-    railScrollContent_.addAndMakeVisible(routingMatrix_);
-    railScrollView_.setViewedComponent(&railScrollContent_, false);
-    addAndMakeVisible(railScrollView_);
+    rail_.attachTo(*this);
 
     // Owner decision 2026-09-26: the pane selector (MainComponentPanes.cpp).
     wirePaneSelectorButtons();
@@ -142,7 +133,7 @@ void MainComponent::setSyntheticMode(bool enabled) {
         // Stop any live device first so the real callback and the synthetic
         // thread never race the same bus.
         audioIo_.stop();
-        devicePanel_.setEnabled(false);
+        rail_.setDevicePanelEnabled(false);
 
         // The synthetic knobs, ON: task 6 built `measurementDelaySamples` /
         // `measurementNoiseDb` and left both at their inert defaults, which
@@ -176,7 +167,7 @@ void MainComponent::setSyntheticMode(bool enabled) {
         audioIo_.bus().config().setRole(1, rta::platform::ChannelRole::Reference);
 
         lastChannelNames_ = kSyntheticChannelNames;
-        channelRoleTable_.setChannelNames(lastChannelNames_);
+        rail_.setChannelNames(lastChannelNames_);
         // routingMatrix_ caches cell TEXT rather than reading config_ live
         // at paint time the way channelRoleTable_'s ListBox does
         // (RoutingMatrix.h's own class comment: refreshFromConfig() is
@@ -184,7 +175,7 @@ void MainComponent::setSyntheticMode(bool enabled) {
         // automatically) -- without this, the two role assignments just
         // above would show as UNUSED here until the next timerCallback tick
         // or an operator's own click.
-        routingMatrix_.refreshFromConfig();
+        rail_.refreshFromConfig();
     } else {
         // Order matters: destroy the synthetic writer before re-enabling the
         // panel that lets a user start a real one, so there is never a
@@ -213,10 +204,10 @@ void MainComponent::setSyntheticMode(bool enabled) {
         audioIo_.bus().config().setRole(0, rta::platform::ChannelRole::Unused);
         audioIo_.bus().config().setRole(1, rta::platform::ChannelRole::Unused);
 
-        devicePanel_.setEnabled(true);
+        rail_.setDevicePanelEnabled(true);
         lastChannelNames_.clear();
         refreshChannelNamesFromDevice();
-        routingMatrix_.refreshFromConfig();
+        rail_.refreshFromConfig();
     }
 
     modeSwitch_.setToggleState(enabled, juce::dontSendNotification);
@@ -248,7 +239,7 @@ void MainComponent::timerCallback() {
     // anywhere OTHER than its own click -- channelRoleTable_'s clicks in
     // LIVE mode, chiefly. Cheap: kMaxTransferFunctions (8) cells, twice a
     // second.
-    routingMatrix_.refreshFromConfig();
+    rail_.refreshFromConfig();
     refreshMembershipFromSnapshot();
     pollLocatePipeline();
     pollCalibrationPipeline();
@@ -264,7 +255,7 @@ void MainComponent::refreshChannelNamesFromDevice() {
     auto names = audioIo_.currentState().inputChannelNames;
     if (names != lastChannelNames_) {
         lastChannelNames_ = names;
-        channelRoleTable_.setChannelNames(lastChannelNames_);
+        rail_.setChannelNames(lastChannelNames_);
     }
 }
 
@@ -280,7 +271,7 @@ void MainComponent::refreshMembershipFromSnapshot() {
     if (const auto snapshot = analysisThread_.latest()) {
         const auto plan =
             rta::measure::planRouting(audioIo_.bus().config(), rta::measure::kMaxTransferFunctions);
-        routingMatrix_.updateMembership(plan, snapshot->positions);
+        rail_.updateMembership(plan, snapshot->positions);
     }
 }
 

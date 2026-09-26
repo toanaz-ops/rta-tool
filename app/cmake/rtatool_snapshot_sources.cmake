@@ -86,6 +86,10 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # reason MainComponentDelay.cpp is (main-live.png constructs the real
     # MainComponent, which now defines paint()/resized() in that file).
     src/MainComponentLayout.cpp
+    # MainComponentRail.cpp: see the matching entry in rtatool's own source
+    # list above -- needed here for the same reason MainComponentLayout.cpp
+    # is (main-live.png constructs the real MainComponent).
+    src/MainComponentRail.cpp
     src/MainComponentDelay.cpp
     # MainComponentPanes.cpp: owner decision 2026-09-26's pane selector,
     # needed here for the same reason MainComponentDelay.cpp is -- main-live

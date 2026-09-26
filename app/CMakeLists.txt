@@ -114,6 +114,10 @@ target_compile_definitions(rtatool_snapshot PRIVATE
     JUCE_USE_CURL=0
     JUCE_STANDALONE_APPLICATION=1
     $<$<AND:$<BOOL:${WIN32}>,$<BOOL:${RTA_ENABLE_ASIO}>>:JUCE_ASIO=1>
+    # Fix round LOW F6: this target includes MainComponentTestAccess.h to
+    # drive analysisThread_ for main-live-spl.png -- see that header's own
+    # compile-time guard.
+    RTA_MAINCOMPONENT_TEST_ACCESS=1
 )
 
 if(WIN32 AND RTA_ENABLE_ASIO)
