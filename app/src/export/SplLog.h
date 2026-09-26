@@ -55,6 +55,23 @@ namespace rta::splexport {
     return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
 }
 
+/// The other direction of the same bug (fix round 3, HIGH R3-1):
+/// `std::filesystem::path::string()` narrows the OS-native (wide, on
+/// Windows) form back down through the process's ACTIVE CODE PAGE, and MSVC
+/// makes that narrowing a THROWING conversion -- a character with no
+/// representation in that code page raises `std::system_error` ("No mapping
+/// for the Unicode character exists in the target multi-byte code page"),
+/// not a silent mojibake byte the way the OTHER direction (`utf8Path`,
+/// above) silently corrupts. `path::u8string()` is the standard's own
+/// non-narrowing accessor -- guaranteed UTF-8, no code page involved, no
+/// throw -- so this hands back its bytes as a plain `std::string` rather
+/// than ever calling `.string()`/`.generic_string()` on a path that can
+/// carry a user's folder name.
+[[nodiscard]] inline std::string utf8String(const std::filesystem::path& path) {
+    const auto u = path.u8string();
+    return std::string(u.begin(), u.end());
+}
+
 /// The per-channel facts `rta::measure::SplConfig` itself does not carry --
 /// weighting and detector are per-`SplMeter` (one instance per weighting,
 /// record §2), and `startedAtUnixMs`/`calibratorLevelDb` are session facts

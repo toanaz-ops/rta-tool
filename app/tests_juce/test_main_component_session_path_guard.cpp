@@ -52,18 +52,68 @@
 // A bare, un-wrapped raw variable in scope -- exactly what the round-1 and
 // round-2 bugs both were -- matches none of the allowed shapes and fails the
 // build.
+//
+// WIDENED SCOPE (fix round 3, HIGH R3-1): the bug has a SECOND direction.
+// Round 1/2 were all `narrow std::string -> std::filesystem::path`, which
+// silently corrupts on Windows. `std::filesystem::path::string()`/
+// `generic_string()` is the OPPOSITE conversion, native/wide back down to
+// the ACP, and MSVC makes THAT one throw `std::system_error` on a character
+// the code page cannot represent -- SplReportPayloadBuilder.cpp:85,100 hit
+// exactly this once R2-1-C's fix let a Vietnamese `dir` resolve far enough
+// to reach them. Two more checks, same ALLOW-LIST philosophy:
+//   - no scanned file may contain `.string()` or `.generic_string()` at all.
+//     Every legitimate need for a path's bytes goes through `utf8String()`
+//     (SplLog.h) instead, which is `path::u8string()` -- never-throwing,
+//     never ACP-dependent -- so requiring its ABSENCE is not a narrower
+//     blacklist-of-today's-phrasing than the rest of this guard: there is no
+//     allowed spelling of `.string()`/`.generic_string()` in scope at all,
+//     the same way there is no allowed spelling of a bare narrow-string
+//     `std::ofstream` construction.
+//   - a `.open(` call (a stream member, not a free constructor -- the
+//     `SplLogWriter.cpp:43` shape) must have a first argument matching the
+//     SAME allow list as the constructions above (`toFsPath(`/`utf8Path(`
+//     et al.), found the same way pathConstructionArgs() finds a
+//     constructor's argument.
 #include <catch2/catch_test_macros.hpp>
 
 #include "CodeLines.h"
 
 #include <cctype>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace {
 
 using rta::test::codeText;
+
+/// Given `text[openParen] == '('`, returns the FIRST top-level argument
+/// (up to the first depth-0 comma, or the whole span if there is none) --
+/// shared by `pathConstructionArgs` and `dotOpenArgs` below so the
+/// paren/comma-balancing logic exists exactly once.
+std::optional<std::string> firstArgumentAt(const std::string& text, std::size_t openParen) {
+    std::size_t depth = 0;
+    std::size_t j = openParen;
+    for (; j < text.size(); ++j) {
+        if (text[j] == '(') {
+            ++depth;
+        } else if (text[j] == ')') {
+            --depth;
+            if (depth == 0) break;
+        }
+    }
+    if (j >= text.size()) return std::nullopt;  // unbalanced -- give up on this occurrence
+
+    std::size_t commaDepth = 0;
+    std::size_t commaPos = j;  // default: no top-level comma, the whole span is one argument
+    for (std::size_t k = openParen + 1; k < j; ++k) {
+        if (text[k] == '(') ++commaDepth;
+        else if (text[k] == ')') --commaDepth;
+        else if (text[k] == ',' && commaDepth == 0) { commaPos = k; break; }
+    }
+    return text.substr(openParen + 1, commaPos - (openParen + 1));
+}
 
 /// Every first-argument text of a `typeToken name(arg, ...)` or
 /// `typeToken(arg, ...)` direct-initialisation found in `text` (already
@@ -86,27 +136,30 @@ std::vector<std::string> pathConstructionArgs(const std::string& text, const std
             pos = at + typeToken.size();
             continue;
         }
-        std::size_t depth = 0;
-        std::size_t j = i;
-        for (; j < text.size(); ++j) {
-            if (text[j] == '(') {
-                ++depth;
-            } else if (text[j] == ')') {
-                --depth;
-                if (depth == 0) break;
-            }
-        }
-        if (j >= text.size()) { pos = i + 1; continue; }  // unbalanced -- give up on this occurrence
+        const auto arg = firstArgumentAt(text, i);
+        if (!arg.has_value()) { pos = i + 1; continue; }
+        args.push_back(*arg);
+        pos = i + arg->size() + 2;  // past the '(' and this argument's own text
+    }
+    return args;
+}
 
-        std::size_t commaDepth = 0;
-        std::size_t commaPos = j;  // default: no top-level comma, the whole span is one argument
-        for (std::size_t k = i + 1; k < j; ++k) {
-            if (text[k] == '(') ++commaDepth;
-            else if (text[k] == ')') --commaDepth;
-            else if (text[k] == ',' && commaDepth == 0) { commaPos = k; break; }
-        }
-        args.push_back(text.substr(i + 1, commaPos - (i + 1)));
-        pos = j + 1;
+/// Fix round 3 R3-1: every first-argument text of a `.open(arg, ...)` member
+/// call -- the `SplLogWriter.cpp:43` `stream_.open(...)` shape, never a free
+/// constructor, so `pathConstructionArgs`'s type-token anchor does not apply
+/// (there is no type name immediately before `.open(`).
+std::vector<std::string> dotOpenArgs(const std::string& text) {
+    std::vector<std::string> args;
+    std::size_t pos = 0;
+    const std::string anchor = ".open(";
+    while (true) {
+        const auto at = text.find(anchor, pos);
+        if (at == std::string::npos) break;
+        const std::size_t openParen = at + anchor.size() - 1;
+        const auto arg = firstArgumentAt(text, openParen);
+        if (!arg.has_value()) { pos = openParen + 1; continue; }
+        args.push_back(*arg);
+        pos = openParen + arg->size() + 2;
     }
     return args;
 }
@@ -141,6 +194,23 @@ void checkFile(const std::filesystem::path& file) {
             INFO("arg: " << arg);
             CHECK(isAllowListed(arg, text));
         }
+    }
+
+    // R3-1: the throwing direction. No allowed spelling of `.string()`/
+    // `.generic_string()` exists in scope at all -- utf8String() (SplLog.h)
+    // is the only way to get a path's bytes as a std::string here.
+    INFO("file: " << file.string());
+    CHECK(text.find(".string()") == std::string::npos);
+    CHECK(text.find(".generic_string()") == std::string::npos);
+
+    // R3-1: a `.open(` member call must open through the same allow list a
+    // free constructor does.
+    for (const auto& arg : dotOpenArgs(text)) {
+        if (looksLikeParameterList(arg)) continue;
+        INFO("file: " << file.string());
+        INFO("type: .open(");
+        INFO("arg: " << arg);
+        CHECK(isAllowListed(arg, text));
     }
 }
 
@@ -212,4 +282,19 @@ TEST_CASE("The path/stream construction guard is not vacuous", "[main_component_
     // somewhere, which is what makes that exception correct rather than a
     // hole.
     CHECK(payloadText.find("fs::path& path") != std::string::npos);
+
+    // R3-1: utf8String() is actually used (not just declared) at both fixed
+    // call sites, so the ".string()"-absence check above is not passing
+    // because this file never touched a path's bytes at all.
+    CHECK(payloadText.find("utf8string(") != std::string::npos);
+
+    // R3-1: the `.open(` scan finds SplLogWriter.cpp's real call site and
+    // allow-lists it -- confirms dotOpenArgs() is not an empty scan.
+    const std::string writerText = codeText(srcDir / "export" / "SplLogWriter.cpp");
+    const auto writerOpenArgs = dotOpenArgs(writerText);
+    bool foundWriterUtf8PathOpen = false;
+    for (const auto& arg : writerOpenArgs) {
+        if (arg.find("utf8path(") != std::string::npos) foundWriterUtf8PathOpen = true;
+    }
+    CHECK(foundWriterUtf8PathOpen);
 }
