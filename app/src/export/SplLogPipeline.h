@@ -219,15 +219,30 @@ private:
         return std::make_unique<SplLogWriter>(basePath, config, info, segmentBlocks);
     };
     // `disable()` destroys every ChannelSink (and with it, `dropped`) once the
-    // writer thread has joined -- but a caller's whole reason to read
-    // `droppedBlocks()` is often "how many did the session that just ended
-    // lose", the same shape as `AnalysisThread::splLogDroppedBlocks` snapshot
-    // in a Snapshot taken after the bus goes inactive. So `writerLoop()`'s own
-    // shutdown sequence copies each sink's final count here BEFORE resetting
-    // it, and `droppedBlocks()` falls back to this snapshot once the live
-    // sink is gone. `enable()` zeroes it for the new session -- a fresh log
-    // never inherits a previous session's drop count (record §10: never
-    // appended to).
+    // writer thread has joined, so `droppedBlocks()` needs SOMETHING to read
+    // once `sinks_[channel]` is gone -- `writerLoop()`'s own shutdown
+    // sequence copies each sink's final count here BEFORE resetting it, and
+    // `droppedBlocks()` falls back to this snapshot once the live sink is
+    // gone. `enable()` zeroes it for the new session -- a fresh log never
+    // inherits a previous session's drop count (record §10: never appended
+    // to).
+    //
+    // CORRECTED (LOW follow-up batch, item 7): the justification this used to
+    // give -- "a caller's whole reason to read droppedBlocks() is often how
+    // many did the session that just ended lose" -- does not describe
+    // `AnalysisThread`'s own path through this class. `applyPendingSplRequest`
+    // zeroes `splLogDroppedBlocks_` (its OWN separate mirror) every time it
+    // runs, including on a plain disable, and `AnalysisThread::
+    // fillSplPublishInput` returns before touching that mirror at all once
+    // `splSession_.config() == nullptr` (a stopped session) -- so NEITHER of
+    // `AnalysisThread`'s two callers ever reaches this snapshot post-disable.
+    // What it actually serves is a caller that holds an `SplLogPipeline`
+    // DIRECTLY -- this file's own unit tests
+    // (test_spl_log_pipeline_writefailed.cpp's "survives disable()" case is
+    // the `writeFailed`-shaped sibling of this exact snapshot) -- or any
+    // future direct caller that does not keep its own separate mirror the way
+    // `AnalysisThread` does: for either, `droppedBlocks()` needs a defined
+    // answer once `sinks_[channel]` is torn down, and this is it.
     std::array<std::atomic<std::uint64_t>, kMaxLoggedChannels> lastDropped_{};
     /// Same snapshot shape as `lastDropped_`, for `writeFailed()` (finding 6).
     std::array<std::atomic<bool>, kMaxLoggedChannels> lastWriteFailed_{};
