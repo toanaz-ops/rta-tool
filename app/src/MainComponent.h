@@ -21,6 +21,7 @@
 #include "trace/TraceLibrary.h"
 #include "view/ChannelRoleTable.h"
 #include "view/DevicePanel.h"
+#include "view/PaneSelectorDecision.h"
 #include "view/RoutingMatrix.h"
 #include "view/WorkspaceView.h"
 
@@ -89,9 +90,26 @@ public:
 
     [[nodiscard]] bool isSyntheticMode() const noexcept { return syntheticInput_ != nullptr; }
 
+    // Rebuilds `workspace_` via the SAME `makePaneFactory` seam the
+    // constructor uses (MainComponentPanes.cpp). Never touches SPL logging.
+    void selectPaneView(rta::view::PaneSelectorButton button);
+
+    [[nodiscard]] rta::view::PaneView currentPaneView() const noexcept { return currentPaneView_; }
+
+    // Test-only pair: the real pane makePaneFactory built, and SPL logging.
+    [[nodiscard]] const juce::Component& paneComponentForTest() const {
+        return *workspace_->getChildComponent(0);
+    }
+    [[nodiscard]] rta::measure::AnalysisThread& analysisThreadForTest() noexcept {
+        return analysisThread_;
+    }
+
 private:
     void timerCallback() override;
     void modeSwitchClicked();
+
+    void wirePaneSelectorButtons();  // MainComponentPanes.cpp: 400-line cap
+    void layoutPaneSelectorRow(juce::Rectangle<int> row);
 
     /// L7-DELAY task F2 (record docs/dsp/2026-09-06-l7-auto-delay.md
     /// sec.11.2-11.4). LOCATE: pink noise, strict solo on output channel 0
@@ -357,10 +375,18 @@ private:
     /// to anyway.
     rta::view::RoutingMatrix routingMatrix_;
 
+    // Pane selector: a radio group. Not persisted (SPL-R11) -- starts at Rta.
+    juce::TextButton paneRtaButton_{"RTA"};
+    juce::TextButton paneTransferButton_{"TRANSFER"};
+    juce::TextButton paneSplButton_{"SPL"};
+    rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
+
     // --- library_ before workspace_ is load-bearing too. See the class
     // comment's extension of trap T-1.
     rta::trace::TraceLibrary library_;
-    rta::view::WorkspaceView workspace_;
+    // A pointer: selectPaneView rebuilds it wholesale (WorkspaceView's
+    // factory is consumed once, in its own constructor).
+    std::unique_ptr<rta::view::WorkspaceView> workspace_;
     // -------------------------------------------------------------------
 
     juce::Rectangle<int> mastheadArea_;
