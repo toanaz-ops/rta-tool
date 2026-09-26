@@ -119,6 +119,13 @@ job — split it along the seam that made it long. This applies to headers too.
   refactors, boilerplate. Dispatch with an exact spec and exact file paths.
 - **Fable** — adversarial review. It reads the real files and tries to refute
   the claim that the work is done. Never review your own work.
+- **A builder never dispatches its own sub-agent.** A long build runs through
+  the Bash tool's `run_in_background`, and the builder waits for it. In L6a,
+  nested builder → sub-agent chains ended turns early, and their completion
+  notices reached the orchestrator instead of the builder, so every result had
+  to be relayed by hand. One sub-agent also reverted its parent's uncommitted
+  fix with `git checkout --`. The review loop itself lives in
+  `docs/GIT-WORKFLOW.md` ("the review loop").
 
 ## Token & context discipline
 
@@ -219,3 +226,21 @@ No phase starts by writing code. Each one starts with a research pass:
 
 The cost of this is hours. The cost of skipping it is discovering in phase 4
 that the band summation chosen in phase 1 cannot express what RT60 needs.
+
+Two rules for the plan and the record that follow from it (added 2026-09-26,
+after L6a):
+
+5. **Every plan task names its production caller.** The station-3 plan's
+   task table carries a "called from" column: the `app/src` file and function
+   that uses what the task builds, or the later task that will. A wave closes
+   only when `tools/orphan_check.py --base <wave start>` is clean.
+   - L6a's plan built and unit-tested every SPL component and gave no task the
+     job of calling them. `enableSplLogging` had no caller for four waves,
+     which cost three extra PRs to fix
+     (`memory/a-component-with-no-production-caller-is-not-shipped.md`).
+6. **A record amendment is written against the shipped code, not ahead of
+   it.** Amend `docs/dsp/` after the code that implements the amendment
+   exists. The verifier then checks the amendment sentence by sentence
+   against that code.
+   - L6a's §15 A6 was written first and had to be corrected three times,
+     because each fix round made the code say something the record did not.

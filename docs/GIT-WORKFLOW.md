@@ -98,19 +98,53 @@ settings the owner can flip by hand that make the procedure harder to skip:
 Making the repository public would enable branch protection outright; the
 licence (AGPL-3.0-or-later) already permits it. That is the owner's decision.
 
-## Verification before merge, unchanged
+## Verification before merge — the review loop (revised 2026-09-26)
 
-The PR replaces the local merge, not the verifier. The sequence is:
+The PR replaces the local merge, not the verifier. The owner set this loop on
+2026-09-25/26 after L6a; the reasoning is in
+`memory/merge-when-no-high-or-medium-remains.md`.
 
-1. Builder pushes branch, opens PR, iterates until the CI matrix is green.
-2. Orchestrator dispatches an independent verifier (no `Write`/`Edit`; commit
-   before dispatch — `memory/a-verifier-with-bash-can-git-checkout-your-uncommitted-fix.md`)
-   that checks out the PR head in its own worktree, rebuilds both configurations
-   with `--clean-first`, re-measures the tallies, and tries to refute the
-   load-bearing claims by mutation.
-3. Verifier verdict + CI status + tallies go in a PR comment (`gh pr comment`).
-4. Owner says "merge". Orchestrator merges, pulls `main`, updates
-   `docs/HANDOFF.md` to name the merge commit.
+1. **The builder self-checks before opening the PR**:
+   - Warnings are counted with CI's pattern `warning( [A-Z]+[0-9]+)?:`, never
+     MSVC's `warning C` alone.
+   - `tools/diffmut.py --base origin/main` shows no SURVIVED mutant on the
+     lines the PR adds, or each survivor is explained in the PR body.
+   - Every tolerance is derived in a comment.
+   - No fixture is shrunk to fit a limit. A limit that bites is a finding.
+   - Every file is under 400 lines. The `source_files_are_under_400_lines`
+     ctest enforces this.
+2. The builder pushes, opens the PR, and iterates until CI is green (the OFF
+   matrix on three OSes, plus the Windows ON job).
+3. The orchestrator commits, then dispatches an independent verifier. The
+   verifier has no `Write`/`Edit`, checks out the PR head in its own worktree
+   under `.claude/worktrees/verify-*` (a Temp path is too long for MSVC's
+   FileTracker), re-measures, and tries to refute the load-bearing claims by
+   mutation. **Every finding is graded HIGH / MEDIUM / LOW.**
+4. The fix round goes back to the same builder with the HIGH and MEDIUM
+   findings. LOW findings go on a lane-level list, fixed together in one PR
+   at the end of the lane.
+5. **After every fix round that changes behaviour, run another narrow
+   verifier round.** There is no cap on the number of rounds: stop when a
+   round finds no HIGH or MEDIUM. A fix round that touches only tests or
+   comments can be closed by the orchestrator reading the diff and CI.
+6. Merge once CI is 3/3 green and no HIGH or MEDIUM remains. Merge on the
+   owner's word, or under a lane-level delegation the owner gave in the
+   conversation. Always run `gh pr checks N` first and merge with
+   `gh pr merge N --merge --match-head-commit <sha>`.
+
+**Rebuild what the change could have changed, not everything.**
+- **OFF** always.
+- **ON** only when the diff touches JUCE-side code: `app/src/*Main*`,
+  `app/src/view/`, `app/src/dev/`, `app/tests_juce/`, `platform/`, `ui/`, or
+  any file listed in the `rtatool` source lists. The Windows ON CI job covers
+  the rest.
+- **The forced atomic fallback** (`-DRTA_FORCE_ATOMIC_SHARED_PTR_FALLBACK=ON`)
+  only when the diff touches `AtomicSharedPtr`, `Snapshot` publication, or
+  any file matching `no_std_atomic_over_shared_ptr`'s scan.
+- **A verifier reuses the builder's build directories** for anything it does
+  not mutate, and builds fresh only where it mutates. A name-only diff decides
+  which of these applies (`memory/reverify-what-the-change-could-have-changed.md`).
+- The full three-config rebuild runs once, before the lane closes.
 
 ## Handoffs still name commits, now on GitHub
 

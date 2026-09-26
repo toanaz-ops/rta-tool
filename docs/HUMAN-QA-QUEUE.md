@@ -795,7 +795,7 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
 *Lane đã đóng — `docs/reports/009-spl-pro.md`. Các mục dưới là việc closeout
 phát hiện, không mục nào chặn gì đã ship.*
 
-- [ ] **App chưa có bộ chọn pane — pane SPL (và Transfer) không mở được
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat): làm ngay** — PR `app/pane-selector`. **App chưa có bộ chọn pane — pane SPL (và Transfer) không mở được
   trong `rtatool.exe`.** `MainComponent.cpp:50-55` chỉ dựng một pane `rta`
   mặc định và chưa có gì nạp session; khoảng trống này có từ trước L6a, không
   phải regression. Hệ quả: operator thấy SPL qua log và `report.html`, không
@@ -803,7 +803,7 @@ phát hiện, không mục nào chặn gì đã ship.*
   chọn view (RTA / Transfer / SPL) đi qua `resolvePaneView`, không đổi schema
   session. Chủ nhân chốt: làm ngay hay xếp vào phase nạp session.
 
-- [ ] **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat): làm, chỉ Windows** — PR `ci/app-on-windows`. **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ
   chạy `RTA_BUILD_APP=OFF` trên cả ba OS; toàn bộ code chỉ-ON (pane SPL,
   `MainComponent*.cpp`, mọi thứ dưới `RTA_BUILD_APP=ON`) không có CI nào phủ,
   và mỗi round build ON cục bộ tốn vài phút JUCE fetch/link. **Được**: code
@@ -815,7 +815,7 @@ phát hiện, không mục nào chặn gì đã ship.*
   đường export report ở `docs/HANDOFF.md` mục "L6a SPL-pro lane CLOSED" (d).
   Chưa phiên nào trong lane này cắm thiết bị thật — mọi số đo đến từ synthetic
   mode và fixture.
-- [ ] **Các đề xuất process-audit đang chờ duyệt.** Bốn đề xuất từ các phiên
+- [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân, trong chat): làm cả bảy** — PR `process/tooling` (diffmut, guard 400 dòng, orphan check) + PR `process/review-loop-docs` (review loop, rebuild theo phạm vi, cột production caller, cấm builder lồng agent, amendment viết sau code). **Các đề xuất process-audit đang chờ duyệt.** Bốn đề xuất từ các phiên
   verify/build của lane này, chưa cái nào được owner duyệt để áp dụng chung
   cho repo: (a) một script differential-mutation chạy hàng loạt thay vì viết
   tay từng mutant; (b) một ctest guard chặn file quá 400 dòng thay vì dựa vào
