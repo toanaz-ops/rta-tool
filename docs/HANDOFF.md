@@ -5,6 +5,183 @@
 
 ---
 
+# 2026-09-26 — **L6a (SPL-pro) lane CLOSED.** Waves 0-3, 4a, Task G, W2-E BUILT và MERGED; Wave 4b (served web viewer) CẮT theo owner. Report [`docs/reports/009-spl-pro.md`](reports/009-spl-pro.md).
+
+*Owner decisions 2026-09-25, trong chat với orchestrator: (1) orchestrator được
+merge từng wave PR khi CI 3/3 xanh và không còn HIGH/MEDIUM verifier finding
+nào — chính sách review ở `memory/merge-when-no-high-or-medium-remains.md`;
+(2) **Wave 4b (served web viewer) CẮT** — report ghi ràng buộc rounding §12
+constraint-2 của record là "recorded as untested for the viewer" (fallback đã
+có sẵn ở plan dòng ~649), nên Chrome LNA test moot cho lane này.*
+
+## PR đã merge trong phiên này
+
+| PR | merge commit | what |
+|---|---|---|
+| #26 | `8c5d407` | W2-A..D: history/alarms/log/pane |
+| #27 | `8f8df27` | W3-A/B: calibration flow |
+| #28 | `66c5f32` | W4a report + W3-C |
+| #29 | `f992ee7` | W2-E1: `SplChannelState` per-chain feeds — dose/Ln từ chain A-weighted (auto-created); alarms đọc đúng chain của metric mình; Ln từ mẫu Fast mỗi 100 ms (record §5); sample accounting chính xác trong `SplMeter` |
+| #30 | `e3253d7` | Task G guards + `report_makes_no_class_1_claim` |
+| #31 | `10da3dc` | W2-E2a: log pipeline SPSC→writer thread, composition-root enable/disable + epoch restart, write-failure được publish, `AllocationProbe` per-thread |
+| #32 | `65d8efc` | W2-E2b: calibration áp vào live session (mở log mới), calibration record + `CalibrationInvalid` lúc đọc, refuse khi channel không khớp, export report từ một live session |
+| #33 | `04b42a6` | LOW batch: 17 mục LOW hoãn, gồm chia `ApiServer.cpp`, chia CMake, chia `AnalysisThread.h` |
+
+Mọi SHA trên đã xác nhận có trong `git log --oneline origin/main`.
+
+## Tallies cuối cùng
+
+Đo tại `04b42a6` (builder + verifier trên fix head của PR #33, `34cbf69`; các
+commit sau đó chỉ sửa test-claim, không đổi số):
+
+```
+ctest --test-dir build -C Release      (RTA_BUILD_APP=OFF)  -> 1019/1019, 0 failed
+ctest --test-dir build-on -C Release   (RTA_BUILD_APP=ON)   -> 1101/1101, 0 failed
+grep -E "warning( [A-Z]+[0-9]+)?:" trên mọi build log Release -> 0
+CI (ubuntu-latest / macos-latest / windows-latest)            -> 3/3 xanh
+```
+
+Baseline Wave-0/1 lúc phiên này bắt đầu, `main` tại `411f1e7`: **OFF 824**.
+
+## Record amendment cần biết trước khi đọc code
+
+`docs/dsp/2026-09-16-spl-pro-l6a.md` §15 **A6** (sliding-window headroom): `T`
+là mẫu số của compliance window KẾ TIẾP, không phải window hiện tại; đang lấp
+đầy thì `t = đã đo`, `T = nominal − excluded`; đầy rồi thì `t = s_recent`,
+`T = s_recent + Δ`; `windowBlocks == 1` đọc thẳng `L_lim`; alarm chờ đủ MỘT
+window có nội dung trước khi phán, trạng thái đó là `SplAlarmState::Filling`.
+Plan amendment tương ứng: mục "### W2-E — the wiring nobody was assigned"
+trong `docs/plans/2026-09-17-L6a-spl-pro-impl-plan.md`.
+
+## Defect thật verifier độc lập bắt được (đưa vào report, mục "what review caught")
+
+- Dose/alarm C-weighted publish dưới nhãn LAeq — lệch 340x dose
+- Ln fed từ level max-held (khiến L90 = L1) thay vì mẫu Fast 100 ms
+- `SplMeter` mất mẫu không đếm khi một hop đóng nhiều block hơn ready buffer
+- Allocation trong `feedHop` của analysis thread
+- Đổi sample rate giữa phiên làm hỏng log header/filters
+- Route index dùng làm channel index trong calibration — verdict mất sau khi
+  đổi role
+- Một dangling reference chỉ đỏ trên gcc/clang
+- `Clear` được publish cho một so sánh chưa từng chạy (đúng ra phải `Filling`)
+- Report thiếu câu "untested for the viewer"
+- Lỗi x-scale của marker/excluded-region trong report
+
+## What the human can try, and how
+
+**Thử cái NÀY trước** — đường export-report với một calibrator chạm mọi phần
+của lane trong một lượt: build, bật synthetic mode, calibrate, export report,
+đọc `report.html`.
+
+`[not run here]` Configure + build ON (cần JUCE 9.0.1 — CLAUDE.md "Build" và
+"JUCE version"):
+
+```bash
+cmake -S . -B build-on -G "Visual Studio 18 2026" -A x64 -DRTA_BUILD_APP=ON -DRTA_JUCE_PATH="D:\DEV CAVE EP3\PROJECT005-AZ-handsfree\external\JUCE"
+```
+
+```bash
+cmake --build build-on --config Release --parallel
+```
+
+`[not run here]` Chạy app:
+
+```bash
+build-on/app/rtatool_artefacts/Release/rtatool.exe
+```
+
+### (a) Bật synthetic mode → logging tự khởi động, KHÔNG cần mở pane SPL
+
+**Sẽ thấy**: bấm nút mode-switch (hint "no hardware needed") sang SYNTHETIC.
+`pollSplLogging()` (`app/src/MainComponentSpl.cpp:140-174`) tự enable logging
+trên cạnh off→on — không cần mở pane nào. Ba nút **CAL START / CAL END /
+EXPORT REPORT** cộng readout của chúng nằm ngay trên `MainComponent`, không
+nằm trong một pane, và bấm được ngay.
+
+**Điều cần nói thẳng, không tô hồng: pane SPL sống (Leq trực tiếp, trạng thái
+alarm Filling/Clear/Fired, headroom, dose, Ln) KHÔNG mở được trong
+`rtatool.exe` đang chạy hôm nay.** `MainComponent` dựng đúng MỘT workspace mặc
+định — một pane `"rta"` — và comment tại chính `MainComponent.cpp:51-56` nói
+thẳng: *"Nothing in this class loads a session yet ... this is the only
+workspace shape MainComponent ever builds today."* Pane `"spl"`
+(`app/src/view/PaneRegistry.h`, `PaneView::Spl`) tồn tại và có test
+(`app/src/view/SplView.cpp`, `SplStrip.h`), nhưng chỉ một session/workspace đặt
+`PaneSpec::view = "spl"` mới gọi tới nó, và không phiên nào đã dựng UI nạp một
+session như vậy. Bằng chứng sống của pane SPL hôm nay là **ctest cộng offscreen
+snapshot** — mục kế tiếp.
+
+### (b) Nhìn pane SPL — offscreen, theo đúng "Seeing the GUI" của CLAUDE.md
+
+```bash
+cmake --build build-on --config Release --target rtatool_snapshot --parallel
+```
+
+```bash
+build-on/app/rtatool_snapshot_artefacts/Release/rtatool_snapshot.exe shots 1100 760
+```
+
+**Sẽ thấy** `shots/preview-spl.png` — SPL strip vẽ trên 10 phút dữ liệu
+synthetic cố định (`app/src/dev/preview/SplPreview.cpp`), không cần thiết bị
+audio, exit 0.
+
+### (c) Thư mục log xuất hiện ở đâu, và đổi sample rate mở thư mục MỚI
+
+**Sẽ thấy** (sau khi bật synthetic mode ở mục a):
+`Documents/RTA Tool/spl/<UTC timestamp>-e<epoch>/`, chứa `ch<N>.gen*.seg*.csv`
+— một file mỗi channel mang role Measurement, generation tăng khi
+reconfigure, segment tăng khi rotate (`app/src/export/SplLogWriter.cpp:35`) —
+cộng `session.header.txt`. Đổi sample rate hoặc device list giữa phiên (epoch
+đổi) → `pollSplLogging` đóng log cũ rồi mở thư mục MỚI
+(`app/src/MainComponentSpl.cpp:164-173`), không bao giờ append vào phiên cũ.
+
+### (d) Calibrate bằng calibrator 94 dB, rồi export report
+
+**Sẽ thấy**: bấm **CAL START** (hint "94 dB calibrator, route 0's mic
+channel"), giữ calibrator 94 dB áp vào mic đo, rồi bấm **CAL END**. Readout đổi
+từ "calibration: not started" sang hiện drift đo được. Bấm **EXPORT REPORT** —
+**sẽ thấy** `report.html` xuất hiện đúng trong thư mục session ở mục (c), và
+readout đổi thành `export: wrote <path>`.
+
+Mục "Calibration" của report hiện: pre-check level + timestamp, post-check
+level + timestamp, drift, và dòng "Compared against: **ISO 1996-2:2017 cl.
+5.2**" (hằng `CalibrationSession::kClause`, `CalibrationSession.h:89`).
+**Drift hỏng (> 0.5 dB)** → verdict Fail; report vẽ một vùng excluded-region tô
+màu trên time-history strip (`SplReportHistorySections.cpp:154`, CSS class
+`excluded-region`) và mục Validity in rõ khoảng block bị loại cộng lý do —
+không bao giờ im lặng in "0.0 dB" cho một phép đo chưa từng chạy.
+
+### (e) Suite OFF (không cần JUCE)
+
+```bash
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+```
+
+```bash
+cmake --build build --config Release --parallel
+```
+
+```bash
+ctest --test-dir build -C Release --output-on-failure
+```
+
+**Sẽ thấy** `100% tests passed, 1019 tests passed, 0 tests failed out of 1019`.
+
+## Thật thà: chưa chạy trên phần cứng thật
+
+**Không phiên nào trong lane này đã cắm một calibrator thật hay một mic thật
+vào máy.** Mọi con số ở trên đến từ synthetic mode cộng fixture đo được trên
+CI. `docs/HUMAN-QA-QUEUE.md` mục "Từ lane L6a" có một item MỚI xin đúng việc
+này.
+
+## Lane kế tiếp
+
+Không có lane L6a nào "kế tiếp" — lane đã đóng. Xem
+`docs/plans/MASTER-EXECUTION-PLAN.md` cho lane mở tiếp theo (L8 nghiên cứu, L9
+productization) hoặc các mục `[!]`/`[ ]` còn mở trong
+`docs/HUMAN-QA-QUEUE.md`.
+
+---
+
 # 2026-09-18 — **Probe: bộ over-aligned `operator new/delete` ĐÃ replace — nhánh `ci/probe-aligned-new`, PR #23, owner đã nói "merge".**
 
 Đóng gap mà PR #22 ghi lại thay vì đóng (`AllocationProbe.h` "WHAT IS
