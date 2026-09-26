@@ -17,7 +17,9 @@ void MainComponent::locateClicked() {
     // (MainComponentCalibration.cpp's own comment) -- refuse rather than
     // stomp on an in-flight calibration capture.
     if (locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_) {
-        return;  // one Locate at a time, matching DelayLocator's own shape
+        return;  // one Locate at a time, same one-shot shape the deleted
+                 // DelayLocator class had (see pollLocatePipeline's own
+                 // comment below for why it was removed)
     }
     // A fresh seed every click rather than a fixed one: two Locates back to
     // back should not correlate against each other's excitation by
@@ -35,11 +37,15 @@ void MainComponent::locateClicked() {
 
 void MainComponent::pollLocatePipeline() {
     if (locateWaitingForSettle_) {
-        // record sec.11: the first 10 ms are not stationary -- same 480
-        // samples at 48 kHz DelayLocator::feedHop waits for (that class is
-        // not used here because its feedHop() wants real per-hop audio,
-        // which only AnalysisThread's drain loop sees; this class polls the
-        // same OutputEngine telemetry that wait is built on instead).
+        // record sec.11: the first 10 ms are not stationary -- 480 samples
+        // at 48 kHz. lane L7-DELAY task F1 originally built a JUCE-free
+        // DelayLocator class for this whole Locate sequence, but its
+        // feedHop() wanted real per-hop audio that only AnalysisThread's
+        // drain loop sees, so it was never wired to a caller; DelayLocator
+        // was deleted as superseded, and this method polls the same
+        // OutputEngine telemetry that wait was built on instead, calling
+        // rta::dsp::suggestDelay directly (see below) rather than through
+        // that class.
         constexpr double kSettleSamplesAt48k = 480.0;
         const double settleSamples =
                 kSettleSamplesAt48k * (audioIo_.output().sampleRate() / 48000.0);

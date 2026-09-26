@@ -93,9 +93,10 @@ compareToPrediction(std::span<const float> measuredAfterDb, std::span<const doub
 
 enum class VerifyState { Idle, Waiting, Measuring, Settling, Done };
 
-/// Named refusals, mirroring DelayLocator's shape. Every early return out of
-/// `arm()` sets exactly one of these, so `lastRefusal()` always describes THIS
-/// call and never a stale one from the previous attempt.
+/// Named refusals, mirroring CaptureSequencer's own named-refusal shape.
+/// Every early return out of `arm()` sets exactly one of these, so
+/// `lastRefusal()` always describes THIS call and never a stale one from the
+/// previous attempt.
 ///
 /// EngineNotQuiescent: `OutputEngine::setSource` returned false. Arming over
 /// somebody else's running excitation would leave THEIR source in the slot,
@@ -105,7 +106,7 @@ enum class VerifyState { Idle, Waiting, Measuring, Settling, Done };
 enum class VerifyRefusal { None, EngineNotQuiescent, AlreadyRunning };
 
 /// The state machine around that comparison, driving a REAL OutputEngine --
-/// JUCE-free like DelayLocator, so it is provable with no audio hardware.
+/// JUCE-free, so it is provable with no audio hardware.
 class EqVerify {
 public:
     struct Config {
@@ -114,8 +115,8 @@ public:
         VerifyTolerance tolerance{};
         /// The excitation is pink noise by record sec.8; its level and seed
         /// are the caller's, so a verify pass is reproducible bit-for-bit
-        /// against the same room -- the same reason DelayLocator takes its
-        /// source from the caller rather than constructing one.
+        /// against the same room -- the caller's own choice, not a source
+        /// this class constructs itself.
         double excitationDbFsRms = -12.0;
         std::uint64_t noiseSeed = 1;
     };
@@ -132,9 +133,8 @@ public:
     void arm();
 
     /// Waiting -> Measuring once the excitation has rendered past the 10 ms
-    /// that are not stationary (output-path record sec.11, the same settle
-    /// DelayLocator waits out). Settling -> Done once the engine reports
-    /// sourceIsQuiescent().
+    /// that are not stationary (output-path record sec.11). Settling -> Done
+    /// once the engine reports sourceIsQuiescent().
     void poll();
 
     /// Measuring -> Settling: builds the report from the re-measured

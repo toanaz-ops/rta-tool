@@ -2,7 +2,8 @@
 #
 # LOW follow-up batch, item 14: split out of app/tests/CMakeLists.txt -- pure
 # relocation. The remaining production .cpp files this target compiles
-# directly (Analyser/AverageGroup/DelayLocator/trace/export/api sources) that
+# directly (Analyser/AverageGroup/trace/export/api sources, plus the
+# dev-support fixture generator) that
 # do not fall under the base/api/spl test surfaces above -- linked straight
 # into rtatool_analysis_tests, the same JUCE-free target every file above is
 # proven in.
@@ -20,11 +21,16 @@ set(RTA_IMPL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisPublish.cpp
     # CaptureSequencer.cpp: task B5's capture state machine (record §8).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CaptureSequencer.cpp
-    # DelayLocator.cpp: lane L7-DELAY task F1's Locate sequence (record
-    # docs/dsp/2026-09-06-l7-auto-delay.md sec.11.2) -- test_delay_locator.cpp
-    # calls straight into it. RawCaptureBuffer.h is header-only, no .cpp.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/DelayLocator.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
+    # DelayLocator.cpp was deleted (superseded by MainComponentDelay.cpp,
+    # which polls OutputEngine telemetry through AnalysisThread instead --
+    # see that file's own header comment). RawCaptureBuffer.h is still
+    # needed: AnalysisThread::armLocateCapture owns one directly, header-only,
+    # no .cpp.
+    # SyntheticSnapshot.cpp lives in app/dev-support/ (moved out of
+    # app/src/measure: never part of the shipped app, only this test target
+    # and the offline snapshot tool) -- test_synthetic_snapshot.cpp and
+    # several SPL/API tests call straight into it via ApiFixture.h.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../dev-support/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/SessionCodec.cpp
     # SessionDecode.cpp: SessionCodec.cpp's decodeIndex split (task B0) --

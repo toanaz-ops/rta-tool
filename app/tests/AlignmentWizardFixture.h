@@ -152,9 +152,9 @@ makeCapture(const std::string& id, const std::vector<float>& magnitudeDb,
     return config;
 }
 
-/// The wizard's excitation, supplied by the CALLER the way DelayLocator's and
-/// EqVerify's are -- so a pass is reproducible bit-for-bit against the same
-/// room, and so nothing constructs a source behind the operator's back.
+/// The wizard's excitation, supplied by the CALLER the way EqVerify's is --
+/// so a pass is reproducible bit-for-bit against the same room, and so
+/// nothing constructs a source behind the operator's back.
 [[nodiscard]] inline rta::platform::SourceVariant pinkNoise() {
     return rta::gen::PinkNoise(rta::gen::Pcg32(1u, 1u), -12.0);
 }

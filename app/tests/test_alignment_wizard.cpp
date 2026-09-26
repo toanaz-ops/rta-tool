@@ -4,8 +4,8 @@
 // record docs/dsp/2026-09-06-l7-alignment-wizard.md Sec.2, Sec.9). The L7-OUT
 // solo sequence and the named refusals, driven against a REAL
 // rta::platform::OutputEngine with no audio hardware -- the shape
-// test_delay_locator.cpp and test_eq_verify.cpp already prove the output path
-// with. The fit, the polarity table and the structural scans are in
+// test_eq_verify.cpp and test_output_policy.cpp already prove the output
+// path with. The fit, the polarity table and the structural scans are in
 // test_alignment_wizard_verdict.cpp.
 
 #include "AlignmentWizardFixture.h"

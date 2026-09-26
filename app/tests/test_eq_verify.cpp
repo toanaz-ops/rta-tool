@@ -5,7 +5,7 @@
 // docs/dsp/2026-09-06-l7-output-path.md sec.6 verbatim). VERIFY rides the
 // output path as a consumer: this file drives a REAL
 // rta::platform::OutputEngine with no audio hardware, exactly as
-// test_delay_locator.cpp and test_output_policy.cpp do.
+// test_output_policy.cpp and test_capture_sequencer.cpp do.
 
 #include "measure/EqVerify.h"
 

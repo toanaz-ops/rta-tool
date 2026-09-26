@@ -72,7 +72,7 @@ add_executable(rtatool_view_tests
     #   view/TransferView.h/.cpp    -> the composite under test
     #   view/TransferRibbon.h/.cpp  -> its ribbon half (file-length split)
     #   measure/PhaseUnwrap.h/.cpp  -> the unwrap toggle (decision 4)
-    #   measure/SyntheticSnapshot.h/.cpp, measure/Analyser.h/.cpp ->
+    #   dev-support/SyntheticSnapshot.h/.cpp, measure/Analyser.h/.cpp ->
     #     makeSyntheticTransfer's own dependency chain (SyntheticSnapshot.h
     #     includes Analyser.h for makeSyntheticSnapshot; Analyser.cpp must
     #     link even though this target never calls it, for the same
@@ -97,7 +97,7 @@ add_executable(rtatool_view_tests
     #     MtwLayer.cpp/MtwReadout.cpp already give.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferSourceToggle.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../dev-support/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0) -- Analyser.cpp calls into it now.
@@ -129,7 +129,12 @@ add_executable(rtatool_view_tests
 # these sources include each other as "view/Foo.h" / "trace/Foo.h", never as a
 # path relative to the including file.
 target_include_directories(rtatool_view_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    # app/dev-support: SyntheticSnapshot.h/.cpp's home (moved out of
+    # app/src/measure -- never part of the shipped app), included as
+    # "dev-support/SyntheticSnapshot.h" from test_transfer_source_toggle.cpp,
+    # test_transfer_view_helpers.h and test_workspace_view.cpp.
+    ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 # az_ui carries its own juce_gui_basics dependency (see ui/az_ui/az_ui.h's
 # module declaration), but juce_gui_basics is named explicitly anyway: this
@@ -245,10 +250,10 @@ add_executable(rtatool_routing_live_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogWriter.cpp
     # --- end L6a task W2-E2a --------------------------------------------------
-    # DelayLocator.cpp is NOT needed here: this target's tests exercise
-    # AnalysisThread's own armLocateCapture/applyReferenceDelay directly,
-    # not the JUCE-free DelayLocator state machine (that lives entirely in
-    # rtatool_analysis_tests, task F1).
+    # RawCaptureBuffer.h: AnalysisThread's own raw-capture accumulator
+    # (armLocateCapture/locateCapture) owns one directly -- DelayLocator,
+    # the class this used to also serve, was deleted as superseded (see
+    # MainComponentDelay.cpp's header comment).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RawCaptureBuffer.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
@@ -364,7 +369,11 @@ add_executable(rtatool_main_component_tests
 )
 
 target_include_directories(rtatool_main_component_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    # app/dev-support: SyntheticSnapshot.h/.cpp's home, pulled in transitively
+    # through RTATOOL_SNAPSHOT_SOURCES above (SyntheticSnapshot.cpp's own
+    # self-include is "dev-support/SyntheticSnapshot.h").
+    ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 target_link_libraries(rtatool_main_component_tests PRIVATE
     RtaToolFonts

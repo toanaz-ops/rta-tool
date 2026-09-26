@@ -10,8 +10,8 @@ namespace {
 
 constexpr double kPi = std::numbers::pi;
 
-/// Output-path record Sec.11, the settle DelayLocator.cpp and EqVerify.cpp
-/// already wait out: the first 10 ms of an excitation are not stationary.
+/// Output-path record Sec.11, the settle EqVerify.cpp already waits out:
+/// the first 10 ms of an excitation are not stationary.
 constexpr double kSettleSamplesAt48k = 480.0;
 constexpr double kSettleReferenceRate = 48000.0;
 
