@@ -802,10 +802,14 @@ phát hiện, không mục nào chặn gì đã ship.*
   loader sẽ dùng — không đổi `SessionCodec` schema, không persist lựa chọn
   (SPL-R11), mặc định vẫn mở ở `rta`. **Cách thử**: build `rtatool`, bấm
   SYNTHETIC rồi bấm SPL trên hàng nút mới phía trên đồ thị — workspace
-  chuyển sang `SplView` sống (Leq, Filling/Clear/Fired, headroom, dose, Ln)
-  khi có phiên log đang chạy; bấm RTA/TRANSFER để quay lại, CAL
-  START/END/EXPORT REPORT và log SPL đang chạy không bị ảnh hưởng bởi việc
-  đổi pane. Specimen offscreen: `shots/main-live-spl.png`
+  chuyển sang `SplView` sống khi có phiên log đang chạy: mỗi metric cấu hình
+  hiện id, mức hiện tại (dB) và % buffer Leq đã đầy; mỗi alarm hiện
+  filling/clear/FIRED theo màu; và hai banner LOG WRITE FAILED / CALIBRATION
+  INVALID khi xảy ra (fix round 2, verifier: `SplView.cpp:72-110` KHÔNG vẽ
+  dose/Ln/headroom — ba số đó có trong `SplBlockView` và được log/report,
+  nhưng live view chưa vẽ, câu "Cách thử" cũ nói sai). Bấm RTA/TRANSFER để
+  quay lại, CAL START/END/EXPORT REPORT và log SPL đang chạy không bị ảnh
+  hưởng bởi việc đổi pane. Specimen offscreen: `shots/main-live-spl.png`
   (`rtatool_snapshot`).
 
 - [ ] **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ

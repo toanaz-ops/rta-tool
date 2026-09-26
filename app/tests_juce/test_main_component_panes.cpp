@@ -117,6 +117,38 @@ bool isDescendantOf(const juce::Component& node, const juce::Component& ancestor
     return false;
 }
 
+/// Fix round 2 (verifier LOW F2): `Button::internalClickCallback` -- what a
+/// real mouse click actually invokes -- is `protected`. This is the
+/// standard, well-defined "inherit and re-expose via using-declaration"
+/// idiom: `using juce::Button::internalClickCallback;` inside a class
+/// publicly deriving from `juce::Button` grants access as of THAT
+/// declaration, and `&ButtonInternalClickThief::internalClickCallback`
+/// names the member function actually declared on `juce::Button` (a
+/// qualified-id naming an inherited, non-redeclared member yields a
+/// pointer-to-member of the DECLARING class, per [expr.unary.op]) --
+/// access is checked once, where the pointer is formed, never again where
+/// it is called through. No UB, no cast between unrelated types: the
+/// pointer-to-member is invoked on a real `juce::Button&` below.
+struct ButtonInternalClickThief : juce::Button {
+    using juce::Button::internalClickCallback;
+};
+
+/// Reproduces exactly what a real click does, synchronously.
+/// `setToggleState(true, sendNotification)` (used above for the click-path
+/// test) does NOT reproduce this: `internalClickCallback` computes its own
+/// `shouldBeOn` from `radioGroupId != 0 || !lastToggleState` (juce_Button.cpp)
+/// -- for a GROUPED button `shouldBeOn` is unconditionally `true`, so
+/// clicking an ALREADY-selected grouped button leaves its toggle state
+/// alone (falls through to `sendClickMessage` with no state change at all),
+/// which is the exact case `setToggleState(true, ...)` cannot exercise
+/// (there is nothing for it to "leave alone" -- it always sets the value it
+/// is given). `triggerClick()` reaches the same function but through
+/// `postCommandMessage`, delivered only by a pumped message loop this
+/// offscreen test never runs.
+void simulateRealClick(juce::Button& button) {
+    (button.*&ButtonInternalClickThief::internalClickCallback)(juce::ModifierKeys());
+}
+
 }  // namespace
 
 TEST_CASE("selecting SPL builds an SplView through the real factory path",
@@ -261,15 +293,25 @@ TEST_CASE("selectPaneView actually attaches the new workspace into the component
 
 TEST_CASE("selectPaneView keeps the selector buttons' toggle state in sync",
          "[main_component_panes]") {
+    // Fix round 2 (verifier MEDIUM F1): the comment this replaced was wrong.
+    // A grouped button's OWN "turn on" call (`paneSplButton_.setToggleState
+    // (true, ...)`) already turns every SIBLING in the same radioGroupId off
+    // as a side effect, UNCONDITIONALLY -- `turnOffOtherButtonsInGroup` runs
+    // before the notification check (juce_Button.cpp:174-184), regardless of
+    // `dontSendNotification`. So a single Rta->Spl transition (the case this
+    // test used to cover) cannot tell a real "turn RTA/TRANSFER off"
+    // line apart from JUCE's own automatic side effect of turning SPL on --
+    // deleting EITHER off-line stayed green.
+    //
+    // What is NOT automatic: nothing ever turns a button back ON except its
+    // OWN explicit setToggleState(true, ...) line -- JUCE's group mechanism
+    // only ever turns siblings OFF, never turns the newly-current one ON.
+    // So the bug a deleted line actually causes only shows up the NEXT time
+    // that SAME button's pane becomes selected again -- which needs a cycle
+    // through every pane, not one hop. Spl -> Rta -> Transfer -> Spl visits
+    // all three as "the one being turned on", checked after EACH step.
     MainComponent component;
     component.setSyntheticMode(true);
-
-    // A PROGRAMMATIC call, not a click -- JUCE's own radio-group exclusion
-    // (Button::turnOffOtherButtonsInGroup) only runs when a button's OWN
-    // toggle state changes, which never happens on this path. The three
-    // setToggleState lines in selectPaneView are the ONLY thing that can
-    // keep the buttons honest here.
-    component.selectPaneView(PaneSelectorButton::Spl);
 
     auto* rtaButton = findButtonByText(component, "RTA");
     auto* transferButton = findButtonByText(component, "TRANSFER");
@@ -278,9 +320,49 @@ TEST_CASE("selectPaneView keeps the selector buttons' toggle state in sync",
     REQUIRE(transferButton != nullptr);
     REQUIRE(splButton != nullptr);
 
+    component.selectPaneView(PaneSelectorButton::Spl);
     CHECK_FALSE(rtaButton->getToggleState());
     CHECK_FALSE(transferButton->getToggleState());
     CHECK(splButton->getToggleState());
+
+    component.selectPaneView(PaneSelectorButton::Rta);
+    CHECK(rtaButton->getToggleState());
+    CHECK_FALSE(transferButton->getToggleState());
+    CHECK_FALSE(splButton->getToggleState());
+
+    component.selectPaneView(PaneSelectorButton::Transfer);
+    CHECK_FALSE(rtaButton->getToggleState());
+    CHECK(transferButton->getToggleState());
+    CHECK_FALSE(splButton->getToggleState());
+
+    component.selectPaneView(PaneSelectorButton::Spl);
+    CHECK_FALSE(rtaButton->getToggleState());
+    CHECK_FALSE(transferButton->getToggleState());
+    CHECK(splButton->getToggleState());
+}
+
+TEST_CASE("re-clicking the already-selected button leaves it lit and the pane unchanged",
+         "[main_component_panes]") {
+    // Fix round 2 (verifier LOW F2): deleting setRadioGroupId (:26) stayed
+    // green. Without it, paneSplButton_'s clickTogglesState-only behaviour
+    // is a plain invert -- clicking it a second time (as a stray double
+    // click, or simply an operator confirming the pane they are already on)
+    // would turn it OFF while the pane it names is still on screen, with
+    // nothing to turn it back on (selectPaneView's own idempotent guard
+    // fires and touches no button state, because the PANE is not changing).
+    MainComponent component;
+    component.setSyntheticMode(true);
+
+    component.selectPaneView(PaneSelectorButton::Spl);
+    auto* splButton = findButtonByText(component, "SPL");
+    REQUIRE(splButton != nullptr);
+    REQUIRE(splButton->getToggleState());
+    const auto* before = &component.paneComponentForTest();
+
+    simulateRealClick(*splButton);
+
+    CHECK(splButton->getToggleState());
+    CHECK(&component.paneComponentForTest() == before);
 }
 
 TEST_CASE("selecting the pane already showing does not rebuild it", "[main_component_panes]") {
