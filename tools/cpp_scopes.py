@@ -55,38 +55,50 @@ _ANON_NAMESPACE_RE = re.compile(r"\bnamespace\s*$")
 _CLASS_RE = re.compile(r"\b(?:class|struct)\s+([A-Za-z_]\w*)")
 
 
+_TEMPLATE_PREFIX_RE = re.compile(r"\btemplate\s*<")
+
+
 class _ScopeEntry:
-    __slots__ = ("names",)
+    __slots__ = ("names", "is_template")
 
-    def __init__(self, names: list[str]) -> None:
+    def __init__(self, names: list[str], is_template: bool = False) -> None:
         self.names = names  # outer-to-inner textual order; [] if unnamed
+        self.is_template = is_template
 
 
-def _classify(header: str) -> list[str]:
+def _classify(header: str) -> tuple[list[str], bool]:
     """The text since the last statement boundary, up to (not including) the
-    `{` it opens -- returns the name(s) that scope contributes, outer-to-inner
-    textual order, or [] for an unnamed block, or [ANONYMOUS] for `namespace {`.
+    `{` it opens -- returns the name(s) that scope contributes (outer-to-inner
+    textual order, [] for an unnamed block, [ANONYMOUS] for `namespace {`),
+    and whether this is a CLASS TEMPLATE (`template <typename T>\nclass Foo`
+    -- the `template <...>` line ends in `>`, not a statement boundary, so it
+    is still part of THIS header text, not a separate one; a plain `.search`
+    finds it anywhere before the class keyword). A member of a class template
+    cannot be given a real decorated-name fragment without knowing the
+    instantiation's template arguments -- orphan_candidates.py uses this to
+    classify such members UNCHECKABLE rather than fragment them wrong.
     """
     stripped = header.strip()
     m = _NAMESPACE_RE.search(stripped)
     if m:
-        return [part.strip() for part in m.group(1).split("::")]
+        return [part.strip() for part in m.group(1).split("::")], False
     if _ANON_NAMESPACE_RE.search(stripped):
-        return [ANONYMOUS]
+        return [ANONYMOUS], False
     m2 = _CLASS_RE.search(stripped)
     if m2:
-        return [m2.group(1)]
-    return []
+        return [m2.group(1)], bool(_TEMPLATE_PREFIX_RE.search(stripped))
+    return [], False
 
 
-def _scan(text: str) -> tuple[list[list[str]], list[bool]]:
-    """One forward pass producing both per-line results:
+def _scan(text: str) -> tuple[list[list[str]], list[bool], list[bool]]:
+    """One forward pass producing three per-line results:
       - the enclosing namespace/class chain (innermost first);
       - whether that line sits at DECLARATION level -- the stack is empty
         (global scope) or its TOP entry is a NAMED one (a namespace or
         class/struct, including an anonymous namespace) -- as opposed to
         being nested inside some UNNAMED block (a function body, an
         if/for/while/lambda body, a brace initialiser).
+      - whether ANY enclosing scope (not just the top) is a class TEMPLATE.
     The second question is what separates a real declaration
     (`void bar();` directly inside a class body, or `void Foo::bar() {`
     directly inside a namespace/at global scope) from a local variable using
@@ -97,11 +109,15 @@ def _scan(text: str) -> tuple[list[list[str]], list[bool]]:
     out. Only the IMMEDIATE top-of-stack entry needs checking: a declaration
     line's own scope is always its innermost NAMED enclosure, with nothing
     unnamed between it and that enclosure, by construction of the language.
+    The third checks the WHOLE stack, not just the top, because a member's
+    own scope entry is never the template class itself for a nested type,
+    but the template-ness still applies transitively from any enclosing level.
     """
     code = strip_comments(text)
     line_count = code.count("\n") + 1
     chains: list[list[str]] = [[] for _ in range(line_count + 2)]
     at_decl_level: list[bool] = [True for _ in range(line_count + 2)]
+    in_template: list[bool] = [False for _ in range(line_count + 2)]
 
     stack: list[_ScopeEntry] = []
     stmt_start = 0
@@ -116,6 +132,7 @@ def _scan(text: str) -> tuple[list[list[str]], list[bool]]:
             line_no += 1
             chains[line_no] = _flatten(stack)
             at_decl_level[line_no] = not stack or bool(stack[-1].names)
+            in_template[line_no] = any(e.is_template for e in stack)
             i += 1
             continue
         if in_string or in_char:
@@ -136,7 +153,8 @@ def _scan(text: str) -> tuple[list[list[str]], list[bool]]:
             continue
         if ch == "{":
             header = code[stmt_start:i]
-            stack.append(_ScopeEntry(_classify(header)))
+            names, is_template = _classify(header)
+            stack.append(_ScopeEntry(names, is_template))
             stmt_start = i + 1
         elif ch == "}":
             if stack:
@@ -145,7 +163,7 @@ def _scan(text: str) -> tuple[list[list[str]], list[bool]]:
         elif ch == ";":
             stmt_start = i + 1
         i += 1
-    return chains, at_decl_level
+    return chains, at_decl_level, in_template
 
 
 def scopes_by_line(text: str) -> list[list[str]]:
@@ -153,8 +171,17 @@ def scopes_by_line(text: str) -> list[list[str]]:
     difflines.AddedLine.lineno); index i holds the chain enclosing line i,
     innermost first.
     """
-    chains, _ = _scan(text)
+    chains, _, _ = _scan(text)
     return chains
+
+
+def in_template_scope_by_line(text: str) -> list[bool]:
+    """Index i is True iff line i is enclosed (at any depth) by a class
+    template -- a member of one cannot be given a real decorated-name
+    fragment without the instantiation's template arguments.
+    """
+    _, _, in_template = _scan(text)
+    return in_template
 
 
 def declaration_level_by_line(text: str) -> list[bool]:
@@ -162,7 +189,7 @@ def declaration_level_by_line(text: str) -> list[bool]:
     own docstring) -- False for a local variable, statement, or nested
     expression inside some function/block body.
     """
-    _, at_decl_level = _scan(text)
+    _, at_decl_level, _ = _scan(text)
     return at_decl_level
 
 

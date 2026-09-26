@@ -36,9 +36,26 @@ WHAT THIS DOES NOT HANDLE (documented, not silently wrong):
     omits. This is the deliberately safe direction -- one live overload is
     enough to call the whole candidate live, never a false orphan report over
     an overload the map-reader could not resolve.
-  - Templates, operator overloads (`operator==`), and destructors are out of
-    this module's scope -- orphan_check.py classifies those UNCHECKABLE
-    before ever asking this module for a fragment.
+  - Operator overloads (`operator==`, `operator()`, a conversion operator like
+    `operator bool`) and templates (a one-line function template, or a member
+    of a class template) are out of this module's scope -- fix round 1 (F2-F4)
+    corrected a docstring claim here that these were "already" handled: at
+    that point orphan_candidates.py silently dropped or mis-fragmented them
+    instead. It now classifies them UNCHECKABLE via
+    `orphan_shapes.unfragmentable_shape` and the class-template scope check in
+    `cpp_scopes.in_template_scope_by_line`, BEFORE this module is ever asked
+    for a fragment -- the fragment this module builds either cannot be formed
+    at all (an operator's real decorated name uses a special code this module
+    does not implement, e.g. `??8` for `operator==`) or depends on
+    instantiation arguments no source-level read can know.
+  - Destructors are excluded differently again: orphan_candidates.py drops
+    them BEFORE they ever become a candidate (see
+    `resolve_qualified`/`test_out_of_line_destructor_is_not_a_candidate` in
+    the test suite) -- they are never offered to this module at all, as
+    UNCHECKABLE or otherwise, because a destructor's reachability is not a
+    meaningful question to ask: every destructible object's destructor is
+    implicitly used by the language, not by anything this tool could see as a
+    "caller".
 """
 
 from __future__ import annotations

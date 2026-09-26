@@ -48,6 +48,52 @@ never cause a non-zero exit by themselves.
 EXIT CODES. 0 nothing orphaned. 1 orphan(s) found (UNCHECKABLE entries alone
 never trigger this). 2 a tool or build error (bad --base, configure/build
 failure, no .map file produced).
+
+TWO LIVENESS CAVEATS (fix round 1, verifier, F7) -- both make the linker say
+LIVE for a function that a human would call dead, never the other direction,
+so they can only hide a real orphan, never invent a false one:
+  - A never-called VIRTUAL OVERRIDE of an INSTANTIATED class reads live
+    through the vtable. The vtable itself is a reference the linker sees (it
+    is data, emitted whenever the class is instantiated), and every override
+    slot in it is a target that reference keeps alive -- whether or not
+    anything ever actually DISPATCHES to that particular override at
+    runtime. This tool cannot distinguish "reachable because something calls
+    it" from "reachable because it merely occupies a vtable slot".
+  - The compiler can delete a call to a side-effect-free callee whose result
+    is discarded (`someQuery();` with the return value unused, where the
+    optimiser has proven `someQuery` has no observable side effects). If
+    that was the candidate's ONLY call site, /OPT:REF then discards the
+    candidate too -- a FALSE ORPHAN report for code that is, in the source,
+    genuinely called.
+Both are documented limitations of asking the OPTIMISED BINARY the question,
+not bugs in this tool's own fragment matching -- see app/CMakeLists.txt's own
+comment on the RTA_ORPHAN_LINKMAP option for the build-flag side of this.
+
+NOT IN TARGET (fix round 1, verifier, F8). A file this tool would otherwise
+scan is not necessarily compiled into `rtatool` at all -- `app/src/dev/preview/**`
+is an explicit per-directory exclusion (its own separate preview tooling,
+compiled only into `rtatool_snapshot`; see app/cmake/rtatool_sources.cmake vs.
+rtatool_snapshot_sources.cmake -- NOTE this is `dev/preview/`, not all of
+`dev/`: `src/dev/SpecimenComponent.cpp` is genuinely in BOTH targets). A
+candidate whose `.cpp` file is not in `rtatool_sources.cmake`'s own source
+list is also reported as NOT IN TARGET, a third category alongside orphan and
+UNCHECKABLE: it says nothing about reachability, only that this tool never
+asked the linker about it, because `rtatool` is the only build root this tool
+checks -- see orphan_check.py's own `_not_in_target_reason` for the exact
+check. A checkout older than 2026-09-26 has no rtatool_sources.cmake to read
+at all (it predates that file's split from app/CMakeLists.txt); the
+source-list half of this check is then skipped for that run, not treated as
+"nothing is in the target".
+
+TEST HOOK (fix round 1, verifier). A candidate whose name ends in `ForTest`
+is never orphaned outright the way an ordinary candidate is: if it is
+otherwise unreachable from `rtatool`'s entry point AND this run finds at
+least one comment-stripped reference to that name under `app/tests*`, it is
+reported as its own TEST HOOK category (non-failing) instead of an orphan --
+the fact that only a test calls it is expected, not a defect, for a name
+whose whole purpose is to be a seam for a test. There is no free-text
+allow-list: a `*ForTest` name this run cannot find any test referencing is
+left as an ordinary, failing orphan. See `_test_hook_is_referenced`.
 """
 
 from __future__ import annotations
@@ -61,6 +107,12 @@ from difflines import git_diff_added_lines
 from map_symbols import extract_decorated_names, is_fragment_live
 from msvc_decorate import decorated_fragment
 from orphan_candidates import find_candidates
+from orphan_targets import (
+    TEST_HOOK_NAME_RE,
+    not_in_target_reason,
+    rtatool_target_sources,
+    test_hook_is_referenced,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -174,18 +226,65 @@ def main(argv: list[str] | None = None) -> int:
 
     decorated_names = extract_decorated_names(map_path.read_text(encoding="utf-8", errors="replace"))
     candidates, uncheckable = find_candidates(added_lines, _read_file_factory(source_dir))
+    target_sources = rtatool_target_sources(source_dir)
 
-    orphans: dict[str, list[str]] = {}
+    # fix round 1 (verifier), F8: a candidate outside the rtatool target is
+    # never asked the liveness question at all -- reported separately below,
+    # never as an orphan. Applied to UNCHECKABLE entries too, so a candidate
+    # under app/src/dev/preview/ that also happens to be e.g. `= delete`
+    # reads as NOT IN TARGET rather than as two different, both-technically-
+    # true classifications.
+    not_in_target: dict[str, list[str]] = {}
+    in_target_candidates = []
     for c in candidates:
+        reason = not_in_target_reason(c.path, target_sources)
+        if reason:
+            not_in_target.setdefault(c.path, []).append(f"{c.name}  ({reason})")
+        else:
+            in_target_candidates.append(c)
+
+    in_target_uncheckable = []
+    for u in uncheckable:
+        reason = u.path and not_in_target_reason(u.path, target_sources)
+        if reason:
+            not_in_target.setdefault(u.path, []).append(f"{u.name}  ({reason})")
+        else:
+            in_target_uncheckable.append(u)
+    uncheckable = in_target_uncheckable
+
+    # Test hooks: an otherwise-unreachable `*ForTest` candidate is proven
+    # live by a real reference under app/tests* on THIS run, not by its name
+    # alone -- see orphan_targets.test_hook_is_referenced.
+    test_hooks: dict[str, list[str]] = {}
+    orphans: dict[str, list[str]] = {}
+    for c in in_target_candidates:
         fragment = decorated_fragment(c.name, c.enclosing, is_constructor=c.is_constructor)
-        if not is_fragment_live(fragment, decorated_names):
+        if is_fragment_live(fragment, decorated_names):
+            continue
+        if TEST_HOOK_NAME_RE.search(c.name) and test_hook_is_referenced(c.name, source_dir):
+            test_hooks.setdefault(c.path, []).append(c.name)
+        else:
             orphans.setdefault(c.path, []).append(c.name)
+
+    if not_in_target:
+        print("orphan_check: NOT IN TARGET (never fails; not asked the linker at all):")
+        for path in sorted(not_in_target):
+            print(f"  {path}")
+            for entry in sorted(set(not_in_target[path])):
+                print(f"    - {entry}")
 
     if uncheckable:
         print("orphan_check: UNCHECKABLE (never fails; a human call, not the linker's):")
         for u in sorted(uncheckable, key=lambda u: (u.path, u.lineno)):
             where = f"{u.path}:{u.lineno}" if u.path else f"line {u.lineno}"
             print(f"  {where}  {u.name}  ({u.reason})")
+
+    if test_hooks:
+        print("orphan_check: TEST HOOK (never fails; referenced under app/tests*):")
+        for path in sorted(test_hooks):
+            print(f"  {path}")
+            for name in sorted(set(test_hooks[path])):
+                print(f"    - {name}")
 
     if not orphans:
         print(

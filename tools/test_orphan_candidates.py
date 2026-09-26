@@ -1,10 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Self-test for tools/orphan_candidates.py -- candidate extraction for
-orphan_check.py v2. Verified separately (PR body) against the REAL
-multi-line `enableSplLogging` declaration in app/src/measure/AnalysisThread.h
-and the real `AnalysisThread(...)` / `AnalysisThread(const AnalysisThread&) =
-delete;` pair; these tests use small synthetic files so they need no repo
-checkout."""
+"""Self-test for tools/orphan_candidates.py -- core candidate detection
+(single-line, multi-line, constructors, qualified out-of-line definitions,
+local-variable and access-specifier exclusions) for orphan_check.py v2.
+
+UNCHECKABLE classification (deleted/defaulted members, constexpr, anonymous
+namespaces, templates, operators, friend, pure virtual, pure-data aggregates)
+is tested separately in test_orphan_shapes.py -- split the same way the
+production code is, to stay under this repo's 400-line cap.
+
+Verified separately (PR body) against the REAL multi-line `enableSplLogging`
+declaration in app/src/measure/AnalysisThread.h and the real
+`AnalysisThread(...)` / `AnalysisThread(const AnalysisThread&) = delete;`
+pair; these tests use small synthetic files so they need no repo checkout.
+"""
 
 from __future__ import annotations
 
@@ -66,50 +74,6 @@ def test_constructor_is_detected_by_matching_the_enclosing_class():
     assert len(candidates) == 1
     assert candidates[0].name == "Foo"
     assert candidates[0].is_constructor is True
-
-
-def test_deleted_copy_constructor_is_uncheckable():
-    text = "class Foo {\npublic:\n    Foo(const Foo&) = delete;\n};\n"
-    added = [AddedLine("f.h", 3, "    Foo(const Foo&) = delete;")]
-    candidates, uncheckable = find_candidates(added, _reader({"f.h": text}))
-    assert candidates == []
-    assert len(uncheckable) == 1
-    assert "delete" in uncheckable[0].reason
-
-
-def test_defaulted_member_is_uncheckable():
-    text = "class Foo {\npublic:\n    Foo() = default;\n};\n"
-    added = [AddedLine("f.h", 3, "    Foo() = default;")]
-    candidates, uncheckable = find_candidates(added, _reader({"f.h": text}))
-    assert candidates == []
-    assert len(uncheckable) == 1
-
-
-def test_constexpr_function_is_uncheckable():
-    text = "namespace rta {\nconstexpr int square(int x) { return x * x; }\n}\n"
-    added = [AddedLine("f.h", 2, "constexpr int square(int x) { return x * x; }")]
-    candidates, uncheckable = find_candidates(added, _reader({"f.h": text}))
-    assert candidates == []
-    assert len(uncheckable) == 1
-    assert "constexpr" in uncheckable[0].reason
-
-
-def test_anonymous_namespace_member_is_uncheckable():
-    text = "namespace {\nvoid helper() {}\n}\n"
-    added = [AddedLine("f.cpp", 2, "void helper() {}")]
-    candidates, uncheckable = find_candidates(added, _reader({"f.cpp": text}))
-    assert candidates == []
-    assert len(uncheckable) == 1
-    assert "anonymous" in uncheckable[0].reason
-
-
-def test_template_function_is_uncheckable():
-    text = "namespace rta {\ntemplate <typename T>\nT identity(T x) { return x; }\n}\n"
-    added = [AddedLine("f.h", 3, "T identity(T x) { return x; }")]
-    candidates, uncheckable = find_candidates(added, _reader({"f.h": text}))
-    assert candidates == []
-    assert len(uncheckable) == 1
-    assert "template" in uncheckable[0].reason
 
 
 def test_out_of_line_cpp_definition_resolves_the_qualifier_into_enclosing():
@@ -264,28 +228,6 @@ def test_control_flow_line_is_never_a_candidate():
     candidates, uncheckable = find_candidates(added, _reader({"f.cpp": text}))
     assert candidates == []
     assert uncheckable == []
-
-
-def test_pure_data_aggregate_is_uncheckable():
-    text = "namespace rta {\nstruct Point {\n    float x;\n    float y;\n};\n}\n"
-    added = [AddedLine("f.h", 2, "struct Point {")]
-    candidates, uncheckable = find_candidates(added, _reader({"f.h": text}))
-    assert candidates == []
-    assert len(uncheckable) == 1
-    assert uncheckable[0].name == "Point"
-    assert "aggregate" in uncheckable[0].reason
-
-
-def test_class_with_a_real_method_is_not_reported_as_a_pure_data_aggregate():
-    text = "namespace rta {\nstruct Widget {\n    void tick();\n};\n}\n"
-    added = [
-        AddedLine("f.h", 2, "struct Widget {"),
-        AddedLine("f.h", 3, "    void tick();"),
-    ]
-    candidates, uncheckable = find_candidates(added, _reader({"f.h": text}))
-    names = [c.name for c in candidates]
-    assert "tick" in names
-    assert not any(u.name == "Widget" for u in uncheckable)
 
 
 if __name__ == "__main__":

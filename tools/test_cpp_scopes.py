@@ -89,6 +89,36 @@ def test_scopes_by_line_covers_every_line_in_one_pass():
     assert scopes[4] == []
 
 
+# --- fix round 1 (verifier), F2-F4: class-template member detection --------
+
+
+def test_member_of_a_class_template_is_flagged():
+    # A member's decorated name depends on the TEMPLATE ARGUMENTS of the
+    # instantiation calling it (`?push@?$Container@H@@...` for
+    # Container<int>), which this tool cannot predict from the source alone
+    # -- orphan_candidates.py uses this flag to mark such members UNCHECKABLE
+    # rather than fragment them with a class name that will never match.
+    text = "namespace rta {\ntemplate <typename T>\nclass Container {\npublic:\n    void push(T value);\n};\n}\n"
+    in_template = cpp_scopes.in_template_scope_by_line(text)
+    assert in_template[5] is True
+
+
+def test_member_of_a_non_template_class_is_not_flagged():
+    text = "namespace rta {\nclass Widget {\npublic:\n    void tick();\n};\n}\n"
+    in_template = cpp_scopes.in_template_scope_by_line(text)
+    assert in_template[4] is False
+
+
+def test_template_flag_does_not_leak_outside_the_template_class():
+    text = (
+        "namespace rta {\ntemplate <typename T>\nclass Container {\npublic:\n"
+        "    void push(T value);\n};\nvoid freeFunction();\n}\n"
+    )
+    in_template = cpp_scopes.in_template_scope_by_line(text)
+    assert in_template[5] is True
+    assert in_template[7] is False
+
+
 if __name__ == "__main__":
     import pytest
 

@@ -110,6 +110,22 @@ target_link_libraries(rtatool PRIVATE
 #              tool exists to avoid.
 #   /MAP       emit rtatool.map (Publics by Value + Static symbols), the
 #              file orphan_check.py reads to decide liveness.
+#
+# "Every candidate must survive as its own out-of-line symbol" is the goal
+# these flags aim for, not an absolute guarantee -- two liveness caveats this
+# build cannot remove (fix round 1, verifier, F7; both documented in full in
+# orphan_check.py's own module docstring, since they are properties of the
+# OPTIMISED BINARY, not of these flags):
+#   - a never-called virtual override of an instantiated class still reads
+#     live through the vtable itself, which the linker sees as a reference
+#     regardless of whether anything actually dispatches to that override;
+#   - the compiler can still delete a call whose callee is side-effect-free
+#     and whose result is discarded, which can make that callee's only call
+#     site vanish and the callee then read as unreachable even though the
+#     source genuinely calls it.
+# Both bias toward FALSE NEGATIVES (calling something live that a human would
+# call dead), never the reverse -- they can hide a real orphan, never invent
+# one that is not.
 option(RTA_ORPHAN_LINKMAP
     "Build rtatool for linker-reachability analysis (tools/orphan_check.py); MSVC only, off by default"
     OFF)
