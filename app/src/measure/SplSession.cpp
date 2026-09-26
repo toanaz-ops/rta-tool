@@ -14,8 +14,8 @@ SplSession::Chain::Chain(const SplConfig& config, rta::dsp::WeightingType w, dou
     window.reserve(windowCapacity);
     // W2-E1 (fix round 2026-09-25: PER CHAIN, not per channel), revised
     // round 4 item 1: reserved once, here -- feedHop below never grows it
-    // (see the member's own comment for why the bound is
-    // SplMeter::kScratchSamples, not BlockAccumulator::kReadyCapacity).
+    // (see the member's own comment for what actually bounds it -- not a
+    // pigeonhole argument over samples-per-segment).
     newlyClosed.reserve(SplMeter::kScratchSamples);
 }
 

@@ -42,10 +42,18 @@ std::uint64_t ticksPerBlockFor(double blockSeconds) noexcept {
     return static_cast<std::uint64_t>(ticks);
 }
 
-/// `(kReadyCapacity + 2) * ticksPerBlock`, floored at 16 -- mirrors
-/// `SplSession::Chain::newlyClosed`'s own sizing (that class's own header
-/// comment): generous against how many ticks a single `push()` call (at
-/// most one hop) can produce before the caller drains it.
+/// `(kReadyCapacity + 2) * ticksPerBlock`, floored at 16. STALE COMPARISON
+/// CORRECTED (LOW follow-up batch): this does NOT mirror
+/// `SplSession::Chain::newlyClosed`'s sizing -- that member reserves flatly
+/// to `SplMeter::kScratchSamples` (SplSession.h's own comment now states the
+/// real bound: `readyBuffer_`'s fixed capacity plus its counted-`Dropped`
+/// fallback once full), while this capacity is a SEPARATE formula scaled by
+/// `ticksPerBlock`, generous against how many 100 ms ticks a single `push()`
+/// call (at most one hop) can produce before the caller drains it. The two
+/// buffers bound two different quantities -- blocks closed vs. ticks
+/// recorded -- and only happened to share a similar "generous headroom over
+/// one push() call" justification, which is what this comment used to
+/// overstate as a shared sizing formula.
 std::size_t lnTickBufferCapacity(double blockSeconds) noexcept {
     const std::uint64_t ticksPerBlock = ticksPerBlockFor(blockSeconds);
     const std::uint64_t generous =

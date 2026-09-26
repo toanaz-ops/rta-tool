@@ -193,3 +193,61 @@ TEST_CASE("a normal (non-refused) record still round-trips its channel, blocks, 
     REQUIRE(parsed.has_value());
     CHECK(parsed->refusal == CalibrationRecordRefusal::None);
 }
+
+// --- LOW follow-up batch, item 15: offsetApplied ---------------------------
+
+TEST_CASE("offsetApplied defaults true and round-trips both ways", "[spl_calibration_record]") {
+    // `passingRecord()` never touches `offsetApplied`, so this is the default
+    // -- an old file with no `offsetApplied=` line at all (parsed further
+    // below) must read back the SAME way: "applied", matching what every
+    // record written before this field existed always meant.
+    const auto applied = passingRecord();
+    CHECK(applied.offsetApplied);
+    const auto appliedText = calibrationRecordText(applied);
+    CHECK(appliedText.find("offsetApplied=1") != std::string::npos);
+    const auto parsedApplied = parseCalibrationRecord(appliedText);
+    REQUIRE(parsedApplied.has_value());
+    CHECK(parsedApplied->offsetApplied);
+
+    auto notApplied = passingRecord();
+    notApplied.offsetApplied = false;
+    const auto notAppliedText = calibrationRecordText(notApplied);
+    CHECK(notAppliedText.find("offsetApplied=0") != std::string::npos);
+    const auto parsedNotApplied = parseCalibrationRecord(notAppliedText);
+    REQUIRE(parsedNotApplied.has_value());
+    CHECK_FALSE(parsedNotApplied->offsetApplied);
+}
+
+TEST_CASE("offsetApplied is written even for a refused record", "[spl_calibration_record]") {
+    // Whether the offset reached the log is a fact about the LOG, independent
+    // of whether the start/end checks resolved to comparable channels -- so
+    // it is not gated behind `refusal == None` the way channel/blocks/verdict
+    // are (SplCalibrationRecord.h's own comment on those fields).
+    auto info = passingRecord();
+    info.refusal = CalibrationRecordRefusal::ChannelMismatch;
+    info.offsetApplied = false;
+    const auto text = calibrationRecordText(info);
+    CHECK(text.find("offsetApplied=0") != std::string::npos);
+
+    const auto parsed = parseCalibrationRecord(text);
+    REQUIRE(parsed.has_value());
+    CHECK_FALSE(parsed->offsetApplied);
+}
+
+TEST_CASE("a record with no offsetApplied key at all parses as applied (old-file compatibility)",
+         "[spl_calibration_record]") {
+    const auto parsed = parseCalibrationRecord(
+        "# calibrationPerformed=1\n"
+        "# startMeasuredLevelDb=12.5\n"
+        "# startNominalLevelDb=94\n"
+        "# startOperatorSupplied=0\n"
+        "# startUnixMs=1700000000000\n"
+        "# endMeasuredLevelDb=13\n"
+        "# endNominalLevelDb=94\n"
+        "# endOperatorSupplied=0\n"
+        "# endUnixMs=1700003600000\n"
+        "# clause=ISO 1996-2:2017 cl. 5.2\n");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->fields.performed);
+    CHECK(parsed->offsetApplied);
+}

@@ -103,6 +103,30 @@ struct SplPublishInput {
     bool calibrationInvalid = false;
 };
 
+/// LOW follow-up batch, item 3. Fills every SCALAR/mirror field of `input`
+/// EXCEPT `config`/`sampleRate`/`latestBlock`/`window`/`metricWindows` (which
+/// need the live `SplSession` itself, still assigned directly in
+/// `AnalysisThread::fillSplPublishInput`) -- pulled out of
+/// `AnalysisThreadSpl.cpp` so this half is provable with `RTA_BUILD_APP=OFF`.
+///
+/// WHY THIS EXISTED WITH NO TEST BEFORE. `AnalysisThread::fillSplPublishInput`
+/// lives in `AnalysisThreadSpl.cpp`, which includes the JUCE-including
+/// `AnalysisThread.h` (this file's own class comment: "JUCE (juce::Thread
+/// only)") to reach `splSession_`/`splChannelStates_`/the atomic mirrors --
+/// so nothing at that boundary could ever run in the `RTA_BUILD_APP=OFF`
+/// target CI actually exercises on all three operating systems. A dropped
+/// field there -- `input.overflowedLnTicks = ...` or
+/// `input.blockSecondsTooSmall = ...`, say -- compiles clean and leaves every
+/// ON-build case green too, because none of them independently varies each
+/// field from every other one. This function is pure data plumbing, not
+/// measurement, so it is exactly the half that CAN be lifted out and proven
+/// OFF -- the same move `SplLoggingDecision.h`/`CalibratedSplConfig.h` already
+/// made for other AnalysisThread/MainComponent boundary facts.
+void fillSplPublishScalars(SplPublishInput& input, std::size_t refusedMetrics,
+                            std::uint64_t overflowedLnTicks, bool blockSecondsTooSmall,
+                            const SplChannelState* channelState, std::uint64_t logDroppedBlocks,
+                            bool logWriteFailed, bool calibrationInvalid) noexcept;
+
 /// Builds the published SPL view, or `std::nullopt` when nothing is logging.
 ///
 /// Every metric's value is `rta::meter::combineBlocks` over that metric's own

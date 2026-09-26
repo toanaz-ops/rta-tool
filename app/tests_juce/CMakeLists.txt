@@ -204,6 +204,11 @@ add_executable(rtatool_routing_live_tests
     # only a live thread can prove is that AnalysisThread wires the two
     # together correctly.
     test_spl_log_wiring.cpp
+    # test_spl_log_wiring_disable.cpp: LOW follow-up batch, item 9 -- split
+    # out of test_spl_log_wiring.cpp (over the 400-line hard cap) along its
+    # own seam: disableSplLogging() actually drains and joins the writer
+    # thread rather than a no-op a background writer's own timing could mask.
+    test_spl_log_wiring_disable.cpp
     # test_spl_epoch_freeze.cpp: station-4 fix round, PR #31, round 3,
     # verifier finding 1 (MEDIUM, the epoch race) -- a real AnalysisThread
     # over a real CaptureBus, proving feedSpl() freezes the instant

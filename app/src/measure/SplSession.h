@@ -246,15 +246,33 @@ private:
         /// more). Round 3 made `SplMeter::push()` poll its accumulator
         /// INSIDE the segment loop rather than only after `push()` returns,
         /// so a single `push()` -- and therefore a single `feedHop` -- can
-        /// now close far more than `kReadyCapacity` blocks: every segment is
-        /// capped at `kScratchSamples` samples AND completes at most one
-        /// block, so `kScratchSamples` is the pigeonhole-safe bound on how
-        /// many blocks one hop can ever hand to `poll()` (mirrors
-        /// `SplMeter::readyBuffer_`'s own sizing and rationale, in
-        /// SplMeter.h). Draining it after every `feedHop` still allocates
-        /// nothing. PER CHAIN (fix round 2026-09-25), not per channel: each
-        /// weighting closes its OWN block from the SAME hop, and a caller
-        /// asking for one weighting's blocks must never see another's.
+        /// now close far more than `kReadyCapacity` blocks.
+        ///
+        /// WHAT ACTUALLY BOUNDS THIS, corrected (LOW follow-up batch): NOT a
+        /// pigeonhole argument over samples-per-segment -- "every segment is
+        /// capped at kScratchSamples samples AND completes at most one
+        /// block" does not by itself bound the number of segments a long hop
+        /// can contain, so it does not bound how many blocks one hop can
+        /// close. The real bound is `SplMeter::readyBuffer_`'s own fixed
+        /// CAPACITY (`kReadyBufferCapacity == kScratchSamples`) plus the
+        /// counted-`Dropped` fallback once it is full: `SplMeter::push()`
+        /// drains `accumulator_` into `readyBuffer_` after every segment, and
+        /// once `readyBuffer_` holds `kScratchSamples` blocks any FURTHER
+        /// completion within the SAME `push()` call is counted as `Dropped`
+        /// rather than appended (SplMeter.cpp's own drain loop) -- so
+        /// `readyBuffer_` can never hold more than `kScratchSamples` entries
+        /// when `push()` returns. `feedHop` then drains `c.meter.poll()` in a
+        /// loop until it returns nullopt, which empties `readyBuffer_`
+        /// completely (plus, in the ordinary case, nothing more: `push()`
+        /// already drained `accumulator_` itself, so its OWN `poll()`
+        /// fallthrough has nothing left to return) -- so `newlyClosed` can
+        /// never exceed `kScratchSamples` entries either. `feedHop` clears
+        /// `newlyClosed` at the top of every call, so this bound holds fresh
+        /// each time, never accumulating across hops. Draining it after
+        /// every `feedHop` still allocates nothing. PER CHAIN (fix round
+        /// 2026-09-25), not per channel: each weighting closes its OWN block
+        /// from the SAME hop, and a caller asking for one weighting's blocks
+        /// must never see another's.
         std::vector<rta::meter::Block> newlyClosed;
     };
 

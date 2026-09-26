@@ -323,6 +323,21 @@ private:
     /// `exportReportClicked()` so it asks the payload builder for exactly the
     /// channels that are actually logging, not a hardcoded one.
     std::vector<int> currentSplLoggedChannels_;
+    /// LOW follow-up batch, item 15: true iff `currentSplSessionDir_` names a
+    /// log `startFreshSplLogWithConfig` opened WITH a calibrated config
+    /// (`calibratorLevelDb.has_value()` at that call -- the same fact
+    /// `restartSplLoggingForCalibration()` supplies and `startFreshSplLog()`
+    /// (the device/epoch-triggered, always-uncalibrated restart) does not).
+    /// Set in `startFreshSplLogWithConfig` itself, the ONE function that
+    /// assigns `currentSplSessionDir_`, so the two can never drift apart.
+    /// Read by `writeCalibrationRecordAndUpdateInvalidFlag()` to state
+    /// whether THIS log actually carries the offset a completed calibration
+    /// check measured -- a START check with nothing logging yet has no
+    /// session to apply it to (`restartSplLoggingForCalibration`'s own early
+    /// return), so an operator who starts an ordinary log afterward and runs
+    /// END against it gets a `performed=1` record beside an uncalibrated log
+    /// unless this says otherwise.
+    bool currentSplLogHasCalibratedOffset_ = false;
     // ----------------------------------------------------------------------
 
     // --- L6a task W2-E2b part B: export the report from a live session -----

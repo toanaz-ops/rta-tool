@@ -53,6 +53,15 @@ CalibrationCheck buildCheck(CalibrationLevel level, std::span<const float> sampl
 void CalibrationSession::recordStartCheck(CalibrationLevel level, std::span<const float> samples,
                                           double sampleRate, std::uint64_t unixMs) noexcept {
     if (samples.empty() || !(sampleRate > 0.0)) return;
+    // LOW follow-up batch, item 17: a new START begins a fresh bracket, so any
+    // END check from a PREVIOUS bracket must not survive into it. Without
+    // this, START -> END(refused, e.g. a channel mismatch) -> START left
+    // `endCheck_` holding the refused check, and every reader
+    // (`hasEndCheck()`, `driftDb()`, `verdict()`, `reportFields()`) kept
+    // reporting the OLD, already-refused pairing until a fresh END finally
+    // overwrote it -- a readout that says REFUSED (or an old drift number)
+    // for a check that has not happened yet in the new bracket.
+    endCheck_.reset();
     startCheck_ = buildCheck(level, samples, sampleRate, unixMs);
 }
 

@@ -112,6 +112,72 @@ enum class Verdict { Serve, NotModified };
                                          std::optional<std::uint64_t> since,
                                          std::uint64_t sequence);
 
+// --- LOW follow-up batch, item 12: the pre-routing SEQUENCING, pulled out of
+// ApiServer.cpp's installPreRouting() so this exact ordering (controls 1-5)
+// is provable in RTA_BUILD_APP=OFF, not only through a real socket in
+// app/tests_juce/test_api_server*.cpp. That file keeps only the two things a
+// pure function cannot own: reading the live httplib::Request into the plain
+// PreRoutingInputs below, and the rate limiter (control 6 -- real mutable
+// state and a clock).
+
+/// What `decidePreRoutingRefusal` found wrong with a request, or `None` when
+/// every one of controls 1-5 passed and the caller may proceed to the rate
+/// limiter.
+enum class PreRoutingRefusal {
+    None,
+    MultipleHostHeaders,
+    HostNotAllowed,
+    MethodNotAllowed,
+    Unauthorized,
+    BodyTooLarge,
+};
+
+/// Everything `decidePreRoutingRefusal` needs, as ALREADY-DECODED plain
+/// values -- this file's whole reason to exist (record sec.15 R1) is that
+/// nothing here may see an `httplib::Request`, so the ONE httplib-touching
+/// caller (`ApiServer::Impl::installPreRouting`) extracts these fields
+/// itself before calling in.
+struct PreRoutingInputs {
+    /// `request.get_header_value_count("Host")` -- RFC 9112 sec.3.2 requires
+    /// exactly one; `get_header_value` alone would silently read only the
+    /// FIRST of several.
+    int hostHeaderCount = 0;
+    std::string_view hostHeaderValue;
+    /// The port actually bound -- see `hostIsAllowed`'s own comment for why
+    /// this is not always `settings` port (an ephemeral bind).
+    int boundPort = -1;
+    Method method = Method::Other;
+    std::string_view authorizationHeader;
+    /// The SAME value `bodyIsAcceptable`'s own first argument takes.
+    long long declaredBodyBytes = 0;
+};
+
+/// Record sec.9 controls 1-5, decided IN THIS ORDER -- the order IS the
+/// decision (PR #18's first version had the rate limiter, control 6, running
+/// FIRST instead of last, and the station-5 verifier measured the cost: three
+/// forged-Host requests at a limit of 3 filled the window and a legitimate
+/// fourth request got 429 -- a caller outside the allowlist, with no token,
+/// could deny the API to the operator during a show).
+///
+///  1. MORE THAN ONE Host header -> refused, before either is even read.
+///  2. The Host allowlist -> refused BEFORE any other control runs. The
+///     highest-value control in the whole API: a forged Host on a path that
+///     does not exist must refuse here, never fall through to a 404.
+///  3. The method allowlist -> refused. The `Allow` header value is the
+///     CALLER's job (`kAllowedMethods`, spelled once in ApiServer.cpp); this
+///     returns only the refusal.
+///  4. The Bearer token, when `settings.token` is non-empty.
+///  5. The body cap, refused BEFORE the body is read -- what makes sec.9's
+///     415 unreachable rather than merely unimplemented.
+///
+/// The rate limiter (control 6) is deliberately NOT decided here:
+/// `RateLimiter::admit` mutates shared state and needs a clock reading, so it
+/// is not a pure decision the same way these five are -- see
+/// `ApiServer::Impl::installPreRouting` for where it runs (last, immediately
+/// before routing, only once every refusal here has already passed) and why.
+[[nodiscard]] PreRoutingRefusal decidePreRoutingRefusal(const PreRoutingInputs& in,
+                                                         const ApiSettings& settings);
+
 /// A SLIDING window, and the choice is load-bearing (record sec.4, sec.15
 /// R15's neighbourhood). A fixed window admits `maxPerSecond` at the end of
 /// one window and `maxPerSecond` at the start of the next -- twice the rate
