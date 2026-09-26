@@ -2,9 +2,15 @@
 // Lane L6a task W2-E2a. Split out of test_spl_log_wiring.cpp (LOW follow-up
 // batch, item 9 -- that file was at 455 lines, over the 400-line hard cap)
 // along its own natural seam: this file's ONE subject is disableSplLogging()
-// actually calling through to SplLogPipeline::disable() and letting it
-// finish, not a no-op that "stays green" only because a background writer
-// happens to catch up on its own. See test_spl_log_wiring.cpp's own header
+// actually calling through to SplLogPipeline::disable(), not a no-op that
+// "stays green" only because a background writer happens to catch up on its
+// own. This proves the CALL happens, deterministically -- it does not, and
+// cannot without a slow-writer test hook this batch does not add, prove that
+// the drain+join it starts has already FINISHED by the time this test reads
+// the files (see the TEST_CASE's own comment for why a timing race cannot
+// prove that here); SplLogPipeline::disable()'s own drain-then-join
+// correctness is proven directly, at its own level, by
+// test_spl_log_pipeline.cpp. See test_spl_log_wiring.cpp's own header
 // comment for the wiring this file shares its subject with.
 //
 // Own copies of the small TempDir/fastConfig/splConfig/pushBlocks/
@@ -153,7 +159,7 @@ TEST_CASE("disableSplLogging() actually calls through to SplLogPipeline::disable
     // never clears and this stays `true` forever; under the real fix, it
     // reliably flips to `false` once the pending disable request lands, with
     // no dependency on writer-thread timing at all.
-    TempDir dir("disable-drains-and-joins");
+    TempDir dir("disable-calls-through");
     CaptureBus bus(1 << 16);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
     bus.prepare(48000.0, 1);
