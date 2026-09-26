@@ -60,6 +60,38 @@ def test_run_mutant_restores_original_bytes_exactly(tmp_path):
     assert hashlib.sha256(restored).hexdigest() == original_sha
 
 
+# --- fix round 2, item F8: the mutant header must precede its own build log --
+
+
+def test_run_mutant_writes_header_before_build_output(tmp_path):
+    target_file = tmp_path / "Sample.cpp"
+    target_file.write_bytes(b"int x;\n")
+    build_dir = tmp_path / "build-does-not-exist"
+    build_dir.mkdir()
+    log_path = tmp_path / "mutant.log"
+
+    diffmut.run_mutant(
+        target_file,
+        lineno=1,
+        targets=["nonexistent_target"],
+        build_dir=build_dir,
+        config="Release",
+        log_path=log_path,
+    )
+
+    content = log_path.read_text(encoding="utf-8", errors="replace")
+    header_index = content.find("=== mutant")
+    assert header_index != -1
+    # The header must be the FIRST thing in this fresh log file. Before the
+    # F8 fix, `log.write(header)` only reached Python's own text buffer;
+    # `subprocess.run(..., stdout=log)` writes directly to the underlying
+    # fd at its CURRENT OS-level position (which the buffered header had not
+    # advanced yet), so the build's own output landed ahead of the header
+    # that is supposed to introduce it, and the header only appeared once
+    # the `with` block's close() finally flushed it -- after the build text.
+    assert content[:header_index].strip() == ""
+
+
 def test_run_mutant_restores_bytes_even_when_line_out_of_range(tmp_path):
     target_file = tmp_path / "Sample.h"
     original = b"#pragma once\nint x = 1;\n"
