@@ -73,7 +73,7 @@ target_sources(rtatool PRIVATE
     # exportReportClicked() is the first `app/src` caller of the report
     # renderer (plan Wave 4a-A) and its own payload builder; both are
     # JUCE-free and already compiled into rtatool_analysis_tests, but this
-    # target names every source one by one, so all four have to be listed
+    # target names every source one by one, so all five have to be listed
     # here too or this binary fails to link with undefined symbols -- the
     # same "first real caller" shape SplHistory.cpp/SplAlarms.cpp went
     # through for W2-E1 above.
@@ -81,6 +81,7 @@ target_sources(rtatool PRIVATE
     src/export/SplReport.cpp
     src/export/SplReportHash.cpp
     src/export/SplReportSections.cpp
+    src/export/SplReportHistorySections.cpp
     src/dev/SpecimenComponent.cpp
     src/AppTypefaces.cpp
     src/view/PlotAxes.cpp
@@ -343,6 +344,7 @@ target_sources(rtatool_snapshot PRIVATE
     src/export/SplReport.cpp
     src/export/SplReportHash.cpp
     src/export/SplReportSections.cpp
+    src/export/SplReportHistorySections.cpp
     src/view/DevicePanel.cpp
     src/view/ChannelRoleTable.cpp
     src/view/RoutingMatrix.cpp

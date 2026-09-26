@@ -232,6 +232,14 @@ SplReportBuildResult buildReportPayload(const SplReportBuildRequest& request) {
                     block.flags |= rta::meter::flagMask(rta::meter::BlockFlag::CalibrationInvalid);
                 }
             }
+            // Fix round 3 (verifier MEDIUM): the history strip drops these
+            // blocks entirely (appendHistoryAndMarkers below), so a reader
+            // of the strip alone cannot see the prefix was excluded --
+            // stated once here for renderValidity/renderHistory to show.
+            // `bracketApplies` is already gated to ONE channel per record
+            // (calibrationRecord->channel == channel), so this is set once.
+            payload.validity.excludedBlockRange = ReportValidity::ExcludedRange{
+                calibrationRecord->startBlockIndex, calibrationRecord->endBlockIndex};
         }
 
         payload.validity.segmentPaths.insert(payload.validity.segmentPaths.end(),

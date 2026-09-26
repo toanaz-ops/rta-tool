@@ -118,6 +118,18 @@ struct ReportValidity {
     /// from "measured, and there was nothing to report"
     /// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
     bool lnDoseAlarmFromLiveSession = false;
+    /// Fix round 3 (verifier MEDIUM): the range a FAILED calibration record
+    /// bracketed as CalibrationInvalid in THIS payload's own in-memory copy
+    /// of the blocks (never on disk) -- `renderHistory`'s own history strip
+    /// silently drops these blocks (the same rule the recomputed Leq
+    /// already follows), so a reader of the strip alone cannot tell "no data
+    /// was ever logged here" from "data was logged and excluded". Absent
+    /// when no bracket applied.
+    struct ExcludedRange {
+        std::uint64_t startBlockIndex = 0;
+        std::uint64_t endBlockIndex = 0;
+    };
+    std::optional<ExcludedRange> excludedBlockRange;
 };
 
 /// One point of the time-history strip (record sec.9 item 7): one metric's

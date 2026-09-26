@@ -59,6 +59,7 @@ th { color: var(--dim); font-family: "IBM Plex Sans", sans-serif; font-weight: 6
 .strip .marker-alarm { stroke: var(--bad); }
 .strip .marker-overload { stroke: var(--amber); }
 .strip .marker-gap { stroke: var(--dim); stroke-dasharray: 2 2; }
+.strip .excluded-region { fill: var(--bad); opacity: 0.12; }
 )CSS";
 
 }  // namespace rta::splexport
