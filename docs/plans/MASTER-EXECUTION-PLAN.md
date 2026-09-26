@@ -7,6 +7,30 @@ session prompt is: "Read docs/plans/MASTER-EXECUTION-PLAN.md lane <X>, then
 docs/reports/README.md, then the decision records it names. Continue the
 pipeline from the current git state."*
 
+## Wiring debt and the next lanes — 2026-09-26 (owner decisions)
+
+`tools/orphan_check.py` (PR #39) found that 16 `app/src/*.cpp` files were
+never compiled into `rtatool`. They come from three lanes, each closed as
+"BUILT" with the `MainComponent` wiring named as a follow-up that never ran:
+L5a (session format), L6b (`CaptureSequencer`) and L7 (FIR, EQ, ALIGN,
+DELAY). The evidence table is in the 2026-09-26 section of
+`docs/HANDOFF.md`. The owner decided, in chat:
+
+| Group | Decision | Where |
+|---|---|---|
+| Session Save/Open (`SessionCodec`, `SessionDecode`, `TraceBlobCodec`, `SessionStore`) | wire now | branch `app/session-save-open` |
+| G18 crossover surface (`CrossoverSurface`, `CrossoverTopology`, `VirtualTrace`) | wire now as a live `XOVER` pane — **ALIGN-R8 reversed** | branch `app/crossover-pane` |
+| `DelayLocator` | delete, superseded by `MainComponentDelay.cpp` | branch `app/unwired-cleanup` |
+| `SyntheticSnapshot` | not a gap (test and tool fixture); move out of `app/src` | branch `app/unwired-cleanup` |
+| EQ + FIR export (`EqSession`, `EqVerify`, `FirTextWriter`, `FirWavWriter`) | **next lane, L7-EQ-UI**: research → plan → build, opens right after the three branches above merge | — |
+| `AlignmentWizard` (+ `Signals`) | **lane after that, L7-ALIGN-UI** (wizard UI design needed) | — |
+| `CaptureSequencer` | deferred: operators solo by hand (L6b plan line 231). Scheduled for the next multichannel lane; until then orphan_check blocks any PR that edits it without wiring it | — |
+
+From now on, "BUILT" in this document means **reachable from `rtatool.exe`**.
+A lane that ships headless code must either wire it or leave a named, dated
+lane in this table. `orphan_check.py` enforces this at wave close (CLAUDE.md,
+"Before each phase", rule 5).
+
 ## Status snapshot — 2026-09-18
 
 **L-API (Remote API) is BUILT and MERGED. The lane is closed out —
