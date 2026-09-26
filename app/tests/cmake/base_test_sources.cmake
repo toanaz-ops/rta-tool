@@ -111,4 +111,11 @@ set(RTA_BASE_TEST_SOURCES
     # -- split out when three rounds of verification grew the declaration scan
     # into its own subject.
     test_crossover_surface_objective.cpp
+    # test_pane_selector_decision.cpp + PaneSelectorDecision.h: the pane
+    # selector's pure half (owner decision 2026-09-26, "the gap" -- SPL and
+    # Transfer were built and tested but unreachable from the running app).
+    # Routes through the same resolvePaneView a saved session uses, so it
+    # lives beside test_workspace.cpp/PaneRegistry.h rather than duplicating
+    # its own mapping.
+    test_pane_selector_decision.cpp
 )

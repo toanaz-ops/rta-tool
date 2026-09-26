@@ -8,10 +8,10 @@ Paste the exact commands and tallies. Numbers are a snapshot at the commit named
 
 ```
 commit: <sha>
-ctest --test-dir build-<x> -C Release          (RTA_BUILD_APP=OFF) -> N/N, 0 failed
-ctest --test-dir build-<x>-on -C Release       (RTA_BUILD_APP=ON)  -> N/N, 0 failed
-CI "Warnings" step (gcc, AppleClang, MSVC)      -> 0 / 0 / 0
-warning C in the RTA_BUILD_APP=ON log (local)   -> 0
+ctest --test-dir build-<x> -C Release          (RTA_BUILD_APP=OFF, local) -> N/N, 0 failed
+CI ci.yml "Test" step                          (RTA_BUILD_APP=OFF)        -> N/N, 0 failed (gcc/AppleClang/MSVC)
+CI ci-app-on.yml "Test" step                   (RTA_BUILD_APP=ON)         -> N/N, 0 failed (windows-latest)
+CI "Warnings" step, pattern `warning( [A-Z]+[0-9]+)?:` -> 0 (ubuntu) / 0 (macos) / 0 (windows OFF) / 0 (windows ON)
 ```
 
 ## Guards still guard
