@@ -7,14 +7,14 @@
 // re-invented: makeSyntheticSnapshot for bands and spectrum, then
 // makeSyntheticTransfer, makeSyntheticMtw and makeSyntheticAverage. Every
 // one of those is documented bit-identical for a given spec
-// (app/src/measure/SyntheticSnapshot.h:44 and the comments at :57, :77, :90)
+// (app/dev-support/SyntheticSnapshot.h:44 and the comments at :57, :77, :90)
 // -- the same property that makes rta-view.png reviewable as a byte-for-byte
 // diff, and the precondition for a golden JSON file being a lock rather than
 // a record of one machine's mood.
 #pragma once
 
 #include "measure/Snapshot.h"
-#include "measure/SyntheticSnapshot.h"
+#include "dev-support/SyntheticSnapshot.h"
 
 #include <cstddef>
 #include <memory>

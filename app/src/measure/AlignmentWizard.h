@@ -16,9 +16,8 @@
 // convention. The estimator is Sec.4's complex band fit, and its bounded `R`
 // collapsing is precisely how it reports "these two are not a matched pair".
 //
-// Device-free over rta::platform::OutputEngine, the way DelayLocator and
-// EqVerify already are, so the whole sequence is provable in ctest with no
-// sound card.
+// Device-free over rta::platform::OutputEngine, the way EqVerify already is,
+// so the whole sequence is provable in ctest with no sound card.
 #pragma once
 
 #include "measure/CrossoverTopology.h"

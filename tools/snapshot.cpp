@@ -35,7 +35,7 @@
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
 #include "measure/SplConfig.h"
-#include "measure/SyntheticSnapshot.h"
+#include "dev-support/SyntheticSnapshot.h"
 #include "trace/Trace.h"
 #include "trace/TraceLibrary.h"
 #include "trace/Workspace.h"

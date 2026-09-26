@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Part of RTA Tool -- app/src/measure. No JUCE, no Qt, no audio-device API.
+// Part of RTA Tool -- app/dev-support. No JUCE, no Qt, no audio-device API.
 // See docs/plans/2026-08-27-audioio-rta-impl-plan.md §1.3, §3.4.
 #pragma once
 

@@ -11,7 +11,7 @@
 
 #include "test_transfer_view_helpers.h"
 
-#include "measure/SyntheticSnapshot.h"
+#include "dev-support/SyntheticSnapshot.h"
 #include "view/BodeLayout.h"
 #include "view/PlotGeometry.h"
 #include "view/TransferSourceToggle.h"

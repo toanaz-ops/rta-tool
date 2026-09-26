@@ -53,8 +53,12 @@ pytest tools 135, warning 0, CMake warning 0.
   `EqVerify`, `SessionCodec`, `SessionDecode`, `SessionStore`, `TraceBlobCodec`.
 - 4 chỉ vào `rtatool_snapshot`: `CrossoverTopology`, `SyntheticSnapshot`,
   `VirtualTrace`, `CrossoverSurface`.
-Đây là tính năng đã build + unit-test nhưng chưa wire (có lẽ thuộc phase nạp
-session). PR nào chạm tới chúng giờ sẽ bị orphan_check fail cho tới khi wire.
+Tra theo plan thật (2026-09-26): mỗi lane (L5a, L6b, L7) đóng ở mức "BUILT
+= chứng minh bằng ctest và snapshot" và ghi phần wire là follow-up. Follow-up
+đó chưa bao giờ được xếp lịch. *(Bản đầu của đoạn này đoán là "phase nạp
+session". Không có phase đó — đã sửa.)* Quyết định của chủ nhân và lịch nằm ở
+mục "Wiring debt and the next lanes" trong `docs/plans/MASTER-EXECUTION-PLAN.md`.
+`SyntheticSnapshot` không phải lỗ hổng: nó là fixture của test và tool.
 Dead code thật (0 caller ở đâu cả): `AnalysisThread::isSplLoggingEnabled`,
 `MainComponent::currentPaneView`. Mục trong `docs/HUMAN-QA-QUEUE.md`.
 

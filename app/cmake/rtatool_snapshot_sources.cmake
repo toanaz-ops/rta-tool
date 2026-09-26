@@ -61,7 +61,7 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # (task B0) -- needed here for the same one-static-library reason as
     # Analyser.cpp itself.
     src/measure/AnalyserPublish.cpp
-    src/measure/SyntheticSnapshot.cpp
+    dev-support/SyntheticSnapshot.cpp
     src/measure/PhaseUnwrap.cpp
     # CrossoverSurface.cpp + CrossoverTopology.cpp + VirtualTrace.cpp: lane
     # L7-ALIGN task I. PhaseAlignPreview.cpp is no longer a canned-data mockup

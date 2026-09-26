@@ -90,6 +90,60 @@ bool waitForSplBlocks(const AnalysisThread& thread, int channel, std::uint64_t t
     return thread.splBlockCount(channel) >= target;
 }
 
+// CI run 36260617729 (windows-latest) failed here with "splBlockCount before
+// = 12, after = 13" -- not the freeze failing, but this test's OWN "before"
+// snapshot landing early. AnalysisThread.cpp's drainRole()/drainPaired()
+// drain every WHOLE hop the ring currently holds in a single drain() call (a
+// `while` loop, not "one hop per tick"), but how many of pushBlocks' 80
+// writes have actually landed in the ring by the analysis thread's next
+// kPollMs (10 ms, AnalysisThread.cpp) tick is a genuine scheduler race
+// against THIS thread's own push loop -- worse on a loaded CI runner.
+// waitForSplBlocks above only proves ">= 4 blocks have closed"; it says
+// nothing about whether the rest of the 80-hop backlog is still sitting in
+// the ring. If `beforeEpochChange` is read while a few hops remain
+// unconsumed, the very next drain() tick closes one more block from that
+// STILL-PRE-EPOCH backlog -- correctly, since CaptureBus::prepare() (which
+// bumps the epoch feedSpl's freeze checks) has not even been called yet at
+// that point -- and the count climbs by exactly the amount this test's own
+// polling arrived early by.
+//
+// CaptureBus::prepare() also RESETS every ring to empty (CaptureBus.h's own
+// comment), so a leftover pre-epoch hop can never survive to be miscounted
+// as post-epoch: either it is drained (and counted) before prepare() runs,
+// or prepare() erases it. That is what makes this a test-only race rather
+// than a product one -- confirmed by reading AnalysisThread.cpp's drain
+// path and CaptureBus::prepare() (platform/types/src/CaptureBus.cpp) rather
+// than assumed.
+//
+// Wait for the backlog to go quiet before trusting a snapshot: the ring has
+// nothing left for drainRole()/drainPaired() to consume (`availableToRead()
+// < hopSize`) AND splBlockCount itself has not moved, both sustained for
+// `stableForMs` straight. Requiring both, sustained, rules out the ring
+// reading momentarily empty mid-push and being refilled a moment later.
+std::uint64_t waitForSplBacklogDrained(const AnalysisThread& thread, CaptureBus& bus, int channel,
+                                       std::size_t hopSize, int stableForMs, int timeoutMs) {
+    const auto deadline =
+        juce::Time::getMillisecondCounter() + static_cast<std::uint32_t>(timeoutMs);
+    std::uint64_t lastCount = thread.splBlockCount(channel);
+    std::uint32_t quietSinceMs = juce::Time::getMillisecondCounter();
+    while (juce::Time::getMillisecondCounter() < deadline) {
+        juce::Thread::sleep(5);
+        const std::uint64_t count = thread.splBlockCount(channel);
+        auto* ring = bus.ring(channel);
+        const bool ringHasWholeHop = ring != nullptr && ring->availableToRead() >= hopSize;
+        const auto nowMs = juce::Time::getMillisecondCounter();
+        if (count != lastCount || ringHasWholeHop) {
+            lastCount = count;
+            quietSinceMs = nowMs;
+            continue;
+        }
+        if (nowMs - quietSinceMs >= static_cast<std::uint32_t>(stableForMs)) {
+            return lastCount;
+        }
+    }
+    return lastCount;
+}
+
 }  // namespace
 
 TEST_CASE("feedSpl freezes the instant the bus epoch changes, with no second "
@@ -107,7 +161,13 @@ TEST_CASE("feedSpl freezes the instant the bus epoch changes, with no second "
     pushBlocks(bus, 2, 1, 16, 80);
     REQUIRE(waitForSplBlocks(thread, 1, 4, 3000));
 
-    const auto beforeEpochChange = thread.splBlockCount(1);
+    // See waitForSplBacklogDrained's own comment above: read the count only
+    // once the 80-hop backlog has stopped draining, not the instant it first
+    // crosses 4 -- otherwise a block still closing from that SAME pre-epoch
+    // push can land after this snapshot and read as a false failure.
+    const auto beforeEpochChange =
+        waitForSplBacklogDrained(thread, bus, 1, static_cast<std::size_t>(fastConfig().hopSize),
+                                 /*stableForMs=*/100, /*timeoutMs=*/3000);
     REQUIRE(beforeEpochChange >= 4);
 
     // Bump the bus's epoch WITHOUT touching enableSplLogging/
