@@ -36,6 +36,8 @@
 #include "measure/SnapshotSource.h"
 #include "measure/SplConfig.h"
 #include "measure/SyntheticSnapshot.h"
+#include "trace/Trace.h"
+#include "trace/TraceLibrary.h"
 #include "trace/Workspace.h"
 #include "view/PaneRegistry.h"
 #include "view/RtaView.h"
@@ -314,6 +316,46 @@ int main (int argc, char** argv)
             if (! renderComponent (component, outDir, "main-live-spl.png", 1280, 800))
                 ++failures;
         }
+    }
+
+    {
+        // main-live-xover.png: the ALIGN-R8 reversal's live pane
+        // (CrossoverPaneView.h). Same seam as main-live-spl.png above, but
+        // the DATA is two STORED library traces, not the device bus -- this
+        // pane reads TraceLibrary::entries()[0]/[1] (its own documented
+        // contract), so two Trace objects added through
+        // MainComponentTestAccess stand in for captures nobody has taken yet.
+        MainComponent component;
+        component.setSyntheticMode (true);
+        juce::Thread::sleep (800);
+
+        auto makeXoverTrace = [] (const char* id, float magnitudeDb, float phaseRadians)
+        {
+            rta::trace::CaptureMeta meta;
+            meta.id = id;
+            meta.sampleRate = 48000.0;
+            meta.fftSize = 2048;
+            const auto points = rta::trace::pointCountFor (meta.fftSize);
+            std::vector<float> magnitude (points, magnitudeDb);
+            std::vector<float> phase (points, phaseRadians);
+            auto trace = rta::trace::Trace::make (meta, std::move (magnitude));
+            [[maybe_unused]] const bool phaseSet = trace->setPhase (std::move (phase));
+            jassert (phaseSet);
+            return std::move (*trace);
+        };
+
+        // A flat 0-radian relative phase for BOTH sides sits exactly on
+        // CrossoverPaneView's own LR4 default target line (LR4's own
+        // designed offset is 0 degrees at every frequency -- CrossoverTopology.h's
+        // identity), so the specimen shows a correctly-aligned pair, not an
+        // arbitrary one.
+        auto& library = MainComponentTestAccess::library (component);
+        library.add (makeXoverTrace ("main-hp", -3.0f, 0.0f), "Main HP", "default");
+        library.add (makeXoverTrace ("sub-lp", -3.0f, 0.0f), "Sub LP", "default");
+
+        component.selectPaneView (rta::view::PaneSelectorButton::Xover);
+        if (! renderComponent (component, outDir, "main-live-xover.png", 1280, 800))
+            ++failures;
     }
 
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
