@@ -188,12 +188,24 @@ void ApiServer::Impl::installPreRouting() {
     // of service against the operator.
     svr.set_pre_routing_handler(
         [this](const httplib::Request& request, httplib::Response& response) {
+            // httplib::Request::get_header_value returns std::string BY VALUE.
+            // PreRoutingInputs::hostHeaderValue/authorizationHeader are
+            // string_view, so each header must be held in a named std::string
+            // that outlives the decidePreRoutingRefusal(in, ...) call below --
+            // assigning the temporary return straight into the view would
+            // dangle the instant this statement ends.
+            const std::string hostHeader = request.get_header_value("Host");
+            const std::string authHeader = request.get_header_value("Authorization");
+
             PreRoutingInputs in;
-            in.hostHeaderCount = request.get_header_value_count("Host");
-            in.hostHeaderValue = request.get_header_value("Host");
+            // get_header_value_count returns size_t; decidePreRoutingRefusal only
+            // ever compares hostHeaderCount against 1, so a bounded int is enough
+            // and this cast is what keeps the build warning-free (C4267).
+            in.hostHeaderCount = static_cast<int>(request.get_header_value_count("Host"));
+            in.hostHeaderValue = hostHeader;
             in.boundPort = boundPort;
             in.method = methodOf(request.method);
-            in.authorizationHeader = request.get_header_value("Authorization");
+            in.authorizationHeader = authHeader;
             in.declaredBodyBytes = declaredBodyBytes(request);
 
             switch (decidePreRoutingRefusal(in, settings)) {
