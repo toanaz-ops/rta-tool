@@ -79,16 +79,35 @@ TEST_CASE("an empty history with markers gives each marker a finite, distinct x"
 // Fix round 3: the excluded span is now shaded on the strip AND named in the
 // Validity table -- a reader of either one alone still learns the prefix was
 // dropped, and exactly which blocks.
-TEST_CASE("the history strip shades the excluded block range", "[spl_report]") {
+// Fix round 4 (verifier MEDIUM): the excluded-region rect is drawn from the
+// SAME first/last scale as the trace and markers, but that scale never
+// included the excluded range's own two block indices. The shipped fixture
+// (excluded {0,5} OVERLAPPING history {0,10}) could not have caught this --
+// {0,5} was already inside the scan's own [0,10] range, so folding it in or
+// not made no difference. This fixture puts the excluded span BEFORE the
+// history entirely (the real shape after a FAILED bracket [0, latest]
+// leaves history starting at latest+1): without the fold, both of the
+// excluded range's endpoints fall outside [first, last] (here just the
+// history's own [6,10]) and map to the SAME x, a zero-width rect
+// indistinguishable from nothing drawn at all.
+TEST_CASE("the history strip shades the excluded block range with nonzero width",
+         "[spl_report]") {
     ReportPayload payload = minimalPayload();
     ReportHistorySeries series;
     series.metricId = "Main";
-    series.points = {{0, 80.0}, {10, 90.0}};
+    series.points = {{6, 80.0}, {10, 90.0}};
     payload.history = {series};
     payload.validity.excludedBlockRange = ReportValidity::ExcludedRange{0, 5};
 
     const auto html = renderReport(payload);
-    CHECK(extractSection(html, "history").find("excluded-region") != std::string::npos);
+    const auto history = extractSection(html, "history");
+    CHECK(history.find("excluded-region") != std::string::npos);
+    // first=0 (excluded start), last=10 (last history point), span=10:
+    // the excluded rect covers x=[0,500], strictly left of the first
+    // history point at x=600.
+    CHECK(history.find("x=\"0.000000\"") != std::string::npos);
+    CHECK(history.find("width=\"500.000000\"") != std::string::npos);
+    CHECK(history.find("width=\"0.000000\"") == std::string::npos);
 }
 
 TEST_CASE("the validity section states the excluded block range, or none", "[spl_report]") {

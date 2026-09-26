@@ -105,6 +105,19 @@ std::string renderHistory(const ReportPayload& p) {
         if (!first || marker.blockIndex < *first) first = marker.blockIndex;
         if (!last || marker.blockIndex > *last) last = marker.blockIndex;
     }
+    // Fix round 4 (verifier MEDIUM): the excluded-region rect below is drawn
+    // from THIS SAME scale, but the scan never included its own two block
+    // indices -- after a FAILED bracket [0, latest] leaves history starting
+    // at latest+1, both x1 and x2 fell outside [first, last] and mapped to
+    // the SAME x (0), a zero-width rect indistinguishable from nothing
+    // drawn at all (probe: `width="0.000000"`).
+    if (p.validity.excludedBlockRange) {
+        const auto& range = *p.validity.excludedBlockRange;
+        if (!first || range.startBlockIndex < *first) first = range.startBlockIndex;
+        if (!last || range.startBlockIndex > *last) last = range.startBlockIndex;
+        if (!first || range.endBlockIndex < *first) first = range.endBlockIndex;
+        if (!last || range.endBlockIndex > *last) last = range.endBlockIndex;
+    }
     const double span = (first && last && *last > *first) ? static_cast<double>(*last - *first) : 1.0;
     auto xFor = [&](std::uint64_t idx) -> double {
         if (!first) return 0.0;
