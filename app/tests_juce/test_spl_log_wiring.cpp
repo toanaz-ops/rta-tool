@@ -322,10 +322,13 @@ TEST_CASE("the logged chain is A-weighted, not Z, at a frequency where the "
     //   (c) the digital-vs-analytic filter residual, 0.01 dB --
     //       test_weighting.cpp's own accepted bound for the SAME comparison.
     // Sum ~0.072 dB, rounded up to ~0.1 dB; the measured residual here is
-    // 0.037 dB, comfortably inside it. The shipped bound is ~0.2 dB -- roughly
-    // 2x the derived sum and 5x the measured residual -- so it stays tight
-    // enough to catch a real regression (a wrong chain reads ~39 dB away, not
-    // a fraction of a dB) while not chasing the derivation's own last digit.
+    // 0.077 dB (re-measured after the LOW follow-up batch's own follow-up --
+    // an earlier draft of this comment cited 0.037 dB, which was stale),
+    // matching the derived sum to within 0.005 dB and comfortably inside the
+    // shipped bound. The shipped bound is ~0.2 dB -- roughly 2x the derived
+    // sum and 2.6x the measured residual -- so it stays tight enough to catch
+    // a real regression (a wrong chain reads ~39 dB away, not a fraction of a
+    // dB) while not chasing the derivation's own last digit.
     CHECK_THAT(measuredDb, Catch::Matchers::WithinAbs(expectedADb, 0.2));
     // The hard refutation, independent of the tolerance above: a Z-labelled-
     // as-A block reads within a fraction of a dB of expectedUnweightedDb,
