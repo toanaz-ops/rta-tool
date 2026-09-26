@@ -284,7 +284,7 @@ TEST_CASE("pushBlock on a channel nothing was enabled for does nothing and does 
 TEST_CASE("SplLogWriter opens its files through utf8Path, not a raw narrow std::string",
          "[spl_log_pipeline]") {
     // Same reasoning as JuceFsPath.h's own structural guard
-    // (app/tests_juce/test_main_component_session.cpp): GetACP() on this box
+    // (app/tests_juce/test_main_component_session_fixround.cpp): GetACP() on this box
     // is 65001 (UTF-8), so std::ofstream's std::string overload happens to
     // decode a UTF-8 path correctly here too -- only a structural read of
     // the real source distinguishes "opens through utf8Path()" from "opens

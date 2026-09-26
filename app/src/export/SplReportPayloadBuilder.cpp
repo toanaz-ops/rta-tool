@@ -168,7 +168,12 @@ void appendHistoryAndMarkers(int channel, const std::vector<rta::meter::Block>& 
 
 SplReportBuildResult buildReportPayload(const SplReportBuildRequest& request) {
     SplReportBuildResult out;
-    const fs::path dir(request.sessionDir);
+    // Round 2 R2-1: `request.sessionDir` is UTF-8 (currentSplSessionDir_,
+    // MainComponentSpl.cpp), so this resolves through utf8Path() (SplLog.h)
+    // rather than fs::path's raw std::string constructor, which decodes via
+    // the process's ACP on MSVC, not UTF-8 -- the same bug class as HIGH F1.
+    // Every directory_iterator below (readChannelLog) walks off of `dir`.
+    const fs::path dir(utf8Path(request.sessionDir));
 
     std::optional<SplCalibrationRecordInfo> calibrationRecord;
     {

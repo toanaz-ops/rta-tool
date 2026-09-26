@@ -142,6 +142,14 @@ TEST_CASE("Save/Open round-trip through a real folder with a Vietnamese name",
 
     MainComponentTestAccess::saveSessionForTest(writer, dir);
     CHECK(MainComponentTestAccess::readoutForTest(writer).startsWith("SAVED"));
+    // Round-2 R2-2's value-based check: resolved through juce::File (UTF-16
+    // internally), never through the narrow std::string this test is
+    // specifically trying to stress -- so it discriminates the ACP bug on a
+    // CI box whose ACP is NOT 65001 (windows-latest), even though it cannot
+    // discriminate anything on THIS box, where GetACP() == 65001 makes the
+    // buggy and fixed code paths land on the same bytes (this file's own
+    // structural-guard test above explains why in full).
+    CHECK(dir.getChildFile("session.index").existsAsFile());
 
     MainComponent reader;
     reader.setSyntheticMode(true);
@@ -235,26 +243,32 @@ TEST_CASE("Open restores the visible flag, not just the trace data",
     CHECK_FALSE(entry->visible);
 }
 
-TEST_CASE("Open reports exactly how many blobs failed to read in a partial folder",
+TEST_CASE("Open reports exactly how many blobs failed to read, and the trace after the bad one still loads",
          "[main_component_session]") {
-    // M4: a wrong skipped-count is a silent lie about how much of the
-    // session actually loaded. Deleting exactly one blob (of two) is what
-    // lets a test tell "reports 1" apart from "reports 0" or "reports 2".
-    TempDir dir("partial");
+    // M4, round-2 R2-3 rebuild: the ORIGINAL fixture put the missing blob
+    // LAST in index/capture order, so a mutant that changes the read loop's
+    // `continue` (after a failed readTrace) to `break` survived -- both stop
+    // reading at the same point when the bad entry is last, so nothing here
+    // could tell them apart. Three traces, bad blob in the MIDDLE: `continue`
+    // goes on to read "last" too; `break` abandons the loop right there and
+    // drops "last" as well, which the size==2/"Last" assertions below catch.
+    TempDir dir("partial-middle");
 
     MainComponent writer;
     writer.setSyntheticMode(true);
     auto& writerLibrary = MainComponentTestAccess::mutableLibraryForTest(writer);
-    writerLibrary.add(*Trace::make(makeMeta("keepme"), std::vector<float>{1.f, 2.f, 3.f, 4.f, 5.f}), "Keep",
+    writerLibrary.add(*Trace::make(makeMeta("first"), std::vector<float>{1.f, 2.f, 3.f, 4.f, 5.f}), "First",
                       "g");
-    writerLibrary.add(*Trace::make(makeMeta("droppedme"), std::vector<float>{6.f, 7.f, 8.f, 9.f, 10.f}),
-                      "Dropped", "g");
+    writerLibrary.add(*Trace::make(makeMeta("middlebad"), std::vector<float>{6.f, 7.f, 8.f, 9.f, 10.f}),
+                      "MiddleBad", "g");
+    writerLibrary.add(*Trace::make(makeMeta("last"), std::vector<float>{11.f, 12.f, 13.f, 14.f, 15.f}),
+                      "Last", "g");
     MainComponentTestAccess::saveSessionForTest(writer, juce::File(dir.path.string()));
 
-    // The index still names "droppedme"; only its blob is gone -- a partial
+    // The index still names "middlebad"; only its blob is gone -- a partial
     // folder (a hand-deleted file, or an interrupted copy), not a corrupt
     // index.
-    REQUIRE(std::filesystem::remove(dir.path / "traces" / "droppedme.bin"));
+    REQUIRE(std::filesystem::remove(dir.path / "traces" / "middlebad.bin"));
 
     MainComponent reader;
     reader.setSyntheticMode(true);
@@ -265,8 +279,9 @@ TEST_CASE("Open reports exactly how many blobs failed to read in a partial folde
     CHECK(readout.contains("1 trace(s) skipped"));
 
     const auto entries = MainComponentTestAccess::library(reader).entries();
-    REQUIRE(entries.size() == 1u);
-    CHECK(entries.front().name == "Keep");
+    REQUIRE(entries.size() == 2u);
+    CHECK(entries[0].name == "First");
+    CHECK(entries[1].name == "Last");  // the trace AFTER the bad one -- this is what `break` drops
 }
 
 TEST_CASE("Open refuses wholesale when every blob fails, even though the index parsed",

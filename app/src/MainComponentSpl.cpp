@@ -27,6 +27,7 @@
 // read once, each time logging (re)starts.
 #include "MainComponent.h"
 
+#include "export/SplLog.h"
 #include "export/SplReport.h"
 #include "export/SplReportPayloadBuilder.h"
 #include "measure/SplConfig.h"
@@ -88,14 +89,18 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
     // rather than needing a second, redundant one here.
     [[maybe_unused]] const bool sessionDirCreated = sessionDir.createDirectory();
 
-    // Fix round (PR #43 verifier HIGH F1): toStdString() here already yields
-    // correct UTF-8 bytes -- juce::String's UTF-8 export is not itself the
-    // ACP bug. The bug is downstream, wherever this std::string is handed to
-    // std::filesystem::path(const std::string&) or std::ofstream's
-    // std::string overload (both decode via the process's active code page
-    // on MSVC, not UTF-8): SplLogWriter.cpp is that one caller, and its two
-    // stream-opening sites now go through SplLog.h's utf8Path() instead of
-    // opening `path` directly, which is where the actual fix landed.
+    // Fix round (PR #43 verifier HIGH F1, extended round 2 R2-1): toStdString()
+    // here already yields correct UTF-8 bytes -- juce::String's UTF-8 export
+    // is not itself the ACP bug. The bug is downstream, wherever this
+    // std::string is handed to std::filesystem::path(const std::string&) or
+    // std::ofstream's std::string overload (both decode via the process's
+    // active code page on MSVC, not UTF-8): every reader of this string --
+    // SplLogWriter.cpp's two stream-opens, this file's own
+    // exportReportClicked() below, SplCalibrationRecord.h's
+    // writeCalibrationRecordFile, and SplReportPayloadBuilder.cpp's
+    // buildReportPayload -- now goes through SplLog.h's utf8Path() instead of
+    // opening the raw string directly, which is where the actual fix lands.
+    // No single call site is "the only caller" any more.
     currentSplSessionDir_ = sessionDir.getFullPathName().toStdString();
     currentSplLoggedChannels_.assign(channels.begin(), channels.end());
     // LOW follow-up batch, item 15: this is the ONE function that assigns
@@ -137,8 +142,10 @@ void MainComponent::exportReportClicked() {
     // Message-thread file I/O, a one-off user action -- never the analysis
     // thread (task brief's own requirement). Binary mode: the
     // SplLogWriter.cpp `writeSessionHeaderFile` precedent, so the bytes on
-    // disk match `html` exactly with no CRLF translation.
-    std::ofstream out(path, std::ios::out | std::ios::trunc | std::ios::binary);
+    // disk match `html` exactly with no CRLF translation. Round 2 R2-1: this
+    // used to open `path` (a UTF-8 std::string) directly -- the same ACP bug
+    // as HIGH F1, just a second call site utf8Path() had not reached yet.
+    std::ofstream out(rta::splexport::utf8Path(path), std::ios::out | std::ios::trunc | std::ios::binary);
     out << html;
     exportReportReadout_.setText(out ? juce::String("export: wrote ") + juce::String(path)
                                      : juce::String("export: failed to write ") + juce::String(path),

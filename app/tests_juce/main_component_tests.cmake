@@ -40,9 +40,12 @@ add_executable(rtatool_main_component_tests
     test_main_component_rail_layout.cpp
     # test_main_component_session.cpp: SAVE/OPEN SESSION against a real
     # MainComponent. test_main_component_session_fixround.cpp is its own
-    # 400-line-cap split (PR #43 fix round).
+    # 400-line-cap split (PR #43 fix round). test_main_component_session_
+    # path_guard.cpp is the fix round 2 MEDIUM R2-2 broad structural guard --
+    # a separate file rather than growing fixround.cpp past its own cap.
     test_main_component_session.cpp
     test_main_component_session_fixround.cpp
+    test_main_component_session_path_guard.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 

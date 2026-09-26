@@ -36,17 +36,23 @@ namespace rta::splexport {
 /// (`_Convert_narrow_to_wide`), not UTF-8, so a folder name outside that code
 /// page's own repertoire (Vietnamese diacritics on a stock-1252/1258 Windows
 /// box, which is what CI's windows-latest runs) silently opens a mojibake
-/// sibling path. The `char8_t`-based constructor is guaranteed by the
-/// standard to decode its input as UTF-8 on every platform, which is exactly
-/// what this string already is -- `reinterpret_cast` between `char` and
-/// `char8_t` pointers is well-defined for this purpose (both are
-/// one-byte character types). `SplLogWriter.cpp` is the only caller: every
-/// `std::ofstream`/`stream.open` there takes the resulting `path`, never the
-/// raw string, so the OS-native (wide, on Windows) form is what actually
-/// reaches the filesystem API.
+/// sibling path. `std::u8string`'s constructor from an iterator pair is how
+/// the standard spells "these bytes are UTF-8"; `std::filesystem::path` then
+/// decodes a `std::u8string` as UTF-8 on every platform by contract -- no
+/// `reinterpret_cast` needed (fix round 2: the earlier `char8_t*`
+/// `reinterpret_cast` form was also well-defined, since `char`/`char8_t` are
+/// both one-byte types, but this spells the same guarantee without leaning
+/// on a cast).
+///
+/// Round 2 found three MORE callers beyond `SplLogWriter.cpp`'s two
+/// stream-opens, all fed by the same `currentSplSessionDir_` UTF-8 string:
+/// `MainComponentSpl.cpp::exportReportClicked()`,
+/// `SplCalibrationRecord.h::writeCalibrationRecordFile`, and
+/// `SplReportPayloadBuilder.cpp::buildReportPayload`. This is no longer a
+/// single-caller function -- do not reintroduce that assumption in a comment
+/// near a new call site.
 [[nodiscard]] inline std::filesystem::path utf8Path(const std::string& utf8) {
-    return std::filesystem::path(reinterpret_cast<const char8_t*>(utf8.data()),
-                                 reinterpret_cast<const char8_t*>(utf8.data() + utf8.size()));
+    return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
 }
 
 /// The per-channel facts `rta::measure::SplConfig` itself does not carry --
