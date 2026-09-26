@@ -8,6 +8,10 @@ set(RTATOOL_SOURCES
     src/Main.cpp
     src/MainComponent.cpp
     src/MainComponentDelay.cpp
+    # MainComponentPanes.cpp: owner decision 2026-09-26's pane selector --
+    # MainComponent.cpp's own 400-line-cap split, same shape as
+    # MainComponentDelay.cpp/MainComponentCalibration.cpp.
+    src/MainComponentPanes.cpp
     # PaneFactory.cpp: makePaneFactory's own translation unit, split out of
     # MainComponent.cpp (fix round, PR #26) so a test can link it without
     # MainComponent's other dependencies. See PaneFactory.h.

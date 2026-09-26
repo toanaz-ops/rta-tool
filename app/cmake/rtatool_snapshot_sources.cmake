@@ -82,6 +82,11 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # itself, not only feed a StaticSnapshotSource into RtaView.
     src/MainComponent.cpp
     src/MainComponentDelay.cpp
+    # MainComponentPanes.cpp: owner decision 2026-09-26's pane selector,
+    # needed here for the same reason MainComponentDelay.cpp is -- main-live
+    # (and main-live-spl) construct the real MainComponent, which now owns
+    # this file's wirePaneSelectorButtons()/selectPaneView().
+    src/MainComponentPanes.cpp
     # PaneFactory.cpp: makePaneFactory's own translation unit (fix round, PR
     # #26), needed here since MainComponent.cpp calls it. SplView.cpp is
     # what its Spl branch constructs.
