@@ -15,11 +15,15 @@
 
 namespace rta::view {
 
-/// The pane selector's three buttons. A plain enum, not three bools --
-/// exactly one is ever "selected" at a time (a radio group, not three
-/// independent switches), and this type cannot express "two selected" or
-/// "none selected" the way three bools could.
-enum class PaneSelectorButton { Rta, Transfer, Spl };
+/// The pane selector's buttons. A plain enum, not N bools -- exactly one is
+/// ever "selected" at a time (a radio group, not independent switches), and
+/// this type cannot express "two selected" or "none selected" the way bools
+/// could.
+///
+/// `Xover` added by the ALIGN-R8 reversal (owner, 2026-09-26): the 4th
+/// selector button, `XOVER`, routed through the same seam as the other
+/// three.
+enum class PaneSelectorButton { Rta, Transfer, Spl, Xover };
 
 /// Maps a selector button to the `PaneView` the workspace should rebuild
 /// itself to show. Routed through `resolvePaneView` (`PaneRegistry.h`)
@@ -42,6 +46,7 @@ enum class PaneSelectorButton { Rta, Transfer, Spl };
 [[nodiscard]] inline PaneResolution decidePaneSelection(PaneSelectorButton button) {
     if (button == PaneSelectorButton::Transfer) return resolvePaneView("transfer");
     if (button == PaneSelectorButton::Spl) return resolvePaneView("spl");
+    if (button == PaneSelectorButton::Xover) return resolvePaneView("xover");
     if (button == PaneSelectorButton::Rta) return resolvePaneView("rta");
 
     // Only reachable once a future enumerator is added to PaneSelectorButton

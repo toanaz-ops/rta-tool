@@ -73,6 +73,13 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/view/CrossoverSurface.cpp
     src/measure/CrossoverTopology.cpp
     src/trace/VirtualTrace.cpp
+    # CrossoverSurfaceRenderer.cpp: the G18 chart drawing PhaseAlignPreview.cpp
+    # now calls into (ALIGN-R8 reversal, app/crossover-pane) instead of
+    # carrying its own copy. CrossoverPaneView.cpp: main-live.png constructs
+    # the real MainComponent (comment below), whose PaneFactory.cpp now names
+    # this type in its Xover branch.
+    src/view/CrossoverSurfaceRenderer.cpp
+    src/view/CrossoverPaneView.cpp
     # main-live.png additionally renders the real MainComponent in synthetic
     # mode (T10/T11's own composition root, plan §0 item 4's "no hardware at
     # all, on CI, and offscreen" made literal) -- which needs the live-device

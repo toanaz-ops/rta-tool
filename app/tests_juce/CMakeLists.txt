@@ -123,6 +123,13 @@ add_executable(rtatool_view_tests
     # SplView.cpp, new here.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PaneFactory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/SplView.cpp
+    # ALIGN-R8: PaneFactory.cpp's Xover branch builds this, needed for
+    # test_main_component_pane_factory.cpp's matching case, plus its chain.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverPaneView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurface.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CrossoverTopology.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/VirtualTrace.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurfaceRenderer.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:
@@ -358,6 +365,7 @@ list(TRANSFORM RTA_MAIN_COMPONENT_TEST_SOURCES PREPEND "${CMAKE_SOURCE_DIR}/app/
 
 add_executable(rtatool_main_component_tests
     test_main_component_panes.cpp
+    test_main_component_panes_xover.cpp  # ALIGN-R8's XOVER coverage, split out (400-line cap)
     # Fix round MEDIUM F1: item 4's rail-scroll fix had no test.
     test_main_component_rail_layout.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}

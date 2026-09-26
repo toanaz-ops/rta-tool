@@ -22,7 +22,7 @@ void MainComponent::wirePaneSelectorButtons() {
     // others off" contract modeSwitch_ gives itself alone with
     // setClickingTogglesState(true).
     constexpr int kPaneSelectorRadioGroupId = 1;
-    for (auto* button : {&paneRtaButton_, &paneTransferButton_, &paneSplButton_}) {
+    for (auto* button : {&paneRtaButton_, &paneTransferButton_, &paneSplButton_, &paneXoverButton_}) {
         button->setRadioGroupId(kPaneSelectorRadioGroupId, juce::dontSendNotification);
         button->setClickingTogglesState(true);
     }
@@ -35,26 +35,33 @@ void MainComponent::wirePaneSelectorButtons() {
     paneRtaButton_.getProperties().set(az::ui::hintProperty, "spectrum analyser");
     paneTransferButton_.getProperties().set(az::ui::hintProperty, "dual-FFT transfer function");
     paneSplButton_.getProperties().set(az::ui::hintProperty, "SPL meter -- Leq, dose, Ln");
+    paneXoverButton_.getProperties().set(az::ui::hintProperty,
+                                         "crossover alignment -- G18, two stored traces");
 
     paneRtaButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Rta); };
     paneTransferButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Transfer); };
     paneSplButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Spl); };
+    paneXoverButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Xover); };
 
     addAndMakeVisible(paneRtaButton_);
     addAndMakeVisible(paneTransferButton_);
     addAndMakeVisible(paneSplButton_);
+    addAndMakeVisible(paneXoverButton_);
 }
 
 void MainComponent::layoutPaneSelectorRow(juce::Rectangle<int> row) {
-    // Same "(width - 2 gaps) / 3" shape MainComponent::resized() already
-    // uses for the LOCATE/APPLY and CAL START/CAL END rows -- three equal
-    // cells, two gaps between them.
-    const int buttonWidth = (row.getWidth() - az::ui::gap * 2) / 3;
+    // Same "(width - N-1 gaps) / N" shape MainComponent::resized() already
+    // uses for the LOCATE/APPLY and CAL START/CAL END rows -- four equal
+    // cells, three gaps between them (grown from three cells/two gaps when
+    // XOVER was added, ALIGN-R8 reversal).
+    const int buttonWidth = (row.getWidth() - az::ui::gap * 3) / 4;
     paneRtaButton_.setBounds(row.removeFromLeft(buttonWidth));
     row.removeFromLeft(az::ui::gap);
     paneTransferButton_.setBounds(row.removeFromLeft(buttonWidth));
     row.removeFromLeft(az::ui::gap);
-    paneSplButton_.setBounds(row);
+    paneSplButton_.setBounds(row.removeFromLeft(buttonWidth));
+    row.removeFromLeft(az::ui::gap);
+    paneXoverButton_.setBounds(row);
 }
 
 void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
@@ -80,6 +87,8 @@ void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
     paneTransferButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Transfer,
                                        juce::dontSendNotification);
     paneSplButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Spl, juce::dontSendNotification);
+    paneXoverButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Xover,
+                                    juce::dontSendNotification);
 
     // The new pane has no bounds yet (WorkspaceView's constructor lays out
     // nothing -- resized() does): position it now rather than waiting for

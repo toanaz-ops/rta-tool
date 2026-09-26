@@ -28,12 +28,17 @@ TEST_CASE("each defined button resolves to its own PaneView, with no fallback",
     CHECK(spl.view == PaneView::Spl);
     CHECK_FALSE(spl.fellBack);
     CHECK(spl.requested == "spl");
+
+    const auto xover = decidePaneSelection(PaneSelectorButton::Xover);
+    CHECK(xover.view == PaneView::Xover);
+    CHECK_FALSE(xover.fellBack);
+    CHECK(xover.requested == "xover");
 }
 
 TEST_CASE("an unrecognised button falls back to Rta and reports it",
          "[pane_selector_decision]") {
-    // No enumerator outside {Rta, Transfer, Spl} exists today, so this pins
-    // the fallback branch itself against the same static_cast an
+    // No enumerator outside {Rta, Transfer, Spl, Xover} exists today, so
+    // this pins the fallback branch itself against the same static_cast an
     // uninitialised or corrupted enum value could produce -- the same
     // "unknown -> Rta, reported" contract resolvePaneView("nonexistent")
     // already carries (test_spl_strip.cpp).

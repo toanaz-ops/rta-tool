@@ -41,7 +41,11 @@ struct MainComponentTestAccess {
     [[nodiscard]] static rta::measure::AnalysisThread& analysisThread(MainComponent& c) {
         return c.analysisThreadForTest();
     }
-    [[nodiscard]] static const rta::trace::TraceLibrary& library(const MainComponent& c) {
+    // Non-const (app/crossover-pane): test_main_component_panes_xover.cpp
+    // calls TraceLibrary::add through this to seed the XOVER pane's two
+    // stored traces. Every existing caller only ever read through it or
+    // compared its address, both still valid against a non-const reference.
+    [[nodiscard]] static rta::trace::TraceLibrary& library(MainComponent& c) {
         return c.libraryForTest();
     }
 
