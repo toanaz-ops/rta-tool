@@ -237,11 +237,11 @@ TEST_CASE("feedHop allocates nothing when one hop closes many blocks (round-4 it
         const int channels[] = {0};
         session.start(config, kFs, channels);
 
-        std::vector<float> hop(4096, 0.2f);
+        std::vector<float> hop4096(4096, 0.2f);
         std::size_t bytes = 0;
         {
             const rta::test::AllocationProbe probe;
-            session.feedHop(0, hop);
+            session.feedHop(0, hop4096);
             bytes = probe.bytes();
         }
         INFO("bytes allocated by one feedHop at blockSamples=1, hop=4096 = " << bytes);
