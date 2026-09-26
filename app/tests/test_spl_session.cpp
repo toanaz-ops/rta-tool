@@ -221,6 +221,35 @@ TEST_CASE("feedHop allocates nothing when one hop closes many blocks (round-4 it
         CHECK(bytes == 0);
         CHECK(session.blockCount(0) > 0);
     }
+
+    // LOW follow-up batch, item 1: the two SECTIONs above never exercise
+    // `Chain::newlyClosed`'s real capacity, so shrinking its `reserve(SplMeter
+    // ::kScratchSamples)` to e.g. `reserve(64)` still read `bytes == 0`.
+    // blockSamples = 1 against a 4096-sample hop drives every segment to one
+    // sample and one block, filling `SplMeter::readyBuffer_` to its own fixed
+    // capacity (kScratchSamples) before the counted-Dropped fallback takes
+    // over -- see SplSession.h's corrected comment on `newlyClosed` for why
+    // that capacity, not a pigeonhole argument, is the real bound.
+    SECTION("blockSamples = 1 (hop 4096) -- fills SplMeter::readyBuffer_ to its real capacity") {
+        SplConfig config = shortBlockConfig();
+        config.blockSeconds = 1e-6;  // blockSamplesFor rounds this down to 1.
+        SplSession session;
+        const int channels[] = {0};
+        session.start(config, kFs, channels);
+
+        std::vector<float> hop(4096, 0.2f);
+        std::size_t bytes = 0;
+        {
+            const rta::test::AllocationProbe probe;
+            session.feedHop(0, hop);
+            bytes = probe.bytes();
+        }
+        INFO("bytes allocated by one feedHop at blockSamples=1, hop=4096 = " << bytes);
+        CHECK(bytes == 0);
+        // The real bound, exactly: readyBuffer_'s own fixed capacity, not a
+        // handful of blocks a mutated small reserve would happen to survive.
+        CHECK(session.blockCount(0) == rta::measure::SplMeter::kScratchSamples);
+    }
 }
 
 // --- PR #29 round-3 fix pass step 2: blockSecondsTooSmall is ADVISORY, ----
