@@ -13,6 +13,7 @@
 // disagree with the log that is its own evidence.
 #pragma once
 
+#include "export/SplCalibrationRecord.h"  // CalibrationRecordRefusal
 #include "measure/CalibrationSession.h"
 #include "measure/SplConfig.h"
 #include "measure/SplHistory.h"
@@ -103,6 +104,33 @@ struct ReportValidity {
     /// kMaxMetrics`, record sec.15 A5) -- 0 normally.
     std::uint32_t refusedMetrics = 0;
     std::vector<std::string> segmentPaths;
+    /// Task W2-E2b part B: trailing bytes `SplLog.h::readLog` discarded
+    /// because they were a truncated final line (record §10, C3: "no
+    /// atomicity claim... the reader discards it and reports how many bytes
+    /// it discarded"). Summed across every segment the payload builder read.
+    /// Normally 0.
+    std::uint64_t bytesDiscarded = 0;
+    /// Task W2-E2b part B's own instruction: "Ln / dose / alarm states are
+    /// NOT in the log ... take them from the live SplBlockView at export
+    /// time and state that source in the report's validity section". True
+    /// when a live view was available to the builder; false means this
+    /// report's dose/Ln/alarm rows are all absent because the session was
+    /// no longer running at export time -- never silently indistinguishable
+    /// from "measured, and there was nothing to report"
+    /// (memory/a-placeholder-for-an-absent-result-erases-its-state.md).
+    bool lnDoseAlarmFromLiveSession = false;
+    /// Fix round 3 (verifier MEDIUM): the range a FAILED calibration record
+    /// bracketed as CalibrationInvalid in THIS payload's own in-memory copy
+    /// of the blocks (never on disk) -- `renderHistory`'s own history strip
+    /// silently drops these blocks (the same rule the recomputed Leq
+    /// already follows), so a reader of the strip alone cannot tell "no data
+    /// was ever logged here" from "data was logged and excluded". Absent
+    /// when no bracket applied.
+    struct ExcludedRange {
+        std::uint64_t startBlockIndex = 0;
+        std::uint64_t endBlockIndex = 0;
+    };
+    std::optional<ExcludedRange> excludedBlockRange;
 };
 
 /// One point of the time-history strip (record sec.9 item 7): one metric's
@@ -131,6 +159,11 @@ struct ReportPayload {
     // 3. Calibration (item 3, task W3-C). `performed == false` prints
     // "calibration check not performed" -- Wave 3's own cut fallback.
     rta::measure::CalibrationReportFields calibration;
+    /// Fix round 3: mirrors the calibration record's own `refusal` field
+    /// (`SplCalibrationRecord.h`) -- `renderCalibration` states WHY no
+    /// channel/block-range/verdict came with `calibration` above, instead of
+    /// silently printing an absent drift/verdict as if nothing had run.
+    CalibrationRecordRefusal calibrationChannelRefusal = CalibrationRecordRefusal::None;
     // 4. Settings (item 4), plus the alarms' live verdict (fix round).
     rta::measure::SplConfig config;
     std::vector<ReportAlarmResult> alarms;

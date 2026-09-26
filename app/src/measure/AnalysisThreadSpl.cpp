@@ -60,12 +60,14 @@ void AnalysisThread::applyPendingSplRequest() {
     std::vector<int> channels;
     bool enable = false;
     std::string logDirectory;
+    std::optional<double> calibratorLevelDb;
     {
         const std::lock_guard<std::mutex> lock(splRequestLock_);
         config = splRequestConfig_;
         channels = splRequestChannels_;
         enable = splRequestEnable_;
         logDirectory = splRequestLogDirectory_;
+        calibratorLevelDb = splRequestCalibratorLevelDb_;
     }
     if (enable) {
         splSession_.start(config, bus_.sampleRate(), channels);
@@ -128,6 +130,10 @@ void AnalysisThread::applyPendingSplRequest() {
             spec.info.blockSamples = blockSamples;
             spec.info.sampleRate = sampleRate;
             spec.info.startedAtUnixMs = params.startedAtUnixMs;
+            // Task W2-E2b part A: absent for an uncalibrated first log,
+            // present once a calibration START check has restarted this log
+            // with an offset -- see `enableSplLogging`'s own comment.
+            spec.info.calibratorLevelDb = calibratorLevelDb;
             params.channels.push_back(std::move(spec));
         }
         splLogPipeline_.enable(params);
@@ -150,6 +156,12 @@ void AnalysisThread::applyPendingSplRequest() {
     // being called for that channel. Same shape as splLogDroppedBlocks_ just
     // above.
     for (auto& failed : splLogWriteFailed_) failed.store(false, std::memory_order_relaxed);
+    // Task W2-E2b part A: a fresh log (this function running at all) starts
+    // an unverified calibration state again -- any PREVIOUS log's failed
+    // verdict must not survive into a session that has not been calibrated
+    // yet, the same "never inherits a previous session's state" reasoning
+    // every other mirror in this function already follows.
+    for (auto& invalid : splCalibrationInvalid_) invalid.store(false, std::memory_order_relaxed);
 }
 
 void AnalysisThread::feedSpl(int channel) {
@@ -249,13 +261,15 @@ void AnalysisThread::feedSpl(int channel) {
 }
 
 void AnalysisThread::enableSplLogging(const SplConfig& config, std::span<const int> channels,
-                                      std::string logDirectory) {
+                                      std::string logDirectory,
+                                      std::optional<double> calibratorLevelDb) {
     {
         const std::lock_guard<std::mutex> lock(splRequestLock_);
         splRequestConfig_ = config;
         splRequestChannels_.assign(channels.begin(), channels.end());
         splRequestEnable_ = true;
         splRequestLogDirectory_ = std::move(logDirectory);
+        splRequestCalibratorLevelDb_ = calibratorLevelDb;
     }
     splRequestPending_.store(true, std::memory_order_release);
 }
@@ -266,8 +280,19 @@ void AnalysisThread::disableSplLogging() {
         splRequestEnable_ = false;
         splRequestChannels_.clear();
         splRequestLogDirectory_.clear();
+        splRequestCalibratorLevelDb_.reset();
     }
     splRequestPending_.store(true, std::memory_order_release);
+}
+
+void AnalysisThread::setCalibrationInvalid(int channel, bool invalid) noexcept {
+    if (channel < 0 || static_cast<std::size_t>(channel) >= splCalibrationInvalid_.size()) return;
+    splCalibrationInvalid_[static_cast<std::size_t>(channel)].store(invalid, std::memory_order_relaxed);
+}
+
+bool AnalysisThread::calibrationInvalid(int channel) const noexcept {
+    if (channel < 0 || static_cast<std::size_t>(channel) >= splCalibrationInvalid_.size()) return false;
+    return splCalibrationInvalid_[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);
 }
 
 std::uint64_t AnalysisThread::splBlockCount(int channel) const noexcept {
@@ -334,6 +359,10 @@ void AnalysisThread::fillSplPublishInput(
     // Station-4 fix round (PR #31, finding 6): same reasoning as the drop
     // count just above -- read the mirror, never splLogPipeline_ itself.
     input.logWriteFailed = splLogWriteFailed(channel);
+    // Task W2-E2b part A: same "read the mirror" reasoning -- the calibration
+    // verdict is decided on the message thread (MainComponentCalibration.cpp),
+    // never here.
+    input.calibrationInvalid = calibrationInvalid(channel);
 }
 
 std::uint64_t AnalysisThread::splLogDroppedBlocks(int channel) const noexcept {

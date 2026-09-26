@@ -93,6 +93,14 @@ struct SplPublishInput {
     /// failed to create makes every segment open underneath it fail too, so
     /// this one signal already covers both.
     bool logWriteFailed = false;
+    /// Task W2-E2b part A: true once this channel's calibration END check
+    /// found drift exceeding ISO 1996-2:2017 cl. 5.2's 0.5 dB -- carried
+    /// straight to `SplBlockView::calibrationInvalid`, same shape as
+    /// `logWriteFailed` above (a message-thread verdict, mirrored through an
+    /// atomic `AnalysisThread` itself owns). Normally false. Cleared by the
+    /// next `enableSplLogging` (a fresh log is an unverified calibration
+    /// state again).
+    bool calibrationInvalid = false;
 };
 
 /// Builds the published SPL view, or `std::nullopt` when nothing is logging.
