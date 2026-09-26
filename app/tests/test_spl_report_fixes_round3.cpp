@@ -144,6 +144,36 @@ TEST_CASE("a no-measurement-channel refusal states its own distinct reason", "[s
     CHECK(calibration.find("no measurement channel could be resolved") != std::string::npos);
 }
 
+// LOW follow-up batch, item 15: a performed=1 record beside an UNCALIBRATED
+// log (a START check with nothing logging yet, followed by an ordinary log
+// and an END check against it) must say so, not read like any other passing
+// calibration.
+TEST_CASE("a performed calibration whose offset was never applied warns instead of "
+         "looking calibrated",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    payload.calibration.performed = true;
+    payload.calibration.verdict = rta::measure::CalibrationVerdict::Pass;
+    payload.calibrationOffsetApplied = false;
+
+    const auto calibration = extractSection(renderReport(payload), "calibration");
+    CHECK(calibration.find("NOT calibrated") != std::string::npos);
+    // The rest of the section still renders normally -- absence of the offset
+    // is not absence of the calibration check itself.
+    CHECK(calibration.find("Pass") != std::string::npos);
+}
+
+TEST_CASE("a performed calibration whose offset WAS applied prints no warning",
+         "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    payload.calibration.performed = true;
+    payload.calibration.verdict = rta::measure::CalibrationVerdict::Pass;
+    // calibrationOffsetApplied left at its default (true).
+
+    const auto calibration = extractSection(renderReport(payload), "calibration");
+    CHECK(calibration.find("NOT calibrated") == std::string::npos);
+}
+
 // Fix round 3 (verifier LOW, mutant M8 survived): dropping the "marker-gap"
 // CSS class from the ternary in renderHistory passed unnoticed -- nothing in
 // this suite asserted a Gap marker's own class, only its presence in the

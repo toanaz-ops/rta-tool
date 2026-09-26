@@ -50,6 +50,20 @@ std::string renderCalibration(const ReportPayload& p) {
                   (c.start.level.operatorSupplied ? " (operator-supplied)" : ""));
     body += kv("Compared against", escapeHtml(std::string(c.clause)));
 
+    // LOW follow-up batch, item 15: `performed == true` beside an
+    // UNCALIBRATED log is real and reachable (a START check with nothing
+    // logging yet has no session to apply its offset to --
+    // MainComponentCalibration.cpp's own `restartSplLoggingForCalibration`
+    // early return) -- printed BEFORE the refusal branch below, because it is
+    // a fact about the LOG, independent of whether the two checks resolved to
+    // comparable channels.
+    if (!p.calibrationOffsetApplied) {
+        body += "<p class=\"honesty\">This log's levels are NOT calibrated: the offset this "
+               "calibration check measured was never applied to it (SPL logging was not yet "
+               "running when the START check completed, or this log was started independently "
+               "of that check).</p>";
+    }
+
     if (p.calibrationChannelRefusal != CalibrationRecordRefusal::None) {
         const std::string reason =
             p.calibrationChannelRefusal == CalibrationRecordRefusal::ChannelMismatch
