@@ -93,6 +93,15 @@ target_link_libraries(rtatool PRIVATE
 juce_add_console_app(rtatool_snapshot
     PRODUCT_NAME "RTA Tool Snapshot"
     COMPANY_NAME "AZ Soundtech"
+    # Fix round PRs #36/#37 item 5: with no BUNDLE_ID, JUCEUtils.cmake
+    # defaults it to "com.${COMPANY_NAME}.${target}" verbatim -- the space in
+    # "AZ Soundtech" rode straight through into "com.AZ Soundtech.
+    # rtatool_snapshot" and JUCEUtils.cmake's own `_juce_set_property_if_not_
+    # set` warns (message(WARNING ...), i.e. a `CMake Warning`) on a bundle id
+    # containing spaces. `rtatool` above never had this problem -- it already
+    # spells its own BUNDLE_ID out ("com.azsoundtech.rtatool"); this target
+    # just never had one. Same dotted-lowercase shape, `.snapshot` appended.
+    BUNDLE_ID     "com.azsoundtech.rtatool.snapshot"
 )
 
 include(cmake/rtatool_snapshot_sources.cmake)

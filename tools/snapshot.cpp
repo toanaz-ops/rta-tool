@@ -26,6 +26,7 @@
 
 #include "AppTypefaces.h"
 #include "MainComponent.h"
+#include "MainComponentTestAccess.h"
 #include "dev/SpecimenComponent.h"
 #include "dev/preview/PhaseAlignPreview.h"
 #include "dev/preview/SplPreview.h"
@@ -33,6 +34,7 @@
 #include "dev/preview/TransferFunctionPreview.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
+#include "measure/SplConfig.h"
 #include "measure/SyntheticSnapshot.h"
 #include "trace/Workspace.h"
 #include "view/PaneRegistry.h"
@@ -40,6 +42,7 @@
 #include "view/TransferView.h"
 #include "view/WorkspaceView.h"
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -232,13 +235,46 @@ int main (int argc, char** argv)
         // running app until this task. Same seam as main-live.png above
         // (setSyntheticMode, then the exact click path an operator's SPL
         // button uses -- selectPaneView, not a second, divergent way to
-        // build the pane), so this picture proves the SPL pane actually
-        // renders live data through the real selector, not a blank pane.
+        // build the pane) for the PANE itself; the SPL DATA underneath it
+        // needs one more thing setSyntheticMode alone does not provide.
+        //
+        // PR #37 review (LOW finding 1): this comment used to claim the
+        // picture "proves the SPL pane actually renders live data". It did
+        // not -- `MainComponent::pollSplLogging()` is what calls
+        // `AnalysisThread::enableSplLogging`, and it only runs from
+        // `timerCallback()`, which `juce::Timer` fires through the message
+        // loop. This offscreen harness pumps no message loop (the same
+        // trap T-6 as `setSize()`/`resized()` above, one level higher:
+        // `Timer::startTimerHz` needs it too), so that poll never ran, SPL
+        // logging was never enabled, and the rendered picture was
+        // `SplView.cpp`'s "NO SPL SESSION" placeholder every time.
+        //
+        // The fix drives `analysisThread_` directly, through
+        // `MainComponentTestAccess.h` (fix round item 2) -- the exact call
+        // `pollSplLogging()` would have made on the LIVE/SYNTHETIC edge, not
+        // a second, divergent path: metering only (empty `logDirectory` --
+        // `AnalysisThread::enableSplLogging`'s own comment: state runs, disk
+        // I/O does not), on channel 0, which `setSyntheticMode(true)` above
+        // already gave the Measurement role.
         MainComponent component;
         component.setSyntheticMode (true);
         juce::Thread::sleep (800);
+
+        const std::array<int, 1> splChannels{{0}};
+        MainComponentTestAccess::analysisThread (component)
+            .enableSplLogging (rta::measure::SplConfig{}, splChannels, /*logDirectory=*/"");
+
+        // Deterministic drive, not a fixed guess: poll splBlockCount() the
+        // same way app/tests_juce's own waitForSplBlocks() helpers do (e.g.
+        // test_spl_drain.cpp) rather than sleeping for an arbitrary interval
+        // and hoping a block closed inside it.
+        for (int waitedMs = 0;
+             waitedMs < 3000 &&
+                 MainComponentTestAccess::analysisThread (component).splBlockCount (0) < 1;
+             waitedMs += 10)
+            juce::Thread::sleep (10);
+
         component.selectPaneView (rta::view::PaneSelectorButton::Spl);
-        juce::Thread::sleep (200);
         if (! renderComponent (component, outDir, "main-live-spl.png", 1280, 800))
             ++failures;
     }

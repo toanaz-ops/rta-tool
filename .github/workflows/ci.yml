@@ -21,7 +21,27 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRTA_BUILD_TESTS=ON -DRTA_BUILD_APP=OFF
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRTA_BUILD_TESTS=ON -DRTA_BUILD_APP=OFF 2>&1 | tee configure.log
+
+      # Fix round PRs #36/#37 item 5: a `CMake Warning` (message(WARNING ...))
+      # is invisible to the Warnings step below -- configure output never
+      # reaches build.log, and that step's own pattern is lowercase
+      # `warning(...)?:`, which a `CMake Warning at <file>:<line> (message):`
+      # block does not match either. Checked against the latest main run at
+      # this PR's base (67eda30, run 36231943576): 0 `CMake Warning` lines on
+      # ubuntu-latest/macos-latest/windows-latest here, so this gate starts
+      # with nothing to exclude -- unlike the ON job's Configure step, which
+      # is not this clean (see ci-app-on.yml's own comment).
+      - name: Configure warnings
+        shell: bash
+        run: |
+          count=$(grep -c "CMake Warning" configure.log || true)
+          echo "CMake warnings (${{ matrix.os }}): $count"
+          if [ "$count" != "0" ]; then
+            grep -n "CMake Warning" -A3 configure.log
+            exit 1
+          fi
 
       # `--parallel` with NO number does not mean "one job per core" -- it
       # means "the native tool's default", and for Makefiles that default is

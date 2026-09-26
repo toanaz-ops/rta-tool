@@ -7,6 +7,10 @@
 set(RTATOOL_SOURCES
     src/Main.cpp
     src/MainComponent.cpp
+    # MainComponentLayout.cpp: paint()/resized() -- fix round PRs #36/#37
+    # item 3's own 400-line-cap split, same shape as MainComponentDelay.cpp
+    # below.
+    src/MainComponentLayout.cpp
     src/MainComponentDelay.cpp
     # MainComponentPanes.cpp: owner decision 2026-09-26's pane selector --
     # MainComponent.cpp's own 400-line-cap split, same shape as
