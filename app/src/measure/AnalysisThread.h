@@ -4,18 +4,15 @@
 // T-1 / T-3 / T-4 / T-5.
 #pragma once
 
-#include "export/SplLogPipeline.h"
 #include "measure/AnalysisPublish.h"
 #include "measure/Analyser.h"
+#include "measure/AnalysisThreadSplState.h"
 #include "measure/AtomicSharedPtr.h"
 #include "measure/AverageGroup.h"
 #include "measure/RawCaptureBuffer.h"
 #include "measure/RoutingPlan.h"
 #include "measure/Snapshot.h"
 #include "measure/SnapshotSource.h"
-#include "measure/SplChannelState.h"
-#include "measure/SplConfig.h"
-#include "measure/SplSession.h"
 
 #include "rta/platform/CaptureBus.h"
 #include "rta/platform/Fault.h"
@@ -214,7 +211,7 @@ public:
 
     /// Station-4 fix round (PR #31, verifier finding 6): the same mirror
     /// shape as `splLogDroppedBlocks` above, over
-    /// `splLogPipeline_.writeFailed(channel)`.
+    /// `splState_.logPipeline.writeFailed(channel)`.
     [[nodiscard]] bool splLogWriteFailed(int channel) const noexcept;
 
     /// Message-thread call: END check's drift > cl. 5.2's 0.5 dB, cleared by
@@ -273,15 +270,6 @@ private:
     /// output, and is out of scope here.
     std::vector<std::unique_ptr<Analyser>> analysers_;
     std::uint64_t lastEpoch_ = 0;
-    /// Station-4 fix round (PR #31, round 3, verifier finding 1, MEDIUM):
-    /// the epoch the CURRENT SPL session (state and/or log) was started at,
-    /// recorded by applyPendingSplRequest() every time it runs. feedSpl()
-    /// compares this against `lastEpoch_` and freezes the instant they
-    /// differ -- see AnalysisThreadSpl.cpp's own comments on both functions
-    /// for why a poll-driven composition root (up to 500 ms, MainComponentSpl
-    /// .cpp) cannot be trusted to react to a device reconfiguration before
-    /// more audio arrives at the new rate.
-    std::uint64_t splSessionEpoch_ = 0;
 
     /// One hop's worth of scratch PER CHANNEL, allocated once here rather
     /// than per drain call (T-4: the analysis thread may allocate, but there
@@ -338,62 +326,13 @@ private:
     std::atomic<bool> applyDelayRequested_{false};
     std::atomic<int> appliedReferenceDelay_{0};
 
-    // --- Lane L6a task W0-D: the SPL feed ---------------------------------
-    // The session itself is JUCE-free and lives in measure/SplSession.h, so
-    // the block clock, the gap arithmetic and the window are all provable
-    // with RTA_BUILD_APP=OFF. What stays here is the two things only this
-    // class can own: the thread handover, and the published counters.
-    SplSession splSession_;  // analysis-thread-only
-
-    mutable std::mutex splRequestLock_;
-    SplConfig splRequestConfig_;
-    std::vector<int> splRequestChannels_;
-    bool splRequestEnable_ = false;
-    /// W2-E2a: empty means "state only, nothing touches disk" -- see
-    /// `enableSplLogging`'s own comment. Guarded by `splRequestLock_`, same
-    /// as the three members above it.
-    std::string splRequestLogDirectory_;
-    std::optional<double> splRequestCalibratorLevelDb_;  // enableSplLogging's own, guarded likewise
-    /// The handover. Same shape as `locateArmRequested_`: the message thread
-    /// writes under the lock and releases this flag; the analysis thread
-    /// acquires it once per drain and takes the lock only then, so no drain
-    /// that has nothing to pick up pays for one.
-    std::atomic<bool> splRequestPending_{false};
-
-    /// Published per channel, for the same reason `routeHopCounts_` is: a
-    /// plain counter written by this thread and read from another would be a
-    /// data race even where a stale value would look harmless.
-    std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splBlockCounts_{};
-    std::array<std::atomic<std::uint32_t>, SplSession::kMaxLoggedChannels> splFlagsSeen_{};
-    std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splDroppedSamples_{};
-
-    // --- Lane L6a task W2-E1: the per-channel SPL state --------------------
-    // One JUCE-free SplChannelState per logged channel (history, alarms,
-    // dose, Ln), allocated in applyPendingSplRequest() -- the same moment
-    // splSession_.start() allocates its own chains -- and never resized
-    // afterward. ANALYSIS-THREAD-ONLY, same as splSession_ itself: fed from
-    // feedSpl(), read from fillSplPublishInput().
-    std::array<std::unique_ptr<SplChannelState>, SplSession::kMaxLoggedChannels> splChannelStates_;
-
-    // --- Lane L6a task W2-E2a: the log-writing pipeline ---------------------
-    // JUCE-free (app/src/export/SplLogPipeline.h), so the queue/writer
-    // mechanics are provable with RTA_BUILD_APP=OFF. Started/stopped from
-    // applyPendingSplRequest(), the same moment splSession_ itself is;
-    // pushBlock() is called from feedSpl(), on this thread alone -- see that
-    // class's own THREADING comment for why no lock guards it here.
-    rta::splexport::SplLogPipeline splLogPipeline_;
-
-    /// Published per channel, same shape as `splDroppedSamples_` above: a
-    /// plain mirror of `splLogPipeline_.droppedBlocks(channel)`, refreshed in
-    /// feedSpl() so the message thread never reads `splLogPipeline_` itself
-    /// (that object is analysis-thread-only).
-    std::array<std::atomic<std::uint64_t>, SplSession::kMaxLoggedChannels> splLogDroppedBlocks_{};
-    /// Station-4 fix round (PR #31, finding 6): same mirror shape as
-    /// `splLogDroppedBlocks_`, over `splLogPipeline_.writeFailed(channel)`.
-    std::array<std::atomic<bool>, SplSession::kMaxLoggedChannels> splLogWriteFailed_{};
-
-    // splLogWriteFailed_'s mirror shape, opposite direction (message thread writes, analysis reads).
-    std::array<std::atomic<bool>, SplSession::kMaxLoggedChannels> splCalibrationInvalid_{};
+    // --- Lane L6a: the SPL feed (tasks W0-D, W2-E1, W2-E2a) ---------------
+    // Factored into its own JUCE-free struct (LOW follow-up batch, item 16)
+    // so this class's own header stays clear of the 400-line hard cap -- see
+    // AnalysisThreadSplState.h for the full field-by-field rationale and
+    // AnalysisThreadSpl.cpp for the one translation unit that reads and
+    // writes every field of it.
+    AnalysisThreadSplState splState_;
 };
 
 }  // namespace rta::measure
