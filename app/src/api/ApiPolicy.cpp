@@ -196,6 +196,25 @@ Verdict conditionalVerdict(std::string_view ifNoneMatch, std::optional<std::uint
     return Verdict::Serve;
 }
 
+PreRoutingRefusal decidePreRoutingRefusal(const PreRoutingInputs& in, const ApiSettings& settings) {
+    if (in.hostHeaderCount > 1) {
+        return PreRoutingRefusal::MultipleHostHeaders;
+    }
+    if (!hostIsAllowed(in.hostHeaderValue, in.boundPort)) {
+        return PreRoutingRefusal::HostNotAllowed;
+    }
+    if (!methodIsAllowed(in.method)) {
+        return PreRoutingRefusal::MethodNotAllowed;
+    }
+    if (!bearerAccepted(in.authorizationHeader, settings)) {
+        return PreRoutingRefusal::Unauthorized;
+    }
+    if (!bodyIsAcceptable(in.declaredBodyBytes, settings)) {
+        return PreRoutingRefusal::BodyTooLarge;
+    }
+    return PreRoutingRefusal::None;
+}
+
 RateLimiter::RateLimiter(int maxPerSecond) : maxPerSecond_(maxPerSecond) {}
 
 bool RateLimiter::admit(Clock::time_point now) {

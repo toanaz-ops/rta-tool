@@ -209,8 +209,15 @@ TEST_CASE("Ln is fed at the 100 ms detector sampling rate, not the block clock",
     // (b) The histogram's own quantisation: no percentile it reports can sit
     // closer than half a bin to the true continuous value (LevelHistogram.h's
     // own `percentileDb` comment; this project's established bound --
-    // test_spl_channel_state.cpp's "c" case).
-    const double histogramQuantizationDb = rta::meter::LevelHistogram::kBinWidthDb / 2.0;
+    // test_spl_channel_state.cpp's "c" case). BUT this comparison is between
+    // TWO INDEPENDENTLY quantised percentiles -- `view.lnDb` from the real
+    // session's own histogram and `expectedL10`/`expectedL90` from this
+    // fixture's SEPARATE `LevelHistogram` built from the closed-form
+    // simulation above -- so each side can independently sit up to half a bin
+    // away from the true continuous value, on OPPOSITE sides of it. The
+    // worst-case gap between the two readings is therefore a FULL bin width,
+    // not half (LOW follow-up batch, item 2).
+    const double histogramQuantizationDb = rta::meter::LevelHistogram::kBinWidthDb;
 
     const double kFilterTransientMarginDb = settlingResidualDb + histogramQuantizationDb;
     INFO("settlingResidualDb = " << settlingResidualDb
@@ -311,14 +318,17 @@ TEST_CASE("Ln ticks stay phase-correct when the hop size does not divide the tic
     REQUIRE(expectedL90.has_value());
 
     // Same derivation as the 100-ms-hop case above: settling residual at the
-    // last tick of a phase, plus half a histogram bin.
+    // last tick of a phase, plus a FULL histogram bin -- two INDEPENDENTLY
+    // quantised percentiles being compared, each up to half a bin off the
+    // true value on either side (LOW follow-up batch, item 2; see that case's
+    // own comment for the full argument).
     const double linearGapFraction = std::pow(decayPerTick, static_cast<double>(ticksPerPhase));
     const double worstCaseLinearResidual =
         linearGapFraction * std::fabs(meanSquareHigh - meanSquareLow);
     const double settlingResidualDb =
         (10.0 / std::log(10.0)) * worstCaseLinearResidual / meanSquareLow;
     const double marginDb =
-        settlingResidualDb + rta::meter::LevelHistogram::kBinWidthDb / 2.0;
+        settlingResidualDb + rta::meter::LevelHistogram::kBinWidthDb;
 
     CHECK_THAT(*view.lnDb[2], WithinAbs(*expectedL10, marginDb));
     CHECK_THAT(*view.lnDb[4], WithinAbs(*expectedL90, marginDb));

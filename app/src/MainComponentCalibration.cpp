@@ -220,6 +220,10 @@ void MainComponent::writeCalibrationRecordAndUpdateInvalidFlag() {
         info.refusal = decision == rta::measure::CalibrationChannelDecision::RefuseChannelMismatch
                            ? rta::splexport::CalibrationRecordRefusal::ChannelMismatch
                            : rta::splexport::CalibrationRecordRefusal::NoMeasurementChannel;
+        // LOW follow-up batch, item 15: a fact about the LOG, independent of
+        // the channel refusal above -- see `currentSplLogHasCalibratedOffset_`'s
+        // own comment.
+        info.offsetApplied = currentSplLogHasCalibratedOffset_;
         rta::splexport::writeCalibrationRecordFile(currentSplSessionDir_ + "/calibration.txt", info);
         // No `setCalibrationInvalid` call: there is no single channel this
         // refusal could correctly attach to (that is exactly the problem),
@@ -244,6 +248,12 @@ void MainComponent::writeCalibrationRecordAndUpdateInvalidFlag() {
     info.channel = calibrationChannel_;
     info.startBlockIndex = 0;
     info.endBlockIndex = endBlockIndex;
+    // LOW follow-up batch, item 15: whether THIS log actually carries the
+    // offset this completed check measured -- see
+    // `currentSplLogHasCalibratedOffset_`'s own comment (MainComponent.h) for
+    // the reachable false case (a START check with nothing logging yet,
+    // followed by an ordinary uncalibrated log and an END check against it).
+    info.offsetApplied = currentSplLogHasCalibratedOffset_;
     rta::splexport::writeCalibrationRecordFile(currentSplSessionDir_ + "/calibration.txt", info);
 
     // Record §15 A2 / §8: drift > 0.5 dB does NOT silently invalidate the

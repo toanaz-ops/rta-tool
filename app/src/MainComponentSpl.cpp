@@ -90,6 +90,13 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
 
     currentSplSessionDir_ = sessionDir.getFullPathName().toStdString();
     currentSplLoggedChannels_.assign(channels.begin(), channels.end());
+    // LOW follow-up batch, item 15: this is the ONE function that assigns
+    // `currentSplSessionDir_`, so this is the one place that can say -- for
+    // this exact log -- whether the offset a calibration START check
+    // measured is actually IN `config`. `restartSplLoggingForCalibration` is
+    // the only caller that ever passes a `calibratorLevelDb` value; the
+    // device/epoch-triggered `startFreshSplLog()` always passes `nullopt`.
+    currentSplLogHasCalibratedOffset_ = calibratorLevelDb.has_value();
     analysisThread_.enableSplLogging(config, channels, currentSplSessionDir_, calibratorLevelDb);
 }
 

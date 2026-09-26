@@ -200,6 +200,7 @@ SplReportBuildResult buildReportPayload(const SplReportBuildRequest& request) {
     if (calibrationRecord.has_value()) {
         payload.calibration = calibrationRecord->fields;
         payload.calibrationChannelRefusal = calibrationRecord->refusal;
+        payload.calibrationOffsetApplied = calibrationRecord->offsetApplied;
     }
 
     std::vector<std::string> allSegmentBytes;

@@ -357,3 +357,43 @@ TEST_CASE("the live average excludes a refused route by number, not just by labe
     }
     CHECK(differsSomewhere);
 }
+
+// --- LOW follow-up batch, item 3: fillSplPublishScalars ---------------------
+
+TEST_CASE("fillSplPublishScalars copies every field it owns, independently",
+          "[analysispublish]") {
+    // Pulled out of AnalysisThreadSpl.cpp so this reaches RTA_BUILD_APP=OFF --
+    // see AnalysisPublish.h's own comment on the function. Every argument is
+    // a DISTINCT, non-default value, so dropping ANY ONE assignment leaves
+    // that field at SplPublishInput's own default (0/false/nullptr), which
+    // this case catches; a shared all-true/all-zero fixture could not.
+    //
+    // Fix round, LOW finding: the three bools used to share ONE value per
+    // call (all true, then all false), so a swap between any two of them
+    // went uncaught. Varied independently (true/false/true, then
+    // false/true/false) so a swap flips exactly one CHECK.
+    rta::measure::SplConfig config;
+    const rta::measure::SplChannelState channelState(config, 48000.0);
+    rta::measure::SplPublishInput input;
+    rta::measure::fillSplPublishScalars(input, 3, 5, true, &channelState, 7, false, true);
+    CHECK(input.refusedMetrics == 3);
+    CHECK(input.overflowedLnTicks == 5);
+    CHECK(input.blockSecondsTooSmall == true);
+    CHECK(input.channelState == &channelState);
+    CHECK(input.logDroppedBlocks == 7);
+    CHECK(input.logWriteFailed == false);
+    CHECK(input.calibrationInvalid == true);
+
+    // The other bool pattern, with the numeric/pointer fields also cleared
+    // to their opposite (zero/nullptr) side, so a mutation hardcoding any
+    // one field to a fixed value is caught either way.
+    rta::measure::SplPublishInput cleared;
+    rta::measure::fillSplPublishScalars(cleared, 0, 0, false, nullptr, 0, true, false);
+    CHECK(cleared.refusedMetrics == 0);
+    CHECK(cleared.overflowedLnTicks == 0);
+    CHECK_FALSE(cleared.blockSecondsTooSmall);
+    CHECK(cleared.channelState == nullptr);
+    CHECK(cleared.logDroppedBlocks == 0);
+    CHECK(cleared.logWriteFailed == true);
+    CHECK_FALSE(cleared.calibrationInvalid);
+}

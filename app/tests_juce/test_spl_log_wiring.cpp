@@ -9,6 +9,10 @@
 // background after the call has landed. The queue/writer mechanics
 // themselves are proven OFF in app/tests/test_spl_log_pipeline.cpp; this
 // file is only the wiring between AnalysisThread and that pipeline.
+//
+// test_spl_log_wiring_disable.cpp: LOW follow-up batch, item 9 -- split out
+// of this file (455 lines, over the 400-line hard cap) along its own natural
+// seam, the disableSplLogging()-actually-drains-and-joins case.
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -299,13 +303,33 @@ TEST_CASE("the logged chain is A-weighted, not Z, at a frequency where the "
 
     INFO("measured = " << measuredDb << " dB, expected A = " << expectedADb
                         << " dB, expected Z (unweighted) = " << expectedUnweightedDb << " dB");
-    // 1 dB tolerance: test_weighting.cpp's own "digital filter tracks the
-    // analytic curve" case accepts 0.01 dB, and the analytic-vs-published
-    // Table 3 tolerance it also uses is 0.05 dB -- 1 dB is generous headroom
-    // over both combined, covering whatever residual the block-accumulation
-    // path itself (not exercised by test_weighting.cpp, which measures the
-    // filter alone) adds.
-    CHECK_THAT(measuredDb, Catch::Matchers::WithinAbs(expectedADb, 1.0));
+    // TOLERANCE, DERIVED (LOW follow-up batch, item 8) -- the untyped 1 dB
+    // hid a mutant-4-sized regression instead of catching one. Three
+    // independent components, summed:
+    //   (a) Table-3 rounding, ~0.04 dB -- kADb above is IEC 61672-1 Table 3's
+    //       PUBLISHED figure at this frequency, itself rounded to 0.1 dB; the
+    //       digital cascade tracks the ANALYTIC curve (test_weighting.cpp's
+    //       own "digital filter tracks the analytic curve" case: 0.01 dB),
+    //       not the published rounding, so up to half that rounding step
+    //       (~0.04 dB, this frequency's own analytic-vs-Table-3 residual) is
+    //       real and belongs in the bound, not folded into slack.
+    //   (b) the finite-window mean-square term, ~0.022 dB -- the last block
+    //       spans kFrequencyHz * blockSeconds = 15.81 CYCLES, not a whole
+    //       number, so `sumSquares / blockSamples` differs from the ideal
+    //       amplitude^2/2 by a term that shrinks with cycle count (settled by
+    //       many time constants, per this test's own comment above, so this
+    //       is the dominant remaining error, not filter transient).
+    //   (c) the digital-vs-analytic filter residual, 0.01 dB --
+    //       test_weighting.cpp's own accepted bound for the SAME comparison.
+    // Sum ~0.072 dB, rounded up to ~0.1 dB; the measured residual here is
+    // 0.077 dB (re-measured after the LOW follow-up batch's own follow-up --
+    // an earlier draft of this comment cited 0.037 dB, which was stale),
+    // matching the derived sum to within 0.005 dB and comfortably inside the
+    // shipped bound. The shipped bound is ~0.2 dB -- roughly 2x the derived
+    // sum and 2.6x the measured residual -- so it stays tight enough to catch
+    // a real regression (a wrong chain reads ~39 dB away, not a fraction of a
+    // dB) while not chasing the derivation's own last digit.
+    CHECK_THAT(measuredDb, Catch::Matchers::WithinAbs(expectedADb, 0.2));
     // The hard refutation, independent of the tolerance above: a Z-labelled-
     // as-A block reads within a fraction of a dB of expectedUnweightedDb,
     // 39.4 dB higher than expectedADb. Half that gap (19.7 dB) is still far

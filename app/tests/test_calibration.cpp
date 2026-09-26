@@ -203,6 +203,35 @@ TEST_CASE("recordStartCheck/recordEndCheck refuse an empty span or a non-positiv
     CHECK_FALSE(session.hasEndCheck());
 }
 
+// LOW follow-up batch, item 17: a new START must clear any END check left
+// over from a PREVIOUS bracket, or a stale pairing survives into the new one.
+TEST_CASE("a new recordStartCheck clears the previous bracket's END check",
+          "[calibration]") {
+    const auto level = calibrationLevel(kIec60942Level94Db);
+    const auto samples = sineAt1kHz(0.5, kFs);
+
+    CalibrationSession session;
+    session.recordStartCheck(level, samples, kFs, 1000);
+    REQUIRE(session.hasStartCheck());
+    session.recordEndCheck(level, samples, kFs, 2000);
+    REQUIRE(session.hasEndCheck());
+    REQUIRE(session.verdict().has_value());
+
+    // START -> END -> START: the mutant this proves against is dropping the
+    // `endCheck_.reset()` this fix adds. Without it, `hasEndCheck()`,
+    // `driftDb()` and `verdict()` all kept reporting the FIRST bracket's
+    // already-completed pairing after this second START, which is exactly
+    // what a live readout (MainComponentCalibration.cpp's
+    // updateCalibrationReadout) reads to decide what to show the operator.
+    session.recordStartCheck(level, samples, kFs, 3000);
+    REQUIRE(session.hasStartCheck());
+    CHECK(session.startCheck().unixMs == 3000);
+    CHECK_FALSE(session.hasEndCheck());
+    CHECK_FALSE(session.driftDb().has_value());
+    CHECK_FALSE(session.verdict().has_value());
+    CHECK_FALSE(session.reportFields().performed);
+}
+
 // --- A2 / A3: the pair, the drift, and the verdict -----------------------
 
 TEST_CASE("A2 the pair, and the clause it is compared against", "[calibration]") {

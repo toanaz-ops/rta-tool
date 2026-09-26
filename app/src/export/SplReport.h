@@ -164,6 +164,14 @@ struct ReportPayload {
     /// channel/block-range/verdict came with `calibration` above, instead of
     /// silently printing an absent drift/verdict as if nothing had run.
     CalibrationRecordRefusal calibrationChannelRefusal = CalibrationRecordRefusal::None;
+    /// LOW follow-up batch, item 15: mirrors the calibration record's own
+    /// `offsetApplied` field. Default `true` matches
+    /// `SplCalibrationRecordInfo::offsetApplied`'s own default (an old record
+    /// with no such key, or no record at all) -- `renderCalibration` prints an
+    /// explicit warning when this is `false` and `calibration.performed` is
+    /// `true`, so a reader does not assume THIS log's levels are calibrated
+    /// just because a `performed=1` record happens to sit beside it.
+    bool calibrationOffsetApplied = true;
     // 4. Settings (item 4), plus the alarms' live verdict (fix round).
     rta::measure::SplConfig config;
     std::vector<ReportAlarmResult> alarms;

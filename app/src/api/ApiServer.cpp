@@ -159,23 +159,25 @@ void ApiServer::Impl::configure() {
 }
 
 void ApiServer::Impl::installPreRouting() {
-    // THE ORDER BELOW IS THE DECISION, not an implementation detail.
+    // LOW follow-up batch, item 12: controls 1-5's sequencing and the WHY of
+    // each one now live in `decidePreRoutingRefusal` (ApiPolicy.h/.cpp),
+    // proven in RTA_BUILD_APP=OFF (test_api_pre_routing.cpp) rather than only
+    // through a real socket here. What stays in THIS file is the httplib
+    // glue -- extracting plain values from `request`, applying the decision
+    // to `response` -- plus the two things a pure function cannot own:
     //
-    // THE RATE LIMITER RUNS LAST, AND PR #18's FIRST VERSION HAD IT FIRST.
-    // That was wrong, and the station-5 verifier measured it: at a limit of
-    // 3, three forged-`Host` requests filled the sliding window and the
-    // legitimate fourth got 429. A caller who cannot read one byte of this
-    // API, from outside the allowlist, with no token, could deny it to the
-    // operator during a show.
-    //
-    // The plan's reasoning for limiter-first -- "the limiter is the
-    // real-time-safety control, so it cannot run after the work it bounds" --
-    // is sound and does not require this position. sec.4's accounting is a
-    // bound on `SnapshotSource::latest()` LOADS, and every refusal below
-    // returns WITHOUT touching the publish slot. A refused request has no
-    // load to bound, so admitting it into the window spends a legitimate
-    // client's quota on work that never happened. The limiter still sits
-    // immediately before routing, which is the last point before a load.
+    // THE RATE LIMITER RUNS LAST, AFTER EVERY REFUSAL ABOVE, AND PR #18's
+    // FIRST VERSION HAD IT FIRST. That was wrong, and the station-5 verifier
+    // measured it: at a limit of 3, three forged-`Host` requests filled the
+    // sliding window and the legitimate fourth got 429. A caller who cannot
+    // read one byte of this API, from outside the allowlist, with no token,
+    // could deny it to the operator during a show. sec.4's accounting is a
+    // bound on `SnapshotSource::latest()` LOADS, and every refusal above
+    // returns WITHOUT touching the publish slot, so admitting a refused
+    // request into the window would spend a legitimate client's quota on
+    // work that never happened. `RateLimiter::admit` also mutates shared
+    // state and needs a clock reading, so it is not a decision
+    // `decidePreRoutingRefusal` could make purely.
     //
     // WHAT THIS GIVES UP, stated rather than glossed: the limiter no longer
     // bounds total INBOUND traffic, only SERVED traffic. A hostile caller
@@ -186,97 +188,75 @@ void ApiServer::Impl::installPreRouting() {
     // of service against the operator.
     svr.set_pre_routing_handler(
         [this](const httplib::Request& request, httplib::Response& response) {
-            // 1. MORE THAN ONE `Host` FIELD -> 400. RFC 9112 sec.3.2 requires
-            //    exactly this, and it is not pedantry:
-            //    `get_header_value("Host")` reads only the FIRST field, so
-            //    `Host: 127.0.0.1:<port>` followed by
-            //    `Host: attacker.example:<port>` would pass the allowlist
-            //    below while every proxy, cache and log downstream may read
-            //    the other one. Refused on COUNT, not on disagreement -- the
-            //    rule is one field line, and "reject only when they differ"
-            //    leaves the parser-disagreement class open for the price of
-            //    the same comparison.
-            if (request.get_header_value_count("Host") > 1) {
-                response.status = 400;
-                return HandlerResponse::Handled;
+            // httplib::Request::get_header_value returns std::string BY VALUE.
+            // PreRoutingInputs::hostHeaderValue/authorizationHeader are
+            // string_view, so each header must be held in a named std::string
+            // that outlives the decidePreRoutingRefusal(in, ...) call below --
+            // assigning the temporary return straight into the view would
+            // dangle the instant this statement ends.
+            const std::string hostHeader = request.get_header_value("Host");
+            const std::string authHeader = request.get_header_value("Authorization");
+
+            PreRoutingInputs in;
+            // get_header_value_count returns size_t; decidePreRoutingRefusal only
+            // ever compares hostHeaderCount against 1, so a bounded int is enough
+            // and this cast is what keeps the build warning-free (C4267).
+            in.hostHeaderCount = static_cast<int>(request.get_header_value_count("Host"));
+            in.hostHeaderValue = hostHeader;
+            in.boundPort = boundPort;
+            in.method = methodOf(request.method);
+            in.authorizationHeader = authHeader;
+            in.declaredBodyBytes = declaredBodyBytes(request);
+
+            switch (decidePreRoutingRefusal(in, settings)) {
+                case PreRoutingRefusal::MultipleHostHeaders:
+                    response.status = 400;
+                    return HandlerResponse::Handled;
+                case PreRoutingRefusal::HostNotAllowed:
+                    response.status = 403;
+                    return HandlerResponse::Handled;
+                case PreRoutingRefusal::MethodNotAllowed:
+                    // All three names in `kAllowedMethods` are SERVED: `Get`
+                    // routes answer GET and HEAD (httplib dispatches both to
+                    // `get_handlers_`), and `Options` routes answer OPTIONS.
+                    // PR #18 advertised OPTIONS here and registered none, so
+                    // the method passed this check, found no route and
+                    // answered 404 -- an API naming a method it does not
+                    // serve.
+                    response.status = 405;
+                    response.set_header("Allow", kAllowedMethods);
+                    return HandlerResponse::Handled;
+                case PreRoutingRefusal::Unauthorized:
+                    response.status = 401;
+                    response.set_header("WWW-Authenticate", "Bearer");
+                    return HandlerResponse::Handled;
+                case PreRoutingRefusal::BodyTooLarge:
+                    response.status = 413;
+                    return HandlerResponse::Handled;
+                case PreRoutingRefusal::None:
+                    break;
             }
 
-            // 2. The `Host` allowlist -> 403 BEFORE any handler runs. The
-            //    highest-value control in the whole API, and the ORDER is
-            //    what test I5 measures: a forged Host on a path that does not
-            //    exist must be 403, not 404.
+            // THE RATE LIMIT, last, immediately before routing -- the last
+            // point before a `latest()`. See this function's own header
+            // comment for why it moved here and what that gives up.
             //
-            //    DEVIATION FROM THE PLAN'S LITERAL TEXT, and it is a
-            //    correction rather than a shortcut. The plan wrote
-            //    `hostIsAllowed(..., settings.port)`. That is wrong for an
-            //    ephemeral bind: `settings.port == 0` means "any port", the
-            //    client connected to the port actually bound, and the `Host`
-            //    header names the port the client asked for -- so comparing
-            //    against 0 would refuse every request that ever arrives. The
-            //    comparison is against `boundPort`, which equals
-            //    `settings.port` whenever that is non-zero, so nothing
-            //    changes for the shipped fixed-port configuration.
-            if (!hostIsAllowed(request.get_header_value("Host"), boundPort)) {
-                response.status = 403;
-                return HandlerResponse::Handled;
-            }
-
-            // 3. The method allowlist -> 405 with an `Allow` header. This is
-            //    NOT what answers a WebSocket upgrade: an upgrade is a `GET`
-            //    and passes here (sec.15 R16a). What makes one impossible is
-            //    that installRoutes() registers no `WebSocket` handler.
+            // OPTIONS IS EXEMPT, and that is R19's own argument carried one
+            // step further rather than an exception to it. The round-2
+            // verifier measured the gap: at a limit of 2, two `OPTIONS`
+            // requests then a legitimate `GET` answered 429 -- and an
+            // `OPTIONS` never reaches `serve()`, so it performs no
+            // `latest()` and there is nothing for a bound on LOADS to bound.
+            // Its whole cost is an accept, a header parse and a 204, which
+            // is the cost of the 403 that R19 already stopped charging for.
             //
-            //    All three names in this string are SERVED: `Get` routes
-            //    answer GET and HEAD (httplib dispatches both to
-            //    `get_handlers_`), and `Options` routes answer OPTIONS. PR
-            //    #18 advertised OPTIONS here and registered none, so the
-            //    method passed this check, found no route and answered 404 --
-            //    an API naming a method it does not serve.
-            const Method method = methodOf(request.method);
-            if (!methodIsAllowed(method)) {
-                response.status = 405;
-                response.set_header("Allow", kAllowedMethods);
-                return HandlerResponse::Handled;
-            }
-
-            // 4. The Bearer token, when one is set -> 401. Header only. There
-            //    is no parameter `bearerAccepted` could receive a cookie or a
-            //    query string through, and that absence is the control.
-            if (!bearerAccepted(request.get_header_value("Authorization"), settings)) {
-                response.status = 401;
-                response.set_header("WWW-Authenticate", "Bearer");
-                return HandlerResponse::Handled;
-            }
-
-            // 5. The body cap -> 413 (sec.15 R17), refused before the body is
-            //    read, which is what makes sec.9's 415 unreachable rather
-            //    than merely unimplemented.
-            if (!bodyIsAcceptable(declaredBodyBytes(request), settings)) {
-                response.status = 413;
-                return HandlerResponse::Handled;
-            }
-
-            // 6. THE RATE LIMIT, last, immediately before routing -- the last
-            //    point before a `latest()`. See the paragraph above this
-            //    lambda for why it moved here and what that gives up.
-            //
-            //    OPTIONS IS EXEMPT, and that is R19's own argument carried one
-            //    step further rather than an exception to it. The round-2
-            //    verifier measured the gap: at a limit of 2, two `OPTIONS`
-            //    requests then a legitimate `GET` answered 429 -- and an
-            //    `OPTIONS` never reaches `serve()`, so it performs no
-            //    `latest()` and there is nothing for a bound on LOADS to
-            //    bound. Its whole cost is an accept, a header parse and a
-            //    204, which is the cost of the 403 that R19 already stopped
-            //    charging for.
-            //
-            //    HEAD IS NOT EXEMPT, and that is the half worth stating: it
-            //    routes to the same `Get` handler, so it does the full
-            //    `latest()` AND the full serialisation -- httplib strips the
-            //    body on the way out, after the work. A "no body, so no cost"
-            //    reading of HEAD would be wrong here and would put an
-            //    unbounded load path on the publish slot.
-            if (method != Method::Options) {
+            // HEAD IS NOT EXEMPT, and that is the half worth stating: it
+            // routes to the same `Get` handler, so it does the full
+            // `latest()` AND the full serialisation -- httplib strips the
+            // body on the way out, after the work. A "no body, so no cost"
+            // reading of HEAD would be wrong here and would put an
+            // unbounded load path on the publish slot.
+            if (in.method != Method::Options) {
                 const std::lock_guard<std::mutex> lock(limiterMutex);
                 if (!limiter.admit(std::chrono::steady_clock::now())) {
                     response.status = 429;
@@ -284,13 +264,13 @@ void ApiServer::Impl::installPreRouting() {
                 }
             }
 
-            // 7. NO CORS HEADERS, and no pretence that their absence is a
-            //    defence: a GET with only safelisted headers is a SIMPLE
-            //    request, gets no preflight, and is EXECUTED by this program
-            //    before the browser decides whether the calling script may
-            //    read the reply (sec.9). `settings.corsOrigins` is empty and
-            //    nothing here reads it -- there is no code path that emits an
-            //    `Access-Control-*` header at all.
+            // NO CORS HEADERS, and no pretence that their absence is a
+            // defence: a GET with only safelisted headers is a SIMPLE
+            // request, gets no preflight, and is EXECUTED by this program
+            // before the browser decides whether the calling script may
+            // read the reply (sec.9). `settings.corsOrigins` is empty and
+            // nothing here reads it -- there is no code path that emits an
+            // `Access-Control-*` header at all.
             return HandlerResponse::Unhandled;
         });
 }

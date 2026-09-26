@@ -63,6 +63,26 @@ struct SplCalibrationRecordInfo {
     std::uint64_t startBlockIndex = 0;
     std::uint64_t endBlockIndex = 0;
     CalibrationRecordRefusal refusal = CalibrationRecordRefusal::None;
+    /// LOW follow-up batch, item 15. A SECOND fact `CalibrationSession` cannot
+    /// know, alongside `channel`/the block range above: whether the offset
+    /// this check measured was ever actually APPLIED to the log this record
+    /// sits beside. Default `true` because every record written before this
+    /// field existed came from a log `restartSplLoggingForCalibration()` had
+    /// just (re)started with the calibrated config -- so an old file with no
+    /// `offsetApplied=` line round-trips as "applied", matching what it
+    /// always meant.
+    ///
+    /// `false` is real and reachable: a START check with NO live SPL session
+    /// running has nothing to restart (`restartSplLoggingForCalibration`'s
+    /// own early return -- SPL-R11 has no preferences store, so the offset is
+    /// not persisted to be replayed onto a session that starts later) -- if
+    /// the operator then starts an ordinary, UNCALIBRATED log afterward and
+    /// runs the END check against IT, `writeCalibrationRecordAndUpdateInvalidFlag`
+    /// still writes a `performed=1` record beside that log (both checks
+    /// exist, and a channel resolved), but the log's own `referenceOffsetDb`
+    /// was never set from this calibration -- a reader trusting `performed=1`
+    /// alone would believe the log's levels are calibrated when they are not.
+    bool offsetApplied = true;
 };
 
 namespace detail {
@@ -82,6 +102,7 @@ inline constexpr std::string_view kCalKeyDriftDb = "driftDb";
 inline constexpr std::string_view kCalKeyVerdict = "verdict";
 inline constexpr std::string_view kCalKeyClause = "clause";
 inline constexpr std::string_view kCalKeyRefusal = "refusalReason";
+inline constexpr std::string_view kCalKeyOffsetApplied = "offsetApplied";
 inline constexpr std::string_view kCalRefusalChannelMismatch = "channelMismatch";
 inline constexpr std::string_view kCalRefusalNoMeasurementChannel = "noMeasurementChannel";
 }  // namespace detail
@@ -110,6 +131,12 @@ inline constexpr std::string_view kCalRefusalNoMeasurementChannel = "noMeasureme
     std::string out;
     numeric(out, detail::kCalKeyPerformed, info.fields.performed ? std::uint64_t{1} : std::uint64_t{0});
     if (!info.fields.performed) return out;
+
+    // LOW follow-up batch, item 15: written regardless of `refusal` -- whether
+    // the offset reached the log is a fact about the LOG, independent of
+    // whether the two checks resolved to comparable channels.
+    numeric(out, detail::kCalKeyOffsetApplied,
+           info.offsetApplied ? std::uint64_t{1} : std::uint64_t{0});
 
     // Fix round 3: a REFUSED record writes no channel, no block range, and
     // no verdict -- see CalibrationRecordRefusal's own comment for why. The
@@ -219,6 +246,9 @@ inline constexpr std::string_view kCalRefusalNoMeasurementChannel = "noMeasureme
             info.refusal = (value == detail::kCalRefusalChannelMismatch)
                                ? CalibrationRecordRefusal::ChannelMismatch
                                : CalibrationRecordRefusal::NoMeasurementChannel;
+        } else if (key == detail::kCalKeyOffsetApplied) {
+            int v = 1;
+            if (tryParse(value, v)) info.offsetApplied = v != 0;
         }
         // kCalKeyClause: written for a human reader, deliberately not parsed
         // back -- see this function's own doc comment.
