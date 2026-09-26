@@ -1,356 +1,203 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""orphan_check.py -- no component without a production caller.
+"""orphan_check.py -- no component without a production caller, decided by
+the LINKER, not by grep.
 
-WHY. One plan in the L6a lane built components nobody called: at commit
-8c5d407 (PR #26, "l6a/wave2-app"), `SplHistory`, `SplAlarms` and `SplLogWriter`
-each had a header, an implementation and a test suite, but nothing in
-app/src outside their own pair ever named them; `enableSplLogging` (a member
-added to the pre-existing `AnalysisThread.h`) had no caller either. The
-wiring into the app landed waves later (W2-E1/E2a/E2b). A green test suite
-says a component works; it says nothing about whether the product actually
-uses it.
+WHY V2. v1 (see git history: process/tooling PR #38) answered "is this
+symbol referenced" with a text-grep reference search, and after two rounds of
+patching it still had four MEDIUM defects, all from one root: a regex has no
+notion of REACHABILITY, only of a spelling appearing somewhere in a file.
+It flagged calls it should have credited (a qualified static call, a
+same-file private helper called from a sibling method) and credited
+references it should have discarded (a doc comment merely naming a symbol, a
+mutual reference cycle between two components neither one anything else
+calls). Patching each hole traded it for another; see that PR's fix-round-2
+body for the specific v1 false positives and negatives this replaces.
 
-WHAT COUNTS AS "NEW" (fix round 1, item M1). Two cases, both scoped to
-app/src/ or core/include/:
-  1. A whole header ADDED in `base...at` (`git diff --diff-filter=A`):
-     every symbol `orphan_symbols.extract_symbols` finds in its full content.
-  2. A symbol newly declared inside a header that already EXISTED before the
-     diff (`git diff --diff-filter=M`): only the symbols found in the ADDED
-     HUNKS of that header (via `difflines.parse_added_lines`, the same parse
-     diffmut.py uses to find mutation candidates -- shared rather than
-     re-derived, so the two tools' notion of "what changed" cannot drift
-     apart). Case 2 is what a `--diff-filter=A`-only scan structurally cannot
-     see: a new member function on a header that itself is not new.
-A header that changed with no symbol-shaped line in its added hunk (a comment
-edit, a formatting pass) contributes nothing from case 2, which is correct --
-nothing NEW was declared there.
+v2 asks a stronger, structurally different question: is this function
+present in the FINAL LINKED IMAGE, once the linker has discarded everything
+transitively unreachable from the app's own entry point? `app/CMakeLists.txt`
+builds `rtatool` under `RTA_ORPHAN_LINKMAP=ON` with:
+  /Ob0          no inlining -- a candidate must survive as its own
+                out-of-line, separately addressable symbol.
+  /Gy           function-level linking (COMDATs) -- what /OPT:REF discards.
+  /OPT:REF      discard COMDATs nothing references, transitively from main.
+  /OPT:NOICF    keep two byte-identical functions as two SEPARATE symbols in
+                the map (ICF's default folding would erase one's name).
+  /MAP          emit the map this tool reads.
+This makes a cycle of two unwired components discard TOGETHER (neither is
+"referenced" by anything the entry point reaches, so neither survives, unlike
+v1's reference-counting which kept each alive via the other); a qualified
+static call resolves exactly like any other reachable call (the linker does
+not care how a caller spelled the callee); and a same-file private helper is
+live the moment its caller is.
 
-WHAT IS EXTRACTED. See orphan_symbols.py's own docstring for the regex
-heuristic and its documented blind spots.
+WHAT IS CHECKED. Every function, method and constructor DECLARED on a line
+this branch ADDED under app/src/** (headers and .cpp -- see
+orphan_candidates.py for exactly how "declared" is read, including a
+signature that wraps across lines). A candidate whose own decorated-name
+FRAGMENT (msvc_decorate.py) is not a prefix of any name in the map is an
+orphan; a class is live iff at least one of its own members is. Some
+candidates cannot be asked this question at all -- `= default`/`= delete`
+members, `constexpr`/`consteval` functions, anonymous-namespace symbols
+(internal linkage answers a different question), templates (instantiation
+is not tracked), and a pure-data aggregate with no function to check
+reachability through -- these are UNCHECKABLE, reported separately, and
+never cause a non-zero exit by themselves.
 
-WHAT COUNTS AS A REFERENCE. Any whole-word occurrence of the symbol name (for
-a qualified member function name, the qualified form) anywhere under app/src/,
-after two exclusions (fix round 1, items M2 and L1):
-  - M2: `//` and `/* */` comments are stripped from both the header being
-    scanned and every file searched for a reference, respecting string/char
-    literals (cpp_text.strip_comments) -- a doc-comment that merely NAMES a
-    component ("`SplAlarms` is the one producer of this...", Snapshot.h:230)
-    no longer counts as a caller.
-  - L1: a line that is the symbol's own out-of-line member DEFINITION
-    (`orphan_symbols.is_self_definition_of`) does not count either, in ANY
-    file -- not only inside the symbol's own same-basename pair.
-    `SplLogWriter` is declared in `SplLog.h` and defined in
-    `SplLogWriter.cpp` (different basenames, so the ordinary same-basename
-    pairing below does not exclude that file); without this exclusion, its
-    own constructor/method definitions there read as external callers of
-    itself.
-The new header's own same-basename `.cpp`/`.h` pair is still excluded
-entirely, and tests (`app/tests*`, `core/tests`, `platform/tests*`,
-`ui/tests`) still do not count.
-
-TRANSITIVE ORPHANS (fix round 1, item L1). `SplHistory`'s only references
-after the two exclusions above are from `SplAlarms.h`/`.cpp` -- genuine code
-(a `SplHistory&` parameter), not a comment -- but `SplAlarms` (the class) is
-ITSELF an orphan once its one remaining "reference" (the Snapshot.h comment)
-is stripped by M2. A reference that comes only from a file whose own header's
-symbols are ALL orphaned is not evidence of a production caller either --
-that file is not wired in. `find_orphans` iterates this to a fixed point:
-each round, any header whose every symbol is currently orphan makes its own
-pair's files "orphaned files"; any symbol whose remaining references are
-entirely inside orphaned files becomes orphan too; repeat until nothing
-changes. A symbol with a genuine reference from a file that is not (even
-transitively) orphaned stops the iteration from over-reaching -- it takes a
-real, wired-in caller to clear a symbol, at any remove.
-
-AT A HISTORICAL COMMIT. `--at <rev>` evaluates `<rev>`'s tree instead of the
-working tree at HEAD, reading every file through `git show <rev>:<path>` and
-enumerating app/src/ through `git ls-tree -r <rev>` -- no checkout needed
-(this repo's sessions each run in their own git worktree and cannot create a
-second one just to look at an old commit).
-
-Exit code: 1 if any symbol in scope has zero (transitively) valid references,
-else 0.
+EXIT CODES. 0 nothing orphaned. 1 orphan(s) found (UNCHECKABLE entries alone
+never trigger this). 2 a tool or build error (bad --base, configure/build
+failure, no .map file produced).
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 import sys
 from pathlib import Path
 
-from cpp_text import strip_comments
 from difflines import git_diff_added_lines
-from orphan_symbols import extract_symbols, is_self_definition_of
+from map_symbols import extract_decorated_names, is_fragment_live
+from msvc_decorate import decorated_fragment
+from orphan_candidates import find_candidates
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-NEW_HEADER_DIRS = ("app/src/", "core/include/")
-HEADER_SUFFIXES = (".h", ".hpp")
-SEARCH_SUFFIXES = (".h", ".hpp", ".cpp")
 
-
-def _changed_headers(base: str, at: str, diff_filter: str) -> list[str]:
-    result = subprocess.run(
-        ["git", "diff", f"--diff-filter={diff_filter}", "--name-only", f"{base}...{at}"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=REPO_ROOT,
-        text=True,
-        check=True,
-    )
-    headers = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if line and line.startswith(NEW_HEADER_DIRS) and line.endswith(HEADER_SUFFIXES):
-            headers.append(line)
-    return headers
-
-
-def new_headers(base: str, at: str = "HEAD") -> list[str]:
-    return _changed_headers(base, at, "A")
-
-
-def modified_headers(base: str, at: str = "HEAD") -> list[str]:
-    return _changed_headers(base, at, "M")
-
-
-def _git_show(at: str, path: str) -> str | None:
-    """`git show <at>:<path>`, or None if that path did not exist in <at>.
-    Lets this script evaluate a HISTORICAL commit's tree without checking it
-    out into a worktree -- see the module docstring's "AT A HISTORICAL
-    COMMIT" section.
-    """
-    result = subprocess.run(
-        ["git", "show", f"{at}:{path}"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=REPO_ROOT,
-        text=True,
-    )
+def _configure_and_build(
+    source_dir: Path,
+    build_dir: Path,
+    config: str,
+    generator: str | None,
+    arch: str | None,
+    juce_path: str | None,
+) -> int:
+    configure_cmd = [
+        "cmake", "-S", str(source_dir), "-B", str(build_dir),
+        "-DRTA_BUILD_APP=ON", "-DRTA_ORPHAN_LINKMAP=ON",
+    ]
+    if generator:
+        configure_cmd += ["-G", generator]
+    if arch:
+        configure_cmd += ["-A", arch]
+    if juce_path:
+        configure_cmd.append(f"-DRTA_JUCE_PATH={juce_path}")
+    result = subprocess.run(configure_cmd)
     if result.returncode != 0:
-        return None
-    return result.stdout
+        return result.returncode
+    build_cmd = [
+        "cmake", "--build", str(build_dir), "--config", config,
+        "--target", "rtatool", "--parallel",
+    ]
+    return subprocess.run(build_cmd).returncode
 
 
-def _git_ls_tree(at: str, subdir: str) -> list[str]:
-    result = subprocess.run(
-        ["git", "ls-tree", "-r", "--name-only", at, "--", subdir],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=REPO_ROOT,
-        text=True,
-        check=True,
-    )
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+def _find_map_file(build_dir: Path, config: str) -> Path | None:
+    matches = sorted(build_dir.glob(f"app/*_artefacts/{config}/*.map"))
+    return matches[0] if matches else None
 
 
-def _is_test_path(path: Path) -> bool:
-    parts = path.as_posix()
-    return (
-        "/tests/" in parts
-        or "/tests_juce/" in parts
-        or parts.startswith("app/tests")
-        or parts.startswith("core/tests")
-        or parts.startswith("platform/tests")
-        or parts.startswith("ui/tests")
-    )
+def _read_file_factory(source_dir: Path):
+    def read(path: str) -> str:
+        return (source_dir / path).read_text(encoding="utf-8")
 
-
-def app_src_files(at: str | None = None) -> list[str]:
-    """Repo-relative paths (forward slashes) under app/src/. Reads the
-    working tree normally, or a historical commit's tree via `git ls-tree`
-    when `at` is given.
-    """
-    if at is not None:
-        paths = _git_ls_tree(at, "app/src")
-        return [p for p in paths if Path(p).suffix in SEARCH_SUFFIXES]
-    root = REPO_ROOT / "app" / "src"
-    if not root.is_dir():
-        return []
-    files = []
-    for suffix in SEARCH_SUFFIXES:
-        for p in root.rglob(f"*{suffix}"):
-            files.append(p.relative_to(REPO_ROOT).as_posix())
-    return files
-
-
-def paired_files(header_repo_path: str, at: str | None = None) -> set[str]:
-    """The header's own repo-relative path and its same-basename .cpp/.h
-    sibling (if any), wherever it lives -- a new header's OWN pair is not
-    evidence that something else calls it. This does NOT catch a class
-    defined in a differently-named .cpp (`SplLogWriter` in `SplLog.h` /
-    `SplLogWriter.cpp`) -- `orphan_symbols.is_self_definition_of` is what
-    excludes that case, from any file, not just a same-basename one.
-    """
-    header = Path(header_repo_path)
-    stem_dir = header.parent
-    stem = header.stem
-    pair = {header_repo_path}
-    for suffix in (".cpp", ".h", ".hpp"):
-        candidate = (stem_dir / f"{stem}{suffix}").as_posix()
-        exists = (
-            _git_show(at, candidate) is not None
-            if at is not None
-            else (REPO_ROOT / candidate).exists()
-        )
-        if exists:
-            pair.add(candidate)
-    return pair
-
-
-def _read(path: str, at: str | None) -> str | None:
-    if at is not None:
-        return _git_show(at, path)
-    full = REPO_ROOT / path
-    if not full.is_file():
-        return None
-    return full.read_text(encoding="utf-8", errors="replace")
-
-
-def _symbols_from_added_header(header: str, at: str | None) -> set[str]:
-    content = _read(header, at)
-    if content is None:
-        return set()
-    return extract_symbols(strip_comments(content))
-
-
-def _symbols_from_modified_header_hunk(header: str, base: str, at_ref: str) -> set[str]:
-    """Fix round 1, item M1: only the symbols in this header's ADDED lines,
-    not its whole (mostly pre-existing) content.
-    """
-    added = git_diff_added_lines(REPO_ROOT, base, at_ref, paths=[header])
-    text = "\n".join(a.text for a in added)
-    return extract_symbols(strip_comments(text))
-
-
-def _collect_scoped_symbols(
-    base: str, at: str | None
-) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
-    """header -> its in-scope symbols, and header -> its paired files, for
-    every header touched (added OR modified with a new declaration) in
-    `base...at_ref`.
-    """
-    at_ref = at if at is not None else "HEAD"
-    header_symbols: dict[str, set[str]] = {}
-    header_pair: dict[str, set[str]] = {}
-
-    for header in new_headers(base, at_ref):
-        symbols = _symbols_from_added_header(header, at)
-        if symbols:
-            header_symbols[header] = symbols
-            header_pair[header] = paired_files(header, at)
-
-    for header in modified_headers(base, at_ref):
-        symbols = _symbols_from_modified_header_hunk(header, base, at_ref)
-        if symbols:
-            header_symbols.setdefault(header, set()).update(symbols)
-            header_pair.setdefault(header, paired_files(header, at))
-
-    return header_symbols, header_pair
-
-
-def find_orphans(base: str, at: str | None = None) -> dict[str, list[str]]:
-    """header path -> list of symbol names with zero (transitively) valid
-    references. Only headers with at least one orphaned symbol appear in the
-    result. See the module docstring for what counts as "new", a reference,
-    and the transitive fixed point.
-    """
-    header_symbols, header_pair = _collect_scoped_symbols(base, at)
-    if not header_symbols:
-        return {}
-
-    content_cache: dict[str, str] = {}
-    for f in app_src_files(at):
-        if _is_test_path(Path(f)):
-            continue
-        text = _read(f, at)
-        if text is not None:
-            content_cache[f] = strip_comments(text)
-
-    symbol_owner: dict[str, str] = {}
-    symbol_refs: dict[str, set[str]] = {}
-    for header, symbols in header_symbols.items():
-        pair = header_pair[header]
-        for name in symbols:
-            symbol_owner[name] = header
-            pattern = re.compile(r"\b" + re.escape(name) + r"\b")
-            refs: set[str] = set()
-            for f, text in content_cache.items():
-                if f in pair:
-                    continue
-                filtered = "\n".join(
-                    line for line in text.splitlines() if not is_self_definition_of(line, name)
-                )
-                if pattern.search(filtered):
-                    refs.add(f)
-            symbol_refs[name] = refs
-
-    is_orphan = {name: (len(refs) == 0) for name, refs in symbol_refs.items()}
-
-    changed = True
-    while changed:
-        changed = False
-        fully_orphaned_headers = {
-            header
-            for header, syms in header_symbols.items()
-            if syms and all(is_orphan[s] for s in syms)
-        }
-        orphaned_files: set[str] = set()
-        for header in fully_orphaned_headers:
-            orphaned_files |= header_pair[header]
-
-        for name, refs in symbol_refs.items():
-            if is_orphan[name]:
-                continue
-            if not (refs - orphaned_files):
-                is_orphan[name] = True
-                changed = True
-
-    orphans: dict[str, list[str]] = {}
-    for name, orphaned in is_orphan.items():
-        if orphaned:
-            orphans.setdefault(symbol_owner[name], []).append(name)
-    for names in orphans.values():
-        names.sort()
-    return orphans
-
-
-def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="orphan_check.py",
-        description="Flag a component under app/src or core/include with no production caller in app/src.",
-    )
-    parser.add_argument("--base", default="origin/main", help="diff base (default: origin/main)")
-    parser.add_argument(
-        "--at",
-        default=None,
-        help=(
-            "evaluate a historical commit's tree via git plumbing (git show/ls-tree) "
-            "instead of the working tree at HEAD -- no checkout needed. "
-            "The diff range becomes <base>...<at>."
-        ),
-    )
-    return parser
+    return read
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_arg_parser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Flag app/src functions/methods/constructors, declared on lines this "
+            "branch added, that the MSVC linker discards as unreachable from "
+            "rtatool's entry point."
+        )
+    )
+    parser.add_argument("--base", required=True, help="diff base")
+    parser.add_argument(
+        "--build-dir", required=True,
+        help="CMake build directory for the RTA_ORPHAN_LINKMAP=ON build of rtatool",
+    )
+    parser.add_argument(
+        "--source-dir", default=None,
+        help="checked-out tree to diff/build from (default: this repo's own checkout). "
+        "For a historical commit, `git worktree add <path> <sha>` it yourself and "
+        "pass that path here; remove the worktree afterward.",
+    )
+    parser.add_argument("--config", default="Release")
+    parser.add_argument(
+        "--cmake-generator", default=None,
+        help='e.g. "Visual Studio 18 2026" -- omit to let CMake auto-detect the way '
+        "CI does; pass this explicitly on a machine where a non-MSVC generator "
+        "(Ninja+MinGW) would otherwise be picked by default (see "
+        "memory/a-misconfigured-build-goes-99-percent-of-the-way.md).",
+    )
+    parser.add_argument(
+        "--cmake-arch", default=None, help="e.g. x64, passed as -A alongside --cmake-generator"
+    )
+    parser.add_argument(
+        "--juce-path", default=None,
+        help="existing JUCE 9.0.1 checkout to reuse (RTA_JUCE_PATH); omit to fetch",
+    )
+    parser.add_argument(
+        "--skip-build", action="store_true",
+        help="reuse an already-built .map in --build-dir instead of configuring/building "
+        "(for testing this tool's own orchestration; never for a real acceptance run)",
+    )
     args = parser.parse_args(argv)
-    # --help exits above and runs nothing else (memory
-    # a-gen-script-runs-the-moment-you-invoke-it.md).
 
-    orphans = find_orphans(args.base, args.at)
+    source_dir = Path(args.source_dir).resolve() if args.source_dir else REPO_ROOT
+    build_dir = Path(args.build_dir)
+
+    if not args.skip_build:
+        rc = _configure_and_build(
+            source_dir, build_dir, args.config, args.cmake_generator, args.cmake_arch, args.juce_path
+        )
+        if rc != 0:
+            print(f"orphan_check: configure/build FAILED (exit {rc})", file=sys.stderr)
+            return 2
+
+    map_path = _find_map_file(build_dir, args.config)
+    if map_path is None:
+        print(
+            f"orphan_check: no .map file found under {build_dir} -- "
+            "did RTA_ORPHAN_LINKMAP=ON actually take effect for this build?",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        added_lines = git_diff_added_lines(source_dir, args.base, "HEAD", paths=["app/src"])
+    except subprocess.CalledProcessError as exc:
+        print(f"orphan_check: git diff failed against base {args.base!r}: {exc}", file=sys.stderr)
+        return 2
+
+    decorated_names = extract_decorated_names(map_path.read_text(encoding="utf-8", errors="replace"))
+    candidates, uncheckable = find_candidates(added_lines, _read_file_factory(source_dir))
+
+    orphans: dict[str, list[str]] = {}
+    for c in candidates:
+        fragment = decorated_fragment(c.name, c.enclosing, is_constructor=c.is_constructor)
+        if not is_fragment_live(fragment, decorated_names):
+            orphans.setdefault(c.path, []).append(c.name)
+
+    if uncheckable:
+        print("orphan_check: UNCHECKABLE (never fails; a human call, not the linker's):")
+        for u in sorted(uncheckable, key=lambda u: (u.path, u.lineno)):
+            where = f"{u.path}:{u.lineno}" if u.path else f"line {u.lineno}"
+            print(f"  {where}  {u.name}  ({u.reason})")
+
     if not orphans:
-        print("orphan_check: OK -- every new/changed symbol is referenced in app/src")
+        print(
+            "orphan_check: OK -- every new/changed function, method and constructor "
+            "is reachable from rtatool's entry point"
+        )
         return 0
 
-    print("orphan_check: found component(s) with no production caller in app/src:")
-    for header, names in sorted(orphans.items()):
-        print(f"  {header}")
-        for name in names:
+    print("orphan_check: found component(s) the linker discarded as unreachable:")
+    for path in sorted(orphans):
+        print(f"  {path}")
+        for name in sorted(set(orphans[path])):
             print(f"    - {name}")
     return 1
 
