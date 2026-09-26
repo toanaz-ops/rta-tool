@@ -244,7 +244,8 @@ after L6a):
      cannot reach is an orphan, and a test caller does not count.
    - It reports three non-failing categories:
      - UNCHECKABLE: templates, operators, `constexpr` and similar.
-     - NOT IN TARGET: `app/src/dev/preview/`, or snapshot-only files.
+     - NOT IN TARGET: `app/src/dev/preview/` only. A production-directory
+       file that only the snapshot tool compiles is still an orphan.
      - TEST HOOK: a `*ForTest` name that a test really references.
    - A `.cpp` file in no source list is an orphan.
    - Known limits are listed in the tool's docstring.
