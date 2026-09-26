@@ -96,13 +96,11 @@ public:
 
     [[nodiscard]] rta::view::PaneView currentPaneView() const noexcept { return currentPaneView_; }
 
-    // Test-only pair: the real pane makePaneFactory built, and SPL logging.
-    [[nodiscard]] const juce::Component& paneComponentForTest() const {
-        return *workspace_->getChildComponent(0);
-    }
-    [[nodiscard]] rta::measure::AnalysisThread& analysisThreadForTest() noexcept {
-        return analysisThread_;
-    }
+    // Test-only trio: the real pane makePaneFactory built, SPL logging, and
+    // the trace library panes should be wired to (pin `setLibrary`'s target).
+    [[nodiscard]] const juce::Component& paneComponentForTest() const { return *workspace_->getChildComponent(0); }
+    [[nodiscard]] rta::measure::AnalysisThread& analysisThreadForTest() noexcept { return analysisThread_; }
+    [[nodiscard]] const rta::trace::TraceLibrary& libraryForTest() const noexcept { return library_; }
 
 private:
     void timerCallback() override;

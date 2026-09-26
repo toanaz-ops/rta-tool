@@ -87,6 +87,36 @@ struct TempDir {
     ~TempDir() { std::error_code ec; std::filesystem::remove_all(path, ec); }
 };
 
+/// Finds a direct child of `root` that is a `juce::Button` with exactly this
+/// text -- `wirePaneSelectorButtons()` adds all three selector buttons
+/// directly to `MainComponent` (no intervening container), and every other
+/// button MainComponent owns (SYNTHETIC, LOCATE, CAL START, ...) has a
+/// distinct label, so a flat, one-level search is enough. Fix-round finding
+/// 1 (verifier): the suite used to call `selectPaneView` directly everywhere,
+/// so a swapped `onClick` lambda between two buttons went unnoticed -- this
+/// is what lets a test find the REAL button an operator would click.
+juce::Button* findButtonByText(juce::Component& root, const juce::String& text) {
+    for (int i = 0; i < root.getNumChildComponents(); ++i) {
+        if (auto* button = dynamic_cast<juce::Button*>(root.getChildComponent(i))) {
+            if (button->getButtonText() == text) return button;
+        }
+    }
+    return nullptr;
+}
+
+/// True if `ancestor` is somewhere in `node`'s parent chain. Fix-round
+/// finding 3 (verifier): `addAndMakeVisible(*workspace_)` was deletable
+/// green, because `paneComponentForTest()` reads through `workspace_`
+/// regardless of whether `workspace_` itself was ever attached to
+/// `MainComponent` -- walking the chain is what actually proves the
+/// attachment.
+bool isDescendantOf(const juce::Component& node, const juce::Component& ancestor) {
+    for (const juce::Component* p = node.getParentComponent(); p != nullptr; p = p->getParentComponent()) {
+        if (p == &ancestor) return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 TEST_CASE("selecting SPL builds an SplView through the real factory path",
@@ -112,7 +142,13 @@ TEST_CASE("selecting back to RTA restores an RtaView", "[main_component_panes]")
     component.selectPaneView(PaneSelectorButton::Rta);
 
     CHECK(component.currentPaneView() == PaneView::Rta);
-    CHECK(dynamic_cast<const RtaView*>(&component.paneComponentForTest()) != nullptr);
+    const auto* rtaView = dynamic_cast<const RtaView*>(&component.paneComponentForTest());
+    REQUIRE(rtaView != nullptr);
+    // Fix-round finding 3 (verifier): setLibrary(&library_) was deletable
+    // green. library() is RtaView's own accessor for what it was last told
+    // (RtaView.h) -- pinning it to the SAME library MainComponent owns, not
+    // merely non-null, after a switch away and back.
+    CHECK(rtaView->library() == &component.libraryForTest());
 }
 
 TEST_CASE("selecting Transfer builds a TransferView", "[main_component_panes]") {
@@ -122,7 +158,9 @@ TEST_CASE("selecting Transfer builds a TransferView", "[main_component_panes]") 
     component.selectPaneView(PaneSelectorButton::Transfer);
 
     CHECK(component.currentPaneView() == PaneView::Transfer);
-    CHECK(dynamic_cast<const TransferView*>(&component.paneComponentForTest()) != nullptr);
+    const auto* transferView = dynamic_cast<const TransferView*>(&component.paneComponentForTest());
+    REQUIRE(transferView != nullptr);
+    CHECK(transferView->library() == &component.libraryForTest());
 }
 
 TEST_CASE("switching panes does not stop or restart SPL logging",
@@ -148,4 +186,115 @@ TEST_CASE("switching panes does not stop or restart SPL logging",
 
     component.analysisThreadForTest().disableSplLogging();
     REQUIRE(waitUntil([&] { return !component.analysisThreadForTest().isSplLoggingEnabled(); }, 2000));
+}
+
+// --- Fix round 1 (verifier NOT SOUND, 4 MEDIUM): the tests above all called
+// `selectPaneView` directly, so none of them could tell a correctly-wired
+// button from a swapped one, an unpinned `resized()`/`setLibrary`/
+// `addAndMakeVisible`/toggle-sync call, or a broken idempotent guard -- each
+// was independently deletable (or swappable) with the suite staying green.
+// The five cases below close those gaps, one property each.
+
+TEST_CASE("clicking each selector button in the component tree shows the matching pane",
+         "[main_component_panes]") {
+    MainComponent component;
+    component.setSyntheticMode(true);
+
+    // setToggleState(true, sendNotification) -- NOT triggerClick(), which
+    // posts through postCommandMessage and is only delivered by a pumped
+    // message loop this offscreen test never runs (Button.cpp's own
+    // setToggleState calls sendClickMessage() synchronously; triggerClick()
+    // does not).
+    auto* splButton = findButtonByText(component, "SPL");
+    REQUIRE(splButton != nullptr);
+    splButton->setToggleState(true, juce::sendNotification);
+    CHECK(dynamic_cast<const SplView*>(&component.paneComponentForTest()) != nullptr);
+
+    auto* transferButton = findButtonByText(component, "TRANSFER");
+    REQUIRE(transferButton != nullptr);
+    transferButton->setToggleState(true, juce::sendNotification);
+    CHECK(dynamic_cast<const TransferView*>(&component.paneComponentForTest()) != nullptr);
+
+    auto* rtaButton = findButtonByText(component, "RTA");
+    REQUIRE(rtaButton != nullptr);
+    rtaButton->setToggleState(true, juce::sendNotification);
+    CHECK(dynamic_cast<const RtaView*>(&component.paneComponentForTest()) != nullptr);
+}
+
+TEST_CASE("selectPaneView gives the new pane real bounds without waiting for a resize event",
+         "[main_component_panes]") {
+    MainComponent component;
+    component.setSyntheticMode(true);
+    // A real size, not the fixture's default 0x0 -- resized() lays out
+    // `getLocalBounds()`, so a 0x0 component would pass even with the
+    // trailing `resized()` call deleted from selectPaneView.
+    component.setSize(1280, 800);
+
+    component.selectPaneView(PaneSelectorButton::Spl);
+
+    const auto& pane = component.paneComponentForTest();
+    CHECK(pane.getWidth() > 0);
+    CHECK(pane.getHeight() > 0);
+}
+
+TEST_CASE("selectPaneView actually attaches the new workspace into the component tree",
+         "[main_component_panes]") {
+    MainComponent component;
+    component.setSyntheticMode(true);
+    component.setSize(1280, 800);
+
+    component.selectPaneView(PaneSelectorButton::Spl);
+
+    const auto& pane = component.paneComponentForTest();
+    CHECK(isDescendantOf(pane, component));
+
+    // The pane's OWN visible flag is set unconditionally by WorkspaceView's
+    // constructor (it addAndMakeVisible's every pane it builds), so checking
+    // it would not catch a MainComponent that forgets to
+    // addAndMakeVisible(*workspace_) itself. That flag lives on workspace_ --
+    // the pane's immediate parent -- and a freshly constructed juce::Component
+    // defaults to NOT visible (componentFlags(0)), which is what this pins.
+    auto* workspace = pane.getParentComponent();
+    REQUIRE(workspace != nullptr);
+    CHECK(workspace->isVisible());
+}
+
+TEST_CASE("selectPaneView keeps the selector buttons' toggle state in sync",
+         "[main_component_panes]") {
+    MainComponent component;
+    component.setSyntheticMode(true);
+
+    // A PROGRAMMATIC call, not a click -- JUCE's own radio-group exclusion
+    // (Button::turnOffOtherButtonsInGroup) only runs when a button's OWN
+    // toggle state changes, which never happens on this path. The three
+    // setToggleState lines in selectPaneView are the ONLY thing that can
+    // keep the buttons honest here.
+    component.selectPaneView(PaneSelectorButton::Spl);
+
+    auto* rtaButton = findButtonByText(component, "RTA");
+    auto* transferButton = findButtonByText(component, "TRANSFER");
+    auto* splButton = findButtonByText(component, "SPL");
+    REQUIRE(rtaButton != nullptr);
+    REQUIRE(transferButton != nullptr);
+    REQUIRE(splButton != nullptr);
+
+    CHECK_FALSE(rtaButton->getToggleState());
+    CHECK_FALSE(transferButton->getToggleState());
+    CHECK(splButton->getToggleState());
+}
+
+TEST_CASE("selecting the pane already showing does not rebuild it", "[main_component_panes]") {
+    MainComponent component;
+    component.setSyntheticMode(true);
+
+    component.selectPaneView(PaneSelectorButton::Spl);
+    const auto* before = &component.paneComponentForTest();
+
+    component.selectPaneView(PaneSelectorButton::Spl);  // already showing SPL
+    const auto* after = &component.paneComponentForTest();
+
+    // Not merely "still an SplView" -- the SAME object, proving the early
+    // return actually skipped the rebuild rather than building an
+    // indistinguishable new one.
+    CHECK(before == after);
 }
