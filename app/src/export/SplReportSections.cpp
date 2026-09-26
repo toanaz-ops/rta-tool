@@ -162,31 +162,6 @@ std::string renderInstrument(const ReportPayload& p) {
     return section("instrument", "Instrument", body);
 }
 
-// W3-C: record sec.9 item 3. `performed` gates first -- `verdict` is
-// std::optional, never a Pass-defaulted placeholder, mirroring
-// CalibrationSession's own optionality exactly.
-std::string renderCalibration(const ReportPayload& p) {
-    const auto& c = p.calibration;
-    std::string body;
-    if (!c.performed) {
-        body += "<p>calibration check not performed.</p>";
-        return section("calibration", "Calibration", body);
-    }
-    body += kv("Pre-check level", escapeHtml(formatTrim(c.start.measuredLevelDb)));
-    body += kv("Pre-check time (ms, Unix epoch)", std::to_string(c.start.unixMs));
-    body += kv("Post-check level", escapeHtml(formatTrim(c.end.measuredLevelDb)));
-    body += kv("Post-check time (ms, Unix epoch)", std::to_string(c.end.unixMs));
-    body += kv("Drift", escapeHtml(formatTrim(c.driftDb)));
-    body += kv("Calibrator nominal level",
-              escapeHtml(formatTrim(c.start.level.nominalDb)) +
-                  (c.start.level.operatorSupplied ? " (operator-supplied)" : ""));
-    body += kv("Compared against", escapeHtml(std::string(c.clause)));
-    if (c.verdict) {
-        body += kv("Verdict", *c.verdict == rta::measure::CalibrationVerdict::Pass ? "Pass" : "Fail");
-    }
-    return section("calibration", "Calibration", body);
-}
-
 std::string renderSettings(const ReportPayload& p) {
     const auto& cfg = p.config;
     std::string body;
@@ -290,78 +265,6 @@ std::string renderDose(const ReportPayload& p) {
     }
     body += "</table>";
     return section("dose", "Dose", body);
-}
-
-// One polyline per series, a fixed 1000x120 viewBox so a very long session
-// scales without a decimation policy the report would have to invent.
-//
-// Fix round (PR #28 verifier, MEDIUM): markers used to map blockIndex via
-// `% 1000`, a DIFFERENT scale from the trace's own `(idx-first)/span*width`
-// -- on a 28800-block session an alarm at the last block landed at x=799
-// instead of x=1000, nowhere near the point it annotates. Both now share
-// ONE first/last range, computed once over every series, so a marker
-// anywhere in the session lands on the same x-axis the trace itself uses.
-std::string renderHistory(const ReportPayload& p) {
-    constexpr double kW = 1000.0, kH = 120.0, kFloor = -20.0, kCeil = 140.0;
-
-    std::optional<std::uint64_t> first;
-    std::optional<std::uint64_t> last;
-    for (const auto& series : p.history) {
-        for (const auto& pt : series.points) {
-            if (!first || pt.blockIndex < *first) first = pt.blockIndex;
-            if (!last || pt.blockIndex > *last) last = pt.blockIndex;
-        }
-    }
-    const double span = (first && last && *last > *first) ? static_cast<double>(*last - *first) : 1.0;
-    auto xFor = [&](std::uint64_t idx) -> double {
-        if (!first) return 0.0;
-        const double delta = idx >= *first ? static_cast<double>(idx - *first) : 0.0;
-        return delta / span * kW;
-    };
-
-    std::string svg = "<svg class=\"strip\" viewBox=\"0 0 1000 120\" "
-                      "xmlns=\"http://www.w3.org/2000/svg\">";
-    for (const auto& series : p.history) {
-        if (series.points.empty()) continue;
-        std::string points;
-        for (const auto& pt : series.points) {
-            const double x = xFor(pt.blockIndex);
-            const double clamped = std::min(std::max(pt.valueDb, kFloor), kCeil);
-            const double y = kH - (clamped - kFloor) / (kCeil - kFloor) * kH;
-            points += std::to_string(x) + "," + std::to_string(y) + " ";
-        }
-        svg += "<polyline class=\"trace\" points=\"" + points + "\" />";
-    }
-    for (const auto& marker : p.markers) {
-        const std::string cls = marker.kind == rta::measure::SplMarkerKind::Alarm ? "marker-alarm"
-                                : marker.kind == rta::measure::SplMarkerKind::Overload ? "marker-overload"
-                                                                                        : "";
-        if (cls.empty()) continue;
-        const std::string x = std::to_string(xFor(marker.blockIndex));
-        svg += "<line class=\"" + cls + "\" x1=\"" + x + "\" x2=\"" + x + "\" y1=\"0\" y2=\"120\" />";
-    }
-    svg += "</svg>";
-    return section("history", "Time history", svg);
-}
-
-std::string renderValidity(const ReportPayload& p) {
-    const auto& v = p.validity;
-    std::string body;
-    body += kv("Total blocks", std::to_string(v.totalBlocks));
-    body += kv("Excluded from compliance windows", std::to_string(v.excludedBlocks));
-    body += kv("Overload blocks", std::to_string(v.overloadBlocks));
-    body += kv("Under-range blocks", std::to_string(v.underRangeBlocks));
-    body += kv("Dropped blocks", std::to_string(v.droppedBlocks));
-    body += kv("Gap blocks", std::to_string(v.gapBlocks));
-    body += kv("Total samples lost to gaps", std::to_string(v.droppedSamplesTotal));
-    body += kv("Refused metrics (configured beyond the cap)", std::to_string(v.refusedMetrics));
-    body += "<table><tr><th>Segment</th></tr>";
-    for (const auto& seg : v.segmentPaths) body += "<tr><td>" + escapeHtml(seg) + "</td></tr>";
-    body += "</table>";
-    body += "<p class=\"honesty\">This report's content list is assembled from market "
-            "practice; it is not claimed conformant with ISO 1996-2:2017 clause 13, "
-            "whose body is paywalled and unread by this project.</p>";
-    return section("validity", "Validity", body);
 }
 
 std::string renderIntegrity(const ReportPayload& p) {

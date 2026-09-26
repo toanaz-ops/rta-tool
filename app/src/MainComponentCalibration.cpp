@@ -7,7 +7,11 @@
 // kind from anything else in that class.
 #include "MainComponent.h"
 
+#include "export/SplCalibrationRecord.h"
+#include "measure/CalibratedSplConfig.h"
+#include "measure/CalibrationChannel.h"
 #include "measure/CaptureTimeout.h"
+#include "measure/RoutingPlan.h"
 
 namespace {
 
@@ -16,10 +20,12 @@ namespace {
 // responsiveness choice, the same shape as MainComponentDelay.cpp's own
 // kCaptureLength.
 constexpr std::size_t kCalibrationCaptureLength = 8192;
-// Calibrating route 0's MEASUREMENT channel: that is where a calibrator
-// clipped onto the mic capsule shows up, the same channel Locate's own
-// capture already reads from that route.
-constexpr int kCalibrationRouteIndex = 0;
+// kCalibrationRouteIndex (route 0's measurement channel -- where a
+// calibrator clipped onto the mic capsule shows up) moved to
+// `MainComponent::kCalibrationRouteIndex` (task W2-E2b part A): this file's
+// own anonymous-namespace copy was invisible to MainComponentSpl.cpp, which
+// needs the SAME channel number to mark a calibration verdict invalid and to
+// bracket a calibration record's block-index range.
 // Fix round finding 6: a calibrator-only rig has no REF channel, so the
 // route-0 accumulator this shares with Locate never fills. Long enough that
 // no real capture (well under a second at any audio sample rate) ever trips
@@ -76,10 +82,33 @@ void MainComponent::pollCalibrationPipeline() {
         const auto level = rta::measure::calibrationLevel(rta::measure::kIec60942Level94Db);
         const double sampleRate = audioIo_.bus().sampleRate();
         const auto unixMs = static_cast<std::uint64_t>(juce::Time::currentTimeMillis());
+
+        // Fix round (verifier HIGH finding): resolve the ROUTE this capture
+        // used to a CHANNEL NUMBER exactly once, here -- the routing plan the
+        // capture actually completed against, not the plan whenever
+        // restartSplLoggingForCalibration()/writeCalibrationRecordAndUpdate
+        // InvalidFlag() happen to run afterwards (same tick today, but the
+        // resolution point should not depend on that staying true).
+        const auto plan =
+            rta::measure::planRouting(audioIo_.bus().config(), audioIo_.bus().numChannels());
+        calibrationChannel_ =
+            rta::measure::calibrationMeasurementChannel(plan, kCalibrationRouteIndex).value_or(-1);
+
         if (calibrationCaptureIsStart_) {
+            // Fix round 3 (verifier MEDIUM, upgraded from LOW): persisted
+            // across to the END check, which resolves its OWN channel from
+            // whatever the routing plan is THEN -- see
+            // `calibrationStartChannel_`'s own comment for why the two can
+            // disagree.
+            calibrationStartChannel_ = calibrationChannel_;
             calibrationSession_.recordStartCheck(level, capture->measurement, sampleRate, unixMs);
+            // Task W2-E2b part A (record §8, §10 C4): the offset this check
+            // just found is applied to the LIVE session by starting a fresh
+            // log -- never to blocks the OLD, uncalibrated log already wrote.
+            restartSplLoggingForCalibration();
         } else {
             calibrationSession_.recordEndCheck(level, capture->measurement, sampleRate, unixMs);
+            writeCalibrationRecordAndUpdateInvalidFlag();
         }
         updateCalibrationReadout();
         return;
@@ -111,6 +140,17 @@ void MainComponent::updateCalibrationReadout() {
             juce::dontSendNotification);
         return;
     }
+    // Fix round 3 (verifier MEDIUM, upgraded from LOW): the channel-mismatch
+    // / no-measurement-channel refusal, shown live the same way a FAILED
+    // drift already is -- see `writeCalibrationRecordAndUpdateInvalidFlag`'s
+    // own comment for why no drift/verdict follows a refusal.
+    if (calibrationChannelRefused_) {
+        calibrationReadout_.setText(
+            "calibration: REFUSED -- start/end checks did not resolve to the same "
+            "measurement channel (or resolved to none) -- no drift verdict written",
+            juce::dontSendNotification);
+        return;
+    }
 
     const auto fields = calibrationSession_.reportFields();
     const juce::String verdictWord =
@@ -119,4 +159,98 @@ void MainComponent::updateCalibrationReadout() {
         "calibration: drift " + juce::String(fields.driftDb, 1) + " dB -- " + verdictWord +
             " (" + juce::String(std::string(rta::measure::CalibrationSession::kClause)) + ")",
         juce::dontSendNotification);
+}
+
+void MainComponent::restartSplLoggingForCalibration() {
+    // Calibrating with nothing logging yet has no live session to restart --
+    // SPL-R11's no-preferences-store simplicity means the offset just
+    // measured only reaches a log the NEXT time one opens fresh (a device or
+    // epoch change, `startFreshSplLog`, uncalibrated by that path's own
+    // design); it is not persisted here to be replayed later.
+    if (!splLoggingActive_) return;
+
+    analysisThread_.disableSplLogging();
+
+    // Fix round (verifier MEDIUM finding, mutant M2): lifted out of this
+    // function into a pure, OFF-tested one -- see CalibratedSplConfig.h's own
+    // comment for why the inline version was untestable.
+    const auto calibrated = rta::measure::calibratedSplLogConfig(calibrationSession_);
+
+    // `splLoggingActive_`/`lastSplEpoch_` are left exactly as they were: this
+    // restart changes neither whether the bus is active nor its epoch, so
+    // `pollSplLogging()`'s own edge-detected decision correctly reads NoOp on
+    // the very next tick (measure/SplLoggingDecision.h) -- no state to
+    // re-synchronise here beyond the fresh session directory itself.
+    startFreshSplLogWithConfig(calibrated.config, calibrated.calibratorLevelDb,
+                               audioIo_.bus().epoch());
+
+    // A fresh log is an unverified calibration state again -- see
+    // AnalysisThreadSpl.cpp's own reset-block comment for why
+    // `enableSplLogging` (started by the call above) already clears this
+    // mirror; this call is defence in depth for the same fact stated once
+    // more at the call site that most needs it to be true.
+    // `calibrationStartChannel_`, never `kCalibrationRouteIndex` (fix round
+    // HIGH finding) and never the bare `calibrationChannel_` (fix round 3:
+    // at THIS point in the flow they are the same value, set one line above
+    // in `pollCalibrationPipeline()`, but the START channel is the one this
+    // fresh log's blocks actually belong to for the rest of the check).
+    analysisThread_.setCalibrationInvalid(calibrationStartChannel_, false);
+}
+
+void MainComponent::writeCalibrationRecordAndUpdateInvalidFlag() {
+    if (currentSplSessionDir_.empty()) return;  // nothing logging -- nowhere to write the record
+
+    const auto fields = calibrationSession_.reportFields();
+    if (!fields.performed) return;  // both checks are required; recordEndCheck's own guard already
+                                    // refuses an empty capture, so reaching here with !performed
+                                    // would mean recordStartCheck never ran either
+
+    // Fix round 3 (verifier MEDIUM, upgraded from LOW): the START and END
+    // checks must have resolved to the SAME real channel, or comparing their
+    // levels compares readings from different signal paths (or from no
+    // channel at all) -- not a drift measurement. Decided by a pure function
+    // (test_calibration_channel.cpp) so the boundary is provable OFF.
+    const auto decision =
+        rta::measure::decideCalibrationRecordChannel(calibrationStartChannel_, calibrationChannel_);
+    if (decision != rta::measure::CalibrationChannelDecision::Write) {
+        calibrationChannelRefused_ = true;
+        rta::splexport::SplCalibrationRecordInfo info;
+        info.fields = fields;
+        info.fields.verdict.reset();  // no verdict -- see CalibrationRecordRefusal's own comment
+        info.refusal = decision == rta::measure::CalibrationChannelDecision::RefuseChannelMismatch
+                           ? rta::splexport::CalibrationRecordRefusal::ChannelMismatch
+                           : rta::splexport::CalibrationRecordRefusal::NoMeasurementChannel;
+        rta::splexport::writeCalibrationRecordFile(currentSplSessionDir_ + "/calibration.txt", info);
+        // No `setCalibrationInvalid` call: there is no single channel this
+        // refusal could correctly attach to (that is exactly the problem),
+        // and SPL data logged so far is unaffected by a calibration
+        // record that carries no verdict -- unlike a FAILED drift, this is
+        // not a claim that any block's level is wrong.
+        return;
+    }
+    calibrationChannelRefused_ = false;
+
+    // The new log's own blockIndex 0 IS the calibration START check
+    // (restartSplLoggingForCalibration ran before this log wrote a single
+    // block), so the range is [0, latest block on the calibration CHANNEL --
+    // fix round HIGH finding: `calibrationChannel_`, resolved from the route
+    // in pollCalibrationPipeline(), never the route index itself]. Equal to
+    // `calibrationStartChannel_` here: `decision == Write` guarantees it.
+    const auto blockCount = analysisThread_.splBlockCount(calibrationChannel_);
+    const std::uint64_t endBlockIndex = blockCount > 0 ? blockCount - 1 : 0;
+
+    rta::splexport::SplCalibrationRecordInfo info;
+    info.fields = fields;
+    info.channel = calibrationChannel_;
+    info.startBlockIndex = 0;
+    info.endBlockIndex = endBlockIndex;
+    rta::splexport::writeCalibrationRecordFile(currentSplSessionDir_ + "/calibration.txt", info);
+
+    // Record §15 A2 / §8: drift > 0.5 dB does NOT silently invalidate the
+    // log (W3-A A3) -- it publishes the fact so the operator sees it live
+    // and the report can apply it to the bracketed range when it reads the
+    // record above.
+    const bool invalid =
+        fields.verdict.has_value() && *fields.verdict == rta::measure::CalibrationVerdict::Fail;
+    analysisThread_.setCalibrationInvalid(calibrationChannel_, invalid);
 }

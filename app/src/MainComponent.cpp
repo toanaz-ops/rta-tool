@@ -89,6 +89,17 @@ MainComponent::MainComponent()
     calibrationReadout_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(calibrationReadout_);
 
+    // Task W2-E2b part B: reachable, minimal -- one button beside the
+    // calibration row rather than a new pane.
+    exportReportButton_.getProperties().set(az::ui::hintProperty,
+                                            "writes report.html into this session's SPL folder");
+    exportReportButton_.onClick = [this] { exportReportClicked(); };
+    addAndMakeVisible(exportReportButton_);
+
+    exportReportReadout_.setText("export: no SPL session logged yet", juce::dontSendNotification);
+    exportReportReadout_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(exportReportReadout_);
+
     addAndMakeVisible(devicePanel_);
     addAndMakeVisible(channelRoleTable_);
     addAndMakeVisible(routingMatrix_);
@@ -237,7 +248,12 @@ void MainComponent::modeSwitchClicked() {
 // MainComponentDelay.cpp (this file's own 400-line cap split).
 //
 // calibrationStartClicked / calibrationEndClicked / pollCalibrationPipeline /
-// updateCalibrationReadout: MainComponentCalibration.cpp, the same split.
+// updateCalibrationReadout / restartSplLoggingForCalibration /
+// writeCalibrationRecordAndUpdateInvalidFlag: MainComponentCalibration.cpp,
+// the same split.
+//
+// startFreshSplLog / startFreshSplLogWithConfig / pollSplLogging /
+// exportReportClicked: MainComponentSpl.cpp, the same split.
 
 void MainComponent::timerCallback() {
     // routingMatrix_ caches its cell text (RoutingMatrix.h's own class
@@ -343,6 +359,18 @@ void MainComponent::resized() {
     calibrationEndButton_.setBounds(calibrationRow.removeFromLeft(calibrationButtonWidth));
     calibrationRow.removeFromLeft(az::ui::gap);
     calibrationReadout_.setBounds(calibrationRow);
+    rail.removeFromTop(az::ui::gap * 2);
+
+    // Task W2-E2b part B: one more fixed row -- the export button and its
+    // readout sharing what's left, the same shape as the two rows above.
+    auto exportRow = rail.removeFromTop(az::ui::buttonCellHeight);
+    // "EXPORT REPORT" is wider text than "CAL START"/"CAL END" above it, so
+    // this row's button gets a bigger share (2/5 rather than that row's 1/3)
+    // -- otherwise the label truncates (measured against main-live.png).
+    const int exportButtonWidth = (exportRow.getWidth() - az::ui::gap) * 2 / 5;
+    exportReportButton_.setBounds(exportRow.removeFromLeft(exportButtonWidth));
+    exportRow.removeFromLeft(az::ui::gap);
+    exportReportReadout_.setBounds(exportRow);
     rail.removeFromTop(az::ui::gap * 2);
 
     devicePanel_.setBounds(rail.removeFromTop(kDevicePanelHeight));

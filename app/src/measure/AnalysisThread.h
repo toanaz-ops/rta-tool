@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -180,8 +181,11 @@ public:
     /// pipeline (`SplLogPipeline`) against that directory: one file per
     /// logged channel plus a session header (record §10), opened fresh every
     /// time this is called with `enable == true`, never appended to.
+    /// `calibratorLevelDb`: threaded to `SplLogHeaderInfo::calibratorLevelDb`,
+    /// absent for an uncalibrated start (task W2-E2b part A).
     void enableSplLogging(const SplConfig& config, std::span<const int> channels,
-                          std::string logDirectory = {});
+                          std::string logDirectory = {},
+                          std::optional<double> calibratorLevelDb = std::nullopt);
 
     /// Stops it, picked up the same way. Also stops the log pipeline (if one
     /// was started) -- drains whatever is already queued, then joins its
@@ -212,6 +216,11 @@ public:
     /// shape as `splLogDroppedBlocks` above, over
     /// `splLogPipeline_.writeFailed(channel)`.
     [[nodiscard]] bool splLogWriteFailed(int channel) const noexcept;
+
+    /// Message-thread call: END check's drift > cl. 5.2's 0.5 dB, cleared by
+    /// a fresh `enableSplLogging` -- read by `fillSplPublishInput` (§15 A2).
+    void setCalibrationInvalid(int channel, bool invalid) noexcept;
+    [[nodiscard]] bool calibrationInvalid(int channel) const noexcept;
 
 private:
     /// Trap T-3: `SpectrumEngine::process` (reached through
@@ -344,6 +353,7 @@ private:
     /// `enableSplLogging`'s own comment. Guarded by `splRequestLock_`, same
     /// as the three members above it.
     std::string splRequestLogDirectory_;
+    std::optional<double> splRequestCalibratorLevelDb_;  // enableSplLogging's own, guarded likewise
     /// The handover. Same shape as `locateArmRequested_`: the message thread
     /// writes under the lock and releases this flag; the analysis thread
     /// acquires it once per drain and takes the lock only then, so no drain
@@ -381,6 +391,9 @@ private:
     /// Station-4 fix round (PR #31, finding 6): same mirror shape as
     /// `splLogDroppedBlocks_`, over `splLogPipeline_.writeFailed(channel)`.
     std::array<std::atomic<bool>, SplSession::kMaxLoggedChannels> splLogWriteFailed_{};
+
+    // splLogWriteFailed_'s mirror shape, opposite direction (message thread writes, analysis reads).
+    std::array<std::atomic<bool>, SplSession::kMaxLoggedChannels> splCalibrationInvalid_{};
 };
 
 }  // namespace rta::measure
