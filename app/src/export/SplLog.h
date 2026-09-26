@@ -19,6 +19,7 @@
 #include "trace/SessionCodecDetail.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <string>
@@ -26,6 +27,27 @@
 #include <vector>
 
 namespace rta::splexport {
+
+/// Fix round (PR #43, verifier HIGH F1): every path this export subsystem is
+/// handed originates from `juce::File::getFullPathName().toStdString()`
+/// (MainComponentSpl.cpp), which IS UTF-8 -- but `std::filesystem::path(const
+/// std::string&)` and `std::ofstream`'s `const std::string&` overload both
+/// decode through the process's ACTIVE CODE PAGE on MSVC
+/// (`_Convert_narrow_to_wide`), not UTF-8, so a folder name outside that code
+/// page's own repertoire (Vietnamese diacritics on a stock-1252/1258 Windows
+/// box, which is what CI's windows-latest runs) silently opens a mojibake
+/// sibling path. The `char8_t`-based constructor is guaranteed by the
+/// standard to decode its input as UTF-8 on every platform, which is exactly
+/// what this string already is -- `reinterpret_cast` between `char` and
+/// `char8_t` pointers is well-defined for this purpose (both are
+/// one-byte character types). `SplLogWriter.cpp` is the only caller: every
+/// `std::ofstream`/`stream.open` there takes the resulting `path`, never the
+/// raw string, so the OS-native (wide, on Windows) form is what actually
+/// reaches the filesystem API.
+[[nodiscard]] inline std::filesystem::path utf8Path(const std::string& utf8) {
+    return std::filesystem::path(reinterpret_cast<const char8_t*>(utf8.data()),
+                                 reinterpret_cast<const char8_t*>(utf8.data() + utf8.size()));
+}
 
 /// The per-channel facts `rta::measure::SplConfig` itself does not carry --
 /// weighting and detector are per-`SplMeter` (one instance per weighting,

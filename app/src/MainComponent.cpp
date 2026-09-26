@@ -36,7 +36,7 @@ MainComponent::MainComponent()
       // shape; Open's rebuild is restoreWorkspaceFromSession (MainComponentPanes.cpp).
       session_(
           library_, [this] { return rta::trace::PaneSpec{rta::view::paneViewName(currentPaneView_), 1.0f}; },
-          [this](std::vector<rta::trace::PaneSpec> panes) { restoreWorkspaceFromSession(std::move(panes)); }) {
+          [this](std::vector<rta::trace::PaneSpec> panes) { return restoreWorkspaceFromSession(std::move(panes)); }) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };

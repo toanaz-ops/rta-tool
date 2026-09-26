@@ -3,6 +3,7 @@
 // comment for why this class exists and what it is trusted with.
 #include "MainComponentSession.h"
 
+#include "JuceFsPath.h"
 #include "trace/SessionCodec.h"
 #include "trace/SessionStore.h"
 #include "trace/Trace.h"
@@ -99,7 +100,7 @@ void MainComponentSession::openClicked() {
 }
 
 void MainComponentSession::performSave(const juce::File& folder) {
-    const rta::trace::SessionStore store(std::filesystem::path(folder.getFullPathName().toStdString()));
+    const rta::trace::SessionStore store(toFsPath(folder));
 
     rta::trace::SessionDocument doc;
     doc.panes = {currentPaneSpec_()};
@@ -125,7 +126,7 @@ void MainComponentSession::performSave(const juce::File& folder) {
 }
 
 void MainComponentSession::performOpen(const juce::File& folder) {
-    const rta::trace::SessionStore store(std::filesystem::path(folder.getFullPathName().toStdString()));
+    const rta::trace::SessionStore store(toFsPath(folder));
 
     rta::trace::SessionDocument doc;
     const auto indexStatus = store.readIndex(doc);
@@ -193,9 +194,15 @@ void MainComponentSession::performOpen(const juce::File& folder) {
     // showing before Open was clicked -- normalisePanes turns an empty list
     // (a session saved before workspaces existed) into the same single
     // default `rta` pane a brand-new session gets.
-    restorePaneView_(rta::trace::normalisePanes(doc.panes));
+    const auto paneReport = restorePaneView_(rta::trace::normalisePanes(doc.panes));
 
     juce::String message = juce::String("OPENED ") + folder.getFullPathName();
+    if (paneReport.fellBack) {
+        // PaneRegistry.h's PaneResolution: "the caller REPORTS this" -- this
+        // is that report (fix round, PR #43 verifier MEDIUM F2).
+        message += juce::String(" -- pane \"") + juce::String(paneReport.requested) +
+                   "\" unknown, showing RTA";
+    }
     if (skipped > 0) message += " (" + juce::String(skipped) + " trace(s) skipped)";
     readout_.setText(message, juce::dontSendNotification);
 }

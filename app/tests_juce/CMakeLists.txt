@@ -364,11 +364,15 @@ add_executable(rtatool_main_component_tests
     # OPEN SESSION) against a real MainComponent -- see that file's own
     # header comment.
     test_main_component_session.cpp
+    # test_main_component_session.cpp's own 400-line-cap split (PR #43 fix round).
+    test_main_component_session_fixround.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 
 target_include_directories(rtatool_main_component_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    # PR #43 fix round: reuses app/tests/CodeLines.h, like rtatool_routing_live_tests does.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../tests)
 
 target_link_libraries(rtatool_main_component_tests PRIVATE
     RtaToolFonts

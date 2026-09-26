@@ -188,3 +188,9 @@ TEST_CASE("a session with no captures still opens, to an empty library",
     CHECK(MainComponentTestAccess::readoutForTest(reader).startsWith("OPENED"));
     CHECK(MainComponentTestAccess::library(reader).entries().empty());
 }
+
+// Fix round (PR #43) additions -- HIGH F1 (path encoding on Windows),
+// MEDIUM F2 (unrecognised pane name reporting) and MEDIUM F3 (five
+// behaviours with no RED mutant) -- live in
+// test_main_component_session_fixround.cpp, this file's own 400-line-cap
+// split.

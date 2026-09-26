@@ -35,7 +35,12 @@ void SplLogWriter::openSegment() {
     std::string path = basePath_ + ".gen" + std::to_string(logGeneration_) + ".seg" +
                         std::to_string(segmentIndex_) + ".csv";
 
-    stream_.open(path, std::ios::out | std::ios::trunc);
+    // utf8Path(), never stream_.open(path, ...) directly (fix round, PR #43
+    // verifier HIGH F1): `path` is UTF-8 (it descends from `basePath_`, which
+    // MainComponentSpl.cpp derives from a juce::File), and std::ofstream's
+    // std::string overload decodes through the ACTIVE CODE PAGE on MSVC, not
+    // UTF-8 -- see SplLog.h's own comment on utf8Path.
+    stream_.open(utf8Path(path), std::ios::out | std::ios::trunc);
     if (!stream_.is_open()) {
         // Station-4 fix round (PR #31, finding 6): a directory that does not
         // exist or is not writable makes `open()` fail silently -- no
@@ -92,7 +97,8 @@ void writeSessionHeaderFile(const std::string& path, const SplSessionHeaderInfo&
     // exact one" property this file's own header rules already rely on
     // (SplLog.h's readLog strips a trailing '\r' for the SAME reason on the
     // read side).
-    std::ofstream stream(path, std::ios::out | std::ios::trunc | std::ios::binary);
+    // utf8Path(), same reason as openSegment() above.
+    std::ofstream stream(utf8Path(path), std::ios::out | std::ios::trunc | std::ios::binary);
     stream << sessionHeader(info);
 }
 

@@ -88,6 +88,14 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
     // rather than needing a second, redundant one here.
     [[maybe_unused]] const bool sessionDirCreated = sessionDir.createDirectory();
 
+    // Fix round (PR #43 verifier HIGH F1): toStdString() here already yields
+    // correct UTF-8 bytes -- juce::String's UTF-8 export is not itself the
+    // ACP bug. The bug is downstream, wherever this std::string is handed to
+    // std::filesystem::path(const std::string&) or std::ofstream's
+    // std::string overload (both decode via the process's active code page
+    // on MSVC, not UTF-8): SplLogWriter.cpp is that one caller, and its two
+    // stream-opening sites now go through SplLog.h's utf8Path() instead of
+    // opening `path` directly, which is where the actual fix landed.
     currentSplSessionDir_ = sessionDir.getFullPathName().toStdString();
     currentSplLoggedChannels_.assign(channels.begin(), channels.end());
     // LOW follow-up batch, item 15: this is the ONE function that assigns

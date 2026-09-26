@@ -5,6 +5,8 @@
 // exercised with no AnalysisThread and no JUCE in the path.
 #include "export/SplLogPipeline.h"
 
+#include "CodeLines.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -274,4 +276,26 @@ TEST_CASE("pushBlock on a channel nothing was enabled for does nothing and does 
     pipeline.pushBlock(5, distinguishableBlock(0));  // channel 5 has no sink
     CHECK(pipeline.droppedBlocks(5) == 0);
     pipeline.disable();
+}
+
+// --- Fix round (PR #43 verifier HIGH F1): SplLogWriter opens through
+// utf8Path(), not a raw narrow path -----------------------------------------
+
+TEST_CASE("SplLogWriter opens its files through utf8Path, not a raw narrow std::string",
+         "[spl_log_pipeline]") {
+    // Same reasoning as JuceFsPath.h's own structural guard
+    // (app/tests_juce/test_main_component_session.cpp): GetACP() on this box
+    // is 65001 (UTF-8), so std::ofstream's std::string overload happens to
+    // decode a UTF-8 path correctly here too -- only a structural read of
+    // the real source distinguishes "opens through utf8Path()" from "opens
+    // the raw std::string directly" on every machine identically. codeText()
+    // strips comments first (this file's own doc comment on utf8Path
+    // explains the bug in prose, which must not trip the check).
+    const auto path = std::filesystem::path(RTA_REPO_ROOT) / "app" / "src" / "export" / "SplLogWriter.cpp";
+    const auto text = rta::test::codeText(path);
+    CHECK(text.find("stream_.open(path,") == std::string::npos);
+    CHECK(text.find("ofstream stream(path,") == std::string::npos);
+    // And the guard is not vacuous: the fixed call sites ARE present.
+    CHECK(text.find("stream_.open(utf8path(path)") != std::string::npos);
+    CHECK(text.find("ofstream stream(utf8path(path)") != std::string::npos);
 }

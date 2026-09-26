@@ -108,7 +108,9 @@ private:
     void wirePaneSelectorButtons();  // MainComponentPanes.cpp: 400-line cap
     void layoutPaneSelectorRow(juce::Rectangle<int> row);
     // MainComponentPanes.cpp: session Open's own rebuild (multi-pane aware).
-    void restoreWorkspaceFromSession(std::vector<rta::trace::PaneSpec> panes);
+    // Returns the first pane resolution that fell back, so Open's readout
+    // can report it (PR #43 verifier MEDIUM F2).
+    rta::view::PaneResolution restoreWorkspaceFromSession(std::vector<rta::trace::PaneSpec> panes);
 
     /// L7-DELAY task F2 (record docs/dsp/2026-09-06-l7-auto-delay.md
     /// sec.11.2-11.4). LOCATE: pink noise, strict solo on output channel 0

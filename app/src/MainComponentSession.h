@@ -20,6 +20,7 @@
 
 #include "trace/TraceLibrary.h"
 #include "trace/Workspace.h"
+#include "view/PaneRegistry.h"
 
 #include <functional>
 #include <memory>
@@ -36,8 +37,13 @@ public:
     /// Rebuilds the workspace from a loaded session's `[pane]` sections
     /// (already normalised via `rta::trace::normalisePanes` -- never empty).
     /// MainComponent supplies this because only it knows AnalysisThread and
-    /// `makePaneFactory`; this class never includes either.
-    using RestorePaneView = std::function<void(std::vector<rta::trace::PaneSpec>)>;
+    /// `makePaneFactory`; this class never includes either. Returns the
+    /// resolution of the first pane that did NOT resolve (`fellBack==false`,
+    /// default-constructed, if every pane resolved) -- `PaneRegistry.h`'s
+    /// `PaneResolution` says the caller REPORTS a fallback; this is that
+    /// report reaching all the way to the readout (fix round, PR #43
+    /// verifier MEDIUM F2).
+    using RestorePaneView = std::function<rta::view::PaneResolution(std::vector<rta::trace::PaneSpec>)>;
     /// What Save should write for the pane CURRENTLY showing. MainComponent
     /// supplies this because only it knows `currentPaneView_`.
     using CurrentPaneSpec = std::function<rta::trace::PaneSpec()>;
