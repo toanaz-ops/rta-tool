@@ -2,16 +2,16 @@
 // Lane L6a task W2-E2a. Split out of test_spl_log_wiring.cpp (LOW follow-up
 // batch, item 9 -- that file was at 455 lines, over the 400-line hard cap)
 // along its own natural seam: this file's ONE subject is disableSplLogging()
-// actually draining and joining the writer thread, not returning while a
-// background writer is still catching up on its own. See
-// test_spl_log_wiring.cpp's own header comment for the wiring this file
-// shares its subject with.
+// actually calling through to SplLogPipeline::disable() and letting it
+// finish, not a no-op that "stays green" only because a background writer
+// happens to catch up on its own. See test_spl_log_wiring.cpp's own header
+// comment for the wiring this file shares its subject with.
 //
 // Own copies of the small TempDir/fastConfig/splConfig/pushBlocks/
-// waitForSplBlocks/waitForSplLoggingOff/readWholeFile/csvFilesIn fixtures
-// test_spl_log_wiring.cpp's anonymous namespace also declares -- an
-// anonymous namespace cannot be shared across TUs, the same trade-off
-// test_spl_log_pipeline.cpp's own multi-file split already makes.
+// readWholeFile/csvFilesIn fixtures test_spl_log_wiring.cpp's anonymous
+// namespace also declares -- an anonymous namespace cannot be shared across
+// TUs, the same trade-off test_spl_log_pipeline.cpp's own multi-file split
+// already makes.
 #include <catch2/catch_test_macros.hpp>
 
 #include "export/SplLog.h"
@@ -85,19 +85,19 @@ bool waitForSplBlocks(const AnalysisThread& thread, int channel, std::uint64_t t
 }
 
 /// `disableSplLogging()` is picked up on the NEXT `drain()`, same as every
-/// other SPL request (AnalysisThread.h's own class comment) -- so the
-/// caller keeps feeding hops until `splBlockCount` has been reset by the
-/// disable actually landing, the same "wait for the request to land" idiom
-/// `waitForSplBlocks` above uses for the opposite direction.
-bool waitForSplLoggingOff(AnalysisThread& thread, CaptureBus& bus, int channel, int timeoutMs) {
+/// other SPL request (AnalysisThread.h's own class comment), and `drain()`
+/// runs on the analysis thread's own `kPollMs` cadence regardless of whether
+/// new audio keeps arriving (`AnalysisThread::runBody()`'s own loop) -- so,
+/// unlike waiting for METERING to reach a target block count, waiting for
+/// this to land needs no continued hop-feeding at all.
+bool waitForSplLoggingOff(const AnalysisThread& thread, int timeoutMs) {
     const auto deadline =
         juce::Time::getMillisecondCounter() + static_cast<std::uint32_t>(timeoutMs);
     while (juce::Time::getMillisecondCounter() < deadline) {
-        if (thread.splBlockCount(channel) == 0) return true;
-        pushBlocks(bus, 1, 16, 1);
+        if (!thread.isSplLoggingEnabled()) return true;
         juce::Thread::sleep(5);
     }
-    return thread.splBlockCount(channel) == 0;
+    return !thread.isSplLoggingEnabled();
 }
 
 std::string readWholeFile(const std::filesystem::path& path) {
@@ -119,47 +119,40 @@ std::vector<std::filesystem::path> csvFilesIn(const std::filesystem::path& dir) 
 
 }  // namespace
 
-// --- LOW follow-up batch, item 9: disableSplLogging() actually drains and
-// joins the writer thread, not a no-op that "stays green" only because the
-// background writer catches up on its own before the test reads the files --
+// --- LOW follow-up batch, item 9: disableSplLogging() actually calls
+// SplLogPipeline::disable() (which itself drains then joins its writer
+// thread -- SplLogPipeline.h's own class comment, exercised directly by
+// test_spl_log_pipeline.cpp), rather than a no-op that "stays green" ---
 
-TEST_CASE("disableSplLogging() leaves every pushed block on disk before it returns",
+TEST_CASE("disableSplLogging() actually calls through to SplLogPipeline::disable()",
           "[spl_log_wiring]") {
     // MUTANT: making `AnalysisThreadSpl.cpp`'s `applyPendingSplRequest()`
-    // treat `splLogPipeline_.disable()` as a no-op on the disable path stayed
-    // GREEN against test_spl_log_wiring.cpp's own FIRST test (16 blocks):
-    // that test's own `pushBlocks`/`waitForSplBlocks` loop, plus the polling
-    // in `waitForSplLoggingOff` below, already gives a background writer
-    // thread (kIdleSleep = 5 ms between drain passes, SplLogPipeline.cpp)
-    // many milliseconds to catch up on its own -- ample time to flush 16
-    // tiny CSV rows even if nothing ever joins it. `disable()`'s own real
-    // job -- "shutdown drains then joins" (SplLogPipeline.h's own class
-    // comment) -- is what a caller is relying on to make the file complete
-    // and closeable the INSTANT `disableSplLogging()`'s request has landed,
-    // not "usually complete a few milliseconds later".
+    // treat `splState_.logPipeline.disable()` as a no-op on the disable path
+    // stayed GREEN against every timing-based version of this test tried
+    // while writing it -- a burst-then-read-the-files race, even scaled up
+    // to 8 channels x 200 blocks (1600 rows), never caught it. Measured
+    // directly: this project's analysis thread meters incoming audio no
+    // faster than roughly one hop per `kPollMs` (10 ms) poll tick, so an
+    // 800-hop, 8-channel burst took ~1.2 s of REAL time just to finish
+    // metering -- and `SplLogPipeline::pushBlock()` is called incrementally
+    // as each block closes DURING that whole window, not all at once at the
+    // end. A background writer thread, whose own per-row cost
+    // (`stream_.flush()`, tens of microseconds) is two to three orders of
+    // magnitude smaller than that metering cadence, never meaningfully
+    // falls behind -- so by the time any burst this test could practically
+    // push finishes metering, the files are already complete regardless of
+    // whether `disable()` was ever called at all. No burst size fixes this;
+    // the bottleneck this test would need to race is upstream of the
+    // pipeline entirely.
     //
-    // The adversarial fixture: 200 blocks (800 tiny hops) pushed back to
-    // back with NO pause before `disableSplLogging()`, the same "overwhelming
-    // probability, not exact timing" shape `test_spl_log_pipeline.cpp`'s own
-    // "a full queue" case already uses in this codebase -- SplLogWriter::
-    // write() calls `stream_.flush()`, a real OS syscall costing at minimum
-    // low tens of microseconds (that test's own measured argument), so
-    // flushing 200 rows costs on the order of several milliseconds of REAL
-    // disk I/O -- while the in-memory push loop below that feeds them costs
-    // microseconds. A background writer with no join forcing it to finish
-    // is, at the moment this test reads the files immediately after
-    // `disableSplLogging()` lands, overwhelmingly likely to still be
-    // mid-flush.
-    //
-    // 200, not 500: `SplLogPipeline::enable()`'s caller here
-    // (`AnalysisThreadSpl.cpp`) never overrides `queueCapacityBlocks`, so the
-    // ring is the default 256 deep. `pushBlock` is real-time-safe and
-    // therefore lossy on overflow (SplLogPipeline.cpp's own comment on
-    // `dropped`) -- a burst past capacity is a GENUINE, unavoidable drop that
-    // happens before `disableSplLogging()` is even called, which is a
-    // different bug class (queue sizing) than the one this test exists to
-    // catch (a `disable()` that returns before its drain/join finishes).
-    // Staying under 256 keeps this test's only variable the one it names.
+    // The reliable, race-free signal instead: `SplLogPipeline::disable()`
+    // clears its own `running_` flag as the very FIRST thing it does, before
+    // the join that follows (SplLogPipeline.cpp's own comment on
+    // `disable()`). `AnalysisThread::isSplLoggingEnabled()` mirrors that flag
+    // directly. Under the mutant, `disable()` is never called, so `running_`
+    // never clears and this stays `true` forever; under the real fix, it
+    // reliably flips to `false` once the pending disable request lands, with
+    // no dependency on writer-thread timing at all.
     TempDir dir("disable-drains-and-joins");
     CaptureBus bus(1 << 16);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
@@ -170,20 +163,22 @@ TEST_CASE("disableSplLogging() leaves every pushed block on disk before it retur
     const std::array<int, 1> channels{ 0 };
     thread.enableSplLogging(splConfig(48000.0), channels, dir.path.string());
 
-    constexpr int kBlocks = 200;
+    constexpr int kBlocks = 20;
     constexpr int kHopsPerBlock = 4;  // splConfig(): 64 samples/block, 16/hop
     pushBlocks(bus, 1, 16, kBlocks * kHopsPerBlock);
+    // Implies the enable request already landed -- metering could not
+    // otherwise have produced any blocks on this channel.
     REQUIRE(waitForSplBlocks(thread, 0, kBlocks, 5000));
+    REQUIRE(thread.isSplLoggingEnabled());
 
     thread.disableSplLogging();
-    REQUIRE(waitForSplLoggingOff(thread, bus, 0, 5000));
+    REQUIRE(waitForSplLoggingOff(thread, 2000));
 
-    // Read IMMEDIATELY -- no sleep, no extra poll beyond confirming the
-    // disable request landed. Under the mutant this reads a short file
-    // (blocks still queued in memory, or mid-flush and `bytesDiscarded`
-    // nonzero from a partially written last line); under the real fix,
-    // `disable()` already blocked until every one of the 200 rows was
-    // written and the file closed, so this is unconditionally complete.
+    // Secondary check, still real regression protection even though it is
+    // not what catches the no-op mutant above (see this test's own header
+    // comment for why a timing race cannot catch it): once the pipeline
+    // reports itself disabled, the files it wrote should be complete, not
+    // merely non-empty.
     const auto files = csvFilesIn(dir.path);
     REQUIRE_FALSE(files.empty());
     std::size_t totalBlocks = 0;

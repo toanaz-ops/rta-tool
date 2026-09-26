@@ -214,6 +214,26 @@ public:
     /// `splState_.logPipeline.writeFailed(channel)`.
     [[nodiscard]] bool splLogWriteFailed(int channel) const noexcept;
 
+    /// LOW follow-up batch, item 9: a direct, race-free mirror of
+    /// `splState_.logPipeline.enabled()` -- `SplLogPipeline::disable()`
+    /// clears its own `running_` flag as the very FIRST thing it does,
+    /// before the join that follows (SplLogPipeline.cpp's own comment on
+    /// `disable()`), so this flipping to `false` is a direct observation of
+    /// "the disable path actually called `SplLogPipeline::disable()`" with
+    /// no dependency on how fast the writer thread's own drain happens to
+    /// run relative to whatever else is going on. `test_spl_log_wiring_
+    /// disable.cpp` uses this to catch a disable path that skips the call
+    /// entirely, a race a burst-then-read-the-files timing test cannot
+    /// reliably win: this project's own analysis thread meters incoming
+    /// audio no faster than roughly one hop per `kPollMs` poll (measured:
+    /// an 800-hop, 8-channel burst took ~1.2 s to finish metering), so the
+    /// writer thread -- whose own per-row cost is two to three orders of
+    /// magnitude smaller -- never meaningfully falls behind regardless of
+    /// burst size, and a mutant that skips the call entirely still reads as
+    /// "files already complete" under any burst this test could practically
+    /// push. Safe from any thread, same reason `splLogWriteFailed` is.
+    [[nodiscard]] bool isSplLoggingEnabled() const noexcept;
+
     /// Message-thread call: END check's drift > cl. 5.2's 0.5 dB, cleared by
     /// a fresh `enableSplLogging` -- read by `fillSplPublishInput` (§15 A2).
     void setCalibrationInvalid(int channel, bool invalid) noexcept;
