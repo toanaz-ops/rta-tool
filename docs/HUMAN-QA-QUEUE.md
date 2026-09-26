@@ -607,7 +607,16 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   > lần regenerate golden, không phải sửa một hằng số**. Đây là câu đáng trả lời
   > **trước khi trạm 4 commit W0-E**.
 
-- [ ] **`[!]` Q2 — dựng calibration flow ngay trong L6a? (mở rộng scope)**
+- [x] **`[!]` Q2 — ĐÃ ĐÓNG bởi bản dựng 2026-09-26 — calibration flow ĐÃ XÂY,
+  default của record được thi hành nguyên văn.** `CalibrationSession` (Wave 3,
+  PR #27 `8f8df27`): start/end pair qua cùng chain Z-weighted, drift, verdict
+  theo đúng **ISO 1996-2:2017 cl. 5.2** (0.5 dB, hằng
+  `CalibrationSession::kClause`); CAL START/CAL END wired vào `MainComponent`;
+  Wave 3-C + W2-E2b (PR #28, #32) áp offset vào live session và đưa cặp
+  đọc vào report. Không có gì để lật nữa — mục dưới đây giữ làm hồ sơ câu hỏi
+  gốc và giá đổi đã từng nêu ra.
+
+  ~~**`[!]` Q2 — dựng calibration flow ngay trong L6a? (mở rộng scope)**~~
   Hàng L6a của master plan không liệt kê nó. Nhưng hiện tại repo có
   `Trace::calibrationOffsetDb` mà **không có gì set nó một cách trung thực**:
   không có routine nào đo calibrator rồi tính offset. Không có flow thì log
@@ -703,7 +712,16 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   bang 502, nên UNVERIFIED). Default log span là bao nhiêu (§4), segment size
   bao nhiêu, và app có bao giờ tự xoá không?
 
-- [ ] **`[!]` Q8 — web viewer có ship trong L6a không?** Nó là thứ cuối cùng
+- [x] **`[!]` Q8 — ĐÃ ĐÓNG 2026-09-25, quyết định của owner, trong chat với
+  orchestrator — Wave 4b (served web viewer) CẮT.** Không phải cắt vì phép thử
+  Chrome LNA thất bại — nó vẫn CHƯA AI CHẠY và giờ **moot** cho lane này, vì
+  không còn viewer nào cần nó. Report (`docs/reports/009-spl-pro.md`) ghi đúng
+  fallback record §9 đã cho phép sẵn: ràng buộc rounding §12 constraint-2 được
+  ghi là "recorded as untested for the viewer". 4a (report) không bị ảnh
+  hưởng — nó không bao giờ phụ thuộc gate này. Câu hỏi gốc và giá đổi giữ dưới
+  đây làm hồ sơ.
+
+  ~~**`[!]` Q8 — web viewer có ship trong L6a không?**~~ Nó là thứ cuối cùng
   trong build order (§9), phụ thuộc PR #11 land, và phụ thuộc một phép thử
   **chưa ai chạy**: một trang phục vụ *từ* `127.0.0.1` fetch `127.0.0.1` có
   được miễn prompt **Local Network Access** của Chrome không. Suy ra được từ mô
@@ -771,6 +789,33 @@ khảo sát chỉ trích những gì ủng hộ mình thì không phải khảo 
   nghĩa validity) và **ISO 1996-2 cl. 10.3** ("incomplete or corrupted data")
   — đều **tường phí và chưa đọc**, nên dự án **không claim** cơ sở tiêu chuẩn
   cho bất kỳ hướng nào và nói thẳng điều đó. Một câu của chủ nhân là đủ.
+
+## Mục mới mở khi đóng lane L6a (2026-09-26)
+
+*Lane đã đóng — `docs/reports/009-spl-pro.md`. Ba mục dưới là việc closeout
+phát hiện, không mục nào chặn gì đã ship.*
+
+- [ ] **CI job dựng cấu hình ON trên Windows (JUCE fetch).** Hôm nay CI chỉ
+  chạy `RTA_BUILD_APP=OFF` trên cả ba OS; toàn bộ code chỉ-ON (pane SPL,
+  `MainComponent*.cpp`, mọi thứ dưới `RTA_BUILD_APP=ON`) không có CI nào phủ,
+  và mỗi round build ON cục bộ tốn vài phút JUCE fetch/link. **Được**: code
+  chỉ-ON có CI, vòng build cục bộ ngắn lại (cache JUCE giữa run). **Giá**:
+  ~10-15 phút Actions Windows mỗi lần chạy, so với quota 2000 phút/tháng của
+  gói private free hiện tại — một job ON mỗi PR có thể ăn hết quota nhanh hơn
+  các job OFF hiện có.
+- [ ] **Một lượt chạy trên phần cứng thật.** Calibrator + mic thật qua đúng
+  đường export report ở `docs/HANDOFF.md` mục "L6a SPL-pro lane CLOSED" (d).
+  Chưa phiên nào trong lane này cắm thiết bị thật — mọi số đo đến từ synthetic
+  mode và fixture.
+- [ ] **Các đề xuất process-audit đang chờ duyệt.** Bốn đề xuất từ các phiên
+  verify/build của lane này, chưa cái nào được owner duyệt để áp dụng chung
+  cho repo: (a) một script differential-mutation chạy hàng loạt thay vì viết
+  tay từng mutant; (b) một ctest guard chặn file quá 400 dòng thay vì dựa vào
+  người đọc nhớ luật; (c) rebuild có phạm vi theo đúng thứ đổi (change-scoped
+  rebuilds) thay vì rebuild toàn bộ mỗi round; (d) một cột "production caller"
+  trong mọi bảng task của plan, cộng cấm builder agent tự spawn builder con
+  (no nested builder agents) — lý do ở
+  `memory/a-component-with-no-production-caller-is-not-shipped.md`.
 
 ---
 

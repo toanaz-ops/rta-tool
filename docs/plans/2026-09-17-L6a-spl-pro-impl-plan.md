@@ -713,6 +713,15 @@ task's file list is a duty nobody holds.
 
 ## Wave 4b — the viewer: the same document over L-API (**Q8 DEFAULT: ships, LAST, gated**)
 
+**CUT by the owner, 2026-09-25 (in the orchestrator's chat).** Not a gate
+failure — Gate 2 (the Chrome LNA test below) was never run, and the owner's
+decision made running it moot rather than answering it. The fallback this
+section already named is what happened: the record §12 constraint-2 obligation
+is recorded as **UNTESTED FOR THE VIEWER**, and that sentence is in
+`docs/reports/009-spl-pro.md`. Wave 4a (the report, above) is untouched — it
+never depended on this gate. The rest of this section is kept as written,
+because it is the record of what Wave 4b would have needed had it not been cut.
+
 **Two gates, both outside this lane's control. If either is unmet when Wave 4a finishes, Wave 4b is CUT, the record §12 constraint-2 obligation is recorded as UNTESTED FOR THE VIEWER, and that sentence goes in the report (§9's own fallback).**
 
 **Gate 1 — L-API station 4 has landed, AND the static-asset mount has been agreed. Two things, not one.** `ApiServer`, its `Host` allowlist and its rate limiter arrive with that lane's **Task I** (the server, now **OFF**-config and socket-tested on three OSes) and **Task J** (composition-root wiring, that lane's only ON task) — `docs/plans/2026-09-17-remote-api-impl-plan.md`, merged as PR #14 at `a02fb29`. **The static-asset mount is a different matter: that plan puts it under *What this lane does NOT include*.** So serving the viewer's HTML from the same origin is an addition this lane proposes to L-API's files and cannot assume; it is item 6 of "Open, needs a human". This lane **builds no server** and must not build a parallel one: record §12 and L-API §12 forbid a second socket, port, bind default or auth model.
