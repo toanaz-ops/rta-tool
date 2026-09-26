@@ -7,6 +7,48 @@ session prompt is: "Read docs/plans/MASTER-EXECUTION-PLAN.md lane <X>, then
 docs/reports/README.md, then the decision records it names. Continue the
 pipeline from the current git state."*
 
+## Plan review — 2026-09-27: lanes built on inputs nobody produces
+
+Verified at `origin/main` `e2c67a1`. The 2026-09-26 wiring-debt pass asked
+"what calls this function", never "what button produces the data this task
+consumes" — `orphan_check.py` only covers `app/src` reachability, so a
+`core/`-only feature with no UI passes as BUILT.
+
+| Lane | Input it needs | Who produces it today | Evidence |
+|---|---|---|---|
+| Save/Open (PR #43) | a saved trace in `TraceLibrary` | nobody — `TraceLibrary::add` has zero production callers | `app/src/trace/TraceLibrary.cpp:60` |
+| XOVER (PR #45) | a live measurement to cross over | no STORE/freeze button exists | full button list: `app/src/MainComponent.h:244-370` (SYNTHETIC, LOCATE, APPLY, CAL START/END, EXPORT REPORT, RTA/TRANSFER/SPL) |
+| L7-EQ-UI | a stored trace or IR | same — no STORE | as above |
+| L7-ALIGN-UI | a captured sweep/IR | no sweep/capture/deconvolve path in `app/src` outside `AlignmentWizard`, itself unreachable | `git grep -liE "rt60\|schroeder\|lundeby" origin/main -- app/src` → empty |
+| any RT60 UI | an IR from a captured sweep | sweep/IR/RT60 (P4, L4a+L4b) lives only in `core/`, no `app/` surface | `EqSession.h:9-10` says it is a dev-preview specimen, not a `MainComponent` binding |
+
+**Two producer lanes are missing from the plan** and are not substitutable by
+any lane currently scheduled:
+- **(a) STORE** — freeze the live measurement into `TraceLibrary`.
+- **(b) Sweep→IR** — play a sweep, capture it, deconvolve it, so an IR exists
+  for anything downstream to consume.
+
+**Owner decisions, 2026-09-27:**
+1. **Next lane is STORE only.** The EQ / ALIGN / CaptureSequencer order the
+   2026-09-26 section below committed to is suspended pending another plan
+   review after STORE lands.
+2. **Every plan task table gains an "operator path" column** naming the
+   button or action by which a human produces each runtime input the task
+   consumes, in the running `rtatool.exe`. From now on "BUILT" means an
+   operator can reach the feature in the app, not merely that other code
+   calls it. P4 (L4a + L4b, sweep/IR/RT60) is relabelled **"core only, no
+   UI"** everywhere this document calls it BUILT, including the dependency
+   mermaid node below — the historical dated status snapshots keep their
+   original prose, with a dated correction line added next to each instead
+   of an edit in place.
+5. **sccache trial for the CI ON job** is approved as a separate,
+   experimental PR later — not implemented here, just recorded as pending.
+
+(Decisions 3 and 4 — CI `cancel-in-progress` and sequential review for PRs
+touching `MainComponent*` — are process/CI decisions with no plan-table
+consequence; they are recorded in `docs/GIT-WORKFLOW.md` and the workflow
+files, not here.)
+
 ## Wiring debt and the next lanes — 2026-09-26 (owner decisions)
 
 `tools/orphan_check.py` (PR #39) found that 16 `app/src/*.cpp` files were
@@ -16,14 +58,18 @@ L5a (session format), L6b (`CaptureSequencer`) and L7 (FIR, EQ, ALIGN,
 DELAY). The evidence table is in the 2026-09-26 section of
 `docs/HANDOFF.md`. The owner decided, in chat:
 
+**Suspended by the 2026-09-27 plan review** (see the section above): the next
+lane order below is on hold pending another review; **STORE** goes first.
+
 | Group | Decision | Where |
 |---|---|---|
+| **STORE (freeze the live measurement into `TraceLibrary`)** | **next lane** — added 2026-09-27; no other lane wires anything ahead of it | — |
 | Session Save/Open (`SessionCodec`, `SessionDecode`, `TraceBlobCodec`, `SessionStore`) | wire now | branch `app/session-save-open` |
 | G18 crossover surface (`CrossoverSurface`, `CrossoverTopology`, `VirtualTrace`) | wire now as a live `XOVER` pane — **ALIGN-R8 reversed** | branch `app/crossover-pane` |
 | `DelayLocator` | delete, superseded by `MainComponentDelay.cpp` | branch `app/unwired-cleanup` |
 | `SyntheticSnapshot` | not a gap (test and tool fixture); move out of `app/src` | branch `app/unwired-cleanup` |
-| EQ + FIR export (`EqSession`, `EqVerify`, `FirTextWriter`, `FirWavWriter`) | **next lane, L7-EQ-UI**: research → plan → build, opens right after the three branches above merge | — |
-| `AlignmentWizard` (+ `Signals`) | **lane after that, L7-ALIGN-UI** (wizard UI design needed) | — |
+| EQ + FIR export (`EqSession`, `EqVerify`, `FirTextWriter`, `FirWavWriter`) | **suspended 2026-09-27** — was next lane L7-EQ-UI; consumes STORE's output, which does not exist yet | — |
+| `AlignmentWizard` (+ `Signals`) | **suspended 2026-09-27** — was L7-ALIGN-UI; consumes a captured sweep/IR, which the missing Sweep→IR producer lane has not built | — |
 | `CaptureSequencer` | deferred: operators solo by hand (L6b plan line 231). Scheduled for the next multichannel lane; until then orphan_check blocks any PR that edits it without wiring it | — |
 
 From now on, "BUILT" in this document means **reachable from `rtatool.exe`**.
@@ -84,6 +130,12 @@ Built + verified and on `origin/main`: **P1, P2 (L2), P3 (L3), P4 (L4a + L4b),
 L5a, L5c, P6-multichannel (L6b), and the whole of P7.** Live test counts live
 in `docs/HANDOFF.md`'s baseline blocks — do NOT copy them here (this doc has
 twice carried a rotted number).
+
+**CORRECTED 2026-09-27:** "P4 (L4a + L4b)" above means built and proven in
+`core/` only. There is no `app/` surface for sweep/IR/RT60 — `git grep -liE
+"rt60|schroeder|lundeby" origin/main -- app/src` returns nothing. See "Plan
+review — 2026-09-27" above for the operator-path evidence and the new BUILT
+definition.
 
 **Open / next: L6a (SPL-pro) stations 1+2+3 are DONE and station 4 has Waves 0+1 BUILT** (1+2 on 2026-09-16,
 station 3 on 2026-09-17) — record
@@ -223,7 +275,7 @@ graph LR
     P1["<b>P1</b> · RTA / SPL / generator<br/><i>built — M2 + M7 by hand</i>"]
     P2["<b>P2</b> · dual-FFT engine<br/><i>BUILT 2026-08-29 · report 003</i>"]
     P3["<b>P3</b> · MTW<br/><i>BUILT 2026-09-06</i>"]
-    P4["<b>P4</b> · sweep / IR<br/><i>L4a+L4b BUILT 2026-08-30</i>"]
+    P4["<b>P4</b> · sweep / IR<br/><i>L4a+L4b core only, no UI — 2026-08-30 (CORRECTED 2026-09-27)</i>"]
     P4b["<b>P4b</b> · THD / STI<br/><i>needs IEC 60268-16</i>"]
     L5a["<b>L5a</b> · trace library + session<br/><i>BUILT · wired by L5c</i>"]
     L5b["<b>L5b</b> · targets / corridor / score<br/><i>needs ISO 2969 or SMPTE ST 202</i>"]
@@ -292,7 +344,7 @@ not, and a guessed tolerance is a false Class claim.
 |---|---|---|---|
 | **L2 — Dual-FFT engine** | P2: cross-spectrum, H=Sxy/Sxx, coherence, delay finder (+GCC-PHAT), phase unwrap, group delay, FIFO averaging (G1), environment input (G16). **✅ BUILT (2026-08-29), see `docs/reports/003-dual-fft-engine.md`.** Record: `docs/dsp/2026-08-28-dual-fft.md`. Merged into `main` and pushed 2026-08-29 | P1 core (done) | L5, L6a, L-web. NOT with L3/L4 (same core/dsp files likely shared) |
 | **L3 — MTW** | P3: multi-time-window transfer function, CONCURRENT with the fixed engine (G2). **✅ BUILT 2026-09-06.** Record `docs/dsp/2026-09-05-mtw-l3.md`, plan `docs/plans/2026-09-05-L3-mtw-impl-plan.md`. Decimation was **REJECTED**: the engine runs `K+1` full-rate `DualFftEngine` instances, FFT size doubling per octave downward, not a decimation cascade. Averaging is frames-uniform (`fifoDepth`, `timeConstantFrames`), with integration seconds reported per band rather than specified in seconds. MTW traces are **live-only** for now — storing them is an L5 amendment (`Trace` derives its axis from `fftSize` on purpose). Numbers live only in `docs/HANDOFF.md`'s baseline block. | L2 interface | L5, L6a |
-| **L4 — Sweep/IR** — split 2026-08-30 into **L4a** (deconvolution → IR, FR, polarity; `core/`), **L4b** (ETC, Schroeder, Lundeby, RT60, clarity), **L4c** (draggable gate G25, min/excess phase G24 — **NOTE: G24's min-phase TEST folded into L7-EQ 2026-09-06 per owner; L4c retains only the time-domain min/excess-phase DISPLAY, which reuses `rta::dsp::excessPhase`/`minimumPhaseFromMagnitude`**, offline WAV G22; `app/`), **L4d** (STI, blocked on IEC 60268-16). **L4a BUILT 2026-08-30**: decisions 1-4 and 7-9 shipped; polarity (G21) shipped as decision **6b** -- decision 6's 2.5-octave bandwidth gate was refuted by its own step-0 survey and replaced by a gate on both measured band edges (low <= 100 Hz AND high >= 8 kHz). G21 tier 3 (guided sub-against-main) was AMENDED by the owner the same day and moved to G17 as a phase question. Record `docs/dsp/2026-08-30-sweep-ir-l4a.md`, plan `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md`, state in `docs/HANDOFF.md`. Original scope: P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
+| **L4 — Sweep/IR** — split 2026-08-30 into **L4a** (deconvolution → IR, FR, polarity; `core/`), **L4b** (ETC, Schroeder, Lundeby, RT60, clarity), **L4c** (draggable gate G25, min/excess phase G24 — **NOTE: G24's min-phase TEST folded into L7-EQ 2026-09-06 per owner; L4c retains only the time-domain min/excess-phase DISPLAY, which reuses `rta::dsp::excessPhase`/`minimumPhaseFromMagnitude`**, offline WAV G22; `app/`), **L4d** (STI, blocked on IEC 60268-16). **L4a BUILT 2026-08-30**: decisions 1-4 and 7-9 shipped; polarity (G21) shipped as decision **6b** -- decision 6's 2.5-octave bandwidth gate was refuted by its own step-0 survey and replaced by a gate on both measured band edges (low <= 100 Hz AND high >= 8 kHz). G21 tier 3 (guided sub-against-main) was AMENDED by the owner the same day and moved to G17 as a phase question. Record `docs/dsp/2026-08-30-sweep-ir-l4a.md`, plan `docs/plans/2026-08-30-L4a-sweep-ir-impl-plan.md`, state in `docs/HANDOFF.md`. Original scope: P4: Farina quick-measure mode (FR+IR one shot), ETC, Schroeder+Lundeby, EDT/T20/T30, C50/C80/D50, STI/STIPA (G4, needs IEC 60268-16), polarity checker (G21), offline dual-FFT vs WAV (G22), min/excess phase (G24), drag IR gating (G25) **CORRECTED 2026-09-27: "BUILT" above is `core/` only — no `app/src` file implements a sweep/capture/deconvolve path, and `AlignmentWizard` (the one thing that references it) is itself unreachable; see "Plan review — 2026-09-27" above** | P1 + generator's Sweep class | L2 partially (coordinate on core/CMakeLists — serialize integration commits), L5, L6a |
 | **~~L5~~ → split into L5a/L5b/L5c** (2026-08-28). **L5a — trace library + session persistence: BUILT**, see `docs/specs/2026-08-28-trace-library-and-session.md` and its 8-task plan. **L5b — targets, corridor, coherence gate, match score**: record not written, and partly blocked on buying ISO 2969 / SMPTE ST 202 for the X-curve tolerance table. **L5c — Bode layout (G9), multi-plot workspaces (G6): ✅ BUILT 2026-08-29.** Ten tasks, 35 commits, `78ef14f..e14d0a0`. Record `docs/dsp/2026-08-29-display-layer-l5c.md` (with a §5a added mid-build for two interactions it had not decided); plan `docs/plans/2026-08-29-L5c-display-layer-impl-plan.md`. Numbers live in ONE place, `docs/HANDOFF.md`'s baseline block — do not copy them here. It also absorbed, on the owner's ruling, the thing no lane owned: **`app/` had never called L2's dual-FFT engine**, so `measure::Snapshot` carried no transfer function. That bridge is now built, and the stored-trace path this plan recorded as "built but unreached" is wired. **The spectrograph remains OUT of scope** — record §7 fixes three constraints and does not design it; it needs its own record when scheduled, and its decay-view half belongs with the IR/RT60 lane. | P1 app (done); solvers NOT needed (they are L7) | L2, L3, L4, L6a — app/ui side, disjoint from core DSP lanes |
 | **~~cepstrum/wavelet (G23)~~** | **Moved OUT of L5** — it is DSP, not display, and belongs with L2/L3. Putting it beside "draw a trace" confused two layers. | L2 | — |
 | **L6a — SPL-pro** | P6 subset: SPL logging/history/alarms/PDF/web viewer (G7), dose IEC 61252 (G8). **Stations 1+2 DONE 2026-09-16, station 3 DONE 2026-09-17, station 4 WAVE 0 BUILT 2026-09-18, MERGED as PR #17 at `b1e14a9`, and WAVE 1 BUILT and VERIFIED 2026-09-18** (this cell said "PR open, NOT merged" until the L-API closeout corrected it; branch `l6a/wave0-spl-publish`, **verified adversarially TWICE on PR #17 and merged up to `origin/main` `7b4773f`**: OFF 747/747, ON 821/821 and forced-fallback OFF 747/747, 0 `warning C` in all three. The verifier reproduced the pre-merge 689/762/689, found four mutations red, and found THREE defects, all fixed on the branch -- the load-bearing one is that `SplConfig::metrics` was unbounded while the publish path's per-metric window storage was a fixed 16, so a 17-metric config published a C-weighted label over the A chain's number, measured 18.843 dB wrong. Round 2 found two more: the ROUTED publish branch had no test at all -- deleting its `snapshot->spl` assignment left the suite green while a routed session, which is what a rig runs during a show, would have published no SPL -- and the per-metric window array's bound was a convention rather than a gate. `docs/HANDOFF.md`'s top section carries the per-commit table, both verifier rounds and every measured residual, and is the only place they live). **WAVE 1 (the core pure math) IS BUILT and VERIFIED (round 1)** on branch `l6a/wave1-core-metrics`, PR #20 open and NOT merged, merged up to `origin/main` `d071269`: OFF **818/818** and ON **892/892**, `0 warning C` in both (pre-merge 790/864 at `1357948` against 747/821 at `b1e14a9`). **Round 1 of adversarial verification returned SOUND-WITH-FIXES with THREE confirmed defects, all fixed, and the load-bearing one is a lesson rather than a number:** the header claimed "no numeric acceptance in this lane can distinguish" the typed exchange constant from the computed one, and D2a -- in the same commit, one file away -- rejects the typed literal on **50 of 51 rows** (1600x over its `1e-9 %` bound). So SPL-R7 stands on TWO legs, accuracy and bitwise exactness, and the claim is arithmetic in the suite now instead of prose. The second defect was the NIOSH ceiling shipping `L_AFmax` where 98-126 cl. 1.3.3 is NORMATIVE for **SLOW** (`L_ASmax`) -- the substituted-convention error `SplCriteria.h` exists to prevent, inside the fixture written to prevent it; the detector is a FIELD with its own citation now, because one character inside a label string is not assertable. The third: B1 credited itself with a gate it did not have -- an accessor returning the logarithm inverted survived it -- and now compares the accumulator BITWISE against an independent sum. Eight lesser findings fixed too, including the per-row resolution rule (the record's "smallest printed unit" prose contradicts the record's own printed 0.1111 % at 100 dBA; the code's Hours-cell key is right and `D2b3` now asserts why). It ships `meter::LevelHistogram` (2000 bins of 0.1 dB + two out-of-span counters, Ln over bin CENTRES, **absence with a reason instead of clamping**, and a `w/2 = 0.05 dB` bound that is a theorem -- measured worst residual `0.050000000000011369` dB, which REACHES the bound), `Leq::sumSquares()` beside `leqDb` asserted BITWISE, record section 3's windowed recompute asserted bitwise over 3600 steps of a 900-block ring **plus the two cases that show why the O(1) running subtraction was rejected** (round-off is 4.3e-13 dB and is NOT the reason; mutable membership is -- a `CalibrationInvalid` verdict on a block still inside the window leaves a running sum 10.8 dB out), `headroomDb` as a closed form with absence when the window is already lost, `AlarmLatch` with **no hysteresis, no debounce and no margin** and a bare-double overload that is `= delete`, `meter::Dose` (one formula, `q` COMPUTED per preset, two accumulators, peak nowhere near the integral) with a two-part fixture over **222 transcribed primary-source rows**, and `SplCriteria.h` keeping the three 140s apart. **Nine mutations run, every one red**; four guards shown red-then-green with their scanned counts read from the guards' own lines (`core_makes_no_class_1_claim` 11 -> 25, closing SPL-R9's inward hole: this wave's six core test files are the densest standards quotations in the repo and were entirely unguarded). **Seven findings, four of them corrections to the plan:** D2d's rounding convention must be round-half-UP, not banker's -- 109 dBA is an exact 112.5 s printed as 113, so round-half-to-even makes the truncated set `{99,109,124,127}` instead of the plan's `{124,127}`; `headroomDb` loses precision by `T/(T-t)` as the window fills, so C1's flat 2.41e-15 dB bound was 260x too tight against a measured 6.25e-13 and the shipped bound is derived per triple; B1's absolute 1e-9 tolerance was the wrong SHAPE for a quantity spanning 960 down to 1.2e-5; W1-E's E2 grep fires on EQ and FIR vocabulary (`"peaking"` is a filter TYPE) and ships with four named, self-expiring exemptions; and **SPL-R7's stated justification is refuted in its own fixture** -- the readable literal 9.9657843 clears every dose bound by five to eight orders, and what the computed `3/log10(2)` actually buys is that `10^(3/q)` is EXACTLY 2.0 bitwise. ~~**Waves 2-4 have NOT started.**~~ **CLOSED OUT 2026-09-26 — see the

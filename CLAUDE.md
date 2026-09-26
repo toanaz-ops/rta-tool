@@ -253,6 +253,11 @@ after L6a):
      job of calling them. `enableSplLogging` had no caller for four waves,
      which cost three extra PRs to fix
      (`memory/a-component-with-no-production-caller-is-not-shipped.md`).
+   - Every plan task table also carries an "operator path" column naming the
+     button a human uses to produce the task's runtime input (decision 2); a
+     task with no operator path must name the lane that will create one, or
+     it cannot be marked BUILT (2026-09-27: STORE and Sweep→IR were missing;
+     five lanes consumed traces or IRs that no button produced).
 6. **A record amendment is written against the shipped code, not ahead of
    it.** Amend `docs/dsp/` after the code that implements the amendment
    exists. The verifier then checks the amendment sentence by sentence
