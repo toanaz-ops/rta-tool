@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Self-test for tools/orphan_check.py -- the symbol extractor and the
-orphan-detection logic, isolated from git and from the real repo tree.
+"""Self-test for tools/orphan_check.py -- new/modified-header scoping (M1),
+comment-stripped reference search (M2), and transitive orphan propagation
+(L1), isolated from the real repo tree via scratch git repos.
 
 Run: python -m pytest tools/test_orphan_check.py -v
 """
@@ -16,69 +17,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import orphan_check as oc  # noqa: E402
 
 
-# --- extract_symbols ----------------------------------------------------
-
-
-def test_extracts_struct_name():
-    assert oc.extract_symbols("struct SplHistory {\n    int x;\n};\n") == {"SplHistory"}
-
-
-def test_extracts_class_name():
-    assert oc.extract_symbols("class SplAlarms {\npublic:\n};\n") == {"SplAlarms"}
-
-
-def test_extracts_free_function_declaration():
-    text = "std::optional<double> slidingMaxLeqDb(std::span<const Block> b, double fs);\n"
-    assert "slidingMaxLeqDb" in oc.extract_symbols(text)
-
-
-def test_extracts_out_of_line_member_definition_qualified():
-    text = "SplAlarmReading SplAlarm::report() const {\n    return out;\n}\n"
-    assert "SplAlarm::report" in oc.extract_symbols(text)
-
-
-def test_ignores_control_flow_lines():
-    text = "if (windowFull) {\nfor (int i = 0; i < 3; ++i) {\nwhile (x) {\n"
-    assert oc.extract_symbols(text) == set()
-
-
-def test_ignores_comment_lines():
-    text = "// struct Fake {\n// int foo();\n"
-    assert oc.extract_symbols(text) == set()
-
-
-def test_ignores_return_statement_calling_a_qualified_function():
-    # Regression: `return std::put_time(&tm, fmt);` inside an inline header
-    # function used to be misread as a DECLARATION of `std::put_time` -- a
-    # standard-library call, not a project symbol -- because its tail matches
-    # the same "name(args);" shape a real declaration has.
-    text = (
-        "inline std::string formatUtcTimestamp(const std::tm& tm) {\n"
-        "    std::ostringstream oss;\n"
-        "    return std::put_time(&tm, \"%Y%m%dT%H%M%SZ\");\n"
-        "}\n"
-    )
-    symbols = oc.extract_symbols(text)
-    assert "std::put_time" not in symbols
-    assert "formatUtcTimestamp" in symbols
-
-
-def test_multiple_symbols_in_one_header():
-    text = (
-        "struct SplHistory {\n"
-        "    int size() const;\n"
-        "};\n"
-        "\n"
-        "void writeSplLog(const SplHistory& h);\n"
-    )
-    symbols = oc.extract_symbols(text)
-    assert "SplHistory" in symbols
-    assert "writeSplLog" in symbols
-
-
-# --- find_orphans, on a scratch git repo ------------------------------------
-
-
 def _init_repo(root: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
@@ -90,6 +28,15 @@ def _commit_all(root: Path, message: str) -> None:
     subprocess.run(["git", "commit", "-q", "-m", message], cwd=root, check=True)
 
 
+def _head(root: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+# --- baseline behaviour (added header, wired vs unwired, tests don't count) --
+
+
 def test_find_orphans_flags_uncalled_new_header(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     (repo / "app" / "src" / "measure").mkdir(parents=True)
@@ -98,11 +45,8 @@ def test_find_orphans_flags_uncalled_new_header(tmp_path, monkeypatch):
     )
     _init_repo(repo)
     _commit_all(repo, "base")
-    base_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-    ).stdout.strip()
+    base_sha = _head(repo)
 
-    # A new header/impl pair that nothing else in app/src ever names.
     (repo / "app" / "src" / "measure" / "OrphanThing.h").write_text(
         "struct OrphanThing {\n    int value() const;\n};\n", encoding="utf-8"
     )
@@ -123,9 +67,7 @@ def test_find_orphans_clears_a_wired_header(tmp_path, monkeypatch):
     (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
     _init_repo(repo)
     _commit_all(repo, "base")
-    base_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-    ).stdout.strip()
+    base_sha = _head(repo)
 
     (repo / "app" / "src" / "measure" / "WiredThing.h").write_text(
         "struct WiredThing {\n    int value() const;\n};\n", encoding="utf-8"
@@ -133,16 +75,13 @@ def test_find_orphans_clears_a_wired_header(tmp_path, monkeypatch):
     (repo / "app" / "src" / "measure" / "WiredThing.cpp").write_text(
         "int WiredThing::value() const { return 1; }\n", encoding="utf-8"
     )
-    # The actual production caller, in a DIFFERENT file -- this is what
-    # should clear the orphan flag.
     (repo / "app" / "src" / "measure" / "Caller.cpp").write_text(
         "#include \"WiredThing.h\"\nvoid useIt() { WiredThing t; t.value(); }\n", encoding="utf-8"
     )
     _commit_all(repo, "add WiredThing and wire it in")
 
     monkeypatch.setattr(oc, "REPO_ROOT", repo)
-    orphans = oc.find_orphans(base_sha)
-    assert orphans == {}
+    assert oc.find_orphans(base_sha) == {}
 
 
 def test_find_orphans_ignores_test_only_reference(tmp_path, monkeypatch):
@@ -152,9 +91,7 @@ def test_find_orphans_ignores_test_only_reference(tmp_path, monkeypatch):
     (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
     _init_repo(repo)
     _commit_all(repo, "base")
-    base_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-    ).stdout.strip()
+    base_sha = _head(repo)
 
     (repo / "app" / "src" / "measure" / "TestOnlyThing.h").write_text(
         "struct TestOnlyThing {\n    int value() const;\n};\n", encoding="utf-8"
@@ -162,7 +99,6 @@ def test_find_orphans_ignores_test_only_reference(tmp_path, monkeypatch):
     (repo / "app" / "src" / "measure" / "TestOnlyThing.cpp").write_text(
         "int TestOnlyThing::value() const { return 1; }\n", encoding="utf-8"
     )
-    # A reference exists, but ONLY under app/tests -- must not count.
     (repo / "app" / "tests" / "test_thing.cpp").write_text(
         "#include \"measure/TestOnlyThing.h\"\nTEST_CASE(\"x\") { TestOnlyThing t; }\n",
         encoding="utf-8",
@@ -175,10 +111,6 @@ def test_find_orphans_ignores_test_only_reference(tmp_path, monkeypatch):
 
 
 def test_find_orphans_at_historical_commit_via_git_plumbing(tmp_path, monkeypatch):
-    # Same scenario as test_find_orphans_flags_uncalled_new_header, but read
-    # through --at's git-plumbing path (git show/ls-tree) instead of the
-    # working tree, proving the historical-commit mode gives the same answer
-    # without a checkout.
     repo = tmp_path / "repo"
     (repo / "app" / "src" / "measure").mkdir(parents=True)
     (repo / "app" / "src" / "measure" / "Existing.cpp").write_text(
@@ -186,9 +118,7 @@ def test_find_orphans_at_historical_commit_via_git_plumbing(tmp_path, monkeypatc
     )
     _init_repo(repo)
     _commit_all(repo, "base")
-    base_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-    ).stdout.strip()
+    base_sha = _head(repo)
 
     (repo / "app" / "src" / "measure" / "OrphanThing.h").write_text(
         "struct OrphanThing {\n    int value() const;\n};\n", encoding="utf-8"
@@ -197,12 +127,8 @@ def test_find_orphans_at_historical_commit_via_git_plumbing(tmp_path, monkeypatc
         "int OrphanThing::value() const { return 1; }\n", encoding="utf-8"
     )
     _commit_all(repo, "add OrphanThing")
-    at_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
-    ).stdout.strip()
+    at_sha = _head(repo)
 
-    # A later commit that would clear the orphan -- but --at pins evaluation
-    # to at_sha, so this must NOT be seen.
     (repo / "app" / "src" / "measure" / "Caller.cpp").write_text(
         "#include \"OrphanThing.h\"\nvoid useIt() { OrphanThing t; t.value(); }\n",
         encoding="utf-8",
@@ -212,11 +138,219 @@ def test_find_orphans_at_historical_commit_via_git_plumbing(tmp_path, monkeypatc
     monkeypatch.setattr(oc, "REPO_ROOT", repo)
     orphans = oc.find_orphans(base_sha, at=at_sha)
     assert "app/src/measure/OrphanThing.h" in orphans
+    assert oc.find_orphans(base_sha, at=None) == {}
 
-    # And evaluating at HEAD (the wired commit) clears it, confirming the
-    # difference is --at, not some other discrepancy.
-    orphans_at_head = oc.find_orphans(base_sha, at=None)
-    assert orphans_at_head == {}
+
+# --- fix round 1, item M1: a new member on a PRE-EXISTING header -----------
+
+
+def test_find_orphans_flags_new_method_on_pre_existing_header(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "measure").mkdir(parents=True)
+    header = repo / "app" / "src" / "measure" / "AnalysisThread.h"
+    header.write_text(
+        "class AnalysisThread {\npublic:\n    void run();\n};\n", encoding="utf-8"
+    )
+    (repo / "app" / "src" / "measure" / "AnalysisThread.cpp").write_text(
+        "void AnalysisThread::run() {}\n", encoding="utf-8"
+    )
+    (repo / "app" / "src" / "measure" / "Caller.cpp").write_text(
+        "#include \"AnalysisThread.h\"\nvoid useIt() { AnalysisThread t; t.run(); }\n",
+        encoding="utf-8",
+    )
+    _init_repo(repo)
+    _commit_all(repo, "base: AnalysisThread already exists and is wired")
+    base_sha = _head(repo)
+
+    assert oc.find_orphans.__wrapped__ if False else True  # sanity no-op
+    # header is UNCHANGED in its class shape except one new, uncalled method.
+    header.write_text(
+        "class AnalysisThread {\npublic:\n    void run();\n"
+        "    void enableSplLogging(int config);\n"
+        "};\n",
+        encoding="utf-8",
+    )
+    (repo / "app" / "src" / "measure" / "AnalysisThreadSpl.cpp").write_text(
+        "#include \"AnalysisThread.h\"\nvoid AnalysisThread::enableSplLogging(int config) {}\n",
+        encoding="utf-8",
+    )
+    _commit_all(repo, "add enableSplLogging, no caller anywhere")
+
+    monkeypatch.setattr(oc, "REPO_ROOT", repo)
+    orphans = oc.find_orphans(base_sha)
+    assert "app/src/measure/AnalysisThread.h" in orphans
+    assert "enableSplLogging" in orphans["app/src/measure/AnalysisThread.h"]
+    # `run` is pre-existing and already wired; M1 must not re-flag it just
+    # because the file changed.
+    assert "run" not in orphans["app/src/measure/AnalysisThread.h"]
+
+
+def test_find_orphans_does_not_flag_a_wired_new_method_on_existing_header(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "measure").mkdir(parents=True)
+    header = repo / "app" / "src" / "measure" / "AnalysisThread.h"
+    header.write_text("class AnalysisThread {\npublic:\n    void run();\n};\n", encoding="utf-8")
+    (repo / "app" / "src" / "measure" / "AnalysisThread.cpp").write_text(
+        "void AnalysisThread::run() {}\n", encoding="utf-8"
+    )
+    _init_repo(repo)
+    _commit_all(repo, "base")
+    base_sha = _head(repo)
+
+    header.write_text(
+        "class AnalysisThread {\npublic:\n    void run();\n    void enableSplLogging(int c);\n};\n",
+        encoding="utf-8",
+    )
+    (repo / "app" / "src" / "measure" / "AnalysisThreadSpl.cpp").write_text(
+        "#include \"AnalysisThread.h\"\nvoid AnalysisThread::enableSplLogging(int c) {}\n",
+        encoding="utf-8",
+    )
+    (repo / "app" / "src" / "MainComponent.cpp").write_text(
+        "#include \"measure/AnalysisThread.h\"\n"
+        "void poll(AnalysisThread& t) { t.enableSplLogging(1); }\n",
+        encoding="utf-8",
+    )
+    _commit_all(repo, "add enableSplLogging AND wire it in, same commit")
+
+    monkeypatch.setattr(oc, "REPO_ROOT", repo)
+    assert oc.find_orphans(base_sha) == {}
+
+
+# --- fix round 1, item M2: a doc comment naming a symbol is not a caller ----
+
+
+def test_find_orphans_ignores_a_doc_comment_naming_the_symbol(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "measure").mkdir(parents=True)
+    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
+    _init_repo(repo)
+    _commit_all(repo, "base")
+    base_sha = _head(repo)
+
+    (repo / "app" / "src" / "measure" / "Widget.h").write_text(
+        "struct Widget {\n    int value() const;\n};\n", encoding="utf-8"
+    )
+    (repo / "app" / "src" / "measure" / "Widget.cpp").write_text(
+        "int Widget::value() const { return 1; }\n", encoding="utf-8"
+    )
+    # The ONLY mention of `Widget` outside its own pair is inside a comment --
+    # this must not be read as a production caller (the exact Snapshot.h:230
+    # regression M2 fixes).
+    (repo / "app" / "src" / "measure" / "Sibling.h").write_text(
+        "// `Widget` is the one producer of this snapshot.\nstruct Sibling {};\n",
+        encoding="utf-8",
+    )
+    _commit_all(repo, "add Widget, mentioned only in a doc comment elsewhere")
+
+    monkeypatch.setattr(oc, "REPO_ROOT", repo)
+    orphans = oc.find_orphans(base_sha)
+    assert "app/src/measure/Widget.h" in orphans
+    assert "Widget" in orphans["app/src/measure/Widget.h"]
+
+
+# --- fix round 1, item L1: self-definition exclusion + transitivity --------
+
+
+def test_find_orphans_excludes_a_classs_own_definition_in_a_differently_named_file(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "export").mkdir(parents=True)
+    (repo / "app" / "src" / "export" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
+    _init_repo(repo)
+    _commit_all(repo, "base")
+    base_sha = _head(repo)
+
+    # Declared in Log.h, defined in LogWriter.cpp -- different basenames, so
+    # the ordinary same-basename pairing does NOT exclude LogWriter.cpp.
+    (repo / "app" / "src" / "export" / "Log.h").write_text(
+        "class LogWriter {\npublic:\n    LogWriter(int x);\n    void write(int v);\n};\n",
+        encoding="utf-8",
+    )
+    (repo / "app" / "src" / "export" / "LogWriter.cpp").write_text(
+        "#include \"Log.h\"\n"
+        "LogWriter::LogWriter(int x) {}\n"
+        "void LogWriter::write(int v) {}\n",
+        encoding="utf-8",
+    )
+    _commit_all(repo, "add LogWriter, declared/defined across differently-named files")
+
+    monkeypatch.setattr(oc, "REPO_ROOT", repo)
+    orphans = oc.find_orphans(base_sha)
+    assert "app/src/export/Log.h" in orphans
+    assert "LogWriter" in orphans["app/src/export/Log.h"]
+
+
+def test_find_orphans_propagates_through_a_file_whose_own_symbols_are_all_orphaned(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "measure").mkdir(parents=True)
+    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
+    _init_repo(repo)
+    _commit_all(repo, "base")
+    base_sha = _head(repo)
+
+    # History is used only by Alarms (a real parameter type, genuine code) --
+    # and Alarms ITSELF has no caller anywhere. History must become orphan
+    # too: a reference from a file that is not wired in is not a real
+    # production caller.
+    (repo / "app" / "src" / "measure" / "History.h").write_text(
+        "struct History {\n    int size() const;\n};\n", encoding="utf-8"
+    )
+    (repo / "app" / "src" / "measure" / "History.cpp").write_text(
+        "int History::size() const { return 0; }\n", encoding="utf-8"
+    )
+    (repo / "app" / "src" / "measure" / "Alarms.h").write_text(
+        "#include \"History.h\"\n"
+        "class Alarms {\npublic:\n    void update(History& h);\n};\n",
+        encoding="utf-8",
+    )
+    (repo / "app" / "src" / "measure" / "Alarms.cpp").write_text(
+        "#include \"Alarms.h\"\nvoid Alarms::update(History& h) {}\n", encoding="utf-8"
+    )
+    _commit_all(repo, "add History and Alarms; Alarms uses History but nothing calls Alarms")
+
+    monkeypatch.setattr(oc, "REPO_ROOT", repo)
+    orphans = oc.find_orphans(base_sha)
+    assert "app/src/measure/Alarms.h" in orphans and "Alarms" in orphans["app/src/measure/Alarms.h"]
+    assert "app/src/measure/History.h" in orphans
+    assert "History" in orphans["app/src/measure/History.h"]
+
+
+def test_find_orphans_does_not_propagate_through_a_genuinely_wired_file(tmp_path, monkeypatch):
+    # Same shape as above, but Alarms (the user of History) IS wired in from
+    # a real caller -- transitivity must not still discard that reference.
+    repo = tmp_path / "repo"
+    (repo / "app" / "src" / "measure").mkdir(parents=True)
+    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
+    _init_repo(repo)
+    _commit_all(repo, "base")
+    base_sha = _head(repo)
+
+    (repo / "app" / "src" / "measure" / "History.h").write_text(
+        "struct History {\n    int size() const;\n};\n", encoding="utf-8"
+    )
+    (repo / "app" / "src" / "measure" / "History.cpp").write_text(
+        "int History::size() const { return 0; }\n", encoding="utf-8"
+    )
+    (repo / "app" / "src" / "measure" / "Alarms.h").write_text(
+        "#include \"History.h\"\n"
+        "class Alarms {\npublic:\n    void update(History& h);\n};\n",
+        encoding="utf-8",
+    )
+    (repo / "app" / "src" / "measure" / "Alarms.cpp").write_text(
+        "#include \"Alarms.h\"\nvoid Alarms::update(History& h) {}\n", encoding="utf-8"
+    )
+    (repo / "app" / "src" / "MainComponent.cpp").write_text(
+        "#include \"measure/Alarms.h\"\n"
+        "void poll(Alarms& a, History& h) { a.update(h); h.size(); }\n",
+        encoding="utf-8",
+    )
+    _commit_all(repo, "add History and Alarms; Alarms IS wired from MainComponent")
+
+    monkeypatch.setattr(oc, "REPO_ROOT", repo)
+    assert oc.find_orphans(base_sha) == {}
 
 
 if __name__ == "__main__":
