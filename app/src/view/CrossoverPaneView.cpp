@@ -2,7 +2,6 @@
 // Part of RTA Tool -- app/src/view. See CrossoverPaneView.h.
 #include "view/CrossoverPaneView.h"
 
-#include "measure/CrossoverTopology.h"
 #include "trace/Trace.h"
 #include "trace/TraceLibrary.h"
 #include "trace/VirtualTrace.h"
@@ -12,35 +11,44 @@
 
 #include <az_ui/az_ui.h>
 
+#include <array>
+
 namespace rta::view {
 namespace {
 
-/// Library edits (add/rename/hide/reorder a stored trace) are an operator
-/// action, not a 20 Hz measurement stream -- RtaView/TransferView poll their
-/// bus at that rate because a live snapshot can change every publish; this
-/// pane has no bus behind it at all, only `TraceLibrary::revision()`, so a
-/// slower poll costs nothing a person could perceive as lag.
+/// Library edits (add/rename/hide) are an operator action, not a 20 Hz
+/// measurement stream -- RtaView/TransferView poll their bus at that rate
+/// because a live snapshot can change every publish; this pane has no bus
+/// behind it at all, only `TraceLibrary::revision()`, so a slower poll costs
+/// nothing a person could perceive as lag.
 constexpr int kTimerHz = 10;
 
-/// The fixed default this pane draws until `AlignmentWizard` (a separate
-/// lane, task brief) is wired to ask for a real answer. Linkwitz-Riley
-/// order 4 is the topology a live-sound processor ships with most often
-/// (docs/dsp/2026-09-06-l7-alignment-wizard.md Sec.3's own citation of Rane
-/// Note 160) -- a defensible DEFAULT for a pane with no picker yet, and the
-/// corner chip (see CrossoverSurfaceRenderer's header comment on what stays
-/// with the caller) says "DEFAULT", never "asked", so nobody mistakes it for
-/// an answer the operator gave.
-constexpr rta::measure::Topology kDefaultTopology{ rta::measure::CrossoverFamily::LinkwitzRiley,
-                                                   4 };
-constexpr rta::measure::ProcessorInversion kDefaultInversion = rta::measure::ProcessorInversion::No;
+/// One entry in the topology picker: a real `rta::measure::Topology` this
+/// pane's `topology_` can hold, paired with the label the combo box shows.
+/// A FINITE, HAND-PICKED list -- `expectedOffset` (CrossoverTopology.h) is
+/// arithmetically valid at any order, but a combo box needs a finite set,
+/// and these seven are what Rane Note 160 (LR-2/4/8) and ordinary practice
+/// (BW-1..4) actually ship. Adding an order some rig actually uses is a
+/// one-line addition here, never a reason to invent a default.
+struct TopologyChoice {
+    rta::measure::Topology topology;
+    const char* label;
+};
 
-/// Centred at 1 kHz, 6 octaves either side: 1000 * 2^-6 ~= 15.6 Hz and
-/// 1000 * 2^6 = 64 kHz, both outside the plotted 20 Hz-20 kHz band
-/// (CrossoverSurfaceRenderer's own geometry). With no crossover frequency
-/// asked yet either, this makes `relativePhase()` cover the WHOLE visible
-/// band rather than a fit window centred on a frequency nobody has named --
-/// the same "cover everything until told otherwise" reasoning the topology
-/// default above gives.
+constexpr std::array<TopologyChoice, 7> kTopologyChoices{ {
+    { { rta::measure::CrossoverFamily::LinkwitzRiley, 2 }, "LR-2" },
+    { { rta::measure::CrossoverFamily::LinkwitzRiley, 4 }, "LR-4" },
+    { { rta::measure::CrossoverFamily::LinkwitzRiley, 8 }, "LR-8" },
+    { { rta::measure::CrossoverFamily::Butterworth, 1 }, "BW-1" },
+    { { rta::measure::CrossoverFamily::Butterworth, 2 }, "BW-2" },
+    { { rta::measure::CrossoverFamily::Butterworth, 3 }, "BW-3" },
+    { { rta::measure::CrossoverFamily::Butterworth, 4 }, "BW-4" },
+} };
+
+/// Centred at 1 kHz, 6 octaves either side -- outside the plotted 20 Hz-
+/// 20 kHz band both ways, so with no crossover frequency asked either, the
+/// relative-phase trace covers the whole visible band rather than a fit
+/// window centred on a frequency nobody has named.
 constexpr PhaseWindow kDefaultWindow{ 1000.0, 6.0 };
 
 constexpr int kSummationHeight = 200;
@@ -48,8 +56,27 @@ constexpr int kSummationHeight = 200;
 }  // namespace
 
 CrossoverPaneView::CrossoverPaneView() {
-    surface_.setAskedTopology(kDefaultTopology, kDefaultInversion);
-    surface_.setWindow(kDefaultWindow);
+    hpCombo_.setTextWhenNothingSelected("CHOOSE HIGH-PASS TRACE");
+    lpCombo_.setTextWhenNothingSelected("CHOOSE LOW-PASS TRACE");
+    topologyCombo_.setTextWhenNothingSelected("CHOOSE TOPOLOGY (NOT INFERRED)");
+    hpCombo_.setTextWhenNoChoicesAvailable("NO PHASE-BEARING TRACES STORED");
+    lpCombo_.setTextWhenNoChoicesAvailable("NO PHASE-BEARING TRACES STORED");
+
+    // The topology list never changes -- fixed once, here, unlike the trace
+    // combos (rebuilt every refresh from whatever the library currently
+    // holds).
+    for (std::size_t i = 0; i < kTopologyChoices.size(); ++i) {
+        topologyCombo_.addItem(kTopologyChoices[i].label, static_cast<int>(i) + 1);
+    }
+
+    hpCombo_.onChange = [this] { hpComboChanged(); };
+    lpCombo_.onChange = [this] { lpComboChanged(); };
+    topologyCombo_.onChange = [this] { topologyComboChanged(); };
+
+    addAndMakeVisible(hpCombo_);
+    addAndMakeVisible(lpCombo_);
+    addAndMakeVisible(topologyCombo_);
+
     startTimerHz(kTimerHz);
 }
 
@@ -63,9 +90,7 @@ void CrossoverPaneView::setLibrary(const rta::trace::TraceLibrary* library) {
 
 void CrossoverPaneView::timerCallback() {
     // `sequence` is always 0: this pane has no live snapshot to advance, only
-    // the library's own revision (RepaintGate.h's two-part gate collapses to
-    // "did revision change" when the other half never moves, the same
-    // comment RtaView.cpp gives for the no-library case in reverse).
+    // the library's own revision.
     const std::uint64_t revision = library_ != nullptr ? library_->revision() : 0;
     if (shouldRepaint(gate_, 0, revision)) {
         refreshFromLibrary();
@@ -73,65 +98,135 @@ void CrossoverPaneView::timerCallback() {
     }
 }
 
+void CrossoverPaneView::rebuildTraceCombo(juce::ComboBox& combo, std::string& selectedId) {
+    combo.clear(juce::dontSendNotification);
+    int selectedItemId = 0;
+    for (std::size_t i = 0; i < eligibleIds_.size(); ++i) {
+        const int itemId = static_cast<int>(i) + 1;
+        const auto& id = eligibleIds_[i];
+        const auto* entry = library_ != nullptr ? library_->entry(id) : nullptr;
+        combo.addItem(entry != nullptr ? juce::String(entry->name) : juce::String(id), itemId);
+        if (id == selectedId) selectedItemId = itemId;
+    }
+    // Not found among the current eligible set: the F3 rule -- a picked
+    // entry that was removed or hidden since reverts to "not asked", not to
+    // whatever now happens to sit at its old index.
+    if (selectedItemId == 0) selectedId.clear();
+    combo.setSelectedId(selectedItemId, juce::dontSendNotification);
+}
+
 void CrossoverPaneView::refreshFromLibrary() {
-    hasSources_ = false;
-    highId_.clear();
-    lowId_.clear();
-    if (library_ == nullptr) return;
+    eligibleIds_.clear();
+    if (library_ != nullptr) {
+        for (const auto& entry : library_->entries()) {
+            // Hidden traces are excluded OUTRIGHT, not merely marked --
+            // the same rule StoredTraceLayer.cpp already applies when
+            // deciding what to draw (`if (!entry.visible) continue;`), kept
+            // consistent here rather than inventing a second convention for
+            // "hidden" in the same app.
+            if (!entry.visible) continue;
+            const auto* candidateTrace = library_->trace(entry.traceId);
+            if (candidateTrace == nullptr || !candidateTrace->has(rta::trace::Field::Phase)) continue;
+            eligibleIds_.push_back(entry.traceId);
+        }
+    }
 
-    const auto entries = library_->entries();
-    if (entries.size() < 2) return;
+    rebuildTraceCombo(hpCombo_, hpId_);
+    rebuildTraceCombo(lpCombo_, lpId_);
 
-    const auto* highTrace = library_->trace(entries[0].traceId);
-    const auto* lowTrace = library_->trace(entries[1].traceId);
-    if (highTrace == nullptr || lowTrace == nullptr) return;
+    ready_ = false;
+    if (library_ != nullptr && !hpId_.empty() && !lpId_.empty() && topology_.has_value()) {
+        const auto* highTrace = library_->trace(hpId_);
+        const auto* lowTrace = library_->trace(lpId_);
+        if (highTrace != nullptr && lowTrace != nullptr) {
+            auto highVirtual = rta::trace::VirtualTrace::fromTrace(*highTrace);
+            auto lowVirtual = rta::trace::VirtualTrace::fromTrace(*lowTrace);
+            if (highVirtual.has_value() && lowVirtual.has_value()) {
+                // ProcessorInversion::No: the fourth wizard question this
+                // pane does not ask (task scope -- AlignmentWizard's own
+                // lane asks it). Not a claim about the real rig, only the
+                // one this pane can draw without a fourth picker.
+                surface_.setAskedTopology(*topology_, rta::measure::ProcessorInversion::No);
+                surface_.setWindow(kDefaultWindow);
+                surface_.setSources(std::move(*highVirtual), std::move(*lowVirtual));
+                ready_ = true;
+            }
+        }
+    }
+}
 
-    // fromTrace refuses a magnitude-only capture (no phase to build a
-    // relative-phase series from -- VirtualTrace.h's own class comment): such
-    // a pair stays in the empty state rather than drawing a half-built
-    // surface with a flat, meaningless phase trace.
-    auto highVirtual = rta::trace::VirtualTrace::fromTrace(*highTrace);
-    auto lowVirtual = rta::trace::VirtualTrace::fromTrace(*lowTrace);
-    if (!highVirtual.has_value() || !lowVirtual.has_value()) return;
+void CrossoverPaneView::hpComboChanged() {
+    const int id = hpCombo_.getSelectedId();
+    hpId_ = (id >= 1 && static_cast<std::size_t>(id) <= eligibleIds_.size())
+               ? eligibleIds_[static_cast<std::size_t>(id) - 1]
+               : std::string();
+    refreshFromLibrary();
+    repaint();
+}
 
-    highId_ = entries[0].traceId;
-    lowId_ = entries[1].traceId;
-    surface_.setSources(std::move(*highVirtual), std::move(*lowVirtual));
-    hasSources_ = true;
+void CrossoverPaneView::lpComboChanged() {
+    const int id = lpCombo_.getSelectedId();
+    lpId_ = (id >= 1 && static_cast<std::size_t>(id) <= eligibleIds_.size())
+               ? eligibleIds_[static_cast<std::size_t>(id) - 1]
+               : std::string();
+    refreshFromLibrary();
+    repaint();
+}
+
+void CrossoverPaneView::topologyComboChanged() {
+    const int id = topologyCombo_.getSelectedId();
+    topology_ = (id >= 1 && static_cast<std::size_t>(id) <= kTopologyChoices.size())
+                  ? std::optional<rta::measure::Topology>(kTopologyChoices[static_cast<std::size_t>(id) - 1].topology)
+                  : std::nullopt;
+    refreshFromLibrary();
+    repaint();
+}
+
+juce::String CrossoverPaneView::refusalMessage() const {
+    // With fewer than 2 eligible traces, say so with the TRUE eligible
+    // count, not the library's total entry count -- an operator staring at
+    // "0 STORED" while three magnitude-only captures sit in the library
+    // would have no idea phase is what is missing.
+    if (eligibleIds_.size() < 2) {
+        return "ONLY " + juce::String(eligibleIds_.size())
+             + " STORED TRACE(S) HAVE PHASE -- NEED AT LEAST 2 TO ALIGN A CROSSOVER";
+    }
+    if (hpId_.empty()) return "CHOOSE THE HIGH-PASS TRACE";
+    if (lpId_.empty()) return "CHOOSE THE LOW-PASS TRACE";
+    if (!topology_.has_value()) return "CHOOSE THE TOPOLOGY (NOT INFERRED)";
+    return {};
+}
+
+void CrossoverPaneView::paintRefusal(juce::Graphics& g, juce::Rectangle<int> area) const {
+    g.setColour(emptyStateText);
+    g.setFont(az::ui::legendFont(az::ui::captionFontSize, true, az::ui::trackingCaption));
+    g.drawFittedText(refusalMessage(), area.reduced(az::ui::gap * 2), juce::Justification::centred, 3);
 }
 
 void CrossoverPaneView::paint(juce::Graphics& g) {
     g.fillAll(az::ui::background);
-    if (!hasSources_) {
-        paintEmptyState(g, getLocalBounds());
+    if (!ready_) {
+        paintRefusal(g, chartArea_);
         return;
     }
     paintCrossoverPhase(g, phaseArea_, surface_);
     paintCrossoverSummation(g, summationArea_, surface_);
-
-    // A COPY of phaseArea_, so removeFromTop mutates the local rectangle,
-    // never the stored layout member -- phaseArea_ itself must stay exactly
-    // what resized() last computed for the next repaint.
-    auto labelArea = phaseArea_;
-    g.setColour(az::ui::faded);
-    g.setFont(az::ui::monoFont(az::ui::tableFontSize));
-    g.drawText("LR4 DEFAULT -- NOT ASKED  --  " + juce::String(highId_) + " / "
-                   + juce::String(lowId_),
-               labelArea.removeFromTop(az::ui::fieldHeight), juce::Justification::topLeft, false);
-}
-
-void CrossoverPaneView::paintEmptyState(juce::Graphics& g, juce::Rectangle<int> area) const {
-    const int have = library_ != nullptr ? static_cast<int>(library_->entries().size()) : 0;
-    g.setColour(emptyStateText);
-    g.setFont(az::ui::legendFont(az::ui::captionFontSize, true, az::ui::trackingCaption));
-    const juce::String message = "CROSSOVER ALIGNMENT NEEDS TWO STORED TRACES ("
-                                  + juce::String(have) + " STORED) -- CAPTURE THE HIGH-PASS AND "
-                                  "LOW-PASS SIDES INTO THE LIBRARY";
-    g.drawFittedText(message, area.reduced(az::ui::gap * 2), juce::Justification::centred, 4);
 }
 
 void CrossoverPaneView::resized() {
     auto area = getLocalBounds().reduced(az::ui::gap);
+
+    auto pickerRow = area.removeFromTop(az::ui::fieldHeight);
+    const int thirdWidth = (pickerRow.getWidth() - az::ui::gap * 2) / 3;
+    hpCombo_.setBounds(pickerRow.removeFromLeft(thirdWidth));
+    pickerRow.removeFromLeft(az::ui::gap);
+    lpCombo_.setBounds(pickerRow.removeFromLeft(thirdWidth));
+    pickerRow.removeFromLeft(az::ui::gap);
+    topologyCombo_.setBounds(pickerRow);
+    area.removeFromTop(az::ui::gap);
+
+    chartArea_ = area;
+
     area.removeFromBottom(kFrequencyLabelHeight);
     summationArea_ = area.removeFromBottom(kSummationHeight);
     area.removeFromBottom(az::ui::gap);

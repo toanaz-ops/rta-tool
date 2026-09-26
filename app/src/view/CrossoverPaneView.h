@@ -2,101 +2,126 @@
 // Part of RTA Tool -- app/src/view.
 //
 // The ALIGN-R8 reversal (owner, 2026-09-26; amendment in docs/dsp/
-// 2026-09-06-l7-alignment-wizard.md): G18 stops being ONLY the dev-preview
-// specimen (app/src/dev/preview/PhaseAlignPreview.{h,cpp}) and becomes a
-// live pane, reached through the 4th selector button (`XOVER`,
-// PaneSelectorDecision.h) the same way `SplView` was mounted through
-// `makePaneFactory` (PaneFactory.cpp) in PR #37.
+// 2026-09-06-l7-alignment-wizard.md): G18 becomes a live pane, reached
+// through the 4th selector button (`XOVER`, PaneSelectorDecision.h) the same
+// way `SplView` was mounted through `makePaneFactory` (PaneFactory.cpp) in
+// PR #26.
 //
-// WHERE THE TWO SOURCES COME FROM, AND WHY THAT IS A PLACEHOLDER. There is
-// no picker UI in this task: `AlignmentWizard` -- the flow that ASKS which
-// stored capture is the high-pass side, which is the low-pass side, and
-// what topology was actually built -- is out of scope here and gets its own
-// lane (task brief). Until it is wired, this pane reads
-// `TraceLibrary::entries()[0]` as the HIGH-PASS side and `entries()[1]` as
-// the LOW-PASS side -- library INSERTION order, the only ordering a
-// placeholder can pick with no operator input, stated here so nobody goes
-// looking for a combo box this task does not add. `setAskedTopology`/
-// `setWindow` are likewise FIXED DEFAULTS (CrossoverPaneView.cpp's own
-// `kDefaultTopology`/`kDefaultWindow`) rather than asked answers -- a
-// default is not a measurement result, and the corner chip says so.
-//
-// LIVE means the pane redraws when the LIBRARY changes -- a trace added,
-// renamed, hidden or reordered -- polled the same way `RtaView`/
-// `TransferView` gate their own repaint on `TraceLibrary::revision()`
-// (`RepaintGate.h`). There is no separate live measurement bus behind this
-// pane the way there is behind the other three: G18's whole subject is two
-// ALREADY-CAPTURED traces, previewed through pending ops, never a running
-// analyser (CrossoverSurface.h's own class comment, "THERE IS NO OBJECTIVE
-// HERE").
+// PR #45 fix round 1 (verifier, F3/F4): the first cut of this pane took
+// `TraceLibrary::entries()[0]/[1]` and a hardcoded LR4 topology -- exactly
+// the "maximise the sum" shape of inference the record's own ruling
+// (docs/dsp/2026-09-06-l7-alignment-wizard.md Sec.0 ruling 1, Sec.6) refuses
+// for a MEASUREMENT, applied here to a PICK: which capture is which side,
+// and what topology was built, are ASKED, never inferred from library
+// order. This header is the asking: three pickers -- the high-pass trace,
+// the low-pass trace, and the topology -- each starting in an explicit
+// "not asked" state, with no default. `AlignmentWizard` (the flow that
+// would ask the FOURTH question, inversion, and drive an actual solo
+// sequence) is still a separate, unwired lane -- this pane's `topology_`
+// picker asks only what §0 ruling 1 requires for THIS view: which one line
+// to draw.
 #pragma once
 
+#include "measure/CrossoverTopology.h"
 #include "view/CrossoverSurface.h"
 #include "view/PaneRegistry.h"
 #include "view/RepaintGate.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace rta::view {
 
+/// The live G18 pane. `LibraryConsumer` is how `WorkspaceView` reaches this
+/// with no `CrossoverPaneView.h` include of its own (`PaneRegistry.h`'s
+/// class comment) -- the same seam `RtaView`/`TransferView` already use.
 class CrossoverPaneView final : public juce::Component, public LibraryConsumer, private juce::Timer {
 public:
     CrossoverPaneView();
     ~CrossoverPaneView() override;
 
-    /// `override`: implements `LibraryConsumer` (`PaneRegistry.h`), the seam
-    /// `WorkspaceView::setLibrary` reaches every pane through with no
-    /// `CrossoverPaneView.h` include of its own. Nullable, same contract
-    /// every other implementer states on its own `setLibrary`: null draws
-    /// the empty state, same as "fewer than two traces".
+    /// `override`: implements `LibraryConsumer` (`PaneRegistry.h`). Nullable,
+    /// same contract every other implementer states: null is the same
+    /// refusal state as an empty library (fewer than 2 eligible traces).
     void setLibrary(const rta::trace::TraceLibrary* library) override;
-
-    /// What `setLibrary` last stored -- production API, not a test-only
-    /// friend seam, the same reason `RtaView::library()`/`TransferView::
-    /// library()` are public: "the library reached this pane" is a fact a
-    /// test reads back, not a private implementation detail.
-    [[nodiscard]] const rta::trace::TraceLibrary* library() const noexcept { return library_; }
-
-    /// False whenever the library has fewer than two entries, OR either of
-    /// the first two has no phase to build a `VirtualTrace` from
-    /// (`VirtualTrace::fromTrace` refuses a magnitude-only capture --
-    /// VirtualTrace.h's own class comment). The empty state paints instead.
-    [[nodiscard]] bool hasTwoTraces() const noexcept { return hasSources_; }
-
-    /// The two `TraceLibrary` ids the model was last fed, empty when
-    /// `hasTwoTraces()` is false -- what
-    /// `test_main_component_panes_xover.cpp` pins against the ids a test
-    /// added, so "receives exactly those two" is a property of THIS pane's
-    /// own bookkeeping and not an inference from pixels.
-    [[nodiscard]] const std::string& highTraceId() const noexcept { return highId_; }
-    [[nodiscard]] const std::string& lowTraceId() const noexcept { return lowId_; }
-
-    [[nodiscard]] const CrossoverSurface& surface() const noexcept { return surface_; }
 
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // --- test hooks -----------------------------------------------------
+    // Every name below ends in `ForTest` and is referenced, whole-word, from
+    // app/tests_juce/test_main_component_panes_xover.cpp -- the exact
+    // contract tools/orphan_check.py's TEST HOOK category checks for (that
+    // tool's own module comment): otherwise-unreachable-from-`rtatool`, but
+    // proven live by a real test caller, so it is reported as a test hook
+    // rather than failed as an orphan. There is no public, non-`ForTest`
+    // accessor left on this class with zero production caller -- the PR #45
+    // fix round's own finding was that the first cut had five such names.
+    [[nodiscard]] bool hasCompleteSelectionForTest() const noexcept { return ready_; }
+    [[nodiscard]] const std::string& chosenHighTraceIdForTest() const noexcept { return hpId_; }
+    [[nodiscard]] const std::string& chosenLowTraceIdForTest() const noexcept { return lpId_; }
+    [[nodiscard]] const CrossoverSurface& surfaceForTest() const noexcept { return surface_; }
+    [[nodiscard]] const std::vector<std::string>& eligibleTraceIdsForTest() const noexcept {
+        return eligibleIds_;
+    }
+    [[nodiscard]] juce::ComboBox& highTraceComboForTest() noexcept { return hpCombo_; }
+    [[nodiscard]] juce::ComboBox& lowTraceComboForTest() noexcept { return lpCombo_; }
+    [[nodiscard]] juce::ComboBox& topologyComboForTest() noexcept { return topologyCombo_; }
+
 private:
     void timerCallback() override;
 
-    /// Rebuilds `surface_` from `library_`'s first two entries, or clears
-    /// `hasSources_` when there are not two, or either lacks phase. Called
-    /// from `setLibrary` (so the very first library handed to a freshly
-    /// built pane is not stale for one whole timer tick) and from
-    /// `timerCallback` on a revision change.
+    /// Rebuilds `eligibleIds_` (visible entries with phase -- see the .cpp's
+    /// own comment on why hidden is excluded outright, not merely marked),
+    /// then the two trace combos' contents, then `ready_`/`surface_`. Called
+    /// from `setLibrary`, from a combo's `onChange`, and from `timerCallback`
+    /// on a revision change -- one function, so "what the pane currently
+    /// shows" can never be computed two different ways that drift.
     void refreshFromLibrary();
 
-    void paintEmptyState(juce::Graphics&, juce::Rectangle<int> area) const;
+    /// Repopulates `combo` from `eligibleIds_` and restores `selectedId` if
+    /// it is still eligible; otherwise clears `selectedId` to "" (not asked)
+    /// -- the "a selected entry that is removed or hidden reverts to not
+    /// asked" rule, applied at the one place both combos share.
+    void rebuildTraceCombo(juce::ComboBox& combo, std::string& selectedId);
+
+    void hpComboChanged();
+    void lpComboChanged();
+    void topologyComboChanged();
+
+    void paintRefusal(juce::Graphics&, juce::Rectangle<int> area) const;
+    [[nodiscard]] juce::String refusalMessage() const;
 
     const rta::trace::TraceLibrary* library_ = nullptr;
     CrossoverSurface surface_;
     GateState gate_;
-    bool hasSources_ = false;
-    std::string highId_;
-    std::string lowId_;
 
+    /// Trace ids with `visible == true` and a phase field, in library order.
+    /// Combo item id `i+1` names `eligibleIds_[i]` -- REBUILT every refresh,
+    /// because the eligible set itself can shrink or grow between refreshes
+    /// (a rename, a hide, a new capture).
+    std::vector<std::string> eligibleIds_;
+
+    /// "" means not asked -- ids, not indices, so a picked entry that is
+    /// later removed or hidden is detected by `rebuildTraceCombo` rather
+    /// than silently continuing to point at whatever now sits at that index.
+    std::string hpId_;
+    std::string lpId_;
+    std::optional<rta::measure::Topology> topology_;
+
+    /// True only once all three are chosen AND both chosen ids still resolve
+    /// to a real, phase-bearing trace. Gates `paint()` between the refusal
+    /// message and the real chart -- there is no third, partial state.
+    bool ready_ = false;
+
+    juce::ComboBox hpCombo_;
+    juce::ComboBox lpCombo_;
+    juce::ComboBox topologyCombo_;
+
+    juce::Rectangle<int> chartArea_;
     juce::Rectangle<int> phaseArea_;
     juce::Rectangle<int> summationArea_;
 

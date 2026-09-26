@@ -39,6 +39,7 @@
 #include "trace/Trace.h"
 #include "trace/TraceLibrary.h"
 #include "trace/Workspace.h"
+#include "view/CrossoverPaneView.h"
 #include "view/PaneRegistry.h"
 #include "view/RtaView.h"
 #include "view/TransferView.h"
@@ -319,42 +320,42 @@ int main (int argc, char** argv)
     }
 
     {
-        // main-live-xover.png: the ALIGN-R8 reversal's live pane
-        // (CrossoverPaneView.h). Same seam as main-live-spl.png above, but
-        // the DATA is two STORED library traces, not the device bus -- this
-        // pane reads TraceLibrary::entries()[0]/[1] (its own documented
-        // contract), so two Trace objects added through
-        // MainComponentTestAccess stand in for captures nobody has taken yet.
+        // main-live-xover.png: ALIGN-R8's live pane, PR #45 (F3/F4): drives
+        // the three real ComboBox widgets an operator would, via MainComponentTestAccess.
         MainComponent component;
         component.setSyntheticMode (true);
         juce::Thread::sleep (800);
 
-        auto makeXoverTrace = [] (const char* id, float magnitudeDb, float phaseRadians)
+        // Flat magnitude, zero phase: sits on the LR-4 line asked below.
+        auto makeXoverTrace = [] (const char* id, float magnitudeDb)
         {
             rta::trace::CaptureMeta meta;
             meta.id = id;
             meta.sampleRate = 48000.0;
             meta.fftSize = 2048;
             const auto points = rta::trace::pointCountFor (meta.fftSize);
-            std::vector<float> magnitude (points, magnitudeDb);
-            std::vector<float> phase (points, phaseRadians);
-            auto trace = rta::trace::Trace::make (meta, std::move (magnitude));
-            [[maybe_unused]] const bool phaseSet = trace->setPhase (std::move (phase));
+            auto trace = rta::trace::Trace::make (meta, std::vector<float> (points, magnitudeDb));
+            [[maybe_unused]] const bool phaseSet = trace->setPhase (std::vector<float> (points, 0.0f));
             jassert (phaseSet);
             return std::move (*trace);
         };
-
-        // A flat 0-radian relative phase for BOTH sides sits exactly on
-        // CrossoverPaneView's own LR4 default target line (LR4's own
-        // designed offset is 0 degrees at every frequency -- CrossoverTopology.h's
-        // identity), so the specimen shows a correctly-aligned pair, not an
-        // arbitrary one.
-        auto& library = MainComponentTestAccess::library (component);
-        library.add (makeXoverTrace ("main-hp", -3.0f, 0.0f), "Main HP", "default");
-        library.add (makeXoverTrace ("sub-lp", -3.0f, 0.0f), "Sub LP", "default");
+        auto& library = MainComponentTestAccess::libraryForTest (component);
+        library.add (makeXoverTrace ("main-hp", -3.0f), "Main HP", "default");
+        library.add (makeXoverTrace ("sub-lp", -3.0f), "Sub LP", "default");
 
         component.selectPaneView (rta::view::PaneSelectorButton::Xover);
-        if (! renderComponent (component, outDir, "main-live-xover.png", 1280, 800))
+        auto& xoverPane = dynamic_cast<rta::view::CrossoverPaneView&> (
+            const_cast<juce::Component&> (MainComponentTestAccess::pane (component)));
+        // Items 1/2 = "main-hp"/"sub-lp"; topology item 2 is LR-4.
+        xoverPane.highTraceComboForTest().setSelectedId (1, juce::sendNotificationSync);
+        xoverPane.lowTraceComboForTest().setSelectedId (2, juce::sendNotificationSync);
+        xoverPane.topologyComboForTest().setSelectedId (2, juce::sendNotificationSync);
+        if (! xoverPane.hasCompleteSelectionForTest())
+        {
+            std::printf ("FAILED: crossover pane refused -- main-live-xover.png would be the placeholder\n");
+            ++failures;
+        }
+        else if (! renderComponent (component, outDir, "main-live-xover.png", 1280, 800))
             ++failures;
     }
 

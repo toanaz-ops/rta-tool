@@ -402,24 +402,32 @@ until this reversal. The owner reversed that instruction: a 4th selector
 button, `XOVER` (`app/src/view/PaneSelectorDecision.h`,
 `app/src/view/PaneRegistry.h`), now builds `app/src/view/CrossoverPaneView.
 {h,cpp}` through the same `makePaneFactory` seam `SplView` was mounted
-through in PR #37. This live pane reuses `CrossoverSurface` unchanged —
+through in PR #26. This live pane reuses `CrossoverSurface` unchanged —
 nothing in this record's model, target-offset table or "maximise the sum is
 refused" ruling above moved — and shares the chart-drawing code with
 `PhaseAlignPreview.cpp` through the new `app/src/view/
 CrossoverSurfaceRenderer.{h,cpp}`, extracted so the two never carry two
 independent copies of the same grid/series/target-line drawing.
 
-What is still NOT asked, and is a fixed placeholder instead: which two
-library entries are the pair (`TraceLibrary::entries()[0]`/`[1]`, insertion
-order — `AlignmentWizard`, the flow that would ask this properly, is its own
-lane and stays unwired per the task brief that shipped this reversal), and
-the topology/inversion/window `CrossoverPaneView.cpp`'s own
-`kDefaultTopology`/`kDefaultInversion`/`kDefaultWindow` hardcode (LR4, no
-inversion, a window wide enough to cover the whole plotted band). The pane's
-corner label says "DEFAULT — NOT ASKED" for exactly this reason: a fixed
-default is not a measurement result, and this record's own ruling above (the
-crossover surface exists because topology must be ASKED, never inferred)
-would be violated by presenting one as though it were.
+PR #45 fix round 1 (verifier, F3/F4) corrected the first cut of this pane,
+which took `TraceLibrary::entries()[0]`/`[1]` in insertion order and a
+hardcoded LR4 topology — exactly the inference this record's own ruling
+above refuses, applied to a PICK instead of a measurement. The shipped pane
+instead carries three pickers (high-pass trace, low-pass trace, topology),
+each starting "not asked", built from `TraceLibrary` entries that are
+VISIBLE and carry a phase field (a hidden or magnitude-only entry is
+excluded from the pickers outright, the same rule `StoredTraceLayer.cpp`
+already applies for what it draws). A pick is held by the entry's id, not
+its position, so an entry that is later hidden reverts that picker to "not
+asked" rather than silently pointing at whatever now sits at the old index.
+Until an operator has chosen all three, the pane draws a refusal message
+naming exactly what is missing (how many phase-bearing traces are stored
+and eligible, or which picker is still empty) — no target line, no
+designed-sum mark, no curve. `AlignmentWizard`, the flow that would ask the
+FOURTH question (inversion) and drive a real solo sequence, is still its own,
+unwired lane; this pane's topology picker offers a fixed list of seven
+common topologies (LR-2/4/8, BW-1..4) and assumes no processor inversion,
+which is stated in code (`CrossoverPaneView.cpp`) rather than asked.
 
 ## 7. Decision: ρ is a bounded, unwhitened same-system similarity; across a crossover no time-domain sign is authoritative, and the intercept is
 
