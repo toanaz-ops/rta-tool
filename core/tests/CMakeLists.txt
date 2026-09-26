@@ -60,10 +60,12 @@ add_executable(rta_core_tests
     test_generator_osc.cpp
     test_generator_noise.cpp
     test_generator_sweep.cpp
+    test_generator_sweep_deconv.cpp
     test_generator_mls.cpp
     test_ir_deconvolver.cpp
     test_ir_golden.cpp
     test_ir_decay.cpp
+    test_ir_decay_clarity.cpp
     test_ir_polarity.cpp
     test_relative_polarity.cpp
     test_relative_polarity_guard.cpp
@@ -199,4 +201,21 @@ add_test(NAME test_names_are_ascii
     COMMAND ${CMAKE_COMMAND}
             "-DDIRS=${CMAKE_SOURCE_DIR}/core/tests;${CMAKE_SOURCE_DIR}/app/tests;${CMAKE_SOURCE_DIR}/app/tests_juce;${CMAKE_SOURCE_DIR}/platform/tests;${CMAKE_SOURCE_DIR}/platform/tests_juce;${CMAKE_SOURCE_DIR}/ui/tests"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_test_names_are_ascii.cmake
+)
+
+# --- File-length guard ------------------------------------------------------
+# CLAUDE.md "File length": hard cap 400 lines. A pure filesystem scan (not a
+# built-target property), so this ONE registration -- inside core/tests,
+# which add_subdirectory(core/tests) above adds unconditionally of
+# RTA_BUILD_APP -- already runs the check in both the OFF (CI) and ON
+# (JUCE) configurations, over core/, app/, platform/, ui/ and tools/*.cpp.
+# See check_file_length.cmake's own header for what is scanned, how lines are
+# counted, and why EXCLUDES stays empty here: at introduction the tree needs
+# no exemptions, and a placeholder exclusion would itself fail the guard's
+# self-proving sentinel (must match >=1 file).
+add_test(NAME source_files_are_under_400_lines
+    COMMAND ${CMAKE_COMMAND}
+            "-DDIRS=${CMAKE_SOURCE_DIR}/core;${CMAKE_SOURCE_DIR}/app;${CMAKE_SOURCE_DIR}/platform;${CMAKE_SOURCE_DIR}/ui"
+            -DTOOLS_DIR=${CMAKE_SOURCE_DIR}/tools
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_file_length.cmake
 )
