@@ -192,14 +192,20 @@ TEST_CASE("The path/stream construction guard is not vacuous", "[main_component_
     CHECK(foundUtf8PathInSpl);
 
     const std::string payloadText = codeText(srcDir / "export" / "SplReportPayloadBuilder.cpp");
-    const auto payloadArgs = pathConstructionArgs(payloadText, "fs::path");
+    const auto payloadFsPathArgs = pathConstructionArgs(payloadText, "fs::path");
     bool foundUtf8PathInPayload = false;
-    bool foundReadWholeFileException = false;
-    for (const auto& arg : payloadArgs) {
+    for (const auto& arg : payloadFsPathArgs) {
         if (arg.find("utf8path(") != std::string::npos) foundUtf8PathInPayload = true;
-        if (arg == "path" && !looksLikeParameterList(arg)) foundReadWholeFileException = true;
     }
     CHECK(foundUtf8PathInPayload);
+    // readWholeFile's `std::ifstream in(path, ...)` is the hand-reviewed
+    // bare-name exception itself -- a DIFFERENT type token (std::ifstream,
+    // not fs::path) from the construction checked just above.
+    const auto payloadIfstreamArgs = pathConstructionArgs(payloadText, "std::ifstream");
+    bool foundReadWholeFileException = false;
+    for (const auto& arg : payloadIfstreamArgs) {
+        if (arg == "path" && !looksLikeParameterList(arg)) foundReadWholeFileException = true;
+    }
     CHECK(foundReadWholeFileException);
     // And the hand-reviewed bare-name exception is real, not a typo: this
     // file really does declare `path` as a `const fs::path&` parameter
