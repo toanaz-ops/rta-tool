@@ -1,0 +1,188 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Builds and tests the ON configuration (RTA_BUILD_APP=ON -- the JUCE app,
+# app/tests_juce, platform/tests_juce, ui/tests, rtatool_snapshot) that
+# ci.yml never touches. ci.yml's three-OS matrix proves rta_core stays
+# framework-free with RTA_BUILD_APP=OFF; it says nothing about
+# MainComponent*.cpp, the view layer, or the app's own JUCE-linked tests,
+# which until this job had no CI coverage at all and had to be rebuilt
+# locally on every review round.
+#
+# A SEPARATE FILE, not a fourth matrix leg in ci.yml, on purpose:
+#   - It runs on ONE OS (windows-latest) at the owner's own instruction
+#     (2026-09-26): this job proves the ON configuration builds and its
+#     tests pass, not that it is portable across compilers -- that claim
+#     belongs to rta_core and ci.yml's three-OS matrix alone. Whether
+#     RTA_BUILD_APP=ON also builds clean on ubuntu-latest/macos-latest has
+#     not been attempted here and is not claimed. Folding this into
+#     ci.yml's `strategy: matrix: os: [...]` would run it on all three
+#     OSes with no evidence that is worth the wait -- a cold run here
+#     already takes ~25 minutes (measured, PR #36's first run) -- and
+#     would need an `if:` per-step gate scattered through a job that
+#     otherwise treats all three OSes identically. A dedicated job with
+#     `runs-on: windows-latest` says the same thing in one line.
+#   - Its steps (JUCE cache, snapshot render, artifact upload) do not
+#     apply to the OFF job at all. Interleaving them into ci.yml's single
+#     job would make a reader check `if(RTA_BUILD_APP)`-shaped conditions
+#     at every step instead of reading two short files.
+#   - docs/GIT-WORKFLOW.md #3 already treats "the ON configuration is not
+#     on CI" as one clause to update; a same-named-but-separate workflow
+#     file is one line to add there and one line to remove if this job
+#     is ever disabled without touching the OFF gate.
+#
+# Triggers match ci.yml exactly (same PRs and the same main-branch pushes
+# see both jobs; GitHub reports them as two separate required-looking
+# checks on the PR, which is what "the merge gate now includes the ON
+# job" in docs/GIT-WORKFLOW.md means in practice).
+name: CI (app ON)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  app-on:
+    name: rtatool app (RTA_BUILD_APP=ON, windows-latest)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # --- JUCE cache -----------------------------------------------------
+      #
+      # CMakeLists.txt's own JUCE block (the `if(RTA_BUILD_APP)` /
+      # `FetchContent_Declare(JUCE ...)` near line 196) is left completely
+      # unmodified: this step does not add -DRTA_JUCE_PATH anywhere. What it
+      # caches is a plain `git clone` of the same tag, fed to CMake through
+      # `-DFETCHCONTENT_SOURCE_DIR_JUCE`, a first-class FetchContent
+      # override (see FetchContent's own docs on FETCHCONTENT_SOURCE_DIR_< uc
+      # name>): when it is set, FetchContent_MakeAvailable(JUCE) skips the
+      # populate step ENTIRELY -- no git subprocess, no ExternalProject
+      # subbuild -- and add_subdirectory()s straight into the given
+      # directory. The CMakeLists.txt code path under test is identical
+      # either way (FetchContent_Declare + FetchContent_MakeAvailable); only
+      # the population source changes, exactly as it would if a developer
+      # ran the same build twice with a warm FetchContent cache.
+      #
+      # Why not cache build/_deps directly (the more obvious "cache the
+      # FetchContent fetch" reading) -- MEASURED locally, not assumed: after
+      # a full configure, _deps/juce-subbuild's own CMakeCache.txt records
+      # the ABSOLUTE build-directory path it was configured in
+      # (`build-ci-app-on/_deps/catch2-subbuild`, in the local repro). Restore
+      # that tree under a build directory whose path differs by so much as
+      # a drive-letter case and CMake refuses outright:
+      #   CMake Error: The current CMakeCache.txt directory
+      #   ".../build-ci-app-on2/_deps/catch2-subbuild/CMakeCache.txt" is
+      #   different than the directory
+      #   ".../build-ci-app-on/_deps/catch2-subbuild" where CMakeCache.txt
+      #   was created.
+      # That is a hard configure failure, not a slow cache miss -- worse than
+      # not caching at all, since a mismatched cache now blocks the build
+      # rather than merely costing minutes. A plain checkout has no such
+      # state: it is bytes on disk, nothing in it names the build directory,
+      # so `actions/cache` restoring it to any path is safe by construction.
+      # This is requirement 2's own named escape hatch (cache a pre-fetched
+      # checkout and pass a path) -- with FETCHCONTENT_SOURCE_DIR_JUCE
+      # instead of RTA_JUCE_PATH so the configure line still reads
+      # "-DRTA_BUILD_APP=ON" and nothing else, and CMakeLists.txt's own
+      # FetchContent block is what actually runs.
+      - name: Read JUCE tag from CMakeLists.txt
+        id: juce
+        shell: bash
+        run: |
+          tag=$(sed -n '/FetchContent_Declare(JUCE/,/)/p' CMakeLists.txt | grep -oE 'GIT_TAG[[:space:]]+\S+' | awk '{print $2}')
+          if [ -z "$tag" ]; then
+            echo "::error::could not read JUCE's GIT_TAG out of CMakeLists.txt" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Cache JUCE checkout
+        id: juce-cache
+        uses: actions/cache@v4
+        with:
+          path: juce-cache
+          # Keyed on the tag, not a commit SHA: CMakeLists.txt pins
+          # GIT_TAG 9.0.1, so the cache is exactly as reproducible as the
+          # source it caches. A tag bump changes this key automatically --
+          # nothing here needs editing by hand when JUCE_VERSION.md updates.
+          key: juce-${{ runner.os }}-${{ steps.juce.outputs.tag }}
+
+      - name: Fetch JUCE (cache miss)
+        if: steps.juce-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          rm -rf juce-cache
+          git clone --branch "${{ steps.juce.outputs.tag }}" --depth 1 \
+            https://github.com/juce-framework/JUCE.git juce-cache/juce-src
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DRTA_BUILD_TESTS=ON -DRTA_BUILD_APP=ON \
+            -DFETCHCONTENT_SOURCE_DIR_JUCE="$(pwd)/juce-cache/juce-src"
+
+      # Same --parallel 4 cap and the same reasoning as ci.yml's Build step:
+      # an unbounded `--parallel` forks one compiler per ready translation
+      # unit and OOMs a 4-vCPU runner (run 34972953923, ci.yml's own
+      # comment). The ON tree compiles JUCE itself plus every app/ui/platform
+      # target, so it is the biggest build this repository asks a CI runner
+      # to do -- the cap matters here at least as much as it does OFF.
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel 4 2>&1 | tee build.log
+
+      # Identical gate and identical pattern to ci.yml's Warnings step --
+      # copied, not reimplemented, so the two jobs can never quietly drift
+      # apart on what counts as a warning. See ci.yml's own comment for why
+      # a log grep and not -Werror.
+      - name: Warnings
+        shell: bash
+        run: |
+          pattern='warning( [A-Z]+[0-9]+)?:'
+          count=$(grep -cE "$pattern" build.log || true)
+          echo "warnings (windows-latest, app ON): $count"
+          if [ "$count" != "0" ]; then
+            grep -nE "$pattern" build.log
+            exit 1
+          fi
+
+      # The whole ON tree: platform/tests_juce, ui/tests, app/tests_juce
+      # (rtatool_view_tests, rtatool_routing_live_tests, rtatool_export_tests)
+      # plus every OFF-configuration test (core/tests, platform/tests,
+      # app/tests), since RTA_BUILD_TESTS=ON pulls both in regardless of
+      # RTA_BUILD_APP. No -R/-E label filter: see the PR body for why every
+      # test in this tree already tolerates a CI box with no audio hardware
+      # (platform/tests_juce/test_audio_io_contract.cpp's M1 cases call
+      # AudioIo::start() and deliberately ignore its return value -- "a CI
+      # box may have no device at all" is that file's own comment) and why
+      # none of the JUCE-using test targets ever creates a window or a
+      # desktop peer (each target's CMakeLists.txt says so; rtatool_snapshot
+      # is the existing proof that this repo's JUCE code already renders
+      # headlessly).
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      # Offscreen render (CLAUDE.md "Seeing the GUI"): no window, no screen
+      # capture, so it needs nothing from the runner beyond the binary it
+      # just built. `cmd //c` is a Git-Bash-on-a-dev-machine workaround
+      # (CLAUDE.md's own note: "direct invocation returns 127"); this step
+      # runs under pwsh, the default shell action steps get on windows-latest
+      # when no `shell:` is given, so the exe is invoked directly.
+      - name: Render GUI snapshot
+        run: |
+          build\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots 1100 760
+          Get-ChildItem shots\*.png | Format-Table Name, Length
+
+      - name: Upload GUI snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtatool-snapshot-${{ github.run_number }}
+          path: shots/*.png
+          retention-days: 7
+          if-no-files-found: error

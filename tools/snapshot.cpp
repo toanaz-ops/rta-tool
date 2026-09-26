@@ -226,6 +226,23 @@ int main (int argc, char** argv)
             ++failures;
     }
 
+    {
+        // main-live-spl.png: owner decision 2026-09-26's pane selector --
+        // the SPL pane was built and tested (L6a) but unreachable from the
+        // running app until this task. Same seam as main-live.png above
+        // (setSyntheticMode, then the exact click path an operator's SPL
+        // button uses -- selectPaneView, not a second, divergent way to
+        // build the pane), so this picture proves the SPL pane actually
+        // renders live data through the real selector, not a blank pane.
+        MainComponent component;
+        component.setSyntheticMode (true);
+        juce::Thread::sleep (800);
+        component.selectPaneView (rta::view::PaneSelectorButton::Spl);
+        juce::Thread::sleep (200);
+        if (! renderComponent (component, outDir, "main-live-spl.png", 1280, 800))
+            ++failures;
+    }
+
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
     // tuning-visuals.md): paint-only components fed canned synthetic data,
     // so -- like SpecimenComponent and RtaView above -- no message loop and
