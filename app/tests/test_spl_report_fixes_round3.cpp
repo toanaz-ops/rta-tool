@@ -124,3 +124,24 @@ TEST_CASE("a no-measurement-channel refusal states its own distinct reason", "[s
     CHECK(calibration.find("Calibration refused") != std::string::npos);
     CHECK(calibration.find("no measurement channel could be resolved") != std::string::npos);
 }
+
+// Fix round 3 (verifier LOW, mutant M8 survived): dropping the "marker-gap"
+// CSS class from the ternary in renderHistory passed unnoticed -- nothing in
+// this suite asserted a Gap marker's own class, only its presence in the
+// PAYLOAD (test_spl_report_payload_builder_fixes.cpp's own "a Gap block flag
+// produces a Gap marker", which never renders anything).
+TEST_CASE("a Gap marker renders with the marker-gap class", "[spl_report]") {
+    ReportPayload payload = minimalPayload();
+    ReportHistorySeries series;
+    series.metricId = "Main";
+    series.points = {{0, 80.0}, {10, 90.0}};
+    payload.history = {series};
+
+    rta::measure::SplMarker marker;
+    marker.blockIndex = 5;
+    marker.kind = rta::measure::SplMarkerKind::Gap;
+    payload.markers = {marker};
+
+    const auto html = renderReport(payload);
+    CHECK(extractSection(html, "history").find("marker-gap") != std::string::npos);
+}
