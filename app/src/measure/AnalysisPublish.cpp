@@ -160,6 +160,19 @@ AverageGroupPublish publishAverageGroup(const AverageGroup& group,
     return group.publish(positions);
 }
 
+void fillSplPublishScalars(SplPublishInput& input, std::size_t refusedMetrics,
+                           std::uint64_t overflowedLnTicks, bool blockSecondsTooSmall,
+                           const SplChannelState* channelState, std::uint64_t logDroppedBlocks,
+                           bool logWriteFailed, bool calibrationInvalid) noexcept {
+    input.refusedMetrics = refusedMetrics;
+    input.overflowedLnTicks = overflowedLnTicks;
+    input.blockSecondsTooSmall = blockSecondsTooSmall;
+    input.channelState = channelState;
+    input.logDroppedBlocks = logDroppedBlocks;
+    input.logWriteFailed = logWriteFailed;
+    input.calibrationInvalid = calibrationInvalid;
+}
+
 std::optional<SplBlockView> buildSplBlockView(const SplPublishInput& input) {
     // Absence, in both of its forms. Nothing is logging (no config), or a
     // logging session has not closed its first block yet -- and neither may
