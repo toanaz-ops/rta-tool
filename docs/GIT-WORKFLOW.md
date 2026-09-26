@@ -15,8 +15,9 @@ Remote: `https://github.com/toanaz-ops/rta-tool` (private). Default branch `main
    not zero, something was merged locally and not pushed — push it or say why.
 2. **No commit lands on `main` except through a pull request.** No local
    `git merge` into `main`, no `--no-ff` in the primary checkout. Lane branches
-   are pushed, a PR is opened, CI runs on three OSes, an independent verifier
-   reads the real files, and then the PR is merged on GitHub.
+   are pushed, a PR is opened, CI runs on three OSes plus the Windows ON job,
+   an independent verifier reads the real files, and then the PR is merged on
+   GitHub.
 3. **CI green is the merge gate.** The workflow `.github/workflows/ci.yml`
    builds `rta_core` with `RTA_BUILD_APP=OFF` on ubuntu / macos / windows. A red
    matrix job blocks the merge, full stop. It is the only proof that `core/` is
@@ -33,18 +34,23 @@ Remote: `https://github.com/toanaz-ops/rta-tool` (private). Default branch `main
    a second, separate workflow, `.github/workflows/ci-app-on.yml`, builds and
    tests the JUCE app (`MainComponent*.cpp`, the view layer, `app/tests_juce`,
    `platform/tests_juce`, `ui/tests`, `rtatool_snapshot`) on `windows-latest`
-   only, on the same `pull_request` / `push: [main]` triggers as `ci.yml`. Not
-   a fourth matrix leg of `ci.yml`: macOS minutes cost 10x on this repo's
-   private free-plan quota (2000 min/month), and the two jobs' steps (JUCE
-   fetch/cache, the offscreen GUI snapshot, its artifact upload) don't overlap
-   with the OFF job's at all, so a separate file reads as two short files
-   instead of one long one with `if(RTA_BUILD_APP)`-shaped conditions on every
-   step. It runs the same warning gate as `ci.yml` (copied, not
+   only, at the owner's own instruction (2026-09-26): it proves the ON
+   configuration builds and its tests pass, not that it is portable across
+   compilers — that claim stays rule 3's alone, on `rta_core` with
+   `RTA_BUILD_APP=OFF`. Whether `RTA_BUILD_APP=ON` also builds clean on
+   ubuntu-latest/macos-latest has not been attempted. Not a fourth matrix leg
+   of `ci.yml`: the two jobs' steps (JUCE fetch/cache, the offscreen GUI
+   snapshot, its artifact upload) don't overlap with the OFF job's at all, so
+   a separate file reads as two short files instead of one long one with
+   `if(RTA_BUILD_APP)`-shaped conditions on every step, and a cold run here
+   already takes ~25 minutes (measured, PR #36's first run) — three of those
+   with no evidence yet that ON is even portable is not obviously worth the
+   wait. It runs the same warning gate as `ci.yml` (copied, not
    reimplemented) and the whole ON ctest tree with no test excluded — see
    `ci-app-on.yml`'s own header comment for why every ON test already
    tolerates a CI box with no audio hardware and no desktop peer. A PR now
    shows both jobs as checks; both must be green before "merge" (rule 4)
-   applies. A human still looks at the uploaded `rtatool-snapshot-<run>`
+   applies. A human still looks at the uploaded `rtatool-snapshot-<run_number>`
    artifact per PR — that upload is not a substitute for the human GUI pass,
    it is what makes that pass possible without a local ON rebuild.
 4. **Merge is still the owner's word, in the current conversation.** A PR that

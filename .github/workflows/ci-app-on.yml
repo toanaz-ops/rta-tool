@@ -9,13 +9,18 @@
 # locally on every review round.
 #
 # A SEPARATE FILE, not a fourth matrix leg in ci.yml, on purpose:
-#   - It runs on ONE OS (windows-latest), not a matrix -- folding it into
-#     ci.yml's `strategy: matrix: os: [...]` would either run it on all
-#     three OSes (macOS minutes cost 10x on the free plan; this repo is
-#     private with a 2000 min/month quota) or need an `if:` per-step
-#     gate scattered through a job that otherwise treats all three OSes
-#     identically. A dedicated job with `runs-on: windows-latest` says
-#     the same thing in one line.
+#   - It runs on ONE OS (windows-latest) at the owner's own instruction
+#     (2026-09-26): this job proves the ON configuration builds and its
+#     tests pass, not that it is portable across compilers -- that claim
+#     belongs to rta_core and ci.yml's three-OS matrix alone. Whether
+#     RTA_BUILD_APP=ON also builds clean on ubuntu-latest/macos-latest has
+#     not been attempted here and is not claimed. Folding this into
+#     ci.yml's `strategy: matrix: os: [...]` would run it on all three
+#     OSes with no evidence that is worth the wait -- a cold run here
+#     already takes ~25 minutes (measured, PR #36's first run) -- and
+#     would need an `if:` per-step gate scattered through a job that
+#     otherwise treats all three OSes identically. A dedicated job with
+#     `runs-on: windows-latest` says the same thing in one line.
 #   - Its steps (JUCE cache, snapshot render, artifact upload) do not
 #     apply to the OFF job at all. Interleaving them into ci.yml's single
 #     job would make a reader check `if(RTA_BUILD_APP)`-shaped conditions
@@ -35,6 +40,9 @@ on:
   push:
     branches: [main]
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   app-on:
