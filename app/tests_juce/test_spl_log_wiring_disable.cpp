@@ -138,18 +138,28 @@ TEST_CASE("disableSplLogging() leaves every pushed block on disk before it retur
     // and closeable the INSTANT `disableSplLogging()`'s request has landed,
     // not "usually complete a few milliseconds later".
     //
-    // The adversarial fixture: 500 blocks (2000 tiny hops) pushed back to
+    // The adversarial fixture: 200 blocks (800 tiny hops) pushed back to
     // back with NO pause before `disableSplLogging()`, the same "overwhelming
     // probability, not exact timing" shape `test_spl_log_pipeline.cpp`'s own
     // "a full queue" case already uses in this codebase -- SplLogWriter::
     // write() calls `stream_.flush()`, a real OS syscall costing at minimum
     // low tens of microseconds (that test's own measured argument), so
-    // flushing 500 rows costs on the order of several to tens of
-    // milliseconds of REAL disk I/O -- while the in-memory push loop below
-    // that feeds them costs microseconds. A background writer with no join
-    // forcing it to finish is, at the moment this test reads the files
-    // immediately after `disableSplLogging()` lands, overwhelmingly likely to
-    // still be mid-flush.
+    // flushing 200 rows costs on the order of several milliseconds of REAL
+    // disk I/O -- while the in-memory push loop below that feeds them costs
+    // microseconds. A background writer with no join forcing it to finish
+    // is, at the moment this test reads the files immediately after
+    // `disableSplLogging()` lands, overwhelmingly likely to still be
+    // mid-flush.
+    //
+    // 200, not 500: `SplLogPipeline::enable()`'s caller here
+    // (`AnalysisThreadSpl.cpp`) never overrides `queueCapacityBlocks`, so the
+    // ring is the default 256 deep. `pushBlock` is real-time-safe and
+    // therefore lossy on overflow (SplLogPipeline.cpp's own comment on
+    // `dropped`) -- a burst past capacity is a GENUINE, unavoidable drop that
+    // happens before `disableSplLogging()` is even called, which is a
+    // different bug class (queue sizing) than the one this test exists to
+    // catch (a `disable()` that returns before its drain/join finishes).
+    // Staying under 256 keeps this test's only variable the one it names.
     TempDir dir("disable-drains-and-joins");
     CaptureBus bus(1 << 16);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
@@ -160,7 +170,7 @@ TEST_CASE("disableSplLogging() leaves every pushed block on disk before it retur
     const std::array<int, 1> channels{ 0 };
     thread.enableSplLogging(splConfig(48000.0), channels, dir.path.string());
 
-    constexpr int kBlocks = 500;
+    constexpr int kBlocks = 200;
     constexpr int kHopsPerBlock = 4;  // splConfig(): 64 samples/block, 16/hop
     pushBlocks(bus, 1, 16, kBlocks * kHopsPerBlock);
     REQUIRE(waitForSplBlocks(thread, 0, kBlocks, 5000));
@@ -172,7 +182,7 @@ TEST_CASE("disableSplLogging() leaves every pushed block on disk before it retur
     // disable request landed. Under the mutant this reads a short file
     // (blocks still queued in memory, or mid-flush and `bytesDiscarded`
     // nonzero from a partially written last line); under the real fix,
-    // `disable()` already blocked until every one of the 500 rows was
+    // `disable()` already blocked until every one of the 200 rows was
     // written and the file closed, so this is unconditionally complete.
     const auto files = csvFilesIn(dir.path);
     REQUIRE_FALSE(files.empty());
