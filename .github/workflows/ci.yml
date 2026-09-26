@@ -74,3 +74,26 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  # fix round 2 (verifier), F-J: tools/*.py's own pytest suite (orphan_check.py
+  # and friends -- see each module's own docstring) had no CI gate at all; a
+  # red suite could sit on main indefinitely and nobody would know short of a
+  # human running it locally. One ubuntu-only job rather than a
+  # step on the `core` matrix: the suite is pure Python with no C++ toolchain
+  # dependency, so running it three times (once per OS) would triple the cost
+  # for zero extra coverage.
+  tools-tests:
+    name: tools (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run tools test suite
+        run: python -m pytest tools -q

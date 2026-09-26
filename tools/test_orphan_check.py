@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Self-test for tools/orphan_check.py v2's own ORCHESTRATION (CLI parsing,
-map-file discovery, exit codes, report formatting) -- against a scratch git
-repo and a hand-written .map fixture, with `--skip-build` so no CMake/MSVC
-build runs. The candidate-extraction and map-parsing MECHANISMS this
-orchestrates are tested on their own in test_orphan_candidates.py,
-test_map_symbols.py, test_msvc_decorate.py and test_cpp_scopes.py; the real,
-full build-and-check acceptance runs (against ad4046b, 8c5d407 and current
-main) are documented with their pasted output in the PR body, since they need
-a real MSVC toolchain this test suite cannot assume.
+map-file discovery, exit codes, plain liveness report formatting) -- against
+a scratch git repo and a hand-written .map fixture, with `--skip-build` so no
+CMake/MSVC build runs. The candidate-extraction and map-parsing MECHANISMS
+this orchestrates are tested on their own in test_orphan_candidates.py,
+test_map_symbols.py, test_msvc_decorate.py and test_cpp_scopes.py; the NOT IN
+TARGET and TEST HOOK reporting (fix round 1 F8, fix round 2 F-A/F-I) is
+tested in test_orphan_targets_check.py, split out to stay under this repo's
+400-line cap. The real, full build-and-check acceptance runs (against
+ad4046b, 8c5d407 and current main) are documented with their pasted output in
+the PR body, since they need a real MSVC toolchain this test suite cannot
+assume.
 """
 
 from __future__ import annotations
@@ -175,153 +178,6 @@ def test_exit_code_two_on_a_bad_base_revision(tmp_path, capsys):
     )
     assert exit_code == 2
     assert "git diff failed" in capsys.readouterr().err
-
-
-def test_excluded_directory_is_not_in_target_not_an_orphan(tmp_path, capsys):
-    # fix round 1 (verifier), F8: a candidate under app/src/dev/preview/ (the
-    # real SplPreview.cpp shape) is compiled only into rtatool_snapshot, so
-    # the .map for rtatool never mentions it -- that must read as NOT IN
-    # TARGET, never as "the linker discarded it".
-    repo = tmp_path / "repo"
-    (repo / "app" / "src" / "dev" / "preview").mkdir(parents=True)
-    (repo / "app" / "src" / "dev" / "preview" / "Existing.cpp").write_text(
-        "int x = 0;\n", encoding="utf-8"
-    )
-    _init_repo(repo)
-    _commit_all(repo, "base")
-    base_sha = _head(repo)
-    (repo / "app" / "src" / "dev" / "preview" / "SplPreview.h").write_text(
-        "namespace rta {\nclass SplPreview {\npublic:\n    void render();\n};\n}\n",
-        encoding="utf-8",
-    )
-    _commit_all(repo, "add SplPreview::render")
-
-    build_dir = tmp_path / "build"
-    _write_fixture_map(build_dir, "Release", ["?unrelated@@YAXXZ"])
-    exit_code = oc.main(
-        ["--base", base_sha, "--build-dir", str(build_dir), "--source-dir", str(repo), "--skip-build"]
-    )
-    out = capsys.readouterr().out
-    assert exit_code == 0
-    assert "NOT IN TARGET" in out
-    assert "render" in out
-    assert "orphan_check: found component" not in out
-
-
-def test_cpp_absent_from_source_list_is_not_in_target(tmp_path, capsys):
-    # A .cpp this branch adds but never wires into
-    # app/cmake/rtatool_sources.cmake's own list is not part of the rtatool
-    # target at all -- reported as NOT IN TARGET, not as an orphan, even
-    # though (correctly) absent from the .map.
-    repo = tmp_path / "repo"
-    (repo / "app" / "src" / "measure").mkdir(parents=True)
-    (repo / "app" / "cmake").mkdir(parents=True)
-    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
-    (repo / "app" / "cmake" / "rtatool_sources.cmake").write_text(
-        "set(RTATOOL_SOURCES\n    src/measure/Existing.cpp\n)\n", encoding="utf-8"
-    )
-    _init_repo(repo)
-    _commit_all(repo, "base")
-    base_sha = _head(repo)
-    (repo / "app" / "src" / "measure" / "Orphaned.cpp").write_text(
-        "namespace rta {\nvoid neverWired() {\n}\n}\n", encoding="utf-8"
-    )
-    _commit_all(repo, "add a .cpp nobody added to the source list")
-
-    build_dir = tmp_path / "build"
-    _write_fixture_map(build_dir, "Release", ["?unrelated@@YAXXZ"])
-    exit_code = oc.main(
-        ["--base", base_sha, "--build-dir", str(build_dir), "--source-dir", str(repo), "--skip-build"]
-    )
-    out = capsys.readouterr().out
-    assert exit_code == 0
-    assert "NOT IN TARGET" in out
-    assert "neverWired" in out
-
-
-def test_missing_source_list_file_skips_the_not_listed_check(tmp_path, capsys):
-    # A checkout that predates app/cmake/rtatool_sources.cmake's own split
-    # (every commit before 9a2862a) has no such file to read at all --
-    # rtatool_target_sources() must return None, not {}, or every single
-    # .cpp file in the whole repo would misreport as NOT IN TARGET.
-    repo = tmp_path / "repo"
-    (repo / "app" / "src" / "measure").mkdir(parents=True)
-    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
-    _init_repo(repo)
-    _commit_all(repo, "base")
-    base_sha = _head(repo)
-    (repo / "app" / "src" / "measure" / "Orphaned.cpp").write_text(
-        "namespace rta {\nvoid neverWired() {\n}\n}\n", encoding="utf-8"
-    )
-    _commit_all(repo, "add a .cpp with no rtatool_sources.cmake in this repo at all")
-
-    build_dir = tmp_path / "build"
-    _write_fixture_map(build_dir, "Release", ["?unrelated@@YAXXZ"])
-    exit_code = oc.main(
-        ["--base", base_sha, "--build-dir", str(build_dir), "--source-dir", str(repo), "--skip-build"]
-    )
-    out = capsys.readouterr().out
-    assert "NOT IN TARGET" not in out
-    assert exit_code == 1
-    assert "neverWired" in out
-
-
-def test_referenced_test_hook_is_exempt_not_an_orphan(tmp_path, capsys):
-    repo = tmp_path / "repo"
-    (repo / "app" / "src" / "measure").mkdir(parents=True)
-    (repo / "app" / "tests").mkdir(parents=True)
-    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
-    _init_repo(repo)
-    _commit_all(repo, "base")
-    base_sha = _head(repo)
-    (repo / "app" / "src" / "measure" / "Thing.h").write_text(
-        "namespace rta {\nclass Thing {\npublic:\n    void enableSplLoggingForTest();\n};\n}\n",
-        encoding="utf-8",
-    )
-    (repo / "app" / "tests" / "ThingTest.cpp").write_text(
-        "void run() {\n    rta::Thing t;\n    t.enableSplLoggingForTest();\n}\n",
-        encoding="utf-8",
-    )
-    _commit_all(repo, "add a test hook and its own test reference")
-
-    build_dir = tmp_path / "build"
-    _write_fixture_map(build_dir, "Release", ["?unrelated@@YAXXZ"])
-    exit_code = oc.main(
-        ["--base", base_sha, "--build-dir", str(build_dir), "--source-dir", str(repo), "--skip-build"]
-    )
-    out = capsys.readouterr().out
-    assert exit_code == 0
-    assert "TEST HOOK" in out
-    assert "enableSplLoggingForTest" in out
-    assert "orphan_check: found component" not in out
-
-
-def test_unreferenced_test_hook_stays_an_orphan(tmp_path, capsys):
-    # No free-text allow-list: a *ForTest name this run cannot find any real
-    # reference to under app/tests* is left as an ordinary, failing orphan.
-    repo = tmp_path / "repo"
-    (repo / "app" / "src" / "measure").mkdir(parents=True)
-    (repo / "app" / "tests").mkdir(parents=True)
-    (repo / "app" / "src" / "measure" / "Existing.cpp").write_text("int x = 0;\n", encoding="utf-8")
-    (repo / "app" / "tests" / "Unrelated.cpp").write_text("void run() {}\n", encoding="utf-8")
-    _init_repo(repo)
-    _commit_all(repo, "base")
-    base_sha = _head(repo)
-    (repo / "app" / "src" / "measure" / "Thing.h").write_text(
-        "namespace rta {\nclass Thing {\npublic:\n    void enableSplLoggingForTest();\n};\n}\n",
-        encoding="utf-8",
-    )
-    _commit_all(repo, "add a test hook nothing under app/tests references")
-
-    build_dir = tmp_path / "build"
-    _write_fixture_map(build_dir, "Release", ["?unrelated@@YAXXZ"])
-    exit_code = oc.main(
-        ["--base", base_sha, "--build-dir", str(build_dir), "--source-dir", str(repo), "--skip-build"]
-    )
-    out = capsys.readouterr().out
-    assert exit_code == 1
-    assert "TEST HOOK" not in out
-    assert "enableSplLoggingForTest" in out
 
 
 def test_help_runs_nothing(capsys):

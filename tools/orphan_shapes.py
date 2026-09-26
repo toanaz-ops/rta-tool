@@ -118,12 +118,16 @@ _FRIEND_RE = re.compile(r"^friend\s+")
 # of the "return type" prefix).
 _OPERATOR_RE = re.compile(r"\boperator\b")
 # A pure virtual's `= 0` sits AFTER the closing paren and any trailing
-# const/noexcept/override qualifiers, immediately before the terminating
-# `;` -- anchored this way so an ordinary default ARGUMENT `= 0` inside the
-# parameter list (`void f(int x = 0);`) is never mistaken for one (that `= 0`
-# sits BEFORE the closing paren, which this pattern never looks past).
+# const/noexcept/override/final qualifiers, immediately before the
+# terminating `;` -- anchored this way so an ordinary default ARGUMENT `= 0`
+# inside the parameter list (`void f(int x = 0);`) is never mistaken for one
+# (that `= 0` sits BEFORE the closing paren, which this pattern never looks
+# past). `final` (fix round 2, F-E: `virtual void fin() final = 0;` was
+# missed -- a pure virtual can be marked `final` to seal it against further
+# overriding while still requiring a derived class to implement it) is
+# allowed in either order relative to `override`, since C++ does not fix one.
 _PURE_VIRTUAL_RE = re.compile(
-    r"\)\s*(?:const\s*)?(?:noexcept(?:\([^)]*\))?\s*)?(?:override\s*)?=\s*0\s*;\s*$"
+    r"\)\s*(?:const\s*)?(?:noexcept(?:\([^)]*\))?\s*)?(?:(?:override|final)\s*)*=\s*0\s*;\s*$"
 )
 # Best-effort name for an UNCHECKABLE report only -- never used to build a
 # fragment. Falls back to whatever token precedes the first `(`.

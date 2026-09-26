@@ -240,6 +240,18 @@ def test_pure_virtual_is_uncheckable():
     assert "pure virtual" in uncheckable[0].reason
 
 
+def test_pure_virtual_final_is_uncheckable():
+    # fix round 2 (verifier), F-E: `final` sealing a pure virtual against
+    # further overriding was missed by the qualifier chain -- the real shape
+    # named in the review, `virtual void fin() final = 0;`.
+    text = "class Foo {\npublic:\n    virtual void fin() final = 0;\n};\n"
+    added = [AddedLine("f.h", 3, "    virtual void fin() final = 0;")]
+    candidates, uncheckable = find_candidates(added, _reader({"f.h": text}))
+    assert candidates == []
+    assert len(uncheckable) == 1
+    assert "pure virtual" in uncheckable[0].reason
+
+
 def test_default_argument_equals_zero_is_not_mistaken_for_pure_virtual():
     # `= 0` as a default ARGUMENT (inside the parameter list, before the
     # closing paren) must not trip the pure-virtual check, which only

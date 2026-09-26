@@ -69,31 +69,42 @@ Both are documented limitations of asking the OPTIMISED BINARY the question,
 not bugs in this tool's own fragment matching -- see app/CMakeLists.txt's own
 comment on the RTA_ORPHAN_LINKMAP option for the build-flag side of this.
 
-NOT IN TARGET (fix round 1, verifier, F8). A file this tool would otherwise
-scan is not necessarily compiled into `rtatool` at all -- `app/src/dev/preview/**`
-is an explicit per-directory exclusion (its own separate preview tooling,
-compiled only into `rtatool_snapshot`; see app/cmake/rtatool_sources.cmake vs.
+NOT IN TARGET (fix round 1, verifier, F8; corrected in fix round 2, F-A). A
+file this tool would otherwise scan is not necessarily compiled into
+`rtatool` at all -- `app/src/dev/preview/**` is an explicit per-directory
+exclusion (its own separate preview tooling, compiled only into
+`rtatool_snapshot`; see app/cmake/rtatool_sources.cmake vs.
 rtatool_snapshot_sources.cmake -- NOTE this is `dev/preview/`, not all of
 `dev/`: `src/dev/SpecimenComponent.cpp` is genuinely in BOTH targets). A
-candidate whose `.cpp` file is not in `rtatool_sources.cmake`'s own source
-list is also reported as NOT IN TARGET, a third category alongside orphan and
-UNCHECKABLE: it says nothing about reachability, only that this tool never
-asked the linker about it, because `rtatool` is the only build root this tool
-checks -- see orphan_check.py's own `_not_in_target_reason` for the exact
-check. A checkout older than 2026-09-26 has no rtatool_sources.cmake to read
-at all (it predates that file's split from app/CMakeLists.txt); the
-source-list half of this check is then skipped for that run, not treated as
-"nothing is in the target".
+`.cpp` genuinely compiled into `rtatool_snapshot` but absent from
+`rtatool_sources.cmake` is ALSO reported NOT IN TARGET (a third,
+non-failing category alongside orphan and UNCHECKABLE) -- but a `.cpp`
+absent from BOTH source lists is NOT in this category: it was never
+compiled into ANY target, which is the L6a defect this whole tool exists to
+catch (SplHistory.cpp/SplAlarms.cpp had no caller and so were never added to
+a source list either, at the commit before their wiring landed), so it is
+reported as an ordinary, FAILING orphan with reason "not compiled into any
+target" -- see orphan_targets.not_in_target_reason and
+orphan_targets.not_in_any_target_reason for the exact checks. Fix round 1's
+first cut treated any unlisted `.cpp` as non-failing NOT IN TARGET, which
+silently defeated exactly the case this paragraph now calls out; the
+verifier's `cpp_only_unlisted_false_clean` fixture is the regression test.
+A checkout older than 2026-09-26 has no rtatool_sources.cmake to read at all
+(it predates that file's split from app/CMakeLists.txt); both checks are
+then skipped for that run (candidates fall through to the ordinary liveness
+check instead), not treated as "nothing is in the target".
 
 TEST HOOK (fix round 1, verifier). A candidate whose name ends in `ForTest`
 is never orphaned outright the way an ordinary candidate is: if it is
 otherwise unreachable from `rtatool`'s entry point AND this run finds at
-least one comment-stripped reference to that name under `app/tests*`, it is
-reported as its own TEST HOOK category (non-failing) instead of an orphan --
-the fact that only a test calls it is expected, not a defect, for a name
-whose whole purpose is to be a seam for a test. There is no free-text
-allow-list: a `*ForTest` name this run cannot find any test referencing is
-left as an ordinary, failing orphan. See `_test_hook_is_referenced`.
+least one comment-and-string-literal-stripped reference to that name under
+`app/tests*`, it is reported as its own TEST HOOK category (non-failing)
+instead of an orphan -- the fact that only a test calls it is expected, not
+a defect, for a name whose whole purpose is to be a seam for a test. There
+is no free-text allow-list: a `*ForTest` name this run cannot find any test
+REFERENCING (fix round 2, F-I: a bare mention inside a string literal no
+longer counts) is left as an ordinary, failing orphan. See
+orphan_targets.test_hook_is_referenced.
 """
 
 from __future__ import annotations
@@ -109,7 +120,9 @@ from msvc_decorate import decorated_fragment
 from orphan_candidates import find_candidates
 from orphan_targets import (
     TEST_HOOK_NAME_RE,
+    not_in_any_target_reason,
     not_in_target_reason,
+    rtatool_snapshot_sources,
     rtatool_target_sources,
     test_hook_is_referenced,
 )
@@ -227,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
     decorated_names = extract_decorated_names(map_path.read_text(encoding="utf-8", errors="replace"))
     candidates, uncheckable = find_candidates(added_lines, _read_file_factory(source_dir))
     target_sources = rtatool_target_sources(source_dir)
+    snapshot_sources = rtatool_snapshot_sources(source_dir)
 
     # fix round 1 (verifier), F8: a candidate outside the rtatool target is
     # never asked the liveness question at all -- reported separately below,
@@ -234,10 +248,20 @@ def main(argv: list[str] | None = None) -> int:
     # under app/src/dev/preview/ that also happens to be e.g. `= delete`
     # reads as NOT IN TARGET rather than as two different, both-technically-
     # true classifications.
+    #
+    # fix round 2 (verifier), F-A: a `.cpp` compiled into NEITHER target is
+    # NOT a legitimate NOT IN TARGET -- it is an ordinary, failing orphan
+    # with its own explicit reason, checked and appended BEFORE the
+    # not-in-target partition below so it can never be shadowed by it.
     not_in_target: dict[str, list[str]] = {}
+    orphans: dict[str, list[str]] = {}
     in_target_candidates = []
     for c in candidates:
-        reason = not_in_target_reason(c.path, target_sources)
+        never_compiled = not_in_any_target_reason(c.path, target_sources, snapshot_sources)
+        if never_compiled:
+            orphans.setdefault(c.path, []).append(f"{c.name}  ({never_compiled})")
+            continue
+        reason = not_in_target_reason(c.path, target_sources, snapshot_sources)
         if reason:
             not_in_target.setdefault(c.path, []).append(f"{c.name}  ({reason})")
         else:
@@ -245,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
 
     in_target_uncheckable = []
     for u in uncheckable:
-        reason = u.path and not_in_target_reason(u.path, target_sources)
+        reason = u.path and not_in_target_reason(u.path, target_sources, snapshot_sources)
         if reason:
             not_in_target.setdefault(u.path, []).append(f"{u.name}  ({reason})")
         else:
@@ -256,7 +280,6 @@ def main(argv: list[str] | None = None) -> int:
     # live by a real reference under app/tests* on THIS run, not by its name
     # alone -- see orphan_targets.test_hook_is_referenced.
     test_hooks: dict[str, list[str]] = {}
-    orphans: dict[str, list[str]] = {}
     for c in in_target_candidates:
         fragment = decorated_fragment(c.name, c.enclosing, is_constructor=c.is_constructor)
         if is_fragment_live(fragment, decorated_names):

@@ -77,6 +77,23 @@ def test_doc_comment_naming_a_symbol_becomes_invisible_to_a_reference_search():
     assert "SplAlarms" not in result
 
 
+def test_strip_string_and_char_literals_removes_only_the_interior():
+    # fix round 2 (verifier), F-I: a bare mention of a name inside a string
+    # literal must not read as a real code reference once stripped.
+    text = 'log("about to call enableSplLoggingForTest");\nchar c = \'x\';\n'
+    result = cpp_text.strip_string_and_char_literals(text)
+    assert "enableSplLoggingForTest" not in result
+    assert 'log("")' in result
+    assert "char c = '';" in result
+
+
+def test_strip_string_and_char_literals_respects_an_escaped_quote():
+    text = 'const char* s = "a \\"quoted\\" word"; int after;\n'
+    result = cpp_text.strip_string_and_char_literals(text)
+    assert "quoted" not in result
+    assert "int after;" in result
+
+
 if __name__ == "__main__":
     import pytest
 

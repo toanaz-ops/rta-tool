@@ -75,3 +75,43 @@ def strip_comments(text: str) -> str:
         out.append(c)
         i += 1
     return "".join(out)
+
+
+def strip_string_and_char_literals(text: str) -> str:
+    """Return `text` with the CONTENTS of every string/char literal removed
+    (the delimiting quotes stay, so what remains still reads as `""`/`''`)
+    -- fix round 2 (verifier), F-I, for a caller that searches for a real
+    CODE reference to a name, not a name that merely appears inside a string
+    (a log message, a display label). `orphan_targets.test_hook_is_referenced`
+    is the caller: without this, a log line like
+    `"calling enableSplLoggingForTest now"` counted as a reference to the
+    hook even though nothing actually calls it.
+
+    Deliberately does not preserve a newline swallowed by a backslash
+    line-continuation inside a literal -- multi-line literals of that shape
+    do not appear in this codebase (same scope note as `strip_comments`
+    above), and the caller here only tests for a name's PRESENCE, never
+    reads a line number back out of this result.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == '"' or c == "'":
+            out.append(c)
+            j = i + 1
+            while j < n and text[j] != c:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                j += 1
+            if j < n:
+                out.append(c)
+                i = j + 1
+            else:
+                i = j
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
