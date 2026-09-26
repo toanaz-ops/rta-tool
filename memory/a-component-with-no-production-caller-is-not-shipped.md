@@ -38,6 +38,25 @@ every audio poll." A row with no caller named is a row whose task is "make
 this compile and pass its own test," which is a real but insufficient bar for
 anything meant to run.
 
+**It was not only L6a (found 2026-09-26).** `tools/orphan_check.py` found 16
+`app/src/*.cpp` files never compiled into `rtatool`, from three earlier lanes:
+- L5a: the session save/load format;
+- L6b: `CaptureSequencer`;
+- L7: FIR export, EQ, AlignmentWizard, CrossoverSurface, and a superseded
+  `DelayLocator`.
+Each lane closed "BUILT" with the wiring *named* as a follow-up ("a follow-up
+that has not started", MASTER-EXECUTION-PLAN), and a follow-up with no date
+never ran. That is the same defect as a wave with no caller, one level up.
+Since then, "BUILT" means reachable from `rtatool.exe`, and deferred wiring
+needs a named, dated lane in the master plan's "Wiring debt" table.
+
+The orchestrator also paid a second lesson here: it wrote "wire it in the
+session-loading phase" into the QA queue without reading those lanes' plans.
+No such phase existed. Read the plan before recommending where work belongs.
+
+**A wave does not close until the linker finds a caller.** The grep below
+was the first form of this rule. `tools/orphan_check.py` replaces it: see
+[[reachability-is-the-linkers-question]]. The original rule:
 **A wave does not close until `grep` finds a caller.** For every new public
 type or function a wave adds, `grep -rn "<Symbol>" app/src` (excluding
 `app/tests`) must return at least one hit outside the file that declares it.

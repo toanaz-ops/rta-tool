@@ -17,9 +17,9 @@ namespace {
 /// identity stays readable against Bendat & Piersol's own form.
 const double kDbPerNeper = 20.0 / std::log(10.0);
 
-/// Output-path record sec.11, the same settle DelayLocator.cpp waits out:
-/// the first 10 ms of an excitation are not stationary. 480 samples at
-/// 48 kHz, scaled to whatever rate the session runs at.
+/// Output-path record sec.11: the first 10 ms of an excitation are not
+/// stationary. 480 samples at 48 kHz, scaled to whatever rate the session
+/// runs at.
 constexpr double kSettleSamplesAt48k = 480.0;
 constexpr double kSettleReferenceRate = 48000.0;
 

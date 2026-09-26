@@ -72,7 +72,7 @@ add_executable(rtatool_view_tests
     #   view/TransferView.h/.cpp    -> the composite under test
     #   view/TransferRibbon.h/.cpp  -> its ribbon half (file-length split)
     #   measure/PhaseUnwrap.h/.cpp  -> the unwrap toggle (decision 4)
-    #   measure/SyntheticSnapshot.h/.cpp, measure/Analyser.h/.cpp ->
+    #   dev-support/SyntheticSnapshot.h/.cpp, measure/Analyser.h/.cpp ->
     #     makeSyntheticTransfer's own dependency chain (SyntheticSnapshot.h
     #     includes Analyser.h for makeSyntheticSnapshot; Analyser.cpp must
     #     link even though this target never calls it, for the same
@@ -97,7 +97,7 @@ add_executable(rtatool_view_tests
     #     MtwLayer.cpp/MtwReadout.cpp already give.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/TransferSourceToggle.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/PhaseUnwrap.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticSnapshot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../dev-support/SyntheticSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     # AnalyserPublish.cpp: Analyser.cpp's publish()-site block-builder split
     # (task B0) -- Analyser.cpp calls into it now.
@@ -129,7 +129,12 @@ add_executable(rtatool_view_tests
 # these sources include each other as "view/Foo.h" / "trace/Foo.h", never as a
 # path relative to the including file.
 target_include_directories(rtatool_view_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    # app/dev-support: SyntheticSnapshot.h/.cpp's home (moved out of
+    # app/src/measure -- never part of the shipped app), included as
+    # "dev-support/SyntheticSnapshot.h" from test_transfer_source_toggle.cpp,
+    # test_transfer_view_helpers.h and test_workspace_view.cpp.
+    ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 # az_ui carries its own juce_gui_basics dependency (see ui/az_ui/az_ui.h's
 # module declaration), but juce_gui_basics is named explicitly anyway: this
@@ -245,10 +250,10 @@ add_executable(rtatool_routing_live_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogPipeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/export/SplLogWriter.cpp
     # --- end L6a task W2-E2a --------------------------------------------------
-    # DelayLocator.cpp is NOT needed here: this target's tests exercise
-    # AnalysisThread's own armLocateCapture/applyReferenceDelay directly,
-    # not the JUCE-free DelayLocator state machine (that lives entirely in
-    # rtatool_analysis_tests, task F1).
+    # RawCaptureBuffer.h: AnalysisThread's own raw-capture accumulator
+    # (armLocateCapture/locateCapture) owns one directly -- DelayLocator,
+    # the class this used to also serve, was deleted as superseded (see
+    # MainComponentDelay.cpp's header comment).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/RawCaptureBuffer.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Analyser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalyserPublish.cpp
@@ -329,70 +334,6 @@ target_compile_definitions(rtatool_export_tests PRIVATE
 
 catch_discover_tests(rtatool_export_tests TEST_PREFIX "export/")
 
-# --- Pane selector, against a REAL MainComponent (owner decision 2026-09-26)
-# test_main_component_panes.cpp needs a real MainComponent -- not a hand-
-# copied fixture -- to prove selectPaneView() rebuilds workspace_ through the
-# real makePaneFactory AND never touches analysisThread_'s SPL logging. That
-# means every dependency MainComponent.h names: DevicePanel, ApiServer
-# (rta_httplib), CalibrationSession, the SPL log pipeline, RoutingMatrix,
-# AudioIo (rta::platform) -- the same graph rtatool_snapshot already proves
-# buildable offscreen for main-live.png (tools/snapshot.cpp's own header
-# comment on why that is safe with no device and no message loop).
-#
-# Reusing RTATOOL_SNAPSHOT_SOURCES rather than a third hand-typed copy of the
-# same ~40-file list: this is the SOURCE LIST (which .cpp files to compile),
-# not a shared static library -- each target still gets its own objects,
-# built with its own JUCE_MODULE_AVAILABLE_* defines (the reason app/
-# CMakeLists.txt's own comment gives for not sharing a library between
-# rtatool and rtatool_snapshot applies to a shared archive, not to reusing
-# which files a THIRD target names). tools/snapshot.cpp itself is removed --
-# this target supplies its own Catch2 main instead.
-include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/rtatool_snapshot_sources.cmake)
-set(RTA_MAIN_COMPONENT_TEST_SOURCES ${RTATOOL_SNAPSHOT_SOURCES})
-list(REMOVE_ITEM RTA_MAIN_COMPONENT_TEST_SOURCES "${CMAKE_SOURCE_DIR}/tools/snapshot.cpp")
-# RTATOOL_SNAPSHOT_SOURCES' remaining entries are relative to app/ (the
-# directory app/CMakeLists.txt's own include() resolves them from) -- this
-# CMakeLists.txt is a different directory, so re-root every entry onto an
-# absolute, unambiguous path rather than relying on CMAKE_CURRENT_SOURCE_DIR.
-list(TRANSFORM RTA_MAIN_COMPONENT_TEST_SOURCES PREPEND "${CMAKE_SOURCE_DIR}/app/")
-
-add_executable(rtatool_main_component_tests
-    test_main_component_panes.cpp
-    # Fix round MEDIUM F1: item 4's rail-scroll fix had no test.
-    test_main_component_rail_layout.cpp
-    # test_main_component_session.cpp: session persistence (SAVE SESSION /
-    # OPEN SESSION) against a real MainComponent -- see that file's own
-    # header comment.
-    test_main_component_session.cpp
-    # test_main_component_session.cpp's own 400-line-cap split (PR #43 fix round).
-    test_main_component_session_fixround.cpp
-    ${RTA_MAIN_COMPONENT_TEST_SOURCES}
-)
-
-target_include_directories(rtatool_main_component_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    # PR #43 fix round: reuses app/tests/CodeLines.h, like rtatool_routing_live_tests does.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../tests)
-
-target_link_libraries(rtatool_main_component_tests PRIVATE
-    RtaToolFonts
-    az_ui
-    rta::core
-    rta::platform
-    rta_httplib
-    juce::juce_gui_extra
-    juce::juce_recommended_config_flags
-    juce::juce_recommended_warning_flags
-    Catch2::Catch2WithMain
-)
-
-target_compile_definitions(rtatool_main_component_tests PRIVATE
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    JUCE_STANDALONE_APPLICATION=1
-    # Fix round LOW F6: this target includes MainComponentTestAccess.h --
-    # see that header's own compile-time guard.
-    RTA_MAINCOMPONENT_TEST_ACCESS=1
-)
-
-catch_discover_tests(rtatool_main_component_tests TEST_PREFIX "main_component/")
+# rtatool_main_component_tests: PR #43 fix round's own 400-line-cap split --
+# see main_component_tests.cmake's own header comment.
+include(${CMAKE_CURRENT_SOURCE_DIR}/main_component_tests.cmake)
