@@ -80,6 +80,13 @@ public:
     /// other trace with no matching entry to explain why.
     void soloOnly(const std::string& id);
 
+    /// Removes every entry and trace in one step -- session Open's own seam
+    /// for replacing the whole library atomically rather than leaving a
+    /// moment where the old and new sessions' traces coexist. Same
+    /// no-op-does-not-bump-revision rule as every setter above: an
+    /// already-empty library staying empty is not a change.
+    void clear();
+
     [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
 
     /// A number assigned once, at construction, from a process-wide counter --

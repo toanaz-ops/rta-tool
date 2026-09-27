@@ -101,6 +101,15 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # what its Spl branch constructs.
     src/PaneFactory.cpp
     src/view/SplView.cpp
+    # MainComponentSession.cpp / SessionCodec.cpp / SessionDecode.cpp /
+    # TraceBlobCodec.cpp / SessionStore.cpp: session persistence, needed here
+    # for the same reason MainComponentCalibration.cpp is -- main-live.png
+    # constructs the real MainComponent, which now owns a MainComponentSession.
+    src/MainComponentSession.cpp
+    src/trace/SessionCodec.cpp
+    src/trace/SessionDecode.cpp
+    src/trace/TraceBlobCodec.cpp
+    src/trace/SessionStore.cpp
     # MainComponentCalibration.cpp / CalibrationSession.cpp: L6a Wave 3 task
     # W3-B, needed here for the same reason MainComponentDelay.cpp is --
     # main-live.png constructs the real MainComponent.

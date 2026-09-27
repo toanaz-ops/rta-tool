@@ -87,3 +87,40 @@ void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
     // calls repaint() rather than leaving the next timer tick to catch up.
     resized();
 }
+
+rta::view::PaneResolution MainComponent::restoreWorkspaceFromSession(std::vector<rta::trace::PaneSpec> panes) {
+    // Session Open's own rebuild: same machinery as selectPaneView above,
+    // but for a FULL (already-normalised, 1..3 pane) session-saved layout
+    // rather than always exactly one. The selector radio group has no way
+    // to express "more than one pane is showing" -- it is synced to the
+    // FIRST pane's resolved view, so it agrees with SOMETHING on screen
+    // rather than being left stale.
+    //
+    // Fix round (PR #43 verifier MEDIUM F2): WorkspaceView's own constructor
+    // resolves each pane's view string but deliberately never reports a
+    // fallback (WorkspaceView.cpp's own comment: "the seam that owes this a
+    // report is whatever future code path decodes a session file's [pane]
+    // sections" -- this is that seam). Resolve every pane's view HERE first,
+    // so an unrecognised name can be reported, before handing the same
+    // strings to WorkspaceView to build from.
+    rta::view::PaneResolution report;  // default: fellBack == false
+    for (const auto& spec : panes) {
+        const auto resolution = rta::view::resolvePaneView(spec.view);
+        if (resolution.fellBack && !report.fellBack) report = resolution;
+    }
+    const auto firstView =
+        panes.empty() ? rta::view::PaneView::Rta : rta::view::resolvePaneView(panes.front().view).view;
+
+    workspace_ = std::make_unique<rta::view::WorkspaceView>(std::move(panes), makePaneFactory(analysisThread_));
+    workspace_->setLibrary(&library_);
+    addAndMakeVisible(*workspace_);
+    currentPaneView_ = firstView;
+
+    paneRtaButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Rta, juce::dontSendNotification);
+    paneTransferButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Transfer,
+                                       juce::dontSendNotification);
+    paneSplButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Spl, juce::dontSendNotification);
+
+    resized();
+    return report;
+}

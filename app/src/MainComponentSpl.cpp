@@ -27,6 +27,7 @@
 // read once, each time logging (re)starts.
 #include "MainComponent.h"
 
+#include "export/SplLog.h"
 #include "export/SplReport.h"
 #include "export/SplReportPayloadBuilder.h"
 #include "measure/SplConfig.h"
@@ -36,6 +37,7 @@
 
 #include <array>
 #include <chrono>
+#include <exception>
 #include <fstream>
 #include <span>
 #include <string>
@@ -88,6 +90,18 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
     // rather than needing a second, redundant one here.
     [[maybe_unused]] const bool sessionDirCreated = sessionDir.createDirectory();
 
+    // Fix round (PR #43 verifier HIGH F1, extended round 2 R2-1): toStdString()
+    // here already yields correct UTF-8 bytes -- juce::String's UTF-8 export
+    // is not itself the ACP bug. The bug is downstream, wherever this
+    // std::string is handed to std::filesystem::path(const std::string&) or
+    // std::ofstream's std::string overload (both decode via the process's
+    // active code page on MSVC, not UTF-8): every reader of this string --
+    // SplLogWriter.cpp's two stream-opens, this file's own
+    // exportReportClicked() below, SplCalibrationRecord.h's
+    // writeCalibrationRecordFile, and SplReportPayloadBuilder.cpp's
+    // buildReportPayload -- now goes through SplLog.h's utf8Path() instead of
+    // opening the raw string directly, which is where the actual fix lands.
+    // No single call site is "the only caller" any more.
     currentSplSessionDir_ = sessionDir.getFullPathName().toStdString();
     currentSplLoggedChannels_.assign(channels.begin(), channels.end());
     // LOW follow-up batch, item 15: this is the ONE function that assigns
@@ -106,35 +120,54 @@ void MainComponent::exportReportClicked() {
         return;
     }
 
-    rta::splexport::SplReportBuildRequest request;
-    request.sessionDir = currentSplSessionDir_;
-    request.channels = currentSplLoggedChannels_;
-    request.appName = "RTA Tool";
-    // Task part B: Ln/dose/alarm are NOT in the log -- read from the most
-    // recently PUBLISHED live snapshot, exactly as the pane itself does
-    // (SplView.cpp reads the same `SnapshotSource::latest()->spl`).
-    if (const auto snapshot = analysisThread_.latest()) {
-        request.liveView = snapshot->spl;
-    }
+    // Fix round 3 (verifier HIGH R3-1): buildReportPayload() below walks the
+    // session directory and can call std::filesystem::path::u8string()-backed
+    // conversions on names the OPERATOR chose (the folder itself, any file
+    // dropped into it) -- utf8String() (SplLog.h) never narrows through the
+    // ACP and so never throws, but this catch is defence in depth for
+    // whatever this function, or a caller changed later, still reaches
+    // through a `.string()`/`.generic_string()` call the path guard did not
+    // yet know to forbid. `JUCE_CATCH_UNHANDLED_EXCEPTIONS` is 0 in this
+    // project (docs/GIT-WORKFLOW.md's own build), so an uncaught exception
+    // here is `std::terminate`, not a JUCE alert box -- a one-off user
+    // action failing must end at this readout, never at the whole app.
+    try {
+        rta::splexport::SplReportBuildRequest request;
+        request.sessionDir = currentSplSessionDir_;
+        request.channels = currentSplLoggedChannels_;
+        request.appName = "RTA Tool";
+        // Task part B: Ln/dose/alarm are NOT in the log -- read from the most
+        // recently PUBLISHED live snapshot, exactly as the pane itself does
+        // (SplView.cpp reads the same `SnapshotSource::latest()->spl`).
+        if (const auto snapshot = analysisThread_.latest()) {
+            request.liveView = snapshot->spl;
+        }
 
-    const auto result = rta::splexport::buildReportPayload(request);
-    if (!result.payload.has_value()) {
-        exportReportReadout_.setText("export: no readable log in this session's folder",
+        const auto result = rta::splexport::buildReportPayload(request);
+        if (!result.payload.has_value()) {
+            exportReportReadout_.setText("export: no readable log in this session's folder",
+                                         juce::dontSendNotification);
+            return;
+        }
+
+        const std::string html = rta::splexport::renderReport(*result.payload);
+        const std::string path = currentSplSessionDir_ + "/report.html";
+        // Message-thread file I/O, a one-off user action -- never the
+        // analysis thread (task brief's own requirement). Binary mode: the
+        // SplLogWriter.cpp `writeSessionHeaderFile` precedent, so the bytes
+        // on disk match `html` exactly with no CRLF translation. Round 2
+        // R2-1: this used to open `path` (a UTF-8 std::string) directly --
+        // the same ACP bug as HIGH F1, just a second call site utf8Path()
+        // had not reached yet.
+        std::ofstream out(rta::splexport::utf8Path(path), std::ios::out | std::ios::trunc | std::ios::binary);
+        out << html;
+        exportReportReadout_.setText(out ? juce::String("export: wrote ") + juce::String(path)
+                                         : juce::String("export: failed to write ") + juce::String(path),
                                      juce::dontSendNotification);
-        return;
+    } catch (const std::exception& e) {
+        exportReportReadout_.setText(juce::String("EXPORT FAILED: ") + juce::String(e.what()),
+                                     juce::dontSendNotification);
     }
-
-    const std::string html = rta::splexport::renderReport(*result.payload);
-    const std::string path = currentSplSessionDir_ + "/report.html";
-    // Message-thread file I/O, a one-off user action -- never the analysis
-    // thread (task brief's own requirement). Binary mode: the
-    // SplLogWriter.cpp `writeSessionHeaderFile` precedent, so the bytes on
-    // disk match `html` exactly with no CRLF translation.
-    std::ofstream out(path, std::ios::out | std::ios::trunc | std::ios::binary);
-    out << html;
-    exportReportReadout_.setText(out ? juce::String("export: wrote ") + juce::String(path)
-                                     : juce::String("export: failed to write ") + juce::String(path),
-                                 juce::dontSendNotification);
 }
 
 void MainComponent::pollSplLogging() {

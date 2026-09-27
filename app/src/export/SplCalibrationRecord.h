@@ -11,6 +11,7 @@
 // string-in-string-out test.
 #pragma once
 
+#include "export/SplLog.h"
 #include "measure/CalibrationSession.h"
 #include "trace/SessionCodecDetail.h"
 
@@ -261,9 +262,13 @@ inline constexpr std::string_view kCalRefusalNoMeasurementChannel = "noMeasureme
 /// Writes `calibrationRecordText(info)` to `path`, truncating any existing
 /// file -- binary mode, the `SplLogWriter.cpp::writeSessionHeaderFile`
 /// precedent, so the bytes on disk match the string exactly with no CRLF
-/// translation.
+/// translation. Round 2 R2-1: `path` is UTF-8 (it is `currentSplSessionDir_`
+/// with `/calibration.txt` appended -- MainComponentCalibration.cpp's two
+/// callers), so this opens through `utf8Path()` (SplLog.h) rather than
+/// handing the raw std::string to `std::ofstream` directly, which decodes
+/// via the process's ACP on MSVC, not UTF-8 -- the same bug class as HIGH F1.
 inline void writeCalibrationRecordFile(const std::string& path, const SplCalibrationRecordInfo& info) {
-    std::ofstream stream(path, std::ios::out | std::ios::trunc | std::ios::binary);
+    std::ofstream stream(utf8Path(path), std::ios::out | std::ios::trunc | std::ios::binary);
     stream << calibrationRecordText(info);
 }
 

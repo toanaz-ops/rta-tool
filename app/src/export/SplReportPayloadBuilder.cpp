@@ -82,7 +82,13 @@ ChannelLog readChannelLog(const fs::path& dir, int channel) {
     if (!fs::exists(dir, ec)) return result;
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
         if (!entry.is_regular_file()) continue;
-        if (auto gs = parseGenSeg(entry.path().filename().string(), basename)) {
+        // Fix round 3 HIGH R3-1: utf8String(), never .string() on a path a
+        // user can name -- entry.path() is directoryIterator-supplied and can
+        // carry any filename the operator dropped into the session folder,
+        // and .string() narrows through the ACP and THROWS on a character
+        // that code page cannot represent (SplLog.h's own comment on
+        // utf8String).
+        if (auto gs = parseGenSeg(utf8String(entry.path().filename()), basename)) {
             files.emplace_back(gs->first, gs->second, entry.path());
         }
     }
@@ -97,7 +103,13 @@ ChannelLog readChannelLog(const fs::path& dir, int channel) {
         const auto part = readLog(raw);
         result.blocks.insert(result.blocks.end(), part.blocks.begin(), part.blocks.end());
         result.bytesDiscarded += part.bytesDiscarded;
-        result.segmentPaths.push_back(path.string());
+        // Fix round 3 HIGH R3-1: `path` carries the full session folder
+        // (Documents under whatever the operator's Windows user name is) --
+        // exactly the string `.string()` can throw on. This is the site the
+        // round-3 verifier reproduced with a Legacy-ACP manifest probe: R2-1-C
+        // made `dir` resolve correctly (utf8Path), so this line is now
+        // actually reached with a non-ASCII path where it never was before.
+        result.segmentPaths.push_back(utf8String(path));
         if (auto parsedHeader = parseLogHeader(raw)) {
             result.header = parsedHeader;  // last one wins -- see ChannelLog's own comment
         }
@@ -168,7 +180,12 @@ void appendHistoryAndMarkers(int channel, const std::vector<rta::meter::Block>& 
 
 SplReportBuildResult buildReportPayload(const SplReportBuildRequest& request) {
     SplReportBuildResult out;
-    const fs::path dir(request.sessionDir);
+    // Round 2 R2-1: `request.sessionDir` is UTF-8 (currentSplSessionDir_,
+    // MainComponentSpl.cpp), so this resolves through utf8Path() (SplLog.h)
+    // rather than fs::path's raw std::string constructor, which decodes via
+    // the process's ACP on MSVC, not UTF-8 -- the same bug class as HIGH F1.
+    // Every directory_iterator below (readChannelLog) walks off of `dir`.
+    const fs::path dir(utf8Path(request.sessionDir));
 
     std::optional<SplCalibrationRecordInfo> calibrationRecord;
     {
