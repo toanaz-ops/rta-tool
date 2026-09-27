@@ -9,6 +9,8 @@
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
 #include "rta/platform/ChannelConfig.h"
+#include "view/TransferSourceToggle.h"
+#include "view/TransferView.h"
 
 #include <juce_core/juce_core.h>
 
@@ -18,6 +20,8 @@ using rta::platform::ChannelConfig;
 using rta::platform::ChannelRole;
 using rta::view::PaneSelectorButton;
 using rta::view::PaneView;
+using rta::view::TransferPane;
+using rta::view::TransferView;
 
 namespace {
 
@@ -68,6 +72,16 @@ void enableSyntheticWithoutReference(MainComponent& component) {
     REQUIRE_FALSE(snapshot->hasReference);
 }
 
+/// The real, live TRANSFER pane -- same `dynamic_cast` through
+/// `MainComponentTestAccess::pane` snapshot_xover.cpp already uses for
+/// XOVER, non-const because the fix-round-1 tests below drive the REAL
+/// `TransferSourceToggle` click handlers (`clickFixedButton()`), not a
+/// second, injected way of changing which engine a pane shows.
+TransferView& liveTransferView(MainComponent& component) {
+    return dynamic_cast<TransferView&>(
+        const_cast<juce::Component&>(MainComponentTestAccess::pane(component)));
+}
+
 }  // namespace
 
 TEST_CASE("STORE on the RTA pane freezes a magnitude-only trace", "[main_component_store]") {
@@ -104,9 +118,53 @@ TEST_CASE("STORE on TRANSFER with a fed reference freezes a trace with phase",
 
     const auto readout = MainComponentTestAccess::storeReadoutForTest(component);
     CHECK(readout.contains("FIXED FFT"));
-    // Owner decision 1: TransferView defaults to MTW, so a TRANSFER store
-    // must ALSO say the screen shows MTW.
-    CHECK(readout.contains("MTW"));
+    // Owner decision 1, fix round 1 HIGH F1: TransferView's own DEFAULT is
+    // MTW for every pane, and nothing here toggled it -- so all three are
+    // named, not a bare constant "screen shows MTW".
+    CHECK(readout.contains("screen shows MTW on"));
+    CHECK(readout.contains("MAG"));
+    CHECK(readout.contains("PHASE"));
+    CHECK(readout.contains("COH"));
+}
+
+// Fix round 1, HIGH F1: the readout used to append "-- screen shows MTW" on
+// EVERY TRANSFER store, unconditionally -- an operator can flip any pane to
+// FIXED with the shipped TransferSourceToggle (TransferSourceToggle.cpp:47-48
+// -> TransferView::setSource), and the readout kept lying. These three cases
+// are the ones the fix round named explicitly.
+TEST_CASE("STORE readout on TRANSFER names exactly the panes currently showing MTW",
+         "[main_component_store]") {
+    MainComponent component;
+    enableSyntheticWithReference(component);
+    component.selectPaneView(PaneSelectorButton::Transfer);
+    auto& transferView = liveTransferView(component);
+
+    SECTION("all three panes on FIXED: no MTW clause at all") {
+        // The mutant this case must catch: reverting to an unconditional
+        // "-- screen shows MTW" append. With every pane explicitly FIXED
+        // (and the fixed block present, since a reference is fed), that
+        // mutant's readout would still say MTW; the fixed implementation's
+        // must not.
+        transferView.sourceToggle(TransferPane::Magnitude).clickFixedButton();
+        transferView.sourceToggle(TransferPane::Phase).clickFixedButton();
+        transferView.sourceToggle(TransferPane::Coherence).clickFixedButton();
+
+        MainComponentTestAccess::storeClickedForTest(component);
+        const auto readout = MainComponentTestAccess::storeReadoutForTest(component);
+        CHECK(readout.contains("FIXED FFT"));
+        CHECK_FALSE(readout.contains("MTW"));
+    }
+
+    SECTION("mixed: MAG and COH stay MTW, PHASE is FIXED -- only MAG and COH are named") {
+        transferView.sourceToggle(TransferPane::Phase).clickFixedButton();
+
+        MainComponentTestAccess::storeClickedForTest(component);
+        const auto readout = MainComponentTestAccess::storeReadoutForTest(component);
+        CHECK(readout.contains("screen shows MTW on"));
+        CHECK(readout.contains("MAG"));
+        CHECK(readout.contains("COH"));
+        CHECK_FALSE(readout.contains("PHASE"));
+    }
 }
 
 TEST_CASE("STORE on TRANSFER with no reference fed refuses and leaves the library untouched",

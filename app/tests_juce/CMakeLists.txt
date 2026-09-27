@@ -35,6 +35,12 @@ add_executable(rtatool_view_tests
     # case.
     test_transfer_view_unwrap.cpp
     test_transfer_view_mtw.cpp
+    # test_transfer_view_effective_source.cpp: station-3 STORE fix round 1,
+    # HIGH F1 -- TransferView::effectiveSource(pane), the preference+
+    # availability fallback rule the STORE readout now reads, proven
+    # directly against a hand-built StaticSnapshotSource (no MainComponent,
+    # no AnalysisThread needed for this rule alone).
+    test_transfer_view_effective_source.cpp
     # test_transfer_source_toggle.cpp: the per-plot MTW/Fixed UI control
     # (docs/reports/005-mtw-engine.md "Known gaps").
     test_transfer_source_toggle.cpp

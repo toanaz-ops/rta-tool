@@ -15,7 +15,7 @@
 #include <set>
 
 using Catch::Matchers::WithinAbs;
-using rta::measure::Analyser;
+using rta::measure::CaptureConfig;
 using rta::measure::Snapshot;
 using rta::measure::TransferBlock;
 using rta::trace::degToRadPhase;
@@ -87,7 +87,7 @@ TEST_CASE("nextCaptureId called twice back-to-back never collides", "[capture_co
 TEST_CASE("traceFromSnapshot on the RTA pane freezes spectrumDb, magnitude-only",
          "[capture_converter]") {
     const auto snapshot = makeSnapshot(48000.0, 2048);
-    const auto trace = traceFromSnapshot(snapshot, PaneView::Rta, Analyser::Config{}, "dev", "roles");
+    const auto trace = traceFromSnapshot(snapshot, PaneView::Rta, CaptureConfig{}, "dev", "roles");
     REQUIRE(trace.has_value());
     CHECK(trace->pointCount() == snapshot.spectrumDb.size());
     for (std::size_t i = 0; i < snapshot.spectrumDb.size(); ++i) {
@@ -108,7 +108,7 @@ TEST_CASE("traceFromSnapshot on TRANSFER freezes the fixed-FFT block, magnitude+
     snapshot.transfer = tf;
     snapshot.hasReference = true;
 
-    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, Analyser::Config{}, "dev", "roles");
+    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, CaptureConfig{}, "dev", "roles");
     REQUIRE(trace.has_value());
     REQUIRE(trace->has(rta::trace::Field::Phase));
     REQUIRE(trace->has(rta::trace::Field::Coherence));
@@ -121,6 +121,35 @@ TEST_CASE("traceFromSnapshot on TRANSFER freezes the fixed-FFT block, magnitude+
         CHECK(trace->field(rta::trace::Field::Coherence)[i] == (*tf.coherence)[i]);
     }
     CHECK(trace->meta().appliedDelaySamples == 37);
+    // Fix round 1, LOW F3: CaptureConfig{}'s default transferAveraging is
+    // Fifo, transferFifoDepth 16 -- recorded as-is.
+    CHECK(trace->meta().averagingType == "Fifo");
+    CHECK(trace->meta().averagingDepth == 16);
+}
+
+TEST_CASE("traceFromSnapshot on TRANSFER records averagingDepth 0 when the engine is Exponential, "
+         "never the unrelated Fifo depth field",
+         "[capture_converter]") {
+    // Fix round 1, LOW F3: transferFifoDepth is "Fifo only" (DualFftEngine.h's
+    // own comment) -- recording it while the engine actually runs
+    // Exponential would name a frame count that averaging mode never uses.
+    // The mutant this row must catch: always recording transferFifoDepth
+    // regardless of which engine actually ran.
+    auto snapshot = makeSnapshot(48000.0, 2048);
+    TransferBlock tf;
+    tf.magnitudeDb.assign(pointCountFor(2048), -6.0f);
+    tf.phaseDeg.assign(pointCountFor(2048), 0.0f);
+    snapshot.transfer = tf;
+    snapshot.hasReference = true;
+
+    CaptureConfig config;
+    config.transferAveraging = rta::dsp::TransferAveraging::Exponential;
+    config.transferFifoDepth = 16;  // non-zero, so a mutant recording it unconditionally is caught
+
+    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, config, "dev", "roles");
+    REQUIRE(trace.has_value());
+    CHECK(trace->meta().averagingType == "Exponential");
+    CHECK(trace->meta().averagingDepth == 0);
 }
 
 TEST_CASE("traceFromSnapshot on TRANSFER with absent coherence stays absent, never zero-filled",
@@ -133,7 +162,7 @@ TEST_CASE("traceFromSnapshot on TRANSFER with absent coherence stays absent, nev
     snapshot.transfer = tf;
     snapshot.hasReference = true;
 
-    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, Analyser::Config{}, "dev", "roles");
+    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, CaptureConfig{}, "dev", "roles");
     REQUIRE(trace.has_value());
     CHECK_FALSE(trace->has(rta::trace::Field::Coherence));
 }
@@ -152,7 +181,7 @@ TEST_CASE("traceFromSnapshot on TRANSFER refuses when hasReference is false, eve
     snapshot.transfer = tf;
     snapshot.hasReference = false;
 
-    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, Analyser::Config{}, "dev", "roles");
+    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, CaptureConfig{}, "dev", "roles");
     CHECK_FALSE(trace.has_value());
 }
 
@@ -161,12 +190,12 @@ TEST_CASE("traceFromSnapshot on TRANSFER refuses when transfer is absent", "[cap
     snapshot.hasReference = true;
     // snapshot.transfer left as std::nullopt.
 
-    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, Analyser::Config{}, "dev", "roles");
+    const auto trace = traceFromSnapshot(snapshot, PaneView::Transfer, CaptureConfig{}, "dev", "roles");
     CHECK_FALSE(trace.has_value());
 }
 
 TEST_CASE("traceFromSnapshot on a non-producer pane always refuses", "[capture_converter]") {
     const auto snapshot = makeSnapshot(48000.0, 2048);
-    CHECK_FALSE(traceFromSnapshot(snapshot, PaneView::Spl, Analyser::Config{}, "dev", "roles").has_value());
-    CHECK_FALSE(traceFromSnapshot(snapshot, PaneView::Xover, Analyser::Config{}, "dev", "roles").has_value());
+    CHECK_FALSE(traceFromSnapshot(snapshot, PaneView::Spl, CaptureConfig{}, "dev", "roles").has_value());
+    CHECK_FALSE(traceFromSnapshot(snapshot, PaneView::Xover, CaptureConfig{}, "dev", "roles").has_value());
 }

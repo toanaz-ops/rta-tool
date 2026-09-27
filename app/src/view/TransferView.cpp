@@ -47,6 +47,21 @@ constexpr double kMagnitudeDbBottom = -18.0;
 constexpr double kWrappedPhaseDbTop = 180.0;
 constexpr double kWrappedPhaseDbBottom = -180.0;
 
+/// The one place the preference+availability fallback rule (record §6) is
+/// written: `preferred` if its own block exists, else whichever block does
+/// exist, else Mtw (both absent -- nothing to draw either way). Shared by
+/// `renderTo` (which fetches ONE snapshot for all three panes, so it passes
+/// `hasFixed`/`hasMtw` in rather than calling `TransferView::effectiveSource`
+/// itself and re-fetching per pane) and `TransferView::effectiveSource`
+/// (a caller with no snapshot of its own, station-3 STORE fix round 1 HIGH
+/// F1) -- station-3's own fix must not re-derive this rule a second time.
+[[nodiscard]] TransferSource resolveEffectiveSource(TransferSource preferred, bool hasFixed,
+                                                    bool hasMtw) noexcept {
+    const bool preferredAvailable = preferred == TransferSource::Mtw ? hasMtw : hasFixed;
+    if (preferredAvailable) return preferred;
+    return hasFixed ? TransferSource::Fixed : TransferSource::Mtw;
+}
+
 }  // namespace
 
 TransferView::TransferView(const rta::measure::SnapshotSource& source) : source_(&source) {
@@ -75,6 +90,13 @@ void TransferView::setSource(const rta::measure::SnapshotSource& source) {
 void TransferView::setSource(TransferPane pane, TransferSource newSource) {
     sources_[static_cast<std::size_t>(pane)] = newSource;
     repaint();
+}
+
+TransferSource TransferView::effectiveSource(TransferPane pane) const noexcept {
+    const auto snapshot = source_->latest();
+    const bool hasFixed = snapshot != nullptr && snapshot->transfer.has_value();
+    const bool hasMtw = snapshot != nullptr && snapshot->mtw.has_value();
+    return resolveEffectiveSource(source(pane), hasFixed, hasMtw);
 }
 
 void TransferView::setLibrary(const rta::trace::TraceLibrary* library) {
@@ -139,15 +161,16 @@ void TransferView::renderTo(juce::Graphics& g, juce::Rectangle<int> area) const 
     // requirement that the fixed engine's own coverage vanish the moment MTW
     // hasn't engaged -- no reference fed yet, or mtwEnabled false). An
     // EXPLICIT setSource is still honoured the instant its own block exists.
-    const auto effectiveSource = [&](TransferPane pane) noexcept {
-        const TransferSource preferred = source(pane);
-        const bool preferredAvailable = preferred == TransferSource::Mtw ? hasMtw : hasFixed;
-        if (preferredAvailable) return preferred;
-        return hasFixed ? TransferSource::Fixed : TransferSource::Mtw;
+    // `resolveEffectiveSource` (this file's own anonymous namespace) is the
+    // ONE place this rule is written -- ONE snapshot fetched above feeds all
+    // three calls here, unlike `TransferView::effectiveSource()`, whose own
+    // caller has no snapshot of its own to share.
+    const auto paneSource = [&](TransferPane pane) noexcept {
+        return resolveEffectiveSource(source(pane), hasFixed, hasMtw);
     };
-    const TransferSource magnitudeSource = effectiveSource(TransferPane::Magnitude);
-    const TransferSource phaseSource = effectiveSource(TransferPane::Phase);
-    const TransferSource coherenceSource = effectiveSource(TransferPane::Coherence);
+    const TransferSource magnitudeSource = paneSource(TransferPane::Magnitude);
+    const TransferSource phaseSource = paneSource(TransferPane::Phase);
+    const TransferSource coherenceSource = paneSource(TransferPane::Coherence);
 
     // Unwrap (decision 4) applies only to the FIXED phase curve: an MTW
     // curve is stitched from independent bands' own atan2 results with no

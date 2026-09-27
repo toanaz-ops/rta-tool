@@ -71,7 +71,7 @@ std::string nextCaptureId() {
 
 std::optional<Trace> traceFromSnapshot(const rta::measure::Snapshot& snapshot,
                                        rta::view::PaneView pane,
-                                       const rta::measure::Analyser::Config& config,
+                                       const rta::measure::CaptureConfig& config,
                                        std::string deviceName,
                                        std::string channelRoles) {
     CaptureMeta meta;
@@ -108,7 +108,19 @@ std::optional<Trace> traceFromSnapshot(const rta::measure::Snapshot& snapshot,
         }
         const auto& tf = *snapshot.transfer;
         meta.averagingType = transferAveragingName(config.transferAveraging);
-        meta.averagingDepth = static_cast<int>(config.transferFifoDepth);
+        // Fix round 1, LOW F3: `transferFifoDepth` (Analyser.h) is "Fifo
+        // only" by DualFftEngine::Config's own comment -- recording it when
+        // the engine is actually running Exponential would name a frame
+        // count that averaging mode never uses. Exponential's own knob is
+        // `Analyser::Config::timeConstantSeconds` (Analyser.cpp's
+        // `toDualConfig`: `dualConfig.timeConstantSeconds = config.
+        // timeConstantSeconds`), a SECONDS value with no integer "depth" to
+        // put here -- `CaptureConfig` does not carry it (T4's scope named
+        // only the four fields this function reads), so 0 is recorded, not
+        // a lossy truncation of a value in the wrong unit.
+        meta.averagingDepth = config.transferAveraging == rta::dsp::TransferAveraging::Fifo
+                                  ? static_cast<int>(config.transferFifoDepth)
+                                  : 0;
         meta.effectiveAverages = tf.effectiveAverages;
         meta.appliedDelaySamples = tf.appliedDelaySamples;
 

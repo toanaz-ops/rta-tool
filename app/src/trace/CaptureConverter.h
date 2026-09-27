@@ -55,7 +55,12 @@ namespace rta::trace {
 ///   disabled the button for these, this is the defensive second line.
 ///
 /// `config` supplies what only the analyser that PRODUCED this snapshot
-/// knows (window, averaging) -- see `AnalysisThread::config()`.
+/// knows (window, averaging) -- see `AnalysisThread::captureConfig()`. A
+/// `CaptureConfig`, by value, never `Analyser::Config` itself: fix round 1
+/// MEDIUM F2 found that the live `Config` a running `AnalysisThread` holds
+/// is not immutable (`referenceDelaySamples` is written from the analysis
+/// thread on APPLY), so nothing downstream of `AnalysisThread` may hold a
+/// reference into it.
 /// `deviceName`/`channelRoles` are plain strings the caller builds from
 /// `AudioIo`/`ChannelConfig` state this file must not depend on (research
 /// A3.3: neither lives on `Snapshot`).
@@ -66,7 +71,7 @@ namespace rta::trace {
 /// exactly the silent unit-mismatch `Trace.h`'s own comment warns against.
 [[nodiscard]] std::optional<Trace> traceFromSnapshot(const rta::measure::Snapshot& snapshot,
                                                       rta::view::PaneView pane,
-                                                      const rta::measure::Analyser::Config& config,
+                                                      const rta::measure::CaptureConfig& config,
                                                       std::string deviceName,
                                                       std::string channelRoles);
 

@@ -8,9 +8,12 @@
 //
 // Owner decisions 2026-09-27 this file implements:
 //   1. Freezes the FIXED-FFT engine always, and the readout says so
-//      ("STORED (FIXED FFT)"), plus an extra clause on TRANSFER when the pane
-//      is showing MTW (TransferView.h's own default) so "why doesn't this
-//      match what I was looking at" never has to be debugged live.
+//      ("STORED (FIXED FFT)"), plus a clause naming exactly which TRANSFER
+//      panes are showing MTW right now (fix round 1, HIGH F1 -- an operator
+//      can flip any pane to FIXED with the shipped TransferSourceToggle, or
+//      MTW can be unavailable outright with mtwEnabled=false/no reference
+//      yet, so "screen shows MTW" is a per-pane fact read off the live
+//      TransferView, never a constant).
 //   2. One global button, branching on currentPaneView() -- see
 //      CaptureConverter::traceFromSnapshot for the RTA/TRANSFER split itself.
 //   3. No adjustable knobs added here or on Trace/TraceLibrary -- post-hoc
@@ -27,6 +30,7 @@
 
 #include "rta/platform/ChannelConfig.h"
 #include "trace/CaptureConverter.h"
+#include "view/TransferView.h"
 
 namespace {
 
@@ -41,6 +45,45 @@ std::string channelRolesSummary(const rta::platform::ChannelConfig& config) {
         if (role == rta::platform::ChannelRole::Unused) continue;
         if (!out.empty()) out += ",";
         out += "ch" + std::to_string(ch) + "=" + std::string(rta::platform::toString(role));
+    }
+    return out;
+}
+
+// Fix round 1, HIGH F1: the workspace can show TRANSFER at any child index
+// (a multi-pane session is not required to put it first -- see
+// MainComponentPanes.cpp's own restoreWorkspaceFromSession comment on why
+// currentPaneView_ only tracks the FIRST pane), so this scans rather than
+// assuming index 0. Returns null when the current workspace has no TRANSFER
+// pane at all -- storeClicked() only calls this once it already knows
+// `pane == PaneView::Transfer`, but a null result is still handled rather
+// than assumed unreachable.
+const rta::view::TransferView* findTransferView(const juce::Component& workspace) {
+    for (int i = 0; i < workspace.getNumChildComponents(); ++i) {
+        if (auto* view = dynamic_cast<const rta::view::TransferView*>(workspace.getChildComponent(i))) {
+            return view;
+        }
+    }
+    return nullptr;
+}
+
+// Fix round 1, HIGH F1: names, in Magnitude/Phase/Coherence order, exactly
+// the panes whose EFFECTIVE source (TransferView::effectiveSource --
+// preference plus availability, the same fallback renderTo() draws with) is
+// Mtw right now. Empty when none is -- the caller appends no clause at all
+// in that case, rather than a clause naming nothing.
+std::string mtwPaneNames(const rta::view::TransferView& view) {
+    using rta::view::TransferPane;
+    using rta::view::TransferSource;
+    static constexpr std::pair<TransferPane, const char*> kPanes[] = {
+        {TransferPane::Magnitude, "MAG"},
+        {TransferPane::Phase, "PHASE"},
+        {TransferPane::Coherence, "COH"},
+    };
+    std::string out;
+    for (const auto& [pane, label] : kPanes) {
+        if (view.effectiveSource(pane) != TransferSource::Mtw) continue;
+        if (!out.empty()) out += ", ";
+        out += label;
     }
     return out;
 }
@@ -71,7 +114,10 @@ void MainComponent::storeClicked() {
         isSyntheticMode() ? std::string("SYNTHETIC") : audioIo_.currentState().deviceName;
     const std::string channelRoles = channelRolesSummary(audioIo_.bus().config());
 
-    auto trace = rta::trace::traceFromSnapshot(*snapshot, pane, analysisThread_.config(), deviceName,
+    // Fix round 1, MEDIUM F2: `captureConfig()`, never `config()` -- see
+    // AnalysisThread.h's own comment on why a reference into `baseConfig_`
+    // is not safe for the message thread to hold.
+    auto trace = rta::trace::traceFromSnapshot(*snapshot, pane, analysisThread_.captureConfig(), deviceName,
                                                channelRoles);
     if (!trace.has_value()) {
         // Unreachable from RTA/TRANSFER given the guard above and T6's own
@@ -101,11 +147,18 @@ void MainComponent::storeClicked() {
 
     juce::String message = juce::String("STORED (FIXED FFT): ") + name;
     if (pane == rta::view::PaneView::Transfer) {
-        // Owner decision 1: TransferView defaults every pane to the MTW
-        // curve (TransferView.h:132) while this always freezes the
-        // fixed-FFT TransferBlock (research C1) -- state both, unconditionally,
-        // whenever the pane being stored is TRANSFER.
-        message += " -- screen shows MTW";
+        // Owner decision 1: this always freezes the fixed-FFT TransferBlock
+        // (research C1) regardless of what is on screen -- state which
+        // panes are showing MTW right now (fix round 1, HIGH F1), never a
+        // constant: an operator can flip any pane to FIXED
+        // (TransferSourceToggle), and MTW can simply be unavailable
+        // (mtwEnabled=false, or no reference fed yet).
+        if (const auto* transferView = findTransferView(*workspace_)) {
+            const auto mtwPanes = mtwPaneNames(*transferView);
+            if (!mtwPanes.empty()) {
+                message += " -- screen shows MTW on " + juce::String(mtwPanes);
+            }
+        }
     }
     storeReadout_.setText(message, juce::dontSendNotification);
 }
