@@ -66,8 +66,36 @@ jobs:
     name: rtatool app (RTA_BUILD_APP=ON, windows-latest)
     runs-on: windows-latest
 
+    # EXPERIMENTAL (owner-approved trial, 2026-09-27): sccache via the GitHub
+    # Actions cache backend, to see whether it shortens this job's ~27 min
+    # Build step. SCCACHE_GHA_ENABLED is read by the sccache binary itself at
+    # build time (mozilla-actions/sccache-action's own README sets it this
+    # way); it does not need the `actions:` permission scope; this job already
+    # proves that with its unrelated JUCE-checkout cache above, using the same
+    # `contents: read` grant.
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+
     steps:
       - uses: actions/checkout@v5
+
+      # sccache wraps cl.exe (CMAKE_<LANG>_COMPILER_LAUNCHER, set at Configure
+      # below) and needs cl/link/rc on PATH -- vcvars, not just any MSVC
+      # install. This step is ALSO the reason the generator changes to Ninja
+      # two steps down: CMAKE_CXX_COMPILER_LAUNCHER is a Makefiles/Ninja-only
+      # hook. The Visual Studio generator drives the build through MSBuild's
+      # own invocation of cl.exe and never consults that CMake variable, so
+      # sccache would sit configured and idle. Local dev builds still use
+      # "Visual Studio 18 2026" (CLAUDE.md's own Build section, unchanged) --
+      # this CI job alone runs Ninja, so a Ninja-only build quirk could show
+      # up here without a local repro. That trade-off is the owner's call;
+      # this comment exists so the swap is never mistaken for the generator
+      # the project actually ships with.
+      - name: Set up MSVC dev environment (vcvars for Ninja + cl.exe)
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       # --- JUCE cache -----------------------------------------------------
       #
@@ -137,11 +165,17 @@ jobs:
           git clone --branch "${{ steps.juce.outputs.tag }}" --depth 1 \
             https://github.com/juce-framework/JUCE.git juce-cache/juce-src
 
+      # -G Ninja + the two launcher variables are the only lines this trial
+      # adds here. Everything else -- RTA_BUILD_TESTS, RTA_BUILD_APP, the
+      # FETCHCONTENT_SOURCE_DIR_JUCE override above -- is untouched, so the ON
+      # configuration under test is the same one the VS-generator run built.
       - name: Configure
         shell: bash
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DRTA_BUILD_TESTS=ON -DRTA_BUILD_APP=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DFETCHCONTENT_SOURCE_DIR_JUCE="$(pwd)/juce-cache/juce-src" \
             2>&1 | tee configure.log
 
@@ -193,6 +227,17 @@ jobs:
             grep -nE "$pattern" build.log
             exit 1
           fi
+
+      # Prints sccache's hit/miss counters for THIS run as their own step
+      # (mozilla-actions/sccache-action also writes a stats table to the job
+      # summary on post-job, but a dedicated step keeps the numbers in the
+      # plain step log too, where `gh run view --log` can grab them without
+      # parsing the summary). `if: always()` so a build/test failure still
+      # reports what sccache saw.
+      - name: sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats
 
       # The whole ON tree: platform/tests_juce, ui/tests, app/tests_juce
       # (rtatool_view_tests, rtatool_routing_live_tests, rtatool_export_tests)
