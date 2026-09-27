@@ -858,23 +858,120 @@ chặn gì đã ship.*
   - dời SyntheticSnapshot ra khỏi `app/src`;
   - EQ+FIR và AlignmentWizard mở thành lane ngay sau đợt này;
   - CaptureSequencer hoãn nhưng có lịch.
-- [ ] **Dead code thật, xoá hay wire:** `AnalysisThread::isSplLoggingEnabled`
-  và `MainComponent::currentPaneView` — 0 caller cả production lẫn test.
-- [ ] **LOW còn lại từ các vòng review (gom vào PR LOW kế tiếp):**
-  - `tools/snapshot.cpp` luôn xuất `main-live*.png` ở 1280x800 bất kể tham số
-    `1100 760` trong CLAUDE.md "Seeing the GUI".
-  - Rail: nhánh không-cuộn (bỏ vạch scrollbar) chưa có test; test rail không
-    pin `railScrollView_.setBounds`/`addAndMakeVisible`; 220/150 là regression
-    lock chưa ghi nhãn; tham số `channelCount` đặt tên sai.
-  - `snapshot.cpp` fail do timeout SPL không xoá `main-live-spl.png` cũ.
-  - Wheel-scroll trong `ChannelRoleTable` lồng viewport: chưa kiểm được offscreen — thử tay.
-  - orphan_check known limits (0 instance hôm nay): template có default/variadic
-    một dòng, member ngoài lớp của class template, `decltype(auto)`,
-    `friend class`, định nghĩa `.cpp` 2 dòng chỉ thêm dòng tên, prefix `L'x'`,
-    overload chết cạnh overload sống; thông báo "not compiled into any target"
-    sai chữ cho file chỉ vào test target.
+- [x] **Đính chính 2026-09-27 (xem mục "Lane-end LOW triage" dưới):**
+  `AnalysisThread::isSplLoggingEnabled` và `MainComponent::currentPaneView`
+  KHÔNG còn 0 caller — cả hai đã có test caller thật (orphan_check v2 chạy
+  lại với `--base` cũ hơn xác nhận). Không xoá; xem triage đầy đủ dưới.
+- [x] **LOW còn lại từ các vòng review — xử lý 2026-09-27, xem mục "Lane-end
+  LOW triage — 2026-09-27" dưới cho bảng đầy đủ:**
+  - ~~`tools/snapshot.cpp` luôn xuất `main-live*.png` ở 1280x800 bất kể tham số
+    `1100 760` trong CLAUDE.md "Seeing the GUI".~~ FIX: đã thêm ghi chú vào
+    CLAUDE.md "Seeing the GUI".
+  - ~~Rail: nhánh không-cuộn (bỏ vạch scrollbar) chưa có test~~ FIX: test mới
+    thêm, mutant đỏ-rồi-xanh xác nhận. Test rail không pin
+    `railScrollView_.setBounds`/`addAndMakeVisible` (R2-2): DEFER, cần seam
+    `MainComponentTestAccess` mới. 220/150 regression lock: KNOWN-LIMIT, đã
+    ghi nhãn sẵn trong comment của chính nó. Tham số `channelCount`: KHÔNG chỉ
+    là đặt tên sai — DEFER với phát hiện sâu hơn, xem bảng dưới (route-count
+    kMaxTransferFunctions=8 vs kMaxChannels=64 thật).
+  - `snapshot.cpp` fail do timeout SPL không xoá `main-live-spl.png` cũ —
+    chưa đụng tới, không nằm trong triage 2026-09-27 (không có trong list LOW
+    gốc được giao).
+  - Wheel-scroll trong `ChannelRoleTable` lồng viewport: KNOWN-LIMIT, vẫn
+    không kiểm được offscreen — thử tay.
+  - ~~orphan_check known limits (0 instance hôm nay)~~ FIX: ghi vào docstring
+    của chính `tools/orphan_check.py` (F-B/F-C/F-D/F-F/F-G + hạn chế
+    friend-wrapper indirection cho TEST HOOK). Thông báo "not compiled into
+    any target" sai chữ cho file test-target-only: DEFER (cần đọc thêm
+    source-list của test targets).
   - `docs/HANDOFF.md` và plan L6a còn câu "Actions billing-blocked" lịch sử —
     đúng tại thời điểm viết, không sửa.
+
+## Lane-end LOW triage — 2026-09-27
+
+Builder pass over the process-audit lane's LOW backlog (PRs #35-#46, all
+merged; the ~40-item list at
+`scratchpad/process-lows.md`, gathered by the review loop from PR #35's
+round-1 verifier through PR #45's round-4). Branch `app/lane-end-lows` off
+`origin/main` at `4fc6b6e` (PR #45 merged). Every verdict below carries the
+file:line or command that produced it — see this section's own text for the
+evidence, not just the verdict word.
+
+**Judgement notes that shaped this pass:**
+- `AnalysisThread::isSplLoggingEnabled()` and `MainComponent::currentPaneView()`
+  were carried in the 2026-09-26 backlog entry above as "0 caller, production
+  or test". Re-running `orphan_check.py` v2 with an OLDER `--base` (the
+  original run's `--base origin/main` trivially passes when `origin/main` IS
+  the current checkout -- it only ever checks lines a branch itself ADDS)
+  shows both now have real TEST callers
+  (`app/tests_juce/test_main_component_panes.cpp`,
+  `test_spl_log_wiring_disable.cpp`). The backlog entry's premise was stale;
+  see the DEFER rows below for the actual (more interesting) finding this
+  uncovered.
+- `RoutingMatrix`'s `channelCount` parameter is not merely misnamed --
+  tracing what actually flows into it turned up a real product question
+  (kMaxTransferFunctions=8 vs. kMaxChannels=64). See its own DEFER row.
+
+### FIX (done in this batch, commits on `app/lane-end-lows`)
+
+| # | Item | File:line | What changed |
+|---|------|-----------|--------------|
+| F1 | Path guard misses `->string()`, `.open (` (space), `.\n open(` at a NEW site (PR #43 r4 items 10-12) | `app/tests/CodeLines.h` `codeTextOf`; `app/tests_juce/test_main_component_session_path_guard.cpp` | Added a space-before-`(` strip to the SHARED `codeTextOf` (safe for every caller -- verified, see below). Did **not** add `->`→`.` there: that broke `app/tests/test_spl_drain.cpp`'s D1 test, which counts `->peek(`/`->discard(` specifically as pointer calls (1023/1023 → 1022/1023 the moment it was tried, caught by this batch's own ctest run before push). Instead added a LOCAL `arrowsAsDots()` helper inside the path-guard test file itself, applied only to that file's own `.string()`/`.generic_string()`/`.open(` checks. |
+| F2 | xover LOW-4: `isPrimary` swap at `CrossoverSurfaceRenderer.cpp:217-220` survives the committed suite | `app/tests_juce/test_crossover_surface_renderer.cpp` | Committed the verifier's render-level label-pairing probe (from `scratchpad/probe.cpp`), adapted to this file's existing helpers (`renderPhase`, `makeAsked`). Renders each ambiguous candidate's OWN claimed label in isolation and checks the real render reproduces exactly that label at that row, not the other candidate's. Mutant (swap `isPrimary` at both call sites): 12/35 assertions RED. Reverted: 35/35 GREEN. |
+| F3 | Rail R2-1: the `contentOverflows ? ... : 0` branch (scrollbar not reserved when content fits) has never run under test -- every existing test is at 1280x800, where content always overflows | `app/tests_juce/test_main_component_rail_layout.cpp` | Added a test at 1280x3000 (content fits, no scroll) compared against the existing 1280x800 case. Mutant (drop the ternary, always subtract the scrollbar): `352 (0x160) > 352 (0x160)` -- RED. Reverted: GREEN. |
+| F4 | `juce::String(e.what())` mojibake for a non-ASCII exception message | `app/src/MainComponentSpl.cpp:167-174` | `juce::String::fromUTF8(e.what())`. No mutant shown red: **no test exercises this catch branch at all** (confirmed -- no file references `exportReportClicked`/`EXPORT FAILED`/`exportReportReadout`); see DEFER row for why a test wasn't added here. |
+| F5 | `utf8Path`'s doc comment reads as risk-free "widening"; it actually throws on malformed UTF-8 | `app/src/export/SplLog.h:47-59` | Added a paragraph correcting this, cross-referenced from `SplLogWriter.cpp`'s `openSegment()` (see its DEFER row -- the throw site itself is not touched, only documented). |
+| F6 | `waitForSplBacklogDrained` returns `lastCount` silently on timeout instead of failing (PR #46 LOW) | `app/tests_juce/test_spl_epoch_freeze.cpp:141-151` | Falls through the deadline now calls `FAIL(...)` with the last count, instead of returning it as if it were a normal, stable value. |
+| F7 | orphan_check.py: F-B/F-C/F-D/F-F/F-G (PR #39 round-2 LOWs, graded and never written down) + the "TEST HOOK reached through a friend-wrapper" limitation this batch found | `tools/orphan_check.py`'s own module docstring | Documented all five 2026-09 shapes (traced against the CURRENT `orphan_shapes.py`/`orphan_candidates.py`, not re-run against the round-2 fixture -- says so explicitly) and the friend-wrapper indirection that makes `analysisThreadForTest`/`paneComponentForTest`/`channelRoleTableForTest`/`routingMatrixForTest` and their `MainComponentTestAccess.h` wrappers report as orphans no matter how they're renamed. |
+| F8 | CLAUDE.md's "Seeing the GUI" 1100x760 command reads as if it sizes every screenshot | `CLAUDE.md` "Seeing the GUI" | One-paragraph note: `main-live*.png` renders fixed at 1280x800 regardless of the command's width/height (already documented inline in `tools/snapshot.cpp`; CLAUDE.md itself didn't say so). |
+
+**Verified after every fix**: `build-off` ctest 1023/1023, `build-on` ctest
+1157/1157, both 0 matches for `warning( [A-Z]+[0-9]+)?:` in their build logs,
+`python tools/orphan_check.py --base origin/main --build-dir build-orphan-final
+--cmake-generator "Visual Studio 18 2026" --cmake-arch x64 --juce-path
+"D:/DEV CAVE EP3/PROJECT005-AZ-handsfree/external/JUCE"` exits 0.
+
+### DEFER (owner decision needed -- see PR body for the same table with dates)
+
+| # | Item | Evidence | Why deferred |
+|---|------|----------|---------------|
+| D1 | `RoutingMatrix`'s `channelCount` (PR #40 round-2 LOW "misnomer") is a REAL scope question, not a naming nit | `MainComponent.cpp:25` passes `rta::measure::kMaxTransferFunctions` (=8, `RoutingPlan.h:29`) into `MainComponentRail`'s `channelCount` parameter, which becomes `RoutingMatrix::channelCount_`; `RoutingMatrix.h`'s own class doc says "one row per input channel", but `rta::platform::kMaxChannels` = 64 (`ChannelConfig.h:23`). The routing-matrix UI shows exactly 8 rows regardless of the real interface's channel count. `MainComponentRail.cpp:16-19`'s own comment already frames the 220px height budget around "8 data rows", so this may be intentional. | Is 8 an intentional ceiling (routing only ever needs to name 8 measurement/reference pairs, matching the 8 TF slots) or a real gap (an operator on a >8-channel interface cannot assign a role to channel 9+ at all)? Proposed fix if the latter: thread the real channel count from `AudioIo`/`ChannelConfig` into `MainComponentRail`'s constructor instead of `kMaxTransferFunctions`, and rename the parameter once the real meaning is confirmed. |
+| D2 | Test-only-called production symbols, judged individually | `AnalysisThread::isSplLoggingEnabled()`/`MainComponent::currentPaneView()`: real test callers exist (see judgement note above); deleting either needs a replacement test seam that lands in the SAME orphan bucket as D3 below (the friend-wrapper indirection, not the name, is what defeats orphan_check). `SplLog(Writer)::reconfigure`, `SplAlarms::slidingMaxLeqDb`/`consecutiveFixedMaxLeqDb`, `SplHistory::at`/`oldestBlockIndex`/`newestBlockIndex`: tested, working logic, zero production callers -- `SplView.cpp` `#include`s `SplStrip.h` (built on top of `SplHistory`) but never calls its geometry function. A fully-built, fully-tested "SPL history strip" with no UI wiring. `SplReport::renderViewerShell()`: serves Wave 4b (the served report viewer), which `SplReportSections.cpp:153-158`'s own comment records as "cut before shipping" by owner decision 2026-09-25. | Recommend: keep all of these (deleting breaks working test coverage with no safe replacement, or removes a feature that may be paused rather than cancelled). Owner call needed on: (a) wire the SPL history strip into `SplView.cpp`, or shelve it explicitly; (b) confirm Wave 4b is permanently cancelled before `renderViewerShell()` is removed. |
+| D3 | `analysisThreadForTest`/`paneComponentForTest` (`MainComponent.h`), `channelRoleTableForTest`/`routingMatrixForTest` (`MainComponentRail.h`), and their `MainComponentTestAccess.h` wrappers (`analysisThread`/`channelRoleTable`/`pane`/`routingMatrix`) | orphan_check v2, re-run with `--base 88d1dbe~1`/`--base 1f80724` (old enough to diff these in): all report as orphans DESPITE being real, actively-used test seams | Not a code defect -- a tool limitation (documented in F7 above). No action needed beyond the documentation already added, listed here so the owner sees it was investigated, not skipped. |
+| D4 | orphan_check.py F2: "not compiled into any target" is literally false for a file compiled into a TEST target only | Confirmed on `AlignmentWizard.cpp`/`EqVerify.cpp`: both compile cleanly into `rtatool_analysis_tests` (this batch's own `build-off` log), neither is in `rtatool_sources.cmake`/`rtatool_snapshot_sources.cmake`. (Their eventual app-wiring is already an owner decision recorded above: "EQ+FIR và AlignmentWizard mở thành lane ngay sau đợt này".) | Fixing the message needs the tool to also read `app/tests*/CMakeLists.txt`'s own source lists -- a third source-of-truth list, or different wording -- a real design decision on `orphan_targets.py`'s shape, not a one-line patch. |
+| D5 | orphan_check.py F4: `cpp_text.py`'s `_is_digit_separator_quote` misreads a prefixed char literal (`L'x'`, `u8'x'`, `u'x'`, `U'x'`) as a digit separator | `tools/cpp_text.py:46-63`; zero instances in the current tree (`grep -rnE "\b(L|u8|u|U)'" app/ core/ platform/ ui/ tools/` -- no match) | A safe fix needs to special-case the known prefixes without weakening the digit-separator rule two REAL fixtures depend on (`test_spl_session_folder_name.cpp`'s `1'700'000'000`, `test_api_serialise.cpp`'s `20'000`) -- deferred to a dedicated tooling PR with its own fixture. |
+| D6 | `SplLogWriter::openSegment()` calls `utf8Path()` uncaught, on the writer thread | `app/src/export/SplLogWriter.cpp:28-46` (see this batch's new comment there) | Zero realistic trigger (paths are always JUCE-derived, well-formed UTF-8), but the correct fallback (mark `writeFailed_` and skip the segment, vs. propagate and end the session) is a session/log-semantics decision, not a mechanical fix. |
+| D7 | Export catch block (`MainComponentSpl.cpp::exportReportClicked`, PR #43 r4 item 14) has no test at all | Confirmed: no test file references `exportReportClicked`/`EXPORT FAILED`/`exportReportReadout` | Forcing the catch to run needs either a new `MainComponentTestAccess` seam or a way to make `utf8Path` throw through the public API -- a testing-seam design decision. |
+| D8 | Rail R2-2: the rail-layout test never pins `railScrollView_.setBounds`/`addAndMakeVisible` (only the three content widgets' sizes) | `app/tests_juce/test_main_component_rail_layout.cpp` | Needs a new `MainComponentTestAccess` seam exposing the viewport itself, not just its content -- a seam-design call, not added speculatively here. |
+| D9 | `SessionStore.cpp:28-29`'s `root / kTracesDirName / (id + ".bin")` -- narrow `std::string`→`path` via `operator/`, the same ACP-decode mechanism as the rest of this bug class | `app/src/trace/SessionStore.cpp`; `id` is always an app-generated (ASCII-only) identifier; this file is already out of the path guard's documented scope (see its own header comment) | No live risk today. Flagged for awareness, not fixed -- fixing it for uniformity alone risks touching a file the guard deliberately does not scan. |
+| D10 | PR #45 round-2 H: topology picker omits LR-6 (36 dB/oct) and BW-5+ | `app/src/measure/CrossoverTopology.cpp:24`, `expectedOffset` | Real DSP options currently unsupported; a missing order refuses safely rather than mis-inferring. Adding new topologies needs the "research, then argue, then build" process (CLAUDE.md), not a LOW fix. |
+| D11 | PR #43 F4/F5/F6: multi-pane collapses on re-save; in-place blob truncation corrupts one trace if a write is interrupted; no overwrite prompt on Save | `MainComponentSession.cpp:104` (`doc.panes = {currentPaneSpec_()}` -- always exactly one pane); `app/src/trace/SessionStore.cpp:93-100` (`std::ofstream out(path, ..., trunc)` -- no tmp-then-rename for trace blobs, unlike the index at line ~35); `MainComponentSession.cpp:79-82` (`FileChooser` flags carry no `warnAboutOverwriting`, and no pre-write existence check) | Persisted-state/session-format changes, explicitly out of scope for a LOW batch per this task's own instructions. Proposed fixes, one paragraph each: **F4** -- `performSave` should write every pane in `library_`'s current multi-pane layout (the shape `restoreWorkspaceFromSession` already reads back), not just `currentPaneSpec_()`; needs a way for `MainComponentSession` to see the FULL pane list, not just the active one. **F5** -- give `writeTrace` the same tmp-then-rename pattern `writeIndex` already uses (`kIndexTmpName` → rename over `kIndexName`), so an interrupted write leaves the OLD blob intact rather than a truncated one. **F6** -- either add `warnAboutOverwriting` to the `FileChooser` flags (JUCE's own prompt) or check `folder.exists() && folder.getNumberOfChildFiles() > 0` before `performSave` and ask first. |
+
+### KNOWN-LIMIT (documented, left as is)
+
+| # | Item | Evidence |
+|---|------|----------|
+| K1 | PR #45 round-2 F: `setTextWhenNoChoicesAvailable(...)` never shows on a closed ComboBox | JUCE only uses it for the popup's disabled item (`juce_ComboBox.cpp:556`); cosmetic, the centred refusal line already carries the real information. |
+| K2 | PR #43 round-3 R3-3: the path guard's vacuousness check (`payloadText.find("fs::path& path")`) is file-scoped, not call-site-scoped | Already explicitly documented in the guard's own header comment ("a hazard only if some future bare name collided with an UNSAFE variable of the same spelling elsewhere in the same file; none currently do"). Re-verified 2026-09-27: exactly 2 matches in `SplReportPayloadBuilder.cpp` (lines 28, 101), both legitimate `const fs::path&` declarations. |
+| K3 | PR #40 round-2 R2-4: the 220/150 magic numbers in the rail-layout test are an unlabelled-looking regression lock | Already named and explained in the test's own comments (ties them to `kRoutingMatrixHeight`/`kChannelRoleTableMinHeight`); those constants are file-local to `MainComponentRail.cpp` and not exportable without a wider refactor just for test readability. |
+| K4 | PR #39 F7: nested-viewport mouse wheel scrolling is not checkable offscreen | A headless render has no real input event loop -- a testing-environment limit, not a code defect. |
+| K5 | PR #39 F6: a dead overload beside a live one is invisible to orphan_check by design | `msvc_decorate.py:34-38`'s own doc: a fragment matches ANY overload in scope, "deliberately safe" (one live overload keeps the whole candidate live) -- a genuinely dead sibling overload is a false negative this tradeoff already accepts. |
+| K6 | PR #39 F10: `tools/test_fixtures/sample.map` carries no SPDX header | It is a VERBATIM-captured real MSVC linker map (`map_symbols.py`'s own docstring: real output, not synthesized), not authored source text -- adding a fabricated comment line would misrepresent a "captured exactly as produced" fixture. The project's SPDX convention is for authored source. |
+| K7 | PR #39 F5: "struct kw in param" -- could not conclusively re-locate | No `struct` keyword appears inside a parameter type position anywhere in the current tree (checked). Left unresolved rather than guessed at; if it resurfaces, check `cpp_scopes.py`'s brace/scope tracking for an inline elaborated-type-specifier in a parameter list. |
+
+### STALE (already fixed or already answered; no action taken)
+
+| # | Item | Evidence it no longer applies |
+|---|------|-------------------------------|
+| S1 | PR #37 r1: `tools/snapshot.cpp` comment claims live SPL data but the specimen showed the "NO SPL SESSION" placeholder | `tools/snapshot.cpp:250` now calls `.enableSplLogging(splConfig, splChannels, "")` -- fixed in a later PR#37 round, per that same block's own "fix round item 2" comment. |
+| S2 | PR #37 r1: `MainComponent.h:99-105` test accessors public on a production class | Now `private:` behind `friend struct MainComponentTestAccess;` (`MainComponent.h:98-105`). |
+| S3 | PR #36 r1: `JUCE_BUNDLE_ID` contains a space, invisible to the Warnings gate | `app/CMakeLists.txt:41` is `"com.azsoundtech.rtatool"` (no space); AND the CI configure gate now exists specifically for this class of regression -- `.github/workflows/ci-app-on.yml`'s "Configure warnings" step (added same fix round) greps `configure.log` for `CMake (Deprecation )?Warning` and fails on non-zero, with a comment naming this exact bug as why it exists. |
+| S4 | PR #36: GIT-WORKFLOW.md said "until the CI matrix is green" without naming the ON job | Current `docs/GIT-WORKFLOW.md` rule 3 explicitly names and describes the separate `ci-app-on.yml` job ("~25 minutes... three of those with no evidence yet that ON is even portable"). |
+| S5 | PR #40 F8: `main-live*.png` hardcoded to 1280x800 regardless of the tool's width/height args | Already documented inline, `tools/snapshot.cpp:187-189`: "Fixed at 1280 x 800 regardless of the tool's own width/height arguments". This batch's F8 (above) only added the missing CLAUDE.md cross-reference. |
+| S6 | PR #43 round-3 R3-2: path guard excludes `app/src/trace/` (`SessionStore.cpp`); a mutant there survived | Current `SessionStore.cpp:60,80,94,108` all construct `ofstream`/`ifstream` from bare `path`/`tmpPath` that ARE genuinely `std::filesystem::path` (built from `root_`) -- exactly the scope-exclusion rationale the guard's own header comment already gives; no live hazard. |
+| S7 | "16 `.cpp` not in `rtatool`" incl. `AlignmentWizard.cpp`/`EqVerify.cpp` | Already answered by the owner 2026-09-26 (entry above in this file): AlignmentWizard becomes its own lane; not a fresh finding for this batch. |
+
+<!-- Lane-end LOW triage — 2026-09-27, commits on app/lane-end-lows -->
 
 ## Từ phiên EP06 (2026-08-30)
 
