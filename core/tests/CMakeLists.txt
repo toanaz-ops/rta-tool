@@ -230,6 +230,6 @@ add_test(NAME source_files_are_under_400_lines
             "-DDIRS=${CMAKE_SOURCE_DIR}/core;${CMAKE_SOURCE_DIR}/app;${CMAKE_SOURCE_DIR}/platform;${CMAKE_SOURCE_DIR}/ui"
             -DTOOLS_DIR=${CMAKE_SOURCE_DIR}/tools
             "-DEXTRA_FILES=${CMAKE_SOURCE_DIR}/CMakeLists.txt"
-            "-DEXCLUDES=${CMAKE_SOURCE_DIR}/tools/gen_*.py;${CMAKE_SOURCE_DIR}/tools/probe_*.py"
+            "-DEXCLUDES=${CMAKE_SOURCE_DIR}/tools/gen_generator.py;${CMAKE_SOURCE_DIR}/tools/probe_align_order4.py;${CMAKE_SOURCE_DIR}/tools/probe_l4b_truncation.py"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_file_length.cmake
 )

@@ -255,7 +255,7 @@ after L6a):
        file that only the snapshot tool compiles is still an orphan.
      - TEST HOOK: a `*ForTest` name that a test really references.
    - A `.cpp` file in no source list is an orphan.
-   - Known limits are listed in the tool's docstring.
+   - Known limits are listed in `docs/tools/orphan-check-known-limits.md`.
    - L6a's plan built and unit-tested every SPL component and gave no task the
      job of calling them. `enableSplLogging` had no caller for four waves,
      which cost three extra PRs to fix
