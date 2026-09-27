@@ -181,7 +181,7 @@ TEST_CASE("selecting back to RTA restores an RtaView", "[main_component_panes]")
     // green. library() is RtaView's own accessor for what it was last told
     // (RtaView.h) -- pinning it to the SAME library MainComponent owns, not
     // merely non-null, after a switch away and back.
-    CHECK(rtaView->library() == &MainComponentTestAccess::library(component));
+    CHECK(rtaView->library() == &MainComponentTestAccess::libraryForTest(component));
 }
 
 TEST_CASE("selecting Transfer builds a TransferView", "[main_component_panes]") {
@@ -193,7 +193,7 @@ TEST_CASE("selecting Transfer builds a TransferView", "[main_component_panes]") 
     CHECK(component.currentPaneView() == PaneView::Transfer);
     const auto* transferView = dynamic_cast<const TransferView*>(&MainComponentTestAccess::pane(component));
     REQUIRE(transferView != nullptr);
-    CHECK(transferView->library() == &MainComponentTestAccess::library(component));
+    CHECK(transferView->library() == &MainComponentTestAccess::libraryForTest(component));
 }
 
 TEST_CASE("switching panes does not stop or restart SPL logging",

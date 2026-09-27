@@ -17,7 +17,7 @@
 // Threading note (task brief item 5, "Save while a trace is being captured
 // does not tear it"): TraceLibrary has no lock and no atomic state -- it is
 // designed to be touched from the message thread only, and every call this
-// suite makes into it (through MainComponentTestAccess::mutableLibraryForTest, or
+// suite makes into it (through MainComponentTestAccess::libraryForTest, or
 // through performSave/performOpen themselves) runs synchronously on the
 // thread that calls it, exactly as a real button click would. Nothing in
 // app/src today ever adds a trace to a library from any OTHER thread --
@@ -84,7 +84,7 @@ TEST_CASE("Open restores the library and pane view a matching Save wrote",
     writer.setSyntheticMode(true);
     writer.selectPaneView(PaneSelectorButton::Spl);
 
-    auto& writerLibrary = MainComponentTestAccess::mutableLibraryForTest(writer);
+    auto& writerLibrary = MainComponentTestAccess::libraryForTest(writer);
     writerLibrary.add(*Trace::make(makeMeta("t1"), std::vector<float>{1.f, 2.f, 3.f, 4.f, 5.f}), "FOH",
                       "positions");
     writerLibrary.add(*Trace::make(makeMeta("t2"), std::vector<float>{6.f, 7.f, 8.f, 9.f, 10.f}), "Delay",
@@ -103,14 +103,14 @@ TEST_CASE("Open restores the library and pane view a matching Save wrote",
 
     CHECK(MainComponentTestAccess::readoutForTest(reader).startsWith("OPENED"));
 
-    const auto entries = MainComponentTestAccess::library(reader).entries();
+    const auto entries = MainComponentTestAccess::libraryForTest(reader).entries();
     REQUIRE(entries.size() == 2u);
     std::vector<std::string> names;
     for (const auto& e : entries) names.push_back(e.name);
     std::sort(names.begin(), names.end());
     CHECK(names == std::vector<std::string>{"Delay", "FOH"});
 
-    const auto* t1 = MainComponentTestAccess::library(reader).trace("t1");
+    const auto* t1 = MainComponentTestAccess::libraryForTest(reader).trace("t1");
     REQUIRE(t1 != nullptr);
     const auto mag = t1->field(Field::Magnitude);
     REQUIRE(mag.size() == 5u);
@@ -127,7 +127,7 @@ TEST_CASE("opening a missing folder refuses and leaves the library untouched",
          "[main_component_session]") {
     MainComponent component;
     component.setSyntheticMode(true);
-    auto& library = MainComponentTestAccess::mutableLibraryForTest(component);
+    auto& library = MainComponentTestAccess::libraryForTest(component);
     library.add(*Trace::make(makeMeta("keep"), std::vector<float>(5, -20.0f)), "Keep", "g");
 
     TempDir dir("missing");
@@ -136,7 +136,7 @@ TEST_CASE("opening a missing folder refuses and leaves the library untouched",
     MainComponentTestAccess::openSessionForTest(component, juce::File(dir.path.string()));
 
     CHECK(MainComponentTestAccess::readoutForTest(component).startsWith("OPEN FAILED"));
-    const auto entries = MainComponentTestAccess::library(component).entries();
+    const auto entries = MainComponentTestAccess::libraryForTest(component).entries();
     REQUIRE(entries.size() == 1u);
     CHECK(entries.front().name == "Keep");
 }
@@ -145,7 +145,7 @@ TEST_CASE("opening a corrupt index refuses and leaves the library untouched",
          "[main_component_session]") {
     MainComponent component;
     component.setSyntheticMode(true);
-    auto& library = MainComponentTestAccess::mutableLibraryForTest(component);
+    auto& library = MainComponentTestAccess::libraryForTest(component);
     library.add(*Trace::make(makeMeta("keep"), std::vector<float>(5, -20.0f)), "Keep", "g");
 
     TempDir dir("corrupt");
@@ -160,7 +160,7 @@ TEST_CASE("opening a corrupt index refuses and leaves the library untouched",
     MainComponentTestAccess::openSessionForTest(component, juce::File(dir.path.string()));
 
     CHECK(MainComponentTestAccess::readoutForTest(component).startsWith("OPEN FAILED"));
-    const auto entries = MainComponentTestAccess::library(component).entries();
+    const auto entries = MainComponentTestAccess::libraryForTest(component).entries();
     REQUIRE(entries.size() == 1u);
     CHECK(entries.front().name == "Keep");
 }
@@ -180,13 +180,13 @@ TEST_CASE("a session with no captures still opens, to an empty library",
 
     MainComponent reader;
     reader.setSyntheticMode(true);
-    auto& readerLibrary = MainComponentTestAccess::mutableLibraryForTest(reader);
+    auto& readerLibrary = MainComponentTestAccess::libraryForTest(reader);
     readerLibrary.add(*Trace::make(makeMeta("stale"), std::vector<float>(5, -20.0f)), "Stale", "g");
 
     MainComponentTestAccess::openSessionForTest(reader, juce::File(dir.path.string()));
 
     CHECK(MainComponentTestAccess::readoutForTest(reader).startsWith("OPENED"));
-    CHECK(MainComponentTestAccess::library(reader).entries().empty());
+    CHECK(MainComponentTestAccess::libraryForTest(reader).entries().empty());
 }
 
 // Fix round (PR #43) additions -- HIGH F1 (path encoding on Windows),

@@ -36,6 +36,12 @@ list(TRANSFORM RTA_MAIN_COMPONENT_TEST_SOURCES PREPEND "${CMAKE_SOURCE_DIR}/app/
 
 add_executable(rtatool_main_component_tests
     test_main_component_panes.cpp
+    # ALIGN-R8's XOVER coverage (PR #45), split across fix rounds (400-line
+    # cap): round 1 in the first file, round 2's MEDIUM A/B + gap D in the
+    # second, round 3's TraceLibrary::clear() survival in the third.
+    test_main_component_panes_xover.cpp
+    test_main_component_panes_xover_round2.cpp
+    test_main_component_panes_xover_round3.cpp
     # Fix round MEDIUM F1: item 4's rail-scroll fix had no test.
     test_main_component_rail_layout.cpp
     # test_main_component_session.cpp: SAVE/OPEN SESSION against a real

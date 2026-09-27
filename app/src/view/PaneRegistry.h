@@ -22,7 +22,12 @@ namespace rta::view {
 /// (`SessionCodec.h:30` stays 3): an older build reading a session that names
 /// `"spl"` already falls back to `Rta` and REPORTS it through `fellBack`,
 /// which is this type's whole contract below.
-enum class PaneView { Rta, Transfer, Spl };
+///
+/// `Xover` added by the ALIGN-R8 reversal (owner, 2026-09-26; amendment in
+/// docs/dsp/2026-09-06-l7-alignment-wizard.md): the G18 crossover surface
+/// becomes a live pane. Same no-version-bump shape as `Spl` -- an older
+/// build reading `"xover"` falls back to `Rta` and reports it.
+enum class PaneView { Rta, Transfer, Spl, Xover };
 
 struct PaneResolution {
     PaneView view = PaneView::Rta;
@@ -38,6 +43,7 @@ struct PaneResolution {
     if (name == "rta") return out;
     if (name == "transfer") { out.view = PaneView::Transfer; return out; }
     if (name == "spl") { out.view = PaneView::Spl; return out; }
+    if (name == "xover") { out.view = PaneView::Xover; return out; }
     out.fellBack = true;   // falls back to Rta, and says so
     return out;
 }
@@ -49,6 +55,12 @@ struct PaneResolution {
 [[nodiscard]] inline std::string paneViewName(PaneView view) {
     if (view == PaneView::Transfer) return "transfer";
     if (view == PaneView::Spl) return "spl";
+    // PR #45 fix round 3 (verifier, PR #43 reconciliation checklist item 2):
+    // this arm was missing -- an XOVER session save silently fell through to
+    // "rta" and lost the pane choice on the very next Open. See
+    // test_pane_view_name_round_trip.cpp for the guard that would have
+    // caught it: a round trip over EVERY `PaneView` enumerator.
+    if (view == PaneView::Xover) return "xover";
     return "rta";
 }
 

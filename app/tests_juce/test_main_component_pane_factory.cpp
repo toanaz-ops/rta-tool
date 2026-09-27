@@ -13,11 +13,13 @@
 
 #include "PaneFactory.h"
 #include "measure/SnapshotSource.h"
+#include "view/CrossoverPaneView.h"
 #include "view/RtaView.h"
 #include "view/SplView.h"
 #include "view/TransferView.h"
 
 using rta::measure::StaticSnapshotSource;
+using rta::view::CrossoverPaneView;
 using rta::view::PaneView;
 using rta::view::RtaView;
 using rta::view::SplView;
@@ -49,4 +51,17 @@ TEST_CASE("makePaneFactory still builds Transfer and Rta panes correctly",
     auto rtaPane = factory(PaneView::Rta);
     REQUIRE(rtaPane != nullptr);
     CHECK(dynamic_cast<RtaView*>(rtaPane.get()) != nullptr);
+}
+
+TEST_CASE("makePaneFactory builds a CrossoverPaneView for PaneView::Xover",
+         "[main_component_pane_factory]") {
+    // ALIGN-R8 reversal (owner, 2026-09-26): the same "own branch, own
+    // concrete type" property the Spl case above pins, one enumerator later.
+    StaticSnapshotSource source;
+    auto factory = makePaneFactory(source);
+
+    auto xoverPane = factory(PaneView::Xover);
+    REQUIRE(xoverPane != nullptr);
+    CHECK(dynamic_cast<CrossoverPaneView*>(xoverPane.get()) != nullptr);
+    CHECK(dynamic_cast<RtaView*>(xoverPane.get()) == nullptr);
 }

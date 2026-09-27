@@ -24,6 +24,7 @@
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
 #include "trace/Trace.h"
+#include "view/CrossoverPaneView.h"
 
 #include <juce_core/juce_core.h>
 
@@ -137,7 +138,7 @@ TEST_CASE("Save/Open round-trip through a real folder with a Vietnamese name",
 
     MainComponent writer;
     writer.setSyntheticMode(true);
-    auto& writerLibrary = MainComponentTestAccess::mutableLibraryForTest(writer);
+    auto& writerLibrary = MainComponentTestAccess::libraryForTest(writer);
     writerLibrary.add(*Trace::make(makeMeta("vn"), std::vector<float>{1.f, 2.f, 3.f, 4.f, 5.f}), "VN", "g");
 
     MainComponentTestAccess::saveSessionForTest(writer, dir);
@@ -156,7 +157,7 @@ TEST_CASE("Save/Open round-trip through a real folder with a Vietnamese name",
     MainComponentTestAccess::openSessionForTest(reader, dir);
 
     CHECK(MainComponentTestAccess::readoutForTest(reader).startsWith("OPENED"));
-    const auto entries = MainComponentTestAccess::library(reader).entries();
+    const auto entries = MainComponentTestAccess::libraryForTest(reader).entries();
     REQUIRE(entries.size() == 1u);
     CHECK(entries.front().name == "VN");
 }
@@ -216,6 +217,47 @@ TEST_CASE("Open syncs the pane selector buttons' toggle state, not just currentP
     CHECK(splButton->getToggleState());
 }
 
+TEST_CASE("Open restores the XOVER selector button and pane, not just currentPaneView",
+         "[main_component_session]") {
+    // PR #45 fix round 3 (PR #43 reconciliation checklist item 3):
+    // restoreWorkspaceFromSession() (MainComponentPanes.cpp) synced only the
+    // RTA/TRANSFER/SPL toggles, unlike selectPaneView() a few lines above it
+    // in the same file, which already syncs all four -- opening a saved
+    // XOVER session left every selector button dark even though the xover
+    // pane itself was showing. Same M8 shape as the test above, the fourth
+    // button.
+    TempDir dir("xover-pane-sync");
+
+    MainComponent writer;
+    writer.setSyntheticMode(true);
+    writer.selectPaneView(PaneSelectorButton::Xover);
+    MainComponentTestAccess::saveSessionForTest(writer, juce::File(dir.path.string()));
+
+    MainComponent reader;
+    reader.setSyntheticMode(true);
+    REQUIRE(reader.currentPaneView() == PaneView::Rta);
+
+    MainComponentTestAccess::openSessionForTest(reader, juce::File(dir.path.string()));
+
+    CHECK(reader.currentPaneView() == PaneView::Xover);
+    CHECK(dynamic_cast<const rta::view::CrossoverPaneView*>(&MainComponentTestAccess::pane(reader)) !=
+         nullptr);
+
+    auto* rtaButton = findButtonByText(reader, "RTA");
+    auto* transferButton = findButtonByText(reader, "TRANSFER");
+    auto* splButton = findButtonByText(reader, "SPL");
+    auto* xoverButton = findButtonByText(reader, "XOVER");
+    REQUIRE(rtaButton != nullptr);
+    REQUIRE(transferButton != nullptr);
+    REQUIRE(splButton != nullptr);
+    REQUIRE(xoverButton != nullptr);
+
+    CHECK_FALSE(rtaButton->getToggleState());
+    CHECK_FALSE(transferButton->getToggleState());
+    CHECK_FALSE(splButton->getToggleState());
+    CHECK(xoverButton->getToggleState());
+}
+
 TEST_CASE("Open restores the visible flag, not just the trace data",
          "[main_component_session]") {
     // M9: TraceLibrary::add() always adds a trace as visible -- the ONLY
@@ -226,7 +268,7 @@ TEST_CASE("Open restores the visible flag, not just the trace data",
 
     MainComponent writer;
     writer.setSyntheticMode(true);
-    auto& writerLibrary = MainComponentTestAccess::mutableLibraryForTest(writer);
+    auto& writerLibrary = MainComponentTestAccess::libraryForTest(writer);
     const auto id =
         writerLibrary.add(*Trace::make(makeMeta("hidden"), std::vector<float>(5, -20.0f)), "Hidden", "g");
     REQUIRE_FALSE(id.empty());
@@ -238,7 +280,7 @@ TEST_CASE("Open restores the visible flag, not just the trace data",
     reader.setSyntheticMode(true);
     MainComponentTestAccess::openSessionForTest(reader, juce::File(dir.path.string()));
 
-    const auto* entry = MainComponentTestAccess::library(reader).entry("hidden");
+    const auto* entry = MainComponentTestAccess::libraryForTest(reader).entry("hidden");
     REQUIRE(entry != nullptr);
     CHECK_FALSE(entry->visible);
 }
@@ -256,7 +298,7 @@ TEST_CASE("Open reports exactly how many blobs failed to read, and the trace aft
 
     MainComponent writer;
     writer.setSyntheticMode(true);
-    auto& writerLibrary = MainComponentTestAccess::mutableLibraryForTest(writer);
+    auto& writerLibrary = MainComponentTestAccess::libraryForTest(writer);
     writerLibrary.add(*Trace::make(makeMeta("first"), std::vector<float>{1.f, 2.f, 3.f, 4.f, 5.f}), "First",
                       "g");
     writerLibrary.add(*Trace::make(makeMeta("middlebad"), std::vector<float>{6.f, 7.f, 8.f, 9.f, 10.f}),
@@ -278,7 +320,7 @@ TEST_CASE("Open reports exactly how many blobs failed to read, and the trace aft
     CHECK(readout.startsWith("OPENED"));
     CHECK(readout.contains("1 trace(s) skipped"));
 
-    const auto entries = MainComponentTestAccess::library(reader).entries();
+    const auto entries = MainComponentTestAccess::libraryForTest(reader).entries();
     REQUIRE(entries.size() == 2u);
     CHECK(entries[0].name == "First");
     CHECK(entries[1].name == "Last");  // the trace AFTER the bad one -- this is what `break` drops
@@ -297,7 +339,7 @@ TEST_CASE("Open refuses wholesale when every blob fails, even though the index p
 
     MainComponent writer;
     writer.setSyntheticMode(true);
-    auto& writerLibrary = MainComponentTestAccess::mutableLibraryForTest(writer);
+    auto& writerLibrary = MainComponentTestAccess::libraryForTest(writer);
     writerLibrary.add(*Trace::make(makeMeta("only"), std::vector<float>(5, -20.0f)), "Only", "g");
     MainComponentTestAccess::saveSessionForTest(writer, juce::File(dir.path.string()));
 
@@ -305,13 +347,13 @@ TEST_CASE("Open refuses wholesale when every blob fails, even though the index p
 
     MainComponent reader;
     reader.setSyntheticMode(true);
-    auto& readerLibrary = MainComponentTestAccess::mutableLibraryForTest(reader);
+    auto& readerLibrary = MainComponentTestAccess::libraryForTest(reader);
     readerLibrary.add(*Trace::make(makeMeta("stale"), std::vector<float>(5, -20.0f)), "Stale", "g");
 
     MainComponentTestAccess::openSessionForTest(reader, juce::File(dir.path.string()));
 
     CHECK(MainComponentTestAccess::readoutForTest(reader).startsWith("OPEN FAILED"));
-    const auto entries = MainComponentTestAccess::library(reader).entries();
+    const auto entries = MainComponentTestAccess::libraryForTest(reader).entries();
     REQUIRE(entries.size() == 1u);
     CHECK(entries.front().name == "Stale");  // untouched -- clear() must not have run
 }

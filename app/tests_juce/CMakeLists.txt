@@ -43,9 +43,9 @@ add_executable(rtatool_view_tests
     # REAL makePaneFactory (PaneFactory.h) and checks its Spl branch builds
     # an SplView, not an RtaView.
     test_main_component_pane_factory.cpp
+    test_crossover_surface_renderer.cpp  # PR #45 round 3: UNKNOWN-inversion rendering, bare CrossoverSurface
     # test_routing_matrix.cpp: task B7's routing matrix (record §6, §7) --
-    # composes az_ui's GridPanel, JUCE-using for the same reason
-    # TransferSourceToggle.cpp already gives.
+    # composes az_ui's GridPanel, JUCE-using for the same reason TransferSourceToggle.cpp already gives.
     test_routing_matrix.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)
@@ -123,6 +123,12 @@ add_executable(rtatool_view_tests
     # SplView.cpp, new here.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PaneFactory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/SplView.cpp
+    # ALIGN-R8: PaneFactory.cpp's Xover branch builds this + chain (test_main_component_pane_factory.cpp's matching case).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverPaneView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurface.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CrossoverTopology.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/VirtualTrace.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurfaceRenderer.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:
@@ -191,34 +197,27 @@ catch_discover_tests(rtatool_view_tests TEST_PREFIX "view/")
 add_executable(rtatool_routing_live_tests
     test_routing_live.cpp
     # test_delay_locate.cpp: lane L7-DELAY task F2 (record docs/dsp/
-    # 2026-09-06-l7-auto-delay.md sec.11.2, sec.1.6, sec.8) -- the raw-
-    # capture accumulator wired into drainPaired, and Apply's rebuild --
-    # against the SAME real AnalysisThread/CaptureBus shape
-    # test_routing_live.cpp uses, so it lives in this target too.
+    # 2026-09-06-l7-auto-delay.md sec.11.2, sec.1.6, sec.8) -- the raw-capture
+    # accumulator wired into drainPaired, and Apply's rebuild -- against the
+    # SAME real AnalysisThread/CaptureBus shape test_routing_live.cpp uses.
     test_delay_locate.cpp
     # test_spl_drain.cpp: lane L6a task W0-D (research sec.C4, SPL-R1) -- the
     # SPL feed above the kMaxTransferFunctions cap, the unrouted drain, and
-    # the Gap the paired drain cannot avoid. Against the same real
-    # AnalysisThread/CaptureBus shape test_routing_live.cpp uses.
+    # the Gap the paired drain cannot avoid. Same real shape as above.
     test_spl_drain.cpp
-    # test_spl_log_wiring.cpp: lane L6a task W2-E2a (plan amendment "W2-E --
-    # the wiring nobody was assigned") -- AnalysisThread::enableSplLogging
-    # actually writing a log to disk, against the same real AnalysisThread/
-    # CaptureBus shape test_spl_drain.cpp uses. The queue/writer mechanics
-    # themselves are proven OFF in app/tests/test_spl_log_pipeline.cpp; what
-    # only a live thread can prove is that AnalysisThread wires the two
-    # together correctly.
+    # test_spl_log_wiring.cpp: lane L6a task W2-E2a ("the wiring nobody was
+    # assigned") -- AnalysisThread::enableSplLogging actually writing a log to
+    # disk, same real shape. The queue/writer mechanics are proven OFF in
+    # app/tests/test_spl_log_pipeline.cpp; only a live thread proves the wire.
     test_spl_log_wiring.cpp
-    # test_spl_log_wiring_disable.cpp: LOW follow-up batch, item 9 -- split
-    # out of test_spl_log_wiring.cpp (over the 400-line hard cap) along its
-    # own seam: disableSplLogging() actually drains and joins the writer
-    # thread rather than a no-op a background writer's own timing could mask.
+    # test_spl_log_wiring_disable.cpp: LOW follow-up item 9, split out of the
+    # file above (400-line cap): disableSplLogging() actually drains and joins
+    # the writer thread, not a no-op a background writer's timing could mask.
     test_spl_log_wiring_disable.cpp
-    # test_spl_epoch_freeze.cpp: station-4 fix round, PR #31, round 3,
-    # verifier finding 1 (MEDIUM, the epoch race) -- a real AnalysisThread
-    # over a real CaptureBus, proving feedSpl() freezes the instant
-    # CaptureBus::prepare() bumps the epoch, with no second
-    # enableSplLogging() call to rescue it. Same shape as test_spl_drain.cpp.
+    # test_spl_epoch_freeze.cpp: station-4 fix round, PR #31 round 3, verifier
+    # finding 1 (MEDIUM, the epoch race) -- feedSpl() freezes the instant
+    # CaptureBus::prepare() bumps the epoch, no second enableSplLogging() call
+    # rescues it. Same shape as test_spl_drain.cpp.
     test_spl_epoch_freeze.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------

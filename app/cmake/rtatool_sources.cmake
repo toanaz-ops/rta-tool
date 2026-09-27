@@ -71,6 +71,22 @@ set(RTATOOL_SOURCES
     src/view/PlotAxes.cpp
     src/view/RtaView.cpp
     src/view/StoredTraceLayer.cpp
+    # CrossoverSurface.cpp / CrossoverTopology.cpp / VirtualTrace.cpp: lane
+    # L7-ALIGN task I, present in rtatool_snapshot_sources.cmake since PR #8
+    # but never in THIS list (docs/HUMAN-QA-QUEUE.md's "16 unwired .cpp";
+    # docs/reports/007-solvers.md's own "not wired into MainComponent" §).
+    # The ALIGN-R8 reversal (owner, 2026-09-26) makes G18 a live pane, and a
+    # live pane needs its model linked into the SHIPPING binary, not only the
+    # offscreen snapshot tool.
+    src/view/CrossoverSurface.cpp
+    src/measure/CrossoverTopology.cpp
+    src/trace/VirtualTrace.cpp
+    # CrossoverSurfaceRenderer.cpp: the G18 chart drawing shared between this
+    # pane and the dev-preview specimen (see that file's own header comment).
+    # CrossoverPaneView.cpp: the live pane itself, built by PaneFactory.cpp's
+    # new Xover branch.
+    src/view/CrossoverSurfaceRenderer.cpp
+    src/view/CrossoverPaneView.cpp
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
     src/view/TraceStroke.cpp

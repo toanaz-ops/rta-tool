@@ -24,6 +24,9 @@
 
 #include <az_ui/az_ui.h>
 
+#include "SnapshotRender.h"
+#include "snapshot_xover.h"
+
 #include "AppTypefaces.h"
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
@@ -36,7 +39,10 @@
 #include "measure/SnapshotSource.h"
 #include "measure/SplConfig.h"
 #include "dev-support/SyntheticSnapshot.h"
+#include "trace/Trace.h"
+#include "trace/TraceLibrary.h"
 #include "trace/Workspace.h"
+#include "view/CrossoverPaneView.h"
 #include "view/PaneRegistry.h"
 #include "view/RtaView.h"
 #include "view/TransferView.h"
@@ -46,52 +52,12 @@
 #include <memory>
 #include <vector>
 
-namespace
-{
-
-bool writePng (const juce::Image& image, const juce::File& file)
-{
-    file.deleteFile();
-    juce::FileOutputStream stream (file);
-
-    if (! stream.openedOk())
-        return false;
-
-    return juce::PNGImageFormat().writeImageToStream (image, stream);
-}
-
-// Renders `component` to `outDir/fileName` at `width x height` and reports the
-// result on stdout in the one format both snapshots share. Shared by
-// SpecimenComponent and RtaView so a future third snapshot costs one call, not
-// a second copy of the resize/paint/write dance.
-bool renderComponent (juce::Component& component, const juce::File& outDir,
-                      const char* fileName, int width, int height)
-{
-    component.setSize (width, height);
-
-    // setSize() alone does not call resized() on a component with no desktop
-    // peer, so children keep whatever bounds they had -- on a fresh one, none
-    // at all, and the image comes out empty. This call is the single most
-    // common thing missing from a blank snapshot (plan trap T-6).
-    component.resized();
-
-    // `true` renders children too; without it a container yields only its own
-    // background (the other half of trap T-6).
-    const auto image = component.createComponentSnapshot (component.getLocalBounds(), true);
-    const auto file  = outDir.getChildFile (fileName);
-
-    if (! writePng (image, file))
-    {
-        std::printf ("FAILED to write %s\n", file.getFullPathName().toRawUTF8());
-        return false;
-    }
-
-    std::printf ("wrote %s  (%d x %d)\n",
-                 file.getFullPathName().toRawUTF8(), image.getWidth(), image.getHeight());
-    return true;
-}
-
-} // namespace
+// `renderComponent`/`renderXoverSpecimens` (SnapshotRender.h,
+// snapshot_xover.h -- PR #45 fix round 3 split, see those files' own header
+// comments) unqualified below, matching every call site already in this
+// file before the split.
+using rta::tools::renderComponent;
+using rta::tools::renderXoverSpecimens;
 
 int main (int argc, char** argv)
 {
@@ -315,6 +281,11 @@ int main (int argc, char** argv)
                 ++failures;
         }
     }
+
+    // main-live-xover*.png: ALIGN-R8's live pane, PR #45 -- see
+    // snapshot_xover.h/.cpp (split out here, round 3, once a second
+    // specimen -- UNKNOWN inversion -- joined the first).
+    renderXoverSpecimens (outDir, failures);
 
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
     // tuning-visuals.md): paint-only components fed canned synthetic data,

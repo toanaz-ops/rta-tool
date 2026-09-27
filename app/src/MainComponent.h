@@ -100,7 +100,9 @@ private:
     // Test-only trio: the real pane makePaneFactory built, SPL logging, and the trace library panes should be wired to.
     [[nodiscard]] const juce::Component& paneComponentForTest() const { return *workspace_->getChildComponent(0); }
     [[nodiscard]] rta::measure::AnalysisThread& analysisThreadForTest() noexcept { return analysisThread_; }
-    [[nodiscard]] const rta::trace::TraceLibrary& libraryForTest() const noexcept { return library_; }
+    // Non-const (app/crossover-pane): a test needs TraceLibrary::add to seed
+    // the XOVER pane's two stored traces.
+    [[nodiscard]] rta::trace::TraceLibrary& libraryForTest() noexcept { return library_; }
 
     void timerCallback() override;
     void modeSwitchClicked();
@@ -373,6 +375,7 @@ private:
     juce::TextButton paneRtaButton_{"RTA"};
     juce::TextButton paneTransferButton_{"TRANSFER"};
     juce::TextButton paneSplButton_{"SPL"};
+    juce::TextButton paneXoverButton_{"XOVER"};  // ALIGN-R8 reversal: G18 live pane
     rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
 
     // --- library_ before workspace_ is load-bearing too. See the class

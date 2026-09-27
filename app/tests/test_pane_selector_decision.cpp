@@ -28,16 +28,46 @@ TEST_CASE("each defined button resolves to its own PaneView, with no fallback",
     CHECK(spl.view == PaneView::Spl);
     CHECK_FALSE(spl.fellBack);
     CHECK(spl.requested == "spl");
+
+    const auto xover = decidePaneSelection(PaneSelectorButton::Xover);
+    CHECK(xover.view == PaneView::Xover);
+    CHECK_FALSE(xover.fellBack);
+    CHECK(xover.requested == "xover");
 }
 
 TEST_CASE("an unrecognised button falls back to Rta and reports it",
          "[pane_selector_decision]") {
-    // No enumerator outside {Rta, Transfer, Spl} exists today, so this pins
-    // the fallback branch itself against the same static_cast an
+    // No enumerator outside {Rta, Transfer, Spl, Xover} exists today, so
+    // this pins the fallback branch itself against the same static_cast an
     // uninitialised or corrupted enum value could produce -- the same
     // "unknown -> Rta, reported" contract resolvePaneView("nonexistent")
     // already carries (test_spl_strip.cpp).
     const auto out = decidePaneSelection(static_cast<PaneSelectorButton>(99));
     CHECK(out.view == PaneView::Rta);
     CHECK(out.fellBack);
+}
+
+TEST_CASE("paneViewName round-trips through resolvePaneView for every PaneView",
+         "[pane_selector_decision]") {
+    // PR #45 fix round 3 (PR #43 reconciliation checklist item 2):
+    // paneViewName() (PaneRegistry.h) is the inverse resolvePaneView() a
+    // session Save writes with -- PR #43 added it missing the Xover arm, so
+    // saving with XOVER showing silently wrote "rta" and Session Open lost
+    // the pane choice on the very next round trip. Every CURRENT
+    // PaneView enumerator is named explicitly here (not looped over a cast
+    // range) so the list this test checks is exactly the list a reviewer
+    // reads, the same reason resolvePaneView's own test above names each
+    // button rather than iterating.
+    //
+    // Mutant: delete the `if (view == PaneView::Xover) return "xover";` arm
+    // -- paneViewName(Xover) falls through to "rta", resolvePaneView("rta")
+    // resolves to PaneView::Rta, and the round trip below goes RED (Xover !=
+    // Rta) rather than reporting a fallback that would ALSO have failed a
+    // `fellBack` check, so this one check alone catches it.
+    for (const auto view : { PaneView::Rta, PaneView::Transfer, PaneView::Spl, PaneView::Xover }) {
+        const auto name = rta::view::paneViewName(view);
+        const auto resolution = rta::view::resolvePaneView(name);
+        CHECK_FALSE(resolution.fellBack);
+        CHECK(resolution.view == view);
+    }
 }
