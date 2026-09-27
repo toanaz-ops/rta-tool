@@ -103,7 +103,56 @@ permissions:
   contents: read
 
 jobs:
+  # A matrix job's OWN `if:` cannot see the `matrix` context -- only
+  # `github`/`needs`/`vars`/`inputs`/`secrets` are available there (verified
+  # against the actual GitHub error the first version of this file produced:
+  # "Unrecognized named-value: 'matrix' ... Located at position 1 within
+  # expression: matrix.main_only == false || github.event_name == 'push'",
+  # a genuine invalid-workflow-file failure on push 85c2131, not a guess).
+  # `matrix` IS available inside `steps`, so a per-step `if:` can pick which
+  # steps a leg runs, but it cannot make a whole leg's JOB not exist on a PR
+  # run -- a matrix combination gated only by step-level `if:` still shows up
+  # as an empty, vacuously-green job/check. The documented way to make an
+  # entire leg conditionally not exist is to compute the matrix itself from
+  # an expression (GitHub's own docs, "Using a matrix for your jobs" ->
+  # "Example: defining a matrix based on a previous job's output"): a tiny
+  # job resolves the JSON, the real job's `strategy.matrix` is
+  # `fromJSON(needs.<job>.outputs.matrix)`, and on `pull_request` that JSON
+  # simply never includes the VS leg -- so on a PR run, the VS leg is not a
+  # job that ran and passed vacuously, it is a job that never existed.
+  resolve_app_on_matrix:
+    name: Resolve app-on matrix (which legs run this event)
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - name: Resolve
+        id: resolve
+        shell: bash
+        run: |
+          ninja_leg=$(jq -nc '{
+            job_name: "rtatool app (RTA_BUILD_APP=ON, windows-latest)",
+            generator: "Ninja",
+            generator_args: "",
+            launcher_args: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache",
+            use_sccache: true
+          }')
+          vs_leg=$(jq -nc '{
+            job_name: "rtatool app (VS generator, main only)",
+            generator: "Visual Studio 18 2026",
+            generator_args: "-A x64",
+            launcher_args: "",
+            use_sccache: false
+          }')
+          if [ "${{ github.event_name }}" = "push" ]; then
+            matrix=$(jq -nc --argjson a "$ninja_leg" --argjson b "$vs_leg" '{include: [$a, $b]}')
+          else
+            matrix=$(jq -nc --argjson a "$ninja_leg" '{include: [$a]}')
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   app-on:
+    needs: resolve_app_on_matrix
     name: ${{ matrix.job_name }}
     runs-on: windows-latest
 
@@ -111,33 +160,12 @@ jobs:
     # YAML dialect does not support anchors/aliases): the two legs share
     # every step below verbatim except the generator, the launcher flags,
     # and which two steps are Ninja-only, so a matrix keeps the shared
-    # steps written ONCE instead of duplicated across two job bodies.
-    # `main_only` gates the VS leg to `push` events via the job-level `if:`
-    # below, which GitHub evaluates once per expanded matrix combination
-    # (so it sees THIS leg's own `matrix.main_only`, not the other leg's).
+    # steps written ONCE instead of duplicated across two job bodies. Which
+    # legs exist for THIS run comes from resolve_app_on_matrix above, not
+    # from a per-leg flag checked here (see that job's own comment for why).
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # Leg (a): unchanged name/behaviour from the PR #48 trial -- runs
-          # on both pull_request and push, and is the one PR checks show.
-          - job_name: "rtatool app (RTA_BUILD_APP=ON, windows-latest)"
-            generator: Ninja
-            generator_args: ""
-            launcher_args: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
-            use_sccache: true
-            main_only: false
-          # Leg (b): the generator every local dev build actually runs
-          # (CLAUDE.md's own Build section: `-G "Visual Studio 18 2026"
-          # -A x64`), no sccache, `main`-only -- see the file header for why.
-          - job_name: "rtatool app (VS generator, main only)"
-            generator: "Visual Studio 18 2026"
-            generator_args: "-A x64"
-            launcher_args: ""
-            use_sccache: false
-            main_only: true
-
-    if: matrix.main_only == false || github.event_name == 'push'
+      matrix: ${{ fromJSON(needs.resolve_app_on_matrix.outputs.matrix) }}
 
     env:
       SCCACHE_GHA_ENABLED: "true"
