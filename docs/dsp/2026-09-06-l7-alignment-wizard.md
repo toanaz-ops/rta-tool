@@ -440,12 +440,16 @@ named; this is the one number the pane fixes instead of asking.
 
 **Round 2 (PR #45 fix round, verifier MEDIUM A/B): distinctness, and the
 FOURTH question is now asked too.** Round 1 left two gaps. First,
-`ready_` did not require the two trace picks to be DISTINCT, nor that at
-least two eligible traces existed to pick distinctly from — the same
+`ready_` did not require the two trace picks to be DISTINCT — the same
 trace chosen as both high-pass and low-pass (or the sole eligible trace
-chosen on both sides) fed `CrossoverSurface` a relative phase of exactly
-zero everywhere, on-screen indistinguishable from a correctly aligned
-pair; both shapes now refuse, the same-entry case by a message naming it.
+chosen on both sides, when only one trace is eligible at all) fed
+`CrossoverSurface` a relative phase of exactly zero everywhere, on-screen
+indistinguishable from a correctly aligned pair; both shapes now refuse,
+the same-entry case by a message naming it. (Round 2 also added an
+explicit `eligibleIds_.size() >= 2` clause here; round 3, LOW F1, removed
+it as dead code -- two non-empty DISTINCT ids already prove at least two
+eligible entries exist, since a picked id can only ever be one
+`rebuildTraceCombo` found in the eligible set.)
 Second, round 1 hardcoded `ProcessorInversion::No` at the call to
 `setAskedTopology`, which answers wizard question (c) — "has the
 processor already inverted one output?" — FOR the operator, exactly the
@@ -708,18 +712,29 @@ Closed forms first; one consistency lock, labelled; no new golden vector.
    and whether ±1 octave is the right window on a real 24 dB/oct pair, need
    a person with a rack and a microphone. Same category as the EDT floor and
    the MTW fill question already open in `docs/HANDOFF.md`.
-3. **Question (c)'s "unknown" branch — BUILT in PR #45 fix round 2, flagged
-   here for the owner to see it now that it exists rather than before.** The
-   G18 live pane (§6's amendment) draws both candidate lines when the
-   operator answers "unknown" (`CrossoverSurface::targetAmbiguous()`/
-   `alternativeTargetRadians()`, `CrossoverPaneView`'s inversion picker) --
-   this item's own text asked that the owner see the shape before it was
-   built, and the PR #45 fix round's verifier instructed exactly this shape
-   without that sign-off having happened first. This record's reading
-   stands unchanged (the operator still chooses which line to believe, and
-   the pane states both are candidates rather than picking one) but the
-   owner should confirm that reading now, against the shipped pane, not the
-   description.
+3. ~~**Question (c)'s "unknown" branch.**~~ **CLOSED 2026-09-27 by the
+   owner: "two labelled lines + a warning chip."** The G18 live pane (§6's
+   amendment) draws both candidates when the operator answers "unknown"
+   (`CrossoverSurface::targetAmbiguous()`/`alternativeTargetRadians()`,
+   `CrossoverPaneView`'s inversion picker), per PR #45 fix round 3:
+   - Each line is labelled at its right end with its actual degree value and
+     which answer it is ("`0 deg  NOT INVERTED`" / "`180 deg  INVERTED`") --
+     the primary candidate (`targetRadians()`) is always the `No` value and
+     the alternative (`alternativeTargetRadians()`) always `Yes`
+     (`CrossoverTopology.cpp`'s `Unknown` branch), so the label follows
+     WHICH line it is, never a fixed top/bottom position (for an LR-2 pair
+     the primary candidate is 180, not 0).
+   - The two lines carry distinct strokes -- primary dotted (this pane's
+     original single-line appearance, unchanged), alternative solid -- so
+     neither reads as the other.
+   - A candidate sitting exactly at +-180 degrees is drawn just inside BOTH
+     frame edges rather than once on top of the frame, where a round-2
+     verifier specimen showed it reading as the plot's own border.
+   - A corner chip reads "`INVERSION UNKNOWN -- 2 CANDIDATES`" whenever
+     `targetAmbiguous()`, so the ambiguity itself is stated, not just shown.
+   This record's reading stands: the operator still chooses which line to
+   believe, and the pane states both are candidates rather than picking one
+   for them.
 4. **The ρ ruling in `HUMAN-QA-QUEUE.md`.** Fold-in was relayed, not
    recorded. The closeout writes the line; the owner confirms it says what
    was meant.

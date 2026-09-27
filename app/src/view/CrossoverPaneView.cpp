@@ -161,16 +161,17 @@ void CrossoverPaneView::refreshFromLibrary() {
     rebuildTraceCombo(lpCombo_, lpId_);
 
     ready_ = false;
-    // MEDIUM A (PR #45 fix round 2): both ids must be chosen, DISTINCT, and
-    // there must be at least two eligible traces to choose distinctly from --
-    // without the distinctness check, the same trace picked as both HP and
-    // LP (or the one available trace picked twice when only one is eligible)
-    // read as a complete selection and fed `CrossoverSurface` a relative
-    // phase of exactly zero everywhere, which looks identical to a correctly
-    // aligned pair.
+    // MEDIUM A (PR #45 fix round 2): both ids must be chosen AND DISTINCT --
+    // without that check, the same trace picked as both HP and LP read as a
+    // complete selection and fed `CrossoverSurface` a relative phase of
+    // exactly zero everywhere, which looks identical to a correctly aligned
+    // pair. No separate "`eligibleIds_.size() >= 2`" clause is needed
+    // (round 3, LOW F1, verifier's mutant A2): `hpId_`/`lpId_` can only ever
+    // hold a value `rebuildTraceCombo` found IN `eligibleIds_`, so two
+    // non-empty, DISTINCT ids already prove at least two eligible entries
+    // exist -- a second clause credited with that property was dead code.
     const bool distinctPick = !hpId_.empty() && !lpId_.empty() && hpId_ != lpId_;
-    if (library_ != nullptr && distinctPick && eligibleIds_.size() >= 2 && topology_.has_value() &&
-        inversion_.has_value()) {
+    if (library_ != nullptr && distinctPick && topology_.has_value() && inversion_.has_value()) {
         const auto* highTrace = library_->trace(hpId_);
         const auto* lowTrace = library_->trace(lpId_);
         if (highTrace != nullptr && lowTrace != nullptr) {

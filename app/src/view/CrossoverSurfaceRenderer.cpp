@@ -47,17 +47,84 @@ void drawDegreeLabels(juce::Graphics& g, const PlotGeometry& geometry) {
     }
 }
 
-/// One horizontal dashed target line at `radians`, in the phase pane's own
-/// degree axis. Factored out so the ambiguous case (two candidate lines,
-/// `ProcessorInversion::Unknown`) draws the identical line twice rather than
-/// keeping a second, drifting copy of the dash geometry.
-void drawTargetLine(juce::Graphics& g, const PlotGeometry& geometry, double radians) {
-    const double targetDeg = radians * 180.0 / kPi;
-    const float targetY = geometry.yForDb(targetDeg);
-    g.setColour(target);
+/// One horizontal dotted row at `rowDeg`, in the phase pane's own degree
+/// axis -- the single-candidate appearance this pane has always drawn,
+/// UNCHANGED (byte-identical, `preview-phase.png`'s own golden check) for
+/// the non-ambiguous path.
+void drawDottedRow(juce::Graphics& g, const PlotGeometry& geometry, double rowDeg) {
+    const float y = geometry.yForDb(rowDeg);
     for (float x = geometry.left; x < geometry.right; x += 6.0f) {
-        g.fillRect(x, targetY - 0.5f, 3.0f, 1.0f);
+        g.fillRect(x, y - 0.5f, 3.0f, 1.0f);
     }
+}
+
+/// One horizontal SOLID row at `rowDeg` -- the alternative candidate's own
+/// stroke (owner decision, 2026-09-27: "distinct strokes, e.g. solid vs
+/// dotted"), full width, one pixel thick.
+void drawSolidRow(juce::Graphics& g, const PlotGeometry& geometry, double rowDeg) {
+    const float y = geometry.yForDb(rowDeg);
+    g.fillRect(geometry.left, y - 0.5f, geometry.right - geometry.left, 1.0f);
+}
+
+/// Pixels of margin a wrapped row needs to clear the plot's own 1px frame
+/// (`drawGrid`'s `g.drawRect(..., 1.0f)`) plus antialiasing -- three times
+/// that stroke width reads as clearly separate from the frame at any of this
+/// pane's actual render sizes.
+constexpr float kEdgeInsetPixels = 3.0f;
+
+/// One candidate target line, in full: row(s), stroke, and its corner label.
+/// `solid` picks the stroke (see `drawSolidRow`/`drawDottedRow`); `isPrimary`
+/// feeds `targetLineLabel` (see that function's own comment for what
+/// "primary" means). The label always sits INSIDE the plot, never over the
+/// frame -- flipped below the row instead of above it for a row that wrapped
+/// to the top edge, where there is no room above.
+void drawCandidateLine(juce::Graphics& g, const PlotGeometry& geometry, double radians,
+                       double insetDeg, bool solid, bool isPrimary) {
+    const double degrees = radians * 180.0 / kPi;
+    const auto rows = targetLineRowsDeg(degrees, insetDeg);
+
+    g.setColour(target);
+    for (const double rowDeg : rows) {
+        if (solid) {
+            drawSolidRow(g, geometry, rowDeg);
+        } else {
+            drawDottedRow(g, geometry, rowDeg);
+        }
+    }
+    if (rows.empty()) return;
+
+    // Rows.front() is always the "natural" (non-wrapped-to-bottom) row --
+    // `targetLineRowsDeg`'s own order -- so labelling it alone is stable
+    // regardless of which edge a wrapped candidate landed on.
+    const float rowY = geometry.yForDb(rows.front());
+    constexpr float kLabelWidth = 160.0f;
+    constexpr float kLabelHeight = 14.0f;
+    // Within one stroke width of the top frame: there is no room to draw the
+    // label ABOVE the row (the usual placement, matching the dB mark labels
+    // in paintCrossoverSummation below) without clipping over the frame, so
+    // it goes BELOW instead.
+    const bool nearTopFrame = (rowY - geometry.top) < (kEdgeInsetPixels + kLabelHeight);
+    const float labelTop = nearTopFrame ? rowY + 2.0f : rowY - kLabelHeight - 2.0f;
+    g.setColour(axisText);
+    g.setFont(az::ui::monoFont(az::ui::tableFontSize));
+    g.drawText(targetLineLabel(degrees, isPrimary),
+               juce::Rectangle<float>(geometry.right - kLabelWidth, labelTop, kLabelWidth, kLabelHeight),
+               juce::Justification::centredRight, false);
+}
+
+/// The `INVERSION UNKNOWN` corner chip (owner decision, 2026-09-27) -- top
+/// LEFT, deliberately on the opposite side from the candidate lines' right-
+/// aligned labels above, so neither ever collides with the other regardless
+/// of which row either one lands on.
+void drawAmbiguousChip(juce::Graphics& g, const PlotGeometry& geometry) {
+    constexpr float kChipWidth = 232.0f;
+    constexpr float kChipHeight = 18.0f;
+    const juce::Rectangle<float> chip(geometry.left + 4.0f, geometry.top + 4.0f, kChipWidth, kChipHeight);
+    az::ui::drawWell(g, chip, false);
+    g.setColour(borderline);
+    g.setFont(az::ui::legendFont(az::ui::columnFontSize, true, az::ui::trackingColumn));
+    g.drawText("INVERSION UNKNOWN -- 2 CANDIDATES", chip.reduced(6.0f, 0.0f),
+               juce::Justification::centredLeft, false);
 }
 
 /// Strokes a dB series over the log-frequency axis, one bin per point.
@@ -90,6 +157,23 @@ void strokeSeries(juce::Graphics& g, const PlotGeometry& geometry, const std::ve
 
 }  // namespace
 
+std::vector<double> targetLineRowsDeg(double degrees, double insetDeg) {
+    // wrapToPiHalfOpen (CrossoverTopology.cpp) can only ever emit +180 at the
+    // positive edge, never -180 -- its wrap is deliberately half-open,
+    // `(-pi, pi]` -- but this function checks both edges symmetrically
+    // rather than leaning on that convention forever.
+    constexpr double kEdgeEpsilonDeg = 1e-6;
+    if (degrees >= 180.0 - kEdgeEpsilonDeg || degrees <= -180.0 + kEdgeEpsilonDeg) {
+        return { 180.0 - insetDeg, -180.0 + insetDeg };
+    }
+    return { degrees };
+}
+
+juce::String targetLineLabel(double degrees, bool isPrimaryCandidate) {
+    return juce::String(static_cast<int>(std::llround(degrees))) + " deg  " +
+           (isPrimaryCandidate ? "NOT INVERTED" : "INVERTED");
+}
+
 PlotGeometry crossoverPhaseGeometry(juce::Rectangle<int> area) { return makeGeometry(area, 180.0, -180.0); }
 
 PlotGeometry crossoverSummationGeometry(juce::Rectangle<int> area) {
@@ -118,13 +202,25 @@ void paintCrossoverPhase(juce::Graphics& g, juce::Rectangle<int> area,
 
     // THE ASKED LINE. Horizontal, at the offset record Sec.3 predicts for the
     // topology and inversion answer the operator NAMED -- nothing on this
-    // plot derived it. `Unknown` inversion draws BOTH candidates (Sec.13.3):
-    // there are genuinely two lines an operator with that answer must read
-    // against, and picking one for them would be exactly the "maximise the
-    // sum" inference this pane's own header comment refuses.
-    drawTargetLine(g, geometry, surface.targetRadians());
+    // plot derived it. `Unknown` inversion draws BOTH candidates (Sec.13.3;
+    // owner decision, 2026-09-27, on the exact shape below): there are
+    // genuinely two lines an operator with that answer must read against,
+    // and picking one for them would be exactly the "maximise the sum"
+    // inference this pane's own header comment refuses. Non-ambiguous stays
+    // the single dotted, unlabelled line this pane has always drawn --
+    // UNCHANGED, so `preview-phase.png` (never ambiguous: PhaseAlignPreview
+    // always asks `ProcessorInversion::No`) renders byte-identical.
     if (surface.targetAmbiguous()) {
-        drawTargetLine(g, geometry, surface.alternativeTargetRadians());
+        const double degPerPixel =
+            (geometry.dbTop - geometry.dbBottom) / static_cast<double>(geometry.bottom - geometry.top);
+        const double insetDeg = kEdgeInsetPixels * degPerPixel;
+        drawCandidateLine(g, geometry, surface.targetRadians(), insetDeg, /*solid=*/false,
+                          /*isPrimary=*/true);
+        drawCandidateLine(g, geometry, surface.alternativeTargetRadians(), insetDeg, /*solid=*/true,
+                          /*isPrimary=*/false);
+        drawAmbiguousChip(g, geometry);
+    } else {
+        drawDottedRow(g, geometry, surface.targetRadians() * 180.0 / kPi);
     }
 
     juce::Path path;

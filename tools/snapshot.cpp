@@ -24,6 +24,9 @@
 
 #include <az_ui/az_ui.h>
 
+#include "SnapshotRender.h"
+#include "snapshot_xover.h"
+
 #include "AppTypefaces.h"
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
@@ -49,52 +52,12 @@
 #include <memory>
 #include <vector>
 
-namespace
-{
-
-bool writePng (const juce::Image& image, const juce::File& file)
-{
-    file.deleteFile();
-    juce::FileOutputStream stream (file);
-
-    if (! stream.openedOk())
-        return false;
-
-    return juce::PNGImageFormat().writeImageToStream (image, stream);
-}
-
-// Renders `component` to `outDir/fileName` at `width x height` and reports the
-// result on stdout in the one format both snapshots share. Shared by
-// SpecimenComponent and RtaView so a future third snapshot costs one call, not
-// a second copy of the resize/paint/write dance.
-bool renderComponent (juce::Component& component, const juce::File& outDir,
-                      const char* fileName, int width, int height)
-{
-    component.setSize (width, height);
-
-    // setSize() alone does not call resized() on a component with no desktop
-    // peer, so children keep whatever bounds they had -- on a fresh one, none
-    // at all, and the image comes out empty. This call is the single most
-    // common thing missing from a blank snapshot (plan trap T-6).
-    component.resized();
-
-    // `true` renders children too; without it a container yields only its own
-    // background (the other half of trap T-6).
-    const auto image = component.createComponentSnapshot (component.getLocalBounds(), true);
-    const auto file  = outDir.getChildFile (fileName);
-
-    if (! writePng (image, file))
-    {
-        std::printf ("FAILED to write %s\n", file.getFullPathName().toRawUTF8());
-        return false;
-    }
-
-    std::printf ("wrote %s  (%d x %d)\n",
-                 file.getFullPathName().toRawUTF8(), image.getWidth(), image.getHeight());
-    return true;
-}
-
-} // namespace
+// `renderComponent`/`renderXoverSpecimens` (SnapshotRender.h,
+// snapshot_xover.h -- PR #45 fix round 3 split, see those files' own header
+// comments) unqualified below, matching every call site already in this
+// file before the split.
+using rta::tools::renderComponent;
+using rta::tools::renderXoverSpecimens;
 
 int main (int argc, char** argv)
 {
@@ -319,45 +282,10 @@ int main (int argc, char** argv)
         }
     }
 
-    {
-        // main-live-xover.png: ALIGN-R8's live pane, PR #45 -- drives all four real ComboBox widgets an operator would, via MainComponentTestAccess.
-        MainComponent component;
-        component.setSyntheticMode (true);
-        juce::Thread::sleep (800);
-
-        // Flat magnitude, zero phase: sits on the LR-4 line asked below.
-        auto makeXoverTrace = [] (const char* id, float magnitudeDb)
-        {
-            rta::trace::CaptureMeta meta;
-            meta.id = id;
-            meta.sampleRate = 48000.0;
-            meta.fftSize = 2048;
-            const auto points = rta::trace::pointCountFor (meta.fftSize);
-            auto trace = rta::trace::Trace::make (meta, std::vector<float> (points, magnitudeDb));
-            [[maybe_unused]] const bool phaseSet = trace->setPhase (std::vector<float> (points, 0.0f));
-            jassert (phaseSet);
-            return std::move (*trace);
-        };
-        auto& library = MainComponentTestAccess::libraryForTest (component);
-        library.add (makeXoverTrace ("main-hp", -3.0f), "Main HP", "default");
-        library.add (makeXoverTrace ("sub-lp", -3.0f), "Sub LP", "default");
-
-        component.selectPaneView (rta::view::PaneSelectorButton::Xover);
-        auto& xoverPane = dynamic_cast<rta::view::CrossoverPaneView&> (
-            const_cast<juce::Component&> (MainComponentTestAccess::pane (component)));
-        // Items 1/2 = "main-hp"/"sub-lp"; topology item 2 is LR-4; inversion item 1 is NOT INVERTED.
-        xoverPane.highTraceComboForTest().setSelectedId (1, juce::sendNotificationSync);
-        xoverPane.lowTraceComboForTest().setSelectedId (2, juce::sendNotificationSync);
-        xoverPane.topologyComboForTest().setSelectedId (2, juce::sendNotificationSync);
-        xoverPane.inversionComboForTest().setSelectedId (1, juce::sendNotificationSync);
-        if (! xoverPane.hasCompleteSelectionForTest())
-        {
-            std::printf ("FAILED: crossover pane refused -- main-live-xover.png would be the placeholder\n");
-            ++failures;
-        }
-        else if (! renderComponent (component, outDir, "main-live-xover.png", 1280, 800))
-            ++failures;
-    }
+    // main-live-xover*.png: ALIGN-R8's live pane, PR #45 -- see
+    // snapshot_xover.h/.cpp (split out here, round 3, once a second
+    // specimen -- UNKNOWN inversion -- joined the first).
+    renderXoverSpecimens (outDir, failures);
 
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
     // tuning-visuals.md): paint-only components fed canned synthetic data,

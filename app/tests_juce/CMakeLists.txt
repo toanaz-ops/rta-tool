@@ -43,9 +43,9 @@ add_executable(rtatool_view_tests
     # REAL makePaneFactory (PaneFactory.h) and checks its Spl branch builds
     # an SplView, not an RtaView.
     test_main_component_pane_factory.cpp
+    test_crossover_surface_renderer.cpp  # PR #45 round 3: UNKNOWN-inversion rendering, bare CrossoverSurface
     # test_routing_matrix.cpp: task B7's routing matrix (record §6, §7) --
-    # composes az_ui's GridPanel, JUCE-using for the same reason
-    # TransferSourceToggle.cpp already gives.
+    # composes az_ui's GridPanel, JUCE-using for the same reason TransferSourceToggle.cpp already gives.
     test_routing_matrix.cpp
     # StoredTraceLayer.cpp's own include list is the whole dependency set:
     #   view/StoredTraceLayer.h -> juce_gui_basics + view/PlotGeometry.h (header only)

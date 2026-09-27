@@ -113,9 +113,14 @@ TEST_CASE("the same entry chosen as both high-pass and low-pass is refused, by n
 
 TEST_CASE("a single eligible trace picked on both sides is refused",
          "[main_component_panes_xover]") {
-    // MEDIUM A's other shape: only one eligible trace exists at all, so
-    // BOTH combos can only ever select it. `ready_` must still refuse --
-    // the `eligibleIds_.size() >= 2` half of the same guard.
+    // MEDIUM A's other shape: only one eligible trace exists at all, so BOTH
+    // combos can only ever select it, and hpId_ == lpId_ either way. `ready_`
+    // still refuses -- the SAME `hpId_ != lpId_` check the other test above
+    // exercises, not a separate eligible-count guard (round 3, LOW F1: a
+    // second `eligibleIds_.size() >= 2` clause here was dead code, since two
+    // non-empty DISTINCT ids already prove at least two eligible entries
+    // exist). This case is kept because it is the shape where an author is
+    // most tempted to add that redundant clause back.
     MainComponent component;
     component.setSyntheticMode(true);
     auto& library = MainComponentTestAccess::libraryForTest(component);

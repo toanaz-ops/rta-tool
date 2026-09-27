@@ -165,6 +165,14 @@ juce_add_console_app(rtatool_snapshot
 
 include(cmake/rtatool_snapshot_sources.cmake)
 target_sources(rtatool_snapshot PRIVATE ${RTATOOL_SNAPSHOT_SOURCES})
+# SnapshotRender.cpp / snapshot_xover.cpp: PR #45 fix round 3 -- split out of
+# tools/snapshot.cpp itself (400-line cap), so NOT in the shared
+# RTATOOL_SNAPSHOT_SOURCES list above -- rtatool_main_component_tests, the
+# other target that list feeds, builds no PNG and calls neither.
+target_sources(rtatool_snapshot PRIVATE
+    ${CMAKE_SOURCE_DIR}/tools/SnapshotRender.cpp
+    ${CMAKE_SOURCE_DIR}/tools/snapshot_xover.cpp
+)
 
 target_include_directories(rtatool_snapshot PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

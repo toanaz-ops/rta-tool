@@ -18,6 +18,14 @@
 // `crossoverSummationGeometry` are exported precisely so a caller's own chip
 // text lands in the same coordinate frame the grid below it was drawn in,
 // with no second geometry construction to drift out of step.
+//
+// The INVERSION-UNKNOWN warning chip (owner decision, 2026-09-27, PR #45 fix
+// round 3) is the one exception, and stays IN here rather than with the
+// caller: unlike the topology, `CrossoverSurface::targetAmbiguous()` IS a
+// queryable property of the surface itself, so both the live pane and
+// `PhaseAlignPreview.cpp` get the warning for free with no duplicated call
+// site, the same reason the shared grid/series code was extracted here in
+// the first place.
 #pragma once
 
 #include "view/CrossoverSurface.h"
@@ -25,7 +33,34 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <vector>
+
 namespace rta::view {
+
+/// The row(s), in degrees, at which one candidate target line should paint,
+/// given its own expected-offset `degrees` (already wrapped to `(-180, 180]`
+/// by `CrossoverTopology.cpp`) and how many degrees of margin a row needs to
+/// clear the plot's own 1px frame (`insetDeg`, converted from a pixel
+/// distance by the caller so it is a header-testable pure function with no
+/// `Graphics` dependency). Normally one row; exactly two -- one just inside
+/// each edge -- when the candidate itself sits at `+180` or `-180`, so it
+/// cannot be mistaken for the frame (owner decision, 2026-09-27: the
+/// verifier's specimen showed a 180 deg candidate drawn exactly ON the
+/// frame and read as part of it).
+[[nodiscard]] std::vector<double> targetLineRowsDeg(double degrees, double insetDeg);
+
+/// The corner label for one candidate target line: "<degrees> deg  NOT
+/// INVERTED" for the PRIMARY candidate (`CrossoverSurface::targetRadians()`,
+/// always the `ProcessorInversion::No` value -- `CrossoverTopology.cpp`'s
+/// `Unknown` branch sets `radians = raw`, the same expression as its `No`
+/// case) or "<degrees> deg  INVERTED" for the alternative (always `Yes`,
+/// same reasoning). `degrees` is read off the ACTUAL line, never assumed --
+/// for an LR-2 pair the primary candidate is 180, not 0 (owner decision,
+/// 2026-09-27: "the labels follow the value, not a fixed order"). Degrees
+/// print as whole numbers with the word "deg", matching the one existing
+/// precedent for this exact quantity (`PhaseAlignPreview.cpp`'s topology
+/// chip), not the `deg` symbol -- one spelling for one quantity.
+[[nodiscard]] juce::String targetLineLabel(double degrees, bool isPrimaryCandidate);
 
 /// The relative-phase pane's plot rectangle: degrees, +180 at the top, -180
 /// at the bottom, over the log-frequency axis `paintCrossoverPhase` also
@@ -39,13 +74,17 @@ namespace rta::view {
 [[nodiscard]] PlotGeometry crossoverSummationGeometry(juce::Rectangle<int> area);
 
 /// Grid, frequency/degree labels, the shaded fit-window band, the horizontal
-/// ASKED target line (dashed, at `surface.targetRadians()`) and the
+/// ASKED target line (dotted, at `surface.targetRadians()`) and the
 /// `arg(H_A conj H_B)` curve itself. When `surface.targetAmbiguous()` --
 /// `ProcessorInversion::Unknown`, wizard question (c) answered "don't know"
-/// -- draws a SECOND dashed line at `surface.alternativeTargetRadians()`
-/// (record Sec.13.3) rather than picking one of the two candidates for the
-/// operator. Draws nothing else -- no legend, no chip: see this file's
-/// header comment for why that stays with the caller.
+/// -- draws BOTH candidates instead of the single line: the primary
+/// (`targetRadians()`) stays dotted, the alternative
+/// (`alternativeTargetRadians()`) draws solid, each labelled at its right
+/// end (`targetLineLabel`) and wrapped off the frame at a +-180 edge
+/// (`targetLineRowsDeg`), plus the `INVERSION UNKNOWN` corner chip -- see
+/// this file's own header comment for why the chip lives here and not with
+/// the caller. Draws no other legend, no chip naming the topology: see this
+/// file's header comment for why THAT stays with the caller.
 void paintCrossoverPhase(juce::Graphics& g, juce::Rectangle<int> area,
                          const CrossoverSurface& surface);
 
