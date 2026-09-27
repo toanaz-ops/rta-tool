@@ -141,6 +141,15 @@ std::uint64_t waitForSplBacklogDrained(const AnalysisThread& thread, CaptureBus&
             return lastCount;
         }
     }
+    // Lane-end LOW batch, 2026-09-27 (PR #46 LOW): falling out of the loop
+    // here means the backlog never went quiet for `stableForMs` straight --
+    // either it is still draining (a real bug: the ring should empty well
+    // inside `timeoutMs` on this test's own small fixture) or it kept
+    // re-filling for the whole window. Both are worth failing loudly on,
+    // never worth handing the caller a `lastCount` silently taken mid-drain
+    // and letting it read as a normal, stable value.
+    FAIL("waitForSplBacklogDrained: backlog on channel " << channel << " did not go quiet for "
+        << stableForMs << " ms within " << timeoutMs << " ms (last count " << lastCount << ")");
     return lastCount;
 }
 
