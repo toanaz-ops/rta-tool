@@ -5,6 +5,62 @@
 
 ---
 
+# 2026-09-27 — **STORE lane BUILT, operator-reachable. Sáu PR merge, main = `c0a4624`.**
+
+*Mỗi PR merge chỉ sau khi verifier SOUND và 0 CI check không xanh.*
+
+## PR đã merge, theo thứ tự
+
+| PR | merge | what |
+|---|---|---|
+| #46 | `e2c67a1` | Fix flaky epoch-freeze test |
+| #47 | `7b113ed` | Plan review 2026-09-27: cột operator-path, BUILT = operator-reachable, P4 đổi nhãn "core only, no UI", CI `cancel-in-progress`, PR đụng `MainComponent` chạy tuần tự |
+| #43 | `fb17563` | Session Save/Open. 4 vòng verifier. Sửa ACP path decoding (`toFsPath`/`utf8Path`/`utf8String`) — Export Report crash dưới legacy code page. Export bọc try/catch + path guard test |
+| #45 | `4fc6b6e` | XOVER live pane. 4 vòng. Picker HP/LP/topology/inversion, "asked, never inferred". Owner quyết UNKNOWN inversion: hai đường ứng viên có nhãn, wrap ±180°, chip "INVERSION UNKNOWN — 2 CANDIDATES". Đã reconcile với #43 |
+| #49 | `49be60f` | Research + plan STORE (`docs/research/2026-09-27-store-trace.md`, `docs/plans/2026-09-27-store-lane-plan.md`) và quyết định của owner: freeze fixed-FFT (nói rõ trong readout), một nút STORE toàn cục, Trace không có knob, nhận default |
+| #48 | `10bcaa7` | CI hybrid: PR chạy Ninja+sccache, push vào main chạy thêm leg VS 18 2026. Đo được: baseline median 30.1 phút; PR warm run 4–9 phút (vd #51 8m49s, 86% cache hit; #50 4m37s); main run đầu tiên xanh cả hai leg ~31 phút |
+| #51 | `beb40a7` | **STORE lane.** 2 vòng. Nút STORE đóng băng phép đo fixed-FFT đang live vào `TraceLibrary`: RTA cho magnitude; TRANSFER cho magnitude+phase+coherence, cộng `appliedDelaySamples`. Readout gọi tên đúng các pane đang hiện MTW. `AnalysisThread::captureConfig()` trả về BY VALUE (ép bằng `static_assert`). Tally vòng 2: OFF 1034, ON 1179 |
+| #50 | `c0a4624` | Batch LOW cuối lane. Bảng triage `docs/HUMAN-QA-QUEUE.md` "Lane-end LOW triage — 2026-09-27". `isSplLoggingEnabled` đổi tên `…ForTest`. Guard độ dài file giờ quét cả `tools/*.py`, 3 exact-path exemption có ghi ngày. Tally: OFF 1034, ON 1182 |
+
+## Người thử được gì, bằng cách nào (STORE operator-reachable)
+
+Build ON, chạy `rtatool.exe`:
+1. SYNTHETIC → TRANSFER, chờ ~1 s cho reference lock.
+2. Bấm **STORE** — readout hiện `STORED (FIXED FFT): TRANSFER @ HH:MM:SS -- screen shows MTW on MAG, PHASE, COH`. Chuyển một pane sang FIXED thì tên pane đó rời khỏi danh sách.
+3. Chờ 1 s, bấm STORE lần nữa.
+4. Sang pane **XOVER**, chọn hai trace làm HP/LP, chọn topology + inversion — đường target và tổng dự đoán hiện ra.
+5. Save phiên, rồi Open lại — trace và pane XOVER phục hồi đúng.
+6. Bằng chứng offscreen: `rtatool_snapshot.exe shots 1100 760` → `shots/main-live-store-xover.png`.
+
+## Baseline đo tại `c0a4624`
+
+```
+ctest --test-dir build -C Release      (RTA_BUILD_APP=OFF) -> 1034/1034
+ctest --test-dir build-on -C Release   (RTA_BUILD_APP=ON)  -> 1182/1182
+```
+
+## Quyết định chờ chủ nhân (đợt plan review thứ hai)
+
+1. Lane sản xuất Sweep→IR: chưa có plan nào; ALIGN-UI và RT60 UI chờ nó.
+2. Thứ tự lane giữa EQ-UI, Sweep→IR, ALIGN-UI, CaptureSequencer.
+3. `RoutingMatrix` chỉ hiện 8 hàng trong khi kênh 9–64 vẫn role-assignable và routable — vô hình với operator (QA queue D1). Cần một lane chủ.
+4. Nợ session persistence từ #43 (QA queue D11): F5 — ghi đè blob tại chỗ, mất dữ liệu nếu bị ngắt giữa chừng; F4 — nhiều pane sụp còn một khi save lại; F6 — Save không hỏi ghi đè.
+5. Giữ hay chia 3 script vượt trần được miễn bằng exact path (`gen_generator.py` 452, `probe_align_order4.py` 519, `probe_l4b_truncation.py` 534 dòng).
+6. MTW storage — cần L5 frequency-vector amendment trước.
+7. Các dòng DEFER còn lại trong QA queue triage (D2–D10).
+
+## Bẫy phiên này
+
+| bẫy | cách đúng |
+|---|---|
+| Lệnh merge tự gate trên check nó tự đọc, không lấy exit code của wrapper | parse số check FAIL về 0 rồi mới `gh pr merge`, gọi tách hai bước (`memory/merge-command-must-gate-on-its-own-check.md`) |
+| Một PR CONFLICTING không chạy CI | phải rebase/merge base trước khi trông đợi check |
+| ACP (ANSI code page) trên máy này là 65001 -- che mất bug narrow-path | test path guard cần fixture non-ASCII thật, không dựa vào ACP mặc định |
+| Guard exclusion viết bằng glob (`gen_*`/`probe_*`) miễn luôn cả file tương lai | liệt kê exact path, có ngày, không dùng glob (PR #50 V3-a) |
+| Đổi một test helper dùng chung (`codeTextOf`) làm mù luôn guard khác build trên nó | sửa cục bộ trong file gọi, không sửa helper chung; chứng minh an toàn bằng mutation trên MỌI guard dùng chung helper đó, không chỉ guard đang sửa (PR #50 V1) |
+
+---
+
 # 2026-09-26 (tối) — **Process audit 1–7 + quyết định 1, 2, 4 XONG.** Sáu PR merge, main = `8f8326b`.
 
 *Owner, trong chat: "Làm từ 1 tới 7 tối ưu quy trình. Và 1-2-4 trong 4 qđ";
