@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# A superseded push on a PR ref cancels that PR's own in-flight run, so an
+# old commit never races a new one for the check mark. A push to `main` is
+# never cancelled — every commit on `main` keeps its own CI record.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
