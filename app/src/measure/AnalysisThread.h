@@ -254,7 +254,15 @@ public:
     /// burst size, and a mutant that skips the call entirely still reads as
     /// "files already complete" under any burst this test could practically
     /// push. Safe from any thread, same reason `splLogWriteFailed` is.
-    [[nodiscard]] bool isSplLoggingEnabled() const noexcept;
+    ///
+    /// `ForTest` suffix (lane-end LOW batch round 1, LOW V4): no production
+    /// caller reads this -- production code decides its own SPL-logging
+    /// state from `SplLoggingDecision.h`'s own inputs, never by re-reading
+    /// this flag back. Every real caller is a test (test_main_component_
+    /// panes.cpp, test_spl_log_wiring_disable.cpp), which is what the
+    /// `*ForTest` convention exists to name (tools/orphan_check.py's own
+    /// TEST HOOK rule) rather than leave reading as an unwired orphan.
+    [[nodiscard]] bool isSplLoggingEnabledForTest() const noexcept;
 
     /// Message-thread call: END check's drift > cl. 5.2's 0.5 dB, cleared by
     /// a fresh `enableSplLogging` -- read by `fillSplPublishInput` (§15 A2).
