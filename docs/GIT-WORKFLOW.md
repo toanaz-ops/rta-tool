@@ -59,6 +59,16 @@ Remote: `https://github.com/toanaz-ops/rta-tool` (public since before 2026-09-26
    push to a PR's ref cancels that PR's own in-flight run, so a superseded
    commit never wins a race against CI for the current one; a push to `main`
    is never cancelled, so every commit on `main` keeps its own record.
+
+   **`ci-app-on.yml`'s `app-on` job is a two-leg matrix (hybrid, 2026-09-27):**
+   a PR runs only the Ninja + sccache leg. A `push` to `main` also runs a
+   Visual Studio 18 2026 leg, no sccache, matching CLAUDE.md's Build section
+   exactly — so a defect only the VS generator hits still surfaces on `main`
+   after merge, and
+   sccache's GitHub Actions cache stays warm for PR branches to inherit.
+   PR #48 measured: baseline median 30.1 min; cold 32.5 min (Build 29.05, 0%
+   hit); warm (same branch, empty commit) 4.4 min (Build 2.45, 98.7% hit) —
+   warm is an upper bound, since nothing changed between those two pushes.
 4. **Merge is still the owner's word, in the current conversation.** A PR that
    is green and verified waits. The owner says "merge" (or "merge and push" —
    they are now the same act), the orchestrator runs `gh pr merge`. "Do all of
