@@ -5,7 +5,7 @@
 
 ---
 
-# 2026-09-27 — **STORE lane BUILT, operator-reachable. Sáu PR merge, main = `c0a4624`.**
+# 2026-09-27 — **STORE lane BUILT, operator-reachable. Tám PR merge, main = `c0a4624`.**
 
 *Mỗi PR merge chỉ sau khi verifier SOUND và 0 CI check không xanh.*
 
