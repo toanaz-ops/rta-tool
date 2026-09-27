@@ -16,22 +16,27 @@ consumes" — `orphan_check.py` only covers `app/src` reachability, so a
 
 | Lane | Input it needs | Who produces it today | Evidence |
 |---|---|---|---|
-| Save/Open (PR #43) | a saved trace in `TraceLibrary` | nobody — `TraceLibrary::add` has zero production callers | `app/src/trace/TraceLibrary.cpp:60` |
-| XOVER (PR #45) | two stored traces (HP and LP) in `TraceLibrary` | nobody — no STORE/freeze button exists | full button list: `app/src/MainComponent.h:244-370` (SYNTHETIC, LOCATE, APPLY, CAL START/END, EXPORT REPORT, RTA/TRANSFER/SPL) |
-| L7-EQ-UI | a stored measured trace | nobody — no STORE; `EqSession` is not bound to `MainComponent` | `app/src/measure/EqSession.h:9-10` says it is a dev-preview specimen, not a `MainComponent` binding |
+| Save/Open (PR #43) | a saved trace in `TraceLibrary` | ~~nobody — `TraceLibrary::add` has zero production callers~~ **CORRECTED 2026-09-27 (after STORE landed): the STORE button**, PR #51 merged `beb40a7` — `storeClicked()` (`app/src/MainComponentStore.cpp`) is `TraceLibrary::add`'s first live-capture caller | `app/src/trace/TraceLibrary.cpp:60`; producer: `app/src/MainComponentStore.cpp` |
+| XOVER (PR #45) | two stored traces (HP and LP) in `TraceLibrary` | ~~nobody — no STORE/freeze button exists~~ **CORRECTED 2026-09-27: the STORE button**, PR #51 merged `beb40a7`, operator path "STORE button (RTA/TRANSFER)" | full button list is now stale where it omits STORE: `app/src/MainComponent.h:244-370` (SYNTHETIC, LOCATE, APPLY, CAL START/END, EXPORT REPORT, STORE, RTA/TRANSFER/SPL) |
+| L7-EQ-UI | a stored measured trace | ~~nobody — no STORE; `EqSession` is not bound to `MainComponent`~~ **CORRECTED 2026-09-27: STORE now produces one** (PR #51, `beb40a7`) — the remaining gap is `EqSession` itself, still not bound to `MainComponent` | `app/src/measure/EqSession.h:9-10` still says it is a dev-preview specimen, not a `MainComponent` binding |
 | L7-ALIGN-UI | a captured IR pair | nobody — no sweep/capture/`deconvolve` path in `app/src` outside `AlignmentWizard`, itself unreachable | `AlignmentWizard(` is constructed nowhere in `app/src` outside its own file |
 | any RT60 UI | an IR from a captured sweep | nobody — sweep/IR/RT60 (P4, L4a+L4b) lives only in `core/`, no `app/` surface | `git grep -liE "rt60\|schroeder\|lundeby" origin/main -- app/src` → empty |
 
-**Two producer lanes are missing from the plan** and are not substitutable by
-any lane currently scheduled:
-- **(a) STORE** — freeze the live measurement into `TraceLibrary`.
+**Two producer lanes were missing from the plan** and were not substitutable
+by any lane then scheduled:
+- ~~**(a) STORE**~~ — freeze the live measurement into `TraceLibrary`.
+  **BUILT 2026-09-27, operator-reachable: PR #51 merged `beb40a7`, operator
+  path "STORE button (RTA/TRANSFER)".**
 - **(b) Sweep→IR** — play a sweep, capture it, deconvolve it, so an IR exists
-  for anything downstream to consume.
+  for anything downstream to consume. Still missing; nothing has changed
+  here.
 
 **Owner decisions, 2026-09-27:**
 1. **Next lane is STORE only.** The EQ / ALIGN / CaptureSequencer order the
    2026-09-26 section below committed to is suspended pending another plan
-   review after STORE lands.
+   review after STORE lands. **STORE landed 2026-09-27 (PR #51, `beb40a7`).
+   The next step is that second plan review; no lane below is opened until
+   it happens.**
 2. **Every plan task table gains an "operator path" column** naming the
    button or action by which a human produces each runtime input the task
    consumes, in the running `rtatool.exe`. From now on "BUILT" means an
@@ -63,13 +68,13 @@ lane order below is on hold pending another review; **STORE** goes first.
 
 | Group | Decision | Where |
 |---|---|---|
-| **STORE (freeze the live measurement into `TraceLibrary`)** | **next lane** — added 2026-09-27; no other lane wires anything ahead of it | — |
-| Session Save/Open (`SessionCodec`, `SessionDecode`, `TraceBlobCodec`, `SessionStore`) | wire now | branch `app/session-save-open` |
-| G18 crossover surface (`CrossoverSurface`, `CrossoverTopology`, `VirtualTrace`) | wire now as a live `XOVER` pane — **ALIGN-R8 reversed** | branch `app/crossover-pane` |
+| **STORE (freeze the live measurement into `TraceLibrary`)** | ~~**next lane** — added 2026-09-27; no other lane wires anything ahead of it~~ **BUILT 2026-09-27, operator-reachable** — the STORE button (RTA/TRANSFER pane) is `storeClicked()`'s operator path | PR #51 merged `beb40a7`, branch `app/store-trace` |
+| Session Save/Open (`SessionCodec`, `SessionDecode`, `TraceBlobCodec`, `SessionStore`) | ~~wire now~~ **BUILT 2026-09-27** — SAVE/OPEN buttons are the operator path | PR #43 merged `fb17563`, branch `app/session-save-open` |
+| G18 crossover surface (`CrossoverSurface`, `CrossoverTopology`, `VirtualTrace`) | ~~wire now as a live `XOVER` pane — **ALIGN-R8 reversed**~~ **BUILT 2026-09-27** — the XOVER pane, reached via the RTA/TRANSFER/SPL/XOVER pane selector, is the operator path | PR #45 merged `4fc6b6e`, branch `app/crossover-pane` |
 | `DelayLocator` | delete, superseded by `MainComponentDelay.cpp` | branch `app/unwired-cleanup` |
 | `SyntheticSnapshot` | not a gap (test and tool fixture); move out of `app/src` | branch `app/unwired-cleanup` |
-| EQ + FIR export (`EqSession`, `EqVerify`, `FirTextWriter`, `FirWavWriter`) | **suspended 2026-09-27** — was next lane L7-EQ-UI; consumes STORE's output, which does not exist yet | — |
-| `AlignmentWizard` (+ `Signals`) | **suspended 2026-09-27** — was L7-ALIGN-UI; consumes a captured sweep/IR, which the missing Sweep→IR producer lane has not built | — |
+| EQ + FIR export (`EqSession`, `EqVerify`, `FirTextWriter`, `FirWavWriter`) | **suspended 2026-09-27** — was next lane L7-EQ-UI. The stated reason has changed: STORE now produces a stored trace (PR #51), so the input this lane needs exists; `EqSession` itself is still not bound to `MainComponent`. Still suspended pending the second plan review, not by input availability | — |
+| `AlignmentWizard` (+ `Signals`) | **suspended 2026-09-27** — was L7-ALIGN-UI; consumes a captured sweep/IR, which the missing Sweep→IR producer lane has not built. Unaffected by STORE landing | — |
 | `CaptureSequencer` | deferred: operators solo by hand (L6b plan line 231). Scheduled for the next multichannel lane; until then orphan_check blocks any PR that edits it without wiring it | — |
 
 From now on, "BUILT" in this document means **reachable from `rtatool.exe`**.
