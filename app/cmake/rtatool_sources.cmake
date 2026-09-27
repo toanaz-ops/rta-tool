@@ -25,6 +25,17 @@ set(RTATOOL_SOURCES
     # MainComponent.cpp (fix round, PR #26) so a test can link it without
     # MainComponent's other dependencies. See PaneFactory.h.
     src/PaneFactory.cpp
+    # MainComponentSession.cpp: SAVE SESSION / OPEN SESSION wiring -- the
+    # first app/src caller of SessionStore/SessionCodec/TraceBlobCodec, all
+    # three JUCE-free and already compiled into rtatool_analysis_tests, but
+    # this target names every source one by one, so all four have to be
+    # listed here too or rtatool fails to link with undefined symbols.
+    src/MainComponentSession.cpp
+    src/trace/SessionCodec.cpp
+    # SessionDecode.cpp: SessionCodec.cpp's decodeIndex split (task B0).
+    src/trace/SessionDecode.cpp
+    src/trace/TraceBlobCodec.cpp
+    src/trace/SessionStore.cpp
     # MainComponentCalibration.cpp: L6a Wave 3 task W3-B's own 400-line-cap
     # split (record docs/dsp/2026-09-16-spl-pro-l6a.md §8), same shape as
     # MainComponentDelay.cpp. CalibrationSession.cpp is JUCE-free and also

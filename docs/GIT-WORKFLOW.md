@@ -54,6 +54,11 @@ Remote: `https://github.com/toanaz-ops/rta-tool` (public since before 2026-09-26
    applies. A human still looks at the uploaded `rtatool-snapshot-<run_number>`
    artifact per PR — that upload is not a substitute for the human GUI pass,
    it is what makes that pass possible without a local ON rebuild.
+
+   **Both workflows carry a `concurrency` block (added 2026-09-27)**: a new
+   push to a PR's ref cancels that PR's own in-flight run, so a superseded
+   commit never wins a race against CI for the current one; a push to `main`
+   is never cancelled, so every commit on `main` keeps its own record.
 4. **Merge is still the owner's word, in the current conversation.** A PR that
    is green and verified waits. The owner says "merge" (or "merge and push" —
    they are now the same act), the orchestrator runs `gh pr merge`. "Do all of
@@ -180,6 +185,17 @@ The PR replaces the local merge, not the verifier. The owner set this loop on
    owner's word, or under a lane-level delegation the owner gave in the
    conversation. Always run `gh pr checks N` first and merge with
    `gh pr merge N --merge --match-head-commit <sha>`.
+
+### PRs touching MainComponent run sequentially (owner decision, 2026-09-27)
+
+A PR touching `app/src/MainComponent*`, `app/cmake/*.cmake`,
+`app/tests_juce/CMakeLists.txt` / `main_component_tests.cmake`, or
+`tools/snapshot.cpp` does not review in parallel with another PR touching the
+same set. If two such PRs are already open, the moment one merges, the other
+must merge `origin/main` and show `mergeable: MERGEABLE` before its next
+review round starts. **A CONFLICTING PR gets no CI runs at all** — PR #45
+went a full review round with no CI because of exactly this, and nobody
+noticed until the round was already spent.
 
 **Rebuild what the change could have changed, not everything.**
 - **OFF** always.

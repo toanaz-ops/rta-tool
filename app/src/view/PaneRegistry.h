@@ -48,6 +48,22 @@ struct PaneResolution {
     return out;
 }
 
+/// The inverse of resolvePaneView -- what a session Save should write for a
+/// live `PaneView`, so the vocabulary a saved `[pane] view=` line uses is
+/// always one resolvePaneView already recognises, never a second,
+/// hand-written spelling that could drift out of sync with it.
+[[nodiscard]] inline std::string paneViewName(PaneView view) {
+    if (view == PaneView::Transfer) return "transfer";
+    if (view == PaneView::Spl) return "spl";
+    // PR #45 fix round 3 (verifier, PR #43 reconciliation checklist item 2):
+    // this arm was missing -- an XOVER session save silently fell through to
+    // "rta" and lost the pane choice on the very next Open. See
+    // test_pane_view_name_round_trip.cpp for the guard that would have
+    // caught it: a round trip over EVERY `PaneView` enumerator.
+    if (view == PaneView::Xover) return "xover";
+    return "rta";
+}
+
 /// The one capability `WorkspaceView` needs from a pane it did not build
 /// itself: "can this be pointed at a trace library". `WorkspaceView`'s
 /// factory (`view/WorkspaceView.h`) returns a plain `juce::Component`

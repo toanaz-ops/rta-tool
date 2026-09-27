@@ -61,4 +61,27 @@ struct MainComponentTestAccess {
     [[nodiscard]] static const juce::Component& routingMatrix(const MainComponent& c) {
         return c.rail_.routingMatrixForTest();
     }
+
+    // Session persistence test seam: app/tests_juce/test_main_component_session.cpp
+    // (and its fix-round split, test_main_component_session_fixround.cpp).
+    // Every name below ends in `ForTest` and is referenced by that exact
+    // spelling from those files -- tools/orphan_check.py's own TEST HOOK
+    // rule (a `*ForTest` candidate the linker discards from `rtatool` is
+    // exempted only when app/tests* really calls it by that name; see that
+    // script's own header comment). PR #45 fix round 3 (PR #43
+    // reconciliation checklist item 4): this seam used to ALSO carry its own
+    // `mutableLibraryForTest`, reaching `c.library_` directly, alongside
+    // `libraryForTest` above reaching the SAME field through `c.
+    // libraryForTest()` -- two names for one thing, from the two branches'
+    // independent PRs. Collapsed to the one already above; every call site
+    // in both session test files now uses it.
+    static void saveSessionForTest(MainComponent& c, const juce::File& folder) {
+        c.session_.performSave(folder);
+    }
+    static void openSessionForTest(MainComponent& c, const juce::File& folder) {
+        c.session_.performOpen(folder);
+    }
+    [[nodiscard]] static juce::String readoutForTest(const MainComponent& c) {
+        return c.session_.readoutForTest();
+    }
 };

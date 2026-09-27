@@ -134,3 +134,30 @@ TEST_CASE("setShadeIndex bumps only on a genuine change", "[library]") {
     CHECK(lib.setShadeIndex("a", initialShade + 1));  // same value again
     CHECK(lib.revision() == afterChange);
 }
+
+TEST_CASE("clear empties the library in one revision step", "[library]") {
+    // Session Open's own seam: replace the whole library atomically rather
+    // than removing entries one at a time (which would move revision() once
+    // per trace and briefly show a half-cleared library to anything
+    // watching it).
+    TraceLibrary lib;
+    lib.add(makeTrace("a"), "A", "left");
+    lib.add(makeTrace("b"), "B", "right");
+    const auto before = lib.revision();
+
+    lib.clear();
+
+    CHECK(lib.revision() == before + 1);
+    CHECK(lib.entries().empty());
+    CHECK(lib.entry("a") == nullptr);
+    CHECK(lib.trace("b") == nullptr);
+}
+
+TEST_CASE("clearing an already-empty library does not advance the revision", "[library]") {
+    TraceLibrary lib;
+    const auto before = lib.revision();
+
+    lib.clear();
+
+    CHECK(lib.revision() == before);
+}

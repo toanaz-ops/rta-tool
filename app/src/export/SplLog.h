@@ -19,6 +19,7 @@
 #include "trace/SessionCodecDetail.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <string>
@@ -26,6 +27,50 @@
 #include <vector>
 
 namespace rta::splexport {
+
+/// Fix round (PR #43, verifier HIGH F1): every path this export subsystem is
+/// handed originates from `juce::File::getFullPathName().toStdString()`
+/// (MainComponentSpl.cpp), which IS UTF-8 -- but `std::filesystem::path(const
+/// std::string&)` and `std::ofstream`'s `const std::string&` overload both
+/// decode through the process's ACTIVE CODE PAGE on MSVC
+/// (`_Convert_narrow_to_wide`), not UTF-8, so a folder name outside that code
+/// page's own repertoire (Vietnamese diacritics on a stock-1252/1258 Windows
+/// box, which is what CI's windows-latest runs) silently opens a mojibake
+/// sibling path. `std::u8string`'s constructor from an iterator pair is how
+/// the standard spells "these bytes are UTF-8"; `std::filesystem::path` then
+/// decodes a `std::u8string` as UTF-8 on every platform by contract -- no
+/// `reinterpret_cast` needed (fix round 2: the earlier `char8_t*`
+/// `reinterpret_cast` form was also well-defined, since `char`/`char8_t` are
+/// both one-byte types, but this spells the same guarantee without leaning
+/// on a cast).
+///
+/// Round 2 found three MORE callers beyond `SplLogWriter.cpp`'s two
+/// stream-opens, all fed by the same `currentSplSessionDir_` UTF-8 string:
+/// `MainComponentSpl.cpp::exportReportClicked()`,
+/// `SplCalibrationRecord.h::writeCalibrationRecordFile`, and
+/// `SplReportPayloadBuilder.cpp::buildReportPayload`. This is no longer a
+/// single-caller function -- do not reintroduce that assumption in a comment
+/// near a new call site.
+[[nodiscard]] inline std::filesystem::path utf8Path(const std::string& utf8) {
+    return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+}
+
+/// The other direction of the same bug (fix round 3, HIGH R3-1):
+/// `std::filesystem::path::string()` narrows the OS-native (wide, on
+/// Windows) form back down through the process's ACTIVE CODE PAGE, and MSVC
+/// makes that narrowing a THROWING conversion -- a character with no
+/// representation in that code page raises `std::system_error` ("No mapping
+/// for the Unicode character exists in the target multi-byte code page"),
+/// not a silent mojibake byte the way the OTHER direction (`utf8Path`,
+/// above) silently corrupts. `path::u8string()` is the standard's own
+/// non-narrowing accessor -- guaranteed UTF-8, no code page involved, no
+/// throw -- so this hands back its bytes as a plain `std::string` rather
+/// than ever calling `.string()`/`.generic_string()` on a path that can
+/// carry a user's folder name.
+[[nodiscard]] inline std::string utf8String(const std::filesystem::path& path) {
+    const auto u = path.u8string();
+    return std::string(u.begin(), u.end());
+}
 
 /// The per-channel facts `rta::measure::SplConfig` itself does not carry --
 /// weighting and detector are per-`SplMeter` (one instance per weighting,

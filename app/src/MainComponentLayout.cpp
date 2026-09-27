@@ -94,6 +94,12 @@ void MainComponent::resized() {
     exportReportReadout_.setBounds(exportRow);
     rail.removeFromTop(az::ui::gap * 2);
 
+    // Session persistence: SAVE SESSION / OPEN SESSION share one row, the
+    // readout takes the row below it -- see MainComponentSession::layout.
+    auto sessionArea = rail.removeFromTop(az::ui::buttonCellHeight * 2 + az::ui::gap);
+    session_.layout(sessionArea);
+    rail.removeFromTop(az::ui::gap * 2);
+
     // Fix round item 3 (MEDIUM F3 follow-up): device panel / routing matrix /
     // channel role table and their scroll viewport (item 4) are grouped into
     // rail_ (MainComponentRail.h/.cpp) -- see that file's own layout()

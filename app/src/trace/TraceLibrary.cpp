@@ -124,4 +124,11 @@ void TraceLibrary::soloOnly(const std::string& id) {
     if (changed) ++revision_;
 }
 
+void TraceLibrary::clear() {
+    if (entries_.empty()) return;  // no-op: revision must not move
+    entries_.clear();
+    traces_.clear();
+    ++revision_;
+}
+
 }  // namespace rta::trace
