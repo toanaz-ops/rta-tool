@@ -56,6 +56,10 @@ set(RTA_IMPL_TEST_SOURCES
     # VirtualTrace.cpp: lane L7-ALIGN task G (record Sec.5) --
     # test_virtual_trace.cpp calls straight into it.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/VirtualTrace.cpp
+    # CaptureConverter.cpp: station-3 STORE plan, tasks T2/T3/T4 -- JUCE-free
+    # (measure_has_no_framework_deps globs it explicitly, app/tests/
+    # CMakeLists.txt), so test_capture_converter.cpp calls straight into it.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/CaptureConverter.cpp
     # AlignmentWizard.cpp + AlignmentWizardSignals.cpp: lane L7-ALIGN task H
     # (record Sec.2, Sec.7). The second is the first's polarity-signal half,
     # split at the 300-line aim -- the seam the record already draws between

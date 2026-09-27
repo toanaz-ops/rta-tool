@@ -120,4 +120,9 @@ set(RTA_BASE_TEST_SOURCES
     # lives beside test_workspace.cpp/PaneRegistry.h rather than duplicating
     # its own mapping.
     test_pane_selector_decision.cpp
+    # test_capture_converter.cpp: station-3 STORE plan tasks T2/T3/T4
+    # (docs/plans/2026-09-27-store-lane-plan.md) -- the pure Snapshot->Trace
+    # conversion, JUCE-free like test_virtual_trace.cpp/test_trace.cpp beside
+    # it, proven OFF on all three CI operating systems.
+    test_capture_converter.cpp
 )

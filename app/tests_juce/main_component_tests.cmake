@@ -52,6 +52,9 @@ add_executable(rtatool_main_component_tests
     test_main_component_session.cpp
     test_main_component_session_fixround.cpp
     test_main_component_session_path_guard.cpp
+    # test_main_component_store.cpp: station-3 STORE button (T5/T6/T7) --
+    # against a real MainComponent, same shape as test_main_component_panes.cpp.
+    test_main_component_store.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 

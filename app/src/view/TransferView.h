@@ -59,6 +59,16 @@ public:
         return sources_[static_cast<std::size_t>(pane)];
     }
 
+    /// The engine actually feeding `pane` RIGHT NOW: `source(pane)`'s
+    /// preference, falling back to whichever block the live snapshot
+    /// actually has -- the exact fallback `renderTo()` draws with (record
+    /// §6), read off `source_->latest()` rather than re-derived. Exposed
+    /// (station-3 STORE fix round 1, HIGH F1) so a caller elsewhere -- the
+    /// STORE readout, `MainComponentStore.cpp` -- can name which panes are
+    /// showing MTW without duplicating this fallback, and so it never
+    /// silently drifts from what `renderTo()` actually draws.
+    [[nodiscard]] TransferSource effectiveSource(TransferPane pane) const noexcept;
+
     /// The on-screen control for `pane`'s source toggle (docs/reports/
     /// 005-mtw-engine.md "Known gaps": this used to be an API with no
     /// control). Production API existing so a test can drive the actual

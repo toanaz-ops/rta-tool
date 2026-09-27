@@ -77,4 +77,71 @@ void renderXoverSpecimens (const juce::File& outDir, int& failures)
     renderOneXoverSpecimen (outDir, 3, "main-live-xover-unknown.png", failures);
 }
 
+void renderStoreXoverSpecimen (const juce::File& outDir, int& failures)
+{
+    MainComponent component;
+    component.setSyntheticMode (true);
+
+    // Same condition test_main_component_store.cpp's own
+    // enableSyntheticWithReference polls for: a real paired hop has to
+    // complete before TRANSFER has anything to freeze.
+    constexpr int kReferenceTimeoutMs = 3000;
+    int waitedMs = 0;
+    for (; waitedMs < kReferenceTimeoutMs; waitedMs += 10)
+    {
+        const auto snapshot = MainComponentTestAccess::analysisThread (component).latest();
+        if (snapshot && snapshot->hasReference) break;
+        juce::Thread::sleep (10);
+    }
+    if (waitedMs >= kReferenceTimeoutMs)
+    {
+        std::printf ("FAILED: no reference fed within %d ms -- main-live-store-xover.png "
+                     "cannot prove SYNTHETIC input can produce a TRANSFER reference offscreen\n",
+                     kReferenceTimeoutMs);
+        ++failures;
+        return;
+    }
+
+    // The real button seam, pressed twice -- T7's own one-second-resolution
+    // naming needs the two presses at least a second apart to read as
+    // distinct in the library, though this specimen does not itself inspect
+    // the names.
+    component.selectPaneView (rta::view::PaneSelectorButton::Transfer);
+    MainComponentTestAccess::storeClickedForTest (component);
+    juce::Thread::sleep (1100);
+    MainComponentTestAccess::storeClickedForTest (component);
+
+    auto& library = MainComponentTestAccess::libraryForTest (component);
+    if (library.entries().size() < 2)
+    {
+        std::printf ("FAILED: fewer than two STORE presses landed in the library -- "
+                     "main-live-store-xover.png would have nothing real to pick\n");
+        ++failures;
+        return;
+    }
+
+    component.selectPaneView (rta::view::PaneSelectorButton::Xover);
+    auto& xoverPane = dynamic_cast<rta::view::CrossoverPaneView&> (
+        const_cast<juce::Component&> (MainComponentTestAccess::pane (component)));
+    // The two most recently stored entries, in the pane's own eligible-trace
+    // order (CrossoverPaneView::refreshFromLibrary walks library_->entries()
+    // in insertion order) -- item 1/2, exactly like renderOneXoverSpecimen's
+    // injected-trace case above, except these two REAL traces came from the
+    // actual STORE button, not makeXoverTrace().
+    xoverPane.highTraceComboForTest().setSelectedId (1, juce::sendNotificationSync);
+    xoverPane.lowTraceComboForTest().setSelectedId (2, juce::sendNotificationSync);
+    xoverPane.topologyComboForTest().setSelectedId (2, juce::sendNotificationSync);   // LR-4
+    xoverPane.inversionComboForTest().setSelectedId (1, juce::sendNotificationSync);  // NOT INVERTED
+
+    if (! xoverPane.hasCompleteSelectionForTest())
+    {
+        std::printf ("FAILED: crossover pane refused the two real STORE'd traces -- "
+                     "main-live-store-xover.png would be the placeholder\n");
+        ++failures;
+        return;
+    }
+    if (! renderComponent (component, outDir, "main-live-store-xover.png", 1280, 800))
+        ++failures;
+}
+
 } // namespace rta::tools

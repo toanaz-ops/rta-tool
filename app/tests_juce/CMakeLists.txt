@@ -35,6 +35,12 @@ add_executable(rtatool_view_tests
     # case.
     test_transfer_view_unwrap.cpp
     test_transfer_view_mtw.cpp
+    # test_transfer_view_effective_source.cpp: station-3 STORE fix round 1,
+    # HIGH F1 -- TransferView::effectiveSource(pane), the preference+
+    # availability fallback rule the STORE readout now reads, proven
+    # directly against a hand-built StaticSnapshotSource (no MainComponent,
+    # no AnalysisThread needed for this rule alone).
+    test_transfer_view_effective_source.cpp
     # test_transfer_source_toggle.cpp: the per-plot MTW/Fixed UI control
     # (docs/reports/005-mtw-engine.md "Known gaps").
     test_transfer_source_toggle.cpp
@@ -219,6 +225,11 @@ add_executable(rtatool_routing_live_tests
     # CaptureBus::prepare() bumps the epoch, no second enableSplLogging() call
     # rescues it. Same shape as test_spl_drain.cpp.
     test_spl_epoch_freeze.cpp
+    # test_analysis_thread_config.cpp: station-3 STORE plan task T1 --
+    # AnalysisThread::config() returns the exact Config it was constructed
+    # with, not Config{}'s compile-time defaults. Same real shape as every
+    # other file in this target.
+    test_analysis_thread_config.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------
     # The SPL feed AnalysisThread.cpp now calls: its own split-off half, the

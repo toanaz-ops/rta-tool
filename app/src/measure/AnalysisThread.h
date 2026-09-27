@@ -27,6 +27,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace rta::measure {
@@ -85,6 +86,26 @@ public:
     /// Safe from any thread (trap T-5: writer = this thread, reader = the
     /// message thread, nothing else).
     [[nodiscard]] SnapshotPtr latest() const override;
+
+    /// station-3 STORE task T1, corrected fix round 1 (MEDIUM F2):
+    /// `baseConfig_` is NOT immutable for the life of this thread --
+    /// `applyPendingReferenceDelay()` (below, called from `run()` on THIS
+    /// thread) writes `baseConfig_.referenceDelaySamples` live, on the
+    /// operator's APPLY button. Returning a reference to it would hand the
+    /// message thread a pointer into state the analysis thread can mutate
+    /// out from under it. Returns a BY-VALUE copy of only the four fields
+    /// that really are written exactly once, at construction, and never
+    /// again -- see `measure::CaptureConfig`'s own comment for the full
+    /// enumeration of `baseConfig_`'s writers this claim rests on. Exists so
+    /// a caller freezing a live measurement
+    /// (`CaptureConverter::traceFromSnapshot`) can read window/averaging
+    /// straight off the analyser that produced the data, rather than a
+    /// throwaway `Analyser::Config{}` that silently goes stale the day a
+    /// runtime control changes one of these fields.
+    [[nodiscard]] CaptureConfig captureConfig() const noexcept {
+        return CaptureConfig{baseConfig_.window, baseConfig_.averaging, baseConfig_.transferAveraging,
+                             baseConfig_.transferFifoDepth};
+    }
 
     /// The last exception `run()` caught, or `Fault::Kind::None`. Mirrors
     /// `AudioIo::lastFault()`'s mutex-guarded shape (trap T-8: a
@@ -355,5 +376,15 @@ private:
     // writes every field of it.
     AnalysisThreadSplState splState_;
 };
+
+// Fix round 1, MEDIUM F2: structural proof, not just a runtime test, that a
+// later edit cannot silently turn `captureConfig()` back into a reference
+// into the live, analysis-thread-mutable `baseConfig_` -- the exact defect
+// this whole struct exists to close. A reference return type here would
+// fail this at COMPILE time, before any test binary even runs.
+static_assert(!std::is_reference_v<decltype(std::declval<const AnalysisThread&>().captureConfig())>,
+             "AnalysisThread::captureConfig() must return CaptureConfig BY VALUE -- "
+             "never a reference into baseConfig_, which applyPendingReferenceDelay() "
+             "(the analysis thread) mutates live (fix round 1 MEDIUM F2)");
 
 }  // namespace rta::measure
