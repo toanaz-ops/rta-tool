@@ -89,6 +89,11 @@ void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
     paneSplButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Spl, juce::dontSendNotification);
     paneXoverButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Xover,
                                     juce::dontSendNotification);
+    // station-3 STORE task T6: enabled only on RTA/TRANSFER -- SPL has no
+    // per-bin curve and XOVER is a consumer, not a producer, of stored
+    // traces (research C2).
+    storeButton_.setEnabled(currentPaneView_ == rta::view::PaneView::Rta ||
+                            currentPaneView_ == rta::view::PaneView::Transfer);
 
     // The new pane has no bounds yet (WorkspaceView's constructor lays out
     // nothing -- resized() does): position it now rather than waiting for
@@ -135,6 +140,12 @@ rta::view::PaneResolution MainComponent::restoreWorkspaceFromSession(std::vector
     // selector button unlit even though the xover pane itself was showing.
     paneXoverButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Xover,
                                     juce::dontSendNotification);
+    // T6 acceptance: this path (session Open) needs the same sync
+    // selectPaneView() above already gets, not only the button-click half --
+    // see that function's own comment on the identical omission this exact
+    // shape already bit once (MainComponentPanes.cpp:133-137's XOVER toggle).
+    storeButton_.setEnabled(currentPaneView_ == rta::view::PaneView::Rta ||
+                            currentPaneView_ == rta::view::PaneView::Transfer);
 
     resized();
     return report;

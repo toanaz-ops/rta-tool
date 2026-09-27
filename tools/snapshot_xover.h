@@ -17,4 +17,16 @@ namespace rta::tools
 // that does not complete.
 void renderXoverSpecimens (const juce::File& outDir, int& failures);
 
+// station-3 STORE plan task T8 (docs/plans/2026-09-27-store-lane-plan.md):
+// the end-to-end human-try proof. Drives the REAL storeButton_ onClick
+// (MainComponentTestAccess::storeClickedForTest) twice on TRANSFER with
+// SYNTHETIC input -- never renderOneXoverSpecimen's own injected
+// makeXoverTrace -- then selects XOVER and picks both just-stored traces as
+// HP/LP through the pane's own real ComboBoxes. Renders
+// "main-live-store-xover.png". Increments `failures` and prints a FAILED
+// message (never a silent placeholder render) if the reference never gets
+// fed, if fewer than two phase-bearing traces land in the library, or if the
+// pane refuses the selection.
+void renderStoreXoverSpecimen (const juce::File& outDir, int& failures);
+
 } // namespace rta::tools

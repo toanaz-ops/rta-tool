@@ -22,6 +22,33 @@
 
 namespace rta::measure {
 
+/// The subset of `Analyser::Config` a caller needs when it wants to know
+/// what SETTINGS produced a capture, without ever touching the live,
+/// analysis-thread-owned `Config` a `Analyser`/`AnalysisThread` actually
+/// runs with. station-3 STORE fix round 1 (MEDIUM F2):
+/// `AnalysisThread::config()` used to return `const Analyser::Config&`
+/// straight into `baseConfig_`, which `AnalysisThread::
+/// applyPendingReferenceDelay()` (the ANALYSIS thread, inside `run()`) does
+/// write into live, on the operator's APPLY button -- exactly the kind of
+/// reference a message-thread caller (`storeClicked()`) must never hold.
+///
+/// Every field named here is written EXACTLY ONCE in the whole tree, at
+/// `Analyser::Config`'s own construction (`AnalysisThread`'s constructor
+/// mem-initialiser) -- `AnalysisThread.cpp` has exactly one write site into
+/// `baseConfig_` after that (`referenceDelaySamples`, `applyPendingReferenceDelay`),
+/// and it touches no field this struct copies. Distinct non-bit-field
+/// members of one object are distinct memory locations ([intro.memory]), so
+/// reading these four from another thread while `referenceDelaySamples`
+/// alone is written elsewhere is not a data race -- but returning them BY
+/// VALUE, copied once, is what makes that argument visible at the call site
+/// instead of resting on it silently.
+struct CaptureConfig {
+    rta::dsp::WindowType window = rta::dsp::WindowType::Hann;
+    rta::dsp::Averaging averaging = rta::dsp::Averaging::Exponential;
+    rta::dsp::TransferAveraging transferAveraging = rta::dsp::TransferAveraging::Fifo;
+    std::size_t transferFifoDepth = 16;
+};
+
 /// The pure engine-driver: turns spans of samples into a published
 /// `Snapshot`, with no thread of its own. `AnalysisThread` (a later wave)
 /// is the thin, JUCE-owning wrapper that calls `pushMeasurement` /

@@ -210,6 +210,8 @@ private:
     /// logged a block yet.
     void exportReportClicked();
 
+    void storeClicked();  // MainComponentStore.cpp (station-3 T5): freezes the pane's Snapshot into library_
+
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
     /// the poll timer while in LIVE mode (a device can be opened, closed or
@@ -289,15 +291,13 @@ private:
     /// the rest of the session.
     double calibrationCaptureArmedAtMs_ = 0.0;
     std::shared_ptr<const rta::measure::LocateCapture> lastHandledCalibrationCapture_;
-    /// Fix round (verifier HIGH finding): `kCalibrationRouteIndex` is a ROUTE
-    /// POSITION, resolved to a CHANNEL NUMBER exactly once, in
-    /// `pollCalibrationPipeline()`, via `rta::measure::
-    /// calibrationMeasurementChannel` against the routing plan the capture
-    /// that just completed actually used -- never re-derived later, and never
-    /// the route index itself. -1 (no channel resolved yet, or the last
-    /// capture's route had none -- the calibrator-only, no-REF-channel case)
-    /// is what every channel-indexed `AnalysisThread` call already treats as
-    /// a safe no-op.
+    /// Fix round (verifier HIGH finding): `kCalibrationRouteIndex` is a ROUTE POSITION, resolved to
+    /// a CHANNEL NUMBER exactly once, in `pollCalibrationPipeline()`, via
+    /// `rta::measure::calibrationMeasurementChannel` against the routing plan the capture that just
+    /// completed actually used -- never re-derived later, and never the route index itself. -1 (no
+    /// channel resolved yet, or the last capture's route had none -- the calibrator-only, no-REF-
+    /// channel case) is what every channel-indexed `AnalysisThread` call already treats as a safe
+    /// no-op.
     int calibrationChannel_ = -1;
     /// Fix round 3 (verifier MEDIUM, upgraded from LOW): `calibrationChannel_`
     /// above is overwritten every time a capture completes -- START AND END
@@ -344,20 +344,17 @@ private:
     /// `exportReportClicked()` so it asks the payload builder for exactly the
     /// channels that are actually logging, not a hardcoded one.
     std::vector<int> currentSplLoggedChannels_;
-    /// LOW follow-up batch, item 15: true iff `currentSplSessionDir_` names a
-    /// log `startFreshSplLogWithConfig` opened WITH a calibrated config
-    /// (`calibratorLevelDb.has_value()` at that call -- the same fact
-    /// `restartSplLoggingForCalibration()` supplies and `startFreshSplLog()`
-    /// (the device/epoch-triggered, always-uncalibrated restart) does not).
-    /// Set in `startFreshSplLogWithConfig` itself, the ONE function that
-    /// assigns `currentSplSessionDir_`, so the two can never drift apart.
-    /// Read by `writeCalibrationRecordAndUpdateInvalidFlag()` to state
-    /// whether THIS log actually carries the offset a completed calibration
-    /// check measured -- a START check with nothing logging yet has no
-    /// session to apply it to (`restartSplLoggingForCalibration`'s own early
-    /// return), so an operator who starts an ordinary log afterward and runs
-    /// END against it gets a `performed=1` record beside an uncalibrated log
-    /// unless this says otherwise.
+    /// LOW follow-up batch, item 15: true iff `currentSplSessionDir_` names a log
+    /// `startFreshSplLogWithConfig` opened WITH a calibrated config (`calibratorLevelDb.has_value()`
+    /// at that call -- the same fact `restartSplLoggingForCalibration()` supplies and
+    /// `startFreshSplLog()` (the device/epoch-triggered, always-uncalibrated restart) does not). Set
+    /// in `startFreshSplLogWithConfig` itself, the ONE function that assigns
+    /// `currentSplSessionDir_`, so the two can never drift apart. Read by
+    /// `writeCalibrationRecordAndUpdateInvalidFlag()` to state whether THIS log actually carries the
+    /// offset a completed calibration check measured -- a START check with nothing logging yet has
+    /// no session to apply it to (`restartSplLoggingForCalibration`'s own early return), so an
+    /// operator who starts an ordinary log afterward and runs END against it gets a `performed=1`
+    /// record beside an uncalibrated log unless this says otherwise.
     bool currentSplLogHasCalibratedOffset_ = false;
     // ----------------------------------------------------------------------
 
@@ -365,6 +362,9 @@ private:
     juce::TextButton exportReportButton_{"EXPORT REPORT"};
     juce::Label exportReportReadout_;
     // ----------------------------------------------------------------------
+    // STORE (station-3): freezes the live measurement into TraceLibrary.
+    juce::TextButton storeButton_{"STORE"};
+    juce::Label storeReadout_;
 
     // Fix round LOW F3: device panel + routing matrix + channel role table +
     // their scroll viewport (item 4), one member instead of five -- see
