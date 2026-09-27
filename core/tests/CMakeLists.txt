@@ -210,13 +210,26 @@ add_test(NAME test_names_are_ascii
 # RTA_BUILD_APP -- already runs the check in both the OFF (CI) and ON
 # (JUCE) configurations, over core/, app/, platform/, ui/ and tools/*.cpp.
 # See check_file_length.cmake's own header for what is scanned, how lines are
-# counted, and why EXCLUDES stays empty here: at introduction the tree needs
-# no exemptions, and a placeholder exclusion would itself fail the guard's
-# self-proving sentinel (must match >=1 file).
+# counted, and why EXCLUDES stays empty here for DIRS: at introduction the
+# tree needs no exemptions, and a placeholder exclusion would itself fail the
+# guard's self-proving sentinel (must match >=1 file).
+#
+# EXCLUDES below (lane-end LOW batch round 1, LOW V3): TOOLS_DIR widened to
+# also scan *.py the same round tools/orphan_check.py itself was found over
+# the cap (see check_file_length.cmake's own comment on why). Three
+# pre-existing, one-off generator/probe scripts are already over 400 lines
+# (gen_generator.py 452, probe_align_order4.py 519, probe_l4b_truncation.py
+# 534, all measured 2026-09-27) -- none is shared, ongoing verification
+# tooling the way orphan_check.py's own module family is (this guard's
+# reason for widening in the first place), and splitting any of the three is
+# out of scope for the batch that found this. Dated exclusion, not a
+# permanent one: revisit if either script grows again or gains a second
+# maintainer who has to read the whole thing.
 add_test(NAME source_files_are_under_400_lines
     COMMAND ${CMAKE_COMMAND}
             "-DDIRS=${CMAKE_SOURCE_DIR}/core;${CMAKE_SOURCE_DIR}/app;${CMAKE_SOURCE_DIR}/platform;${CMAKE_SOURCE_DIR}/ui"
             -DTOOLS_DIR=${CMAKE_SOURCE_DIR}/tools
             "-DEXTRA_FILES=${CMAKE_SOURCE_DIR}/CMakeLists.txt"
+            "-DEXCLUDES=${CMAKE_SOURCE_DIR}/tools/gen_*.py;${CMAKE_SOURCE_DIR}/tools/probe_*.py"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_file_length.cmake
 )
