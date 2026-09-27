@@ -114,6 +114,20 @@ is no free-text allow-list: a `*ForTest` name this run cannot find any test
 REFERENCING (fix round 2, F-I: a bare mention inside a string literal no
 longer counts) is left as an ordinary, failing orphan. See
 orphan_targets.test_hook_is_referenced.
+
+KNOWN LIMITS, WRITTEN DOWN SEPARATELY (lane-end LOW batch round 1, LOW V3):
+this docstring's own growth is what pushed this file past the project's
+400-line cap (CLAUDE.md "File length"), so two entries that are prose, not
+code guiding a reader through THIS module, moved to
+`docs/tools/orphan-check-known-limits.md`, linked from here rather than
+inlined:
+  - a private `*ForTest` method reached only through a same-class friend
+    wrapper (the `MainComponentTestAccess` pattern) defeats the TEST HOOK
+    check above on BOTH names, no matter how either is spelled -- affects
+    `analysisThreadForTest`/`paneComponentForTest`/`channelRoleTableForTest`/
+    `routingMatrixForTest` and their `MainComponentTestAccess.h` wrappers;
+  - five UNCHECKABLE shapes from PR #39 round 2 (F-B/F-C/F-D/F-F/F-G) that
+    were graded LOW and never written down anywhere until now.
 """
 
 from __future__ import annotations

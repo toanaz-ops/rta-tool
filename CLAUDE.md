@@ -191,7 +191,14 @@ cmake --build build --config Release --target rtatool_snapshot --parallel
 build/app/rtatool_snapshot_artefacts/Release/rtatool_snapshot.exe shots 1100 760
 ```
 
-Then read `shots/specimen.png`. Screen capture of a live app fails for reasons
+Then read `shots/specimen.png`. `main-live*.png` (the real `MainComponent`
+window, not the bare `specimen.png` preview) render at a FIXED 1280x800
+regardless of the width/height given on the command line above -- that
+picture needs room for the rail beside the plot the others do not carry
+(tools/snapshot.cpp's own comment on `main-live.png`). Passing a different
+size changes `specimen.png`/`workspace.png`/`rta-view.png` only.
+
+Screen capture of a live app fails for reasons
 unrelated to the app -- another window drifts in front, desktop DPI scaling
 rescales the result, layout has not settled after a resize, and the running
 binary holds a lock on its own .exe so the next build cannot link. A snapshot
@@ -248,7 +255,7 @@ after L6a):
        file that only the snapshot tool compiles is still an orphan.
      - TEST HOOK: a `*ForTest` name that a test really references.
    - A `.cpp` file in no source list is an orphan.
-   - Known limits are listed in the tool's docstring.
+   - Known limits are listed in `docs/tools/orphan-check-known-limits.md`.
    - L6a's plan built and unit-tested every SPL component and gave no task the
      job of calling them. `enableSplLogging` had no caller for four waves,
      which cost three extra PRs to fix

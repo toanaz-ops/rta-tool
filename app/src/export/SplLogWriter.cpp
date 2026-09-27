@@ -40,6 +40,18 @@ void SplLogWriter::openSegment() {
     // MainComponentSpl.cpp derives from a juce::File), and std::ofstream's
     // std::string overload decodes through the ACTIVE CODE PAGE on MSVC, not
     // UTF-8 -- see SplLog.h's own comment on utf8Path.
+    //
+    // Left uncaught (fix round 4, LOW-6): utf8Path() throws on malformed
+    // UTF-8 (that function's own comment), and this call is on the writer
+    // thread (SplLogWriter is never touched from the analysis/audio thread --
+    // record its own real-time-safety note), not the message thread any
+    // MainComponent-level try/catch guards. `path` is built one line above
+    // from `basePath_`, itself always a `juce::File`-derived, well-formed
+    // UTF-8 string -- no known input reaches this throw. Deferred rather
+    // than fixed here because a catch needs an owner decision on the actual
+    // fallback behaviour (mark `writeFailed_` and skip the segment, the way
+    // a failed `is_open()` already does two lines down, vs. propagate and
+    // let the session end) -- session/log semantics, not a mechanical fix.
     stream_.open(utf8Path(path), std::ios::out | std::ios::trunc);
     if (!stream_.is_open()) {
         // Station-4 fix round (PR #31, finding 6): a directory that does not

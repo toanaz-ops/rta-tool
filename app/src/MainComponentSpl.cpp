@@ -165,8 +165,14 @@ void MainComponent::exportReportClicked() {
                                          : juce::String("export: failed to write ") + juce::String(path),
                                      juce::dontSendNotification);
     } catch (const std::exception& e) {
-        exportReportReadout_.setText(juce::String("EXPORT FAILED: ") + juce::String(e.what()),
-                                     juce::dontSendNotification);
+        // fromUTF8, not the juce::String(const char*) ctor: `what()` for a
+        // path-carrying exception (utf8Path()'s own throw, for instance) can
+        // contain a non-ASCII path byte, and the narrow ctor assumes the
+        // platform's default (non-UTF-8) encoding -- mojibake, not a crash,
+        // which is why it survived until an operator actually saw the text.
+        exportReportReadout_.setText(
+            juce::String("EXPORT FAILED: ") + juce::String::fromUTF8(e.what()),
+            juce::dontSendNotification);
     }
 }
 

@@ -388,7 +388,7 @@ std::uint64_t AnalysisThread::splDroppedSamples(int channel) const noexcept {
     return splState_.droppedSamples[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);
 }
 
-bool AnalysisThread::isSplLoggingEnabled() const noexcept {
+bool AnalysisThread::isSplLoggingEnabledForTest() const noexcept {
     return splState_.logPipeline.enabled();
 }
 

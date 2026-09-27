@@ -71,11 +71,11 @@ bool staysTrueFor(const std::function<bool()>& predicate, int durationMs) {
     return predicate();
 }
 
-/// `AnalysisThread::isSplLoggingEnabled()` mirrors the LOG PIPELINE (the
+/// `AnalysisThread::isSplLoggingEnabledForTest()` mirrors the LOG PIPELINE (the
 /// disk writer), not the in-memory metering session -- `enableSplLogging`'s
 /// own comment (AnalysisThread.h) is explicit that an empty `logDirectory`
 /// starts metering only, with "nothing touches disk", so this test's one
-/// observable (isSplLoggingEnabled) needs a real directory, the same
+/// observable (isSplLoggingEnabledForTest) needs a real directory, the same
 /// TempDir shape test_spl_log_wiring.cpp/test_spl_log_wiring_disable.cpp
 /// both already use.
 struct TempDir {
@@ -205,20 +205,20 @@ TEST_CASE("switching panes does not stop or restart SPL logging",
     const rta::measure::SplConfig config;
     const std::array<int, 1> channels{0};
     MainComponentTestAccess::analysisThread(component).enableSplLogging(config, channels, tempDir.path.string());
-    REQUIRE(waitUntil([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabled(); }, 2000));
+    REQUIRE(waitUntil([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabledForTest(); }, 2000));
 
     component.selectPaneView(PaneSelectorButton::Spl);
     // A mutant that adds a disable() call needs a moment for its OWN async
     // request to land -- staysTrueFor holds the assertion open across that
     // settle window instead of reading the flag once, immediately, which
     // would still read "true" a mutant would only flip a few ms later.
-    CHECK(staysTrueFor([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabled(); }, 200));
+    CHECK(staysTrueFor([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabledForTest(); }, 200));
 
     component.selectPaneView(PaneSelectorButton::Rta);
-    CHECK(staysTrueFor([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabled(); }, 200));
+    CHECK(staysTrueFor([&] { return MainComponentTestAccess::analysisThread(component).isSplLoggingEnabledForTest(); }, 200));
 
     MainComponentTestAccess::analysisThread(component).disableSplLogging();
-    REQUIRE(waitUntil([&] { return !MainComponentTestAccess::analysisThread(component).isSplLoggingEnabled(); }, 2000));
+    REQUIRE(waitUntil([&] { return !MainComponentTestAccess::analysisThread(component).isSplLoggingEnabledForTest(); }, 2000));
 }
 
 // --- Fix round 1 (verifier NOT SOUND, 4 MEDIUM): the tests above all called

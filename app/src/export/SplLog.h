@@ -51,6 +51,21 @@ namespace rta::splexport {
 /// `SplReportPayloadBuilder.cpp::buildReportPayload`. This is no longer a
 /// single-caller function -- do not reintroduce that assumption in a comment
 /// near a new call site.
+///
+/// This is NOT a bare widening with no failure mode (fix round 4, LOW-6: a
+/// caller-side comment described it that way, which is wrong): `utf8`
+/// bytes that are not well-formed UTF-8 (a lone continuation byte, a
+/// truncated multi-byte sequence) make the `std::u8string`/`path`
+/// construction below throw, the same family of exception `utf8String`'s
+/// own doc comment already documents for the OPPOSITE direction. Every
+/// caller today hands this function bytes that came from
+/// `juce::File::getFullPathName().toStdString()` or a literal appended to
+/// one, and JUCE's own `String` is always well-formed UTF-8 by construction
+/// -- so the throw has no known way to trigger with a real path this app
+/// produces, not a guarantee the type signature makes. `SplLogWriter.cpp`'s
+/// `openSegment()` calls this uncaught on the writer thread; see that
+/// function's own comment for why that gap is left open rather than fixed
+/// here.
 [[nodiscard]] inline std::filesystem::path utf8Path(const std::string& utf8) {
     return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
 }

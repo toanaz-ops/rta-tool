@@ -31,6 +31,14 @@ struct CaptureMeta {
     int fftSize = 0;
     std::string window;
     std::string averagingType;
+    /// For a TRANSFER capture (CaptureConverter.cpp): the FIFO frame count
+    /// only when `transferAveraging == TransferAveraging::Fifo`. Exponential
+    /// averaging has no integer "depth" -- its own knob is
+    /// `Analyser::Config::timeConstantSeconds`, a seconds value this field
+    /// cannot carry -- so an Exponential capture records 0 here, not a
+    /// truncated/misconverted stand-in. For an RTA capture this is always 0
+    /// (no averaging count of its own to report). PR #51 round-1 LOW F3;
+    /// R4.
     int averagingDepth = 0;
     /// Effective, not raw: overlapped frames are not independent (dual-FFT
     /// record §5), and a gate that trusts a raw count opens too early.

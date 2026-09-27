@@ -100,10 +100,10 @@ bool waitForSplLoggingOff(const AnalysisThread& thread, int timeoutMs) {
     const auto deadline =
         juce::Time::getMillisecondCounter() + static_cast<std::uint32_t>(timeoutMs);
     while (juce::Time::getMillisecondCounter() < deadline) {
-        if (!thread.isSplLoggingEnabled()) return true;
+        if (!thread.isSplLoggingEnabledForTest()) return true;
         juce::Thread::sleep(5);
     }
-    return !thread.isSplLoggingEnabled();
+    return !thread.isSplLoggingEnabledForTest();
 }
 
 std::string readWholeFile(const std::filesystem::path& path) {
@@ -154,7 +154,7 @@ TEST_CASE("disableSplLogging() actually calls through to SplLogPipeline::disable
     // The reliable, race-free signal instead: `SplLogPipeline::disable()`
     // clears its own `running_` flag as the very FIRST thing it does, before
     // the join that follows (SplLogPipeline.cpp's own comment on
-    // `disable()`). `AnalysisThread::isSplLoggingEnabled()` mirrors that flag
+    // `disable()`). `AnalysisThread::isSplLoggingEnabledForTest()` mirrors that flag
     // directly. Under the mutant, `disable()` is never called, so `running_`
     // never clears and this stays `true` forever; under the real fix, it
     // reliably flips to `false` once the pending disable request lands, with
@@ -175,7 +175,7 @@ TEST_CASE("disableSplLogging() actually calls through to SplLogPipeline::disable
     // Implies the enable request already landed -- metering could not
     // otherwise have produced any blocks on this channel.
     REQUIRE(waitForSplBlocks(thread, 0, kBlocks, 5000));
-    REQUIRE(thread.isSplLoggingEnabled());
+    REQUIRE(thread.isSplLoggingEnabledForTest());
 
     thread.disableSplLogging();
     REQUIRE(waitForSplLoggingOff(thread, 2000));

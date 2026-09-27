@@ -169,6 +169,57 @@ bool looksLikeParameterList(const std::string& arg) {
     return arg.find('&') != std::string::npos;
 }
 
+/// `text` with every `->` rewritten to `.` -- fix round 4 items 10-12: a
+/// pointer's `->string()`/`->open(` is the exact same ACP hazard as a
+/// value's `.string()`/`.open(`, and an anchor spelled only with `.` would
+/// silently pass a new call site written through a pointer. This is a LOCAL
+/// copy on top of `rta::test::codeText`'s shared output, not a change to
+/// that shared function itself: `codeTextOf`'s own header comment explains
+/// why -- `->`/`.` need to read as DIFFERENT tokens for
+/// app/tests/test_spl_drain.cpp's D1, which counts them separately as
+/// pointer-vs-value ring-buffer calls, so this equivalence is this file's
+/// own to build, not something every caller of the shared reader should
+/// have imposed on it.
+std::string arrowsAsDots(const std::string& text) {
+    std::string result;
+    result.reserve(text.size());
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '-' && i + 1 < text.size() && text[i + 1] == '>') {
+            result.push_back('.');
+            ++i;
+            continue;
+        }
+        result.push_back(text[i]);
+    }
+    return result;
+}
+
+/// `text` with a single space directly before `(` removed -- fix round 4
+/// items 11-12: `.open (` / `.string ()` (valid C++; this codebase does not
+/// enforce one spelling) otherwise reads as a different token sequence than
+/// the no-space `.open(`/`.string()` this file's own anchors are spelled
+/// with, and evades them.
+///
+/// LOCAL to this file (lane-end LOW batch round 1, MEDIUM V1 -- round 0 put
+/// this same strip into the SHARED `rta::test::codeTextOf` instead, on the
+/// claim that it was "safe for every caller". It was not: `codeTextOf` is
+/// also what `test_spl_publish.cpp`'s C3 uses to anchor on the literal
+/// `"valuedb > "` (trailing space) to catch a re-derived alarm comparison,
+/// and the shared strip turned `valueDb > (limitDb)` into
+/// `valuedb >(limitdb)`, silencing C3 -- caught by round-1 verification via
+/// mutation, not by the inspection the original claim rested on. A
+/// normalisation only THIS file wants stays in THIS file, the same
+/// reasoning `arrowsAsDots` above already follows.
+std::string spaceBeforeParenStripped(const std::string& text) {
+    std::string result;
+    result.reserve(text.size());
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == ' ' && i + 1 < text.size() && text[i + 1] == '(') continue;
+        result.push_back(text[i]);
+    }
+    return result;
+}
+
 bool isAllowListed(const std::string& arg, const std::string& wholeFileText) {
     if (arg.find("tofspath(") != std::string::npos) return true;
     if (arg.find("utf8path(") != std::string::npos) return true;
@@ -198,14 +249,20 @@ void checkFile(const std::filesystem::path& file) {
 
     // R3-1: the throwing direction. No allowed spelling of `.string()`/
     // `.generic_string()` exists in scope at all -- utf8String() (SplLog.h)
-    // is the only way to get a path's bytes as a std::string here.
+    // is the only way to get a path's bytes as a std::string here. Scanned
+    // through `normalisedText` (fix round 4 items 10-12; MEDIUM V1
+    // corrected which normalisations are shared vs. local), so `ptr->
+    // string()` and `.string ()` both read the same as `.string()` -- see
+    // `arrowsAsDots`'s and `spaceBeforeParenStripped`'s own comments for why
+    // both are LOCAL normalisations, not ones `codeText` itself applies.
+    const std::string normalisedText = spaceBeforeParenStripped(arrowsAsDots(text));
     INFO("file: " << file.string());
-    CHECK(text.find(".string()") == std::string::npos);
-    CHECK(text.find(".generic_string()") == std::string::npos);
+    CHECK(normalisedText.find(".string()") == std::string::npos);
+    CHECK(normalisedText.find(".generic_string()") == std::string::npos);
 
-    // R3-1: a `.open(` member call must open through the same allow list a
-    // free constructor does.
-    for (const auto& arg : dotOpenArgs(text)) {
+    // R3-1: a `.open(`/`->open(`/`.open (` member call must open through the
+    // same allow list a free constructor does.
+    for (const auto& arg : dotOpenArgs(normalisedText)) {
         if (looksLikeParameterList(arg)) continue;
         INFO("file: " << file.string());
         INFO("type: .open(");
@@ -229,6 +286,32 @@ TEST_CASE("Every path/stream construction in app/src and app/src/export is ACP-s
         const auto ext = entry.path().extension().string();
         if (ext == ".h" || ext == ".hpp" || ext == ".cpp") checkFile(entry.path());
     }
+}
+
+TEST_CASE("the path guard's local text normalisers actually normalise",
+         "[main_component_session][path_guard]") {
+    // Lane-end LOW batch round 1, LOW V2: neither `arrowsAsDots` nor
+    // `spaceBeforeParenStripped` was pinned by its own test -- a change that
+    // silently made either one the identity function would still compile
+    // and every OTHER test in this file would still pass (none of the
+    // scanned files today actually contain a `->string(`/`->open(`/
+    // `.open (` site, so `checkFile`'s own CHECKs would stay green on
+    // nothing to catch). Direct, synthetic checks on both, independent of
+    // any real source file.
+    //
+    // The `!=` line beside each: what would be true if the normaliser were
+    // ever REPLACED with `return text;` -- were that mutation applied, this
+    // exact assertion (not the `==` one above it) is the one that would
+    // read differently and fail, which is the definition of this test
+    // catching that mutant.
+    CHECK(arrowsAsDots("path->string()") == "path.string()");
+    CHECK(arrowsAsDots("path->string()") != "path->string()");
+    CHECK(spaceBeforeParenStripped(".open (x)") == ".open(x)");
+    CHECK(spaceBeforeParenStripped(".open (x)") != ".open (x)");
+    // Both compose: a pointer call with the space-before-paren spelling
+    // reads as the plain, no-space, dot form after both run in sequence --
+    // the exact chain `checkFile` applies.
+    CHECK(spaceBeforeParenStripped(arrowsAsDots("path->open (x)")) == "path.open(x)");
 }
 
 TEST_CASE("The path/stream construction guard is not vacuous", "[main_component_session][path_guard]") {

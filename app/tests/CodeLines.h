@@ -86,6 +86,28 @@ namespace rta::test {
 /// Remaining limitation, and this one is a real boundary rather than a wish: raw
 /// string literals (`R"(...)"`) are not handled. Neither is a preprocessor
 /// conditional -- both arms are read. A scan is a scan, not a preprocessor.
+///
+/// Lane-end LOW batch, 2026-09-27, round 1 (MEDIUM V1): this function used
+/// to ALSO strip a space directly before `(` (for the path guard's `.open (`/
+/// `.string ()` spelling gap, PR #43 fix round 4 items 11-12) and, briefly,
+/// collapse `->` to `.` (see the git history of this comment for that one --
+/// reverted the same round it landed, once it zeroed test_spl_drain.cpp's D1
+/// count). The space-strip looked safe by the same argument, but WAS NOT:
+/// `test_spl_publish.cpp`'s C3 anchors on the literal `"valuedb > "` (with
+/// its trailing space) to catch a re-derived alarm comparison; the strip
+/// turns `valueDb > (limitDb)` into `valuedb >(limitdb)`, and C3 no longer
+/// finds it -- a real MEDIUM, caught by round-1 verification via mutation
+/// (`return valueDb > (limitDb);` in `SplAlarms.cpp`, missed on the "fixed"
+/// tree, caught on `origin/main`'s), not by inspection. Both normalisations
+/// are now LOCAL to the one caller that wants them
+/// (test_main_component_session_path_guard.cpp's own `arrowsAsDots` and
+/// `spaceBeforeParenStripped`), never applied here: this function is SHARED
+/// (this file's own header comment explains why), and a normalisation safe
+/// for one caller is not provably safe for every caller until it is checked
+/// against every caller's own tests -- exactly the checking step the first
+/// attempt skipped. `codeTextOf` itself is back to its pre-2026-09-27
+/// behaviour: comments and literal contents stripped, whitespace runs
+/// collapsed to one space, nothing else.
 [[nodiscard]] inline std::string codeTextOf(const std::string& raw) {
     std::string stripped;
     stripped.reserve(raw.size());

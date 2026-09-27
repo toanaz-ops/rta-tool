@@ -15,8 +15,14 @@ cmake_minimum_required(VERSION 3.22)
 # every CMakeLists.txt and *.cmake under DIRS -- the task spec calls those out
 # by name because a 600-line CMakeLists.txt is exactly as unreadable as a
 # 600-line .cpp, and nothing else was watching it. TOOLS_DIR (optional) is
-# scanned for *.cpp ONLY: tools/ is mostly *.py generator/probe scripts this
-# guard does not govern (they are not C++ and were never in scope here).
+# scanned for *.cpp AND *.py (widened lane-end LOW batch round 1, LOW V3:
+# tools/orphan_check.py itself crossed 400 lines and nothing caught it, the
+# exact failure mode this whole guard exists to prevent -- see git history
+# for the split that brought it back under). tools/ is still mostly one-off
+# *.py generator/probe scripts (gen_*.py, probe_*.py) that predate this
+# widening and are not shared, ongoing tooling the way orphan_check.py's own
+# module family is -- see EXCLUDES below and the registering CMakeLists for
+# that specific, dated exemption.
 #
 # EXTRA_FILES (optional): semicolon-separated exact file paths scanned in
 # addition to DIRS/TOOLS_DIR -- for a file that lives outside every scanned
@@ -68,7 +74,7 @@ if(DEFINED TOOLS_DIR)
     if(NOT IS_DIRECTORY "${TOOLS_DIR}")
         message(FATAL_ERROR "file-length guard: TOOLS_DIR=${TOOLS_DIR} is not a directory")
     endif()
-    file(GLOB_RECURSE TOOLS_FOUND "${TOOLS_DIR}/*.cpp")
+    file(GLOB_RECURSE TOOLS_FOUND "${TOOLS_DIR}/*.cpp" "${TOOLS_DIR}/*.py")
     list(APPEND SOURCES ${TOOLS_FOUND})
 endif()
 
