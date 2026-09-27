@@ -50,12 +50,12 @@
 #   - On `push` to `main`, a SECOND leg also runs: the plain Visual Studio
 #     18 2026 generator, no sccache, matching CLAUDE.md's own Build section
 #     exactly. Its purpose is NOT speed -- it is the generator every local
-#     dev build actually uses, so a defect that is somehow specific to the
-#     Ninja leg (a build-system quirk, not a compiler one: both legs still
-#     call the same cl.exe/link.exe/rc.exe) surfaces on `main` shortly after
-#     merge instead of staying invisible for the life of the project. This
-#     is the answer to the trial PR's own open risk ("no local repro for a
-#     Ninja-only bug"): `main` gets a repro path within one push.
+#     dev build actually uses. A defect that only the VS generator hits (a
+#     build-system quirk, not a compiler one: both legs still call the same
+#     cl.exe/link.exe/rc.exe) is invisible to the PR's Ninja leg, and this
+#     leg surfaces it on `main` one push after merge. That is the price of
+#     the hybrid: such a defect is caught after merge, not before. (A defect
+#     only Ninja hits is already caught by the PR leg itself.)
 #   - The push-to-main run of the Ninja leg ALSO exists to keep sccache's
 #     GitHub Actions cache warm on the default branch. Per GitHub's cache
 #     access rules (Actions docs, "Restrictions for accessing a cache":

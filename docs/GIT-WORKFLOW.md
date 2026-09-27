@@ -63,7 +63,8 @@ Remote: `https://github.com/toanaz-ops/rta-tool` (public since before 2026-09-26
    **`ci-app-on.yml`'s `app-on` job is a two-leg matrix (hybrid, 2026-09-27):**
    a PR runs only the Ninja + sccache leg. A `push` to `main` also runs a
    Visual Studio 18 2026 leg, no sccache, matching CLAUDE.md's Build section
-   exactly — so a Ninja-only defect still surfaces on `main` after merge, and
+   exactly — so a defect only the VS generator hits still surfaces on `main`
+   after merge, and
    sccache's GitHub Actions cache stays warm for PR branches to inherit.
    PR #48 measured: baseline median 30.1 min; cold 32.5 min (Build 29.05, 0%
    hit); warm (same branch, empty commit) 4.4 min (Build 2.45, 98.7% hit) —
