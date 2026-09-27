@@ -38,6 +38,47 @@
 # `paths-ignore` skips the workflow only when ALL changed paths match, so
 # one C++/CMake/workflow file in the PR brings the job back. A skipped
 # workflow shows no check on the PR; that is expected for such a PR.
+#
+# HYBRID sccache trial (owner decision 2026-09-27, after PR #48's measured
+# trial: baseline median 30.1 min, cold 32.5 min / 0% hit, warm 4.4 min
+# (Build 2.45 min) / 98.7% hit on an empty commit -- see PR #48's body and
+# docs/GIT-WORKFLOW.md #3 for the full numbers):
+#   - On `pull_request`, only the Ninja + sccache leg below runs. It is the
+#     one PR authors and reviewers see, and the one that amortizes across a
+#     PR's own fix-round pushes (the ~25-min-per-round cost
+#     docs/GIT-WORKFLOW.md already names).
+#   - On `push` to `main`, a SECOND leg also runs: the plain Visual Studio
+#     18 2026 generator, no sccache, matching CLAUDE.md's own Build section
+#     exactly. Its purpose is NOT speed -- it is the generator every local
+#     dev build actually uses, so a defect that is somehow specific to the
+#     Ninja leg (a build-system quirk, not a compiler one: both legs still
+#     call the same cl.exe/link.exe/rc.exe) surfaces on `main` shortly after
+#     merge instead of staying invisible for the life of the project. This
+#     is the answer to the trial PR's own open risk ("no local repro for a
+#     Ninja-only bug"): `main` gets a repro path within one push.
+#   - The push-to-main run of the Ninja leg ALSO exists to keep sccache's
+#     GitHub Actions cache warm on the default branch. Per GitHub's cache
+#     access rules (Actions docs, "Restrictions for accessing a cache":
+#     a workflow run can restore a cache created on the current branch, the
+#     base branch of a pull request, or the default branch), a cache entry
+#     sccache writes from a `main` push is restorable by a pull_request run
+#     whose base is `main` -- i.e. by any ordinary PR against this repo.
+#     sccache's own GHA backend doc (mozilla/sccache docs/GHA.md) confirms
+#     it authenticates with `ACTIONS_RESULTS_URL` / `ACTIONS_RUNTIME_TOKEN`,
+#     the same tokens and the same underlying Actions cache/results service
+#     `actions/cache` uses -- so this is the same access-scope guarantee,
+#     not a different one sccache invented; GitHub's own docs are the
+#     citation for the scope rule, sccache's docs are the citation for it
+#     using that same service. A brand-new PR branch that has never pushed
+#     under this workflow before therefore still gets *some* warm entries
+#     (anything unchanged since the last `main` push), not just a fully
+#     cold cache -- though a PR that touches many files will still see
+#     fewer hits than the same-branch warm case PR #48 measured (98.7%,
+#     which is an upper bound: an empty commit changes nothing at all).
+#   - Only one leg uploads the `rtatool-snapshot-<run_number>` artifact
+#     (the Ninja leg): `actions/upload-artifact` requires a unique name per
+#     workflow run, and `github.run_number` is shared by both legs of the
+#     same run, so a second upload under that name would collide.
 name: CI (app ON)
 
 on:
@@ -63,16 +104,41 @@ permissions:
 
 jobs:
   app-on:
-    name: rtatool app (RTA_BUILD_APP=ON, windows-latest)
+    name: ${{ matrix.job_name }}
     runs-on: windows-latest
 
-    # EXPERIMENTAL (owner-approved trial, 2026-09-27): sccache via the GitHub
-    # Actions cache backend, to see whether it shortens this job's ~27 min
-    # Build step. SCCACHE_GHA_ENABLED is read by the sccache binary itself at
-    # build time (mozilla-actions/sccache-action's own README sets it this
-    # way); it does not need the `actions:` permission scope; this job already
-    # proves that with its unrelated JUCE-checkout cache above, using the same
-    # `contents: read` grant.
+    # matrix, not two separate job blocks or YAML anchors (GitHub Actions'
+    # YAML dialect does not support anchors/aliases): the two legs share
+    # every step below verbatim except the generator, the launcher flags,
+    # and which two steps are Ninja-only, so a matrix keeps the shared
+    # steps written ONCE instead of duplicated across two job bodies.
+    # `main_only` gates the VS leg to `push` events via the job-level `if:`
+    # below, which GitHub evaluates once per expanded matrix combination
+    # (so it sees THIS leg's own `matrix.main_only`, not the other leg's).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Leg (a): unchanged name/behaviour from the PR #48 trial -- runs
+          # on both pull_request and push, and is the one PR checks show.
+          - job_name: "rtatool app (RTA_BUILD_APP=ON, windows-latest)"
+            generator: Ninja
+            generator_args: ""
+            launcher_args: "-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
+            use_sccache: true
+            main_only: false
+          # Leg (b): the generator every local dev build actually runs
+          # (CLAUDE.md's own Build section: `-G "Visual Studio 18 2026"
+          # -A x64`), no sccache, `main`-only -- see the file header for why.
+          - job_name: "rtatool app (VS generator, main only)"
+            generator: "Visual Studio 18 2026"
+            generator_args: "-A x64"
+            launcher_args: ""
+            use_sccache: false
+            main_only: true
+
+    if: matrix.main_only == false || github.event_name == 'push'
+
     env:
       SCCACHE_GHA_ENABLED: "true"
 
@@ -81,20 +147,16 @@ jobs:
 
       # sccache wraps cl.exe (CMAKE_<LANG>_COMPILER_LAUNCHER, set at Configure
       # below) and needs cl/link/rc on PATH -- vcvars, not just any MSVC
-      # install. This step is ALSO the reason the generator changes to Ninja
-      # two steps down: CMAKE_CXX_COMPILER_LAUNCHER is a Makefiles/Ninja-only
-      # hook. The Visual Studio generator drives the build through MSBuild's
-      # own invocation of cl.exe and never consults that CMake variable, so
-      # sccache would sit configured and idle. Local dev builds still use
-      # "Visual Studio 18 2026" (CLAUDE.md's own Build section, unchanged) --
-      # this CI job alone runs Ninja, so a Ninja-only build quirk could show
-      # up here without a local repro. That trade-off is the owner's call;
-      # this comment exists so the swap is never mistaken for the generator
-      # the project actually ships with.
+      # install. Ninja leg only: CMAKE_CXX_COMPILER_LAUNCHER is a
+      # Makefiles/Ninja-only hook, ignored by the Visual Studio generator
+      # (MSBuild drives cl.exe itself), so the VS leg has no use for either
+      # this step or sccache and skips both.
       - name: Set up MSVC dev environment (vcvars for Ninja + cl.exe)
+        if: matrix.use_sccache
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Set up sccache
+        if: matrix.use_sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
       # --- JUCE cache -----------------------------------------------------
@@ -111,7 +173,11 @@ jobs:
       # directory. The CMakeLists.txt code path under test is identical
       # either way (FetchContent_Declare + FetchContent_MakeAvailable); only
       # the population source changes, exactly as it would if a developer
-      # ran the same build twice with a warm FetchContent cache.
+      # ran the same build twice with a warm FetchContent cache. Shared by
+      # both legs -- the cached JUCE source tree is generator-independent,
+      # so both write/read the same `juce-${{ runner.os }}-<tag>` key; a
+      # concurrent miss on `push` (both legs cold at once) makes the second
+      # cache save a harmless "already exists" no-op, not a failure.
       #
       # Why not cache build/_deps directly (the more obvious "cache the
       # FetchContent fetch" reading) -- MEASURED locally, not assumed: after
@@ -165,17 +231,17 @@ jobs:
           git clone --branch "${{ steps.juce.outputs.tag }}" --depth 1 \
             https://github.com/juce-framework/JUCE.git juce-cache/juce-src
 
-      # -G Ninja + the two launcher variables are the only lines this trial
-      # adds here. Everything else -- RTA_BUILD_TESTS, RTA_BUILD_APP, the
-      # FETCHCONTENT_SOURCE_DIR_JUCE override above -- is untouched, so the ON
-      # configuration under test is the same one the VS-generator run built.
+      # `matrix.generator`/`generator_args`/`launcher_args` are the only
+      # per-leg differences here. Everything else -- RTA_BUILD_TESTS,
+      # RTA_BUILD_APP, the FETCHCONTENT_SOURCE_DIR_JUCE override above -- is
+      # identical between legs, so both configure the same ON tree; only the
+      # build system driving the compiler differs.
       - name: Configure
         shell: bash
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          cmake -S . -B build -G "${{ matrix.generator }}" ${{ matrix.generator_args }} -DCMAKE_BUILD_TYPE=Release \
             -DRTA_BUILD_TESTS=ON -DRTA_BUILD_APP=ON \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            ${{ matrix.launcher_args }} \
             -DFETCHCONTENT_SOURCE_DIR_JUCE="$(pwd)/juce-cache/juce-src" \
             2>&1 | tee configure.log
 
@@ -192,7 +258,9 @@ jobs:
       # reimplemented so the two gates cannot quietly drift apart -- see
       # that step's own comment for fix round PR #40 LOW F5 (`CMake
       # Deprecation Warning` is a distinct message class a plain `CMake
-      # Warning` grep misses).
+      # Warning` grep misses). Both legs run this gate: it is generator-
+      # agnostic and the whole point of leg (b) is not to silently exempt
+      # the VS generator from anything leg (a) already checks.
       - name: Configure warnings
         shell: bash
         run: |
@@ -208,7 +276,10 @@ jobs:
       # unit and OOMs a 4-vCPU runner (run 34972953923, ci.yml's own
       # comment). The ON tree compiles JUCE itself plus every app/ui/platform
       # target, so it is the biggest build this repository asks a CI runner
-      # to do -- the cap matters here at least as much as it does OFF.
+      # to do -- the cap matters here at least as much as it does OFF. Same
+      # command for both legs: `--config Release` is consumed by the
+      # multi-config VS generator and harmlessly ignored by the single-config
+      # Ninja one (CMAKE_BUILD_TYPE=Release from Configure already fixed it).
       - name: Build
         shell: bash
         run: cmake --build build --config Release --parallel 4 2>&1 | tee build.log
@@ -216,7 +287,8 @@ jobs:
       # Identical gate and identical pattern to ci.yml's Warnings step --
       # copied, not reimplemented, so the two jobs can never quietly drift
       # apart on what counts as a warning. See ci.yml's own comment for why
-      # a log grep and not -Werror.
+      # a log grep and not -Werror. Both legs run this gate for the same
+      # reason as Configure warnings above.
       - name: Warnings
         shell: bash
         run: |
@@ -232,10 +304,11 @@ jobs:
       # (mozilla-actions/sccache-action also writes a stats table to the job
       # summary on post-job, but a dedicated step keeps the numbers in the
       # plain step log too, where `gh run view --log` can grab them without
-      # parsing the summary). `if: always()` so a build/test failure still
-      # reports what sccache saw.
+      # parsing the summary). Ninja leg only -- the VS leg never installs
+      # sccache. `if: always()` so a build/test failure still reports what
+      # sccache saw.
       - name: sccache stats
-        if: always()
+        if: always() && matrix.use_sccache
         shell: bash
         run: sccache --show-stats
 
@@ -251,7 +324,9 @@ jobs:
       # none of the JUCE-using test targets ever creates a window or a
       # desktop peer (each target's CMakeLists.txt says so; rtatool_snapshot
       # is the existing proof that this repo's JUCE code already renders
-      # headlessly).
+      # headlessly). Both legs run the full suite -- leg (b) is the one
+      # whose ctest count is compared against leg (a)'s as the push-to-main
+      # correctness check.
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
@@ -260,13 +335,21 @@ jobs:
       # just built. `cmd //c` is a Git-Bash-on-a-dev-machine workaround
       # (CLAUDE.md's own note: "direct invocation returns 127"); this step
       # runs under pwsh, the default shell action steps get on windows-latest
-      # when no `shell:` is given, so the exe is invoked directly.
+      # when no `shell:` is given, so the exe is invoked directly. Both legs
+      # render (cheap, and it is real evidence the VS-built binary also
+      # works, not just the Ninja-built one); only one leg uploads it below.
       - name: Render GUI snapshot
         run: |
           build\app\rtatool_snapshot_artefacts\Release\rtatool_snapshot.exe shots 1100 760
           Get-ChildItem shots\*.png | Format-Table Name, Length
 
+      # Ninja leg only: `github.run_number` is shared by both legs of the
+      # same workflow run, so both uploading `rtatool-snapshot-<run_number>`
+      # would collide on the artifact name. The Ninja leg is the one PR
+      # reviewers already look at (file header, "Its purpose ... is the one
+      # PR checks show"), so it keeps the upload.
       - name: Upload GUI snapshot
+        if: matrix.use_sccache
         uses: actions/upload-artifact@v4
         with:
           name: rtatool-snapshot-${{ github.run_number }}
