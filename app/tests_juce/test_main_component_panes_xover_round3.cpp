@@ -75,6 +75,23 @@ TEST_CASE("TraceLibrary::clear() reverts a complete xover selection to refusal v
     pane.inversionComboForTest().setSelectedId(1, juce::sendNotificationSync);
     REQUIRE(pane.hasCompleteSelectionForTest());
 
+    // Prime the timer's own gate (RepaintGate.h: `GateState::primed`) BEFORE
+    // clear() -- its first-ever tick refreshes unconditionally regardless of
+    // whether the revision moved, so a poll started only AFTER clear() would
+    // pass even under a mutant that drops clear()'s `++revision_` entirely,
+    // by refreshing on that "first tick" freebie rather than on the revision
+    // change this test means to prove. One tick, on the SAME live pane, is
+    // enough to capture the CURRENT (pre-clear) revision as the gate's own
+    // baseline.
+    {
+        const auto primeDeadline = juce::Time::getMillisecondCounter() + 1000u;
+        while (juce::Time::getMillisecondCounter() < primeDeadline) {
+            juce::Thread::sleep(20);
+            juce::Timer::callPendingTimersSynchronously();
+        }
+    }
+    REQUIRE(pane.hasCompleteSelectionForTest());  // the priming tick changed nothing real
+
     // This is exactly the call MainComponentSession::performOpen makes
     // (`library_.clear()`) before repopulating from a newly opened session --
     // called directly here, on the SAME live pane instance, so this test
