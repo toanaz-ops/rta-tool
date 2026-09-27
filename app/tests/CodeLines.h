@@ -86,6 +86,31 @@ namespace rta::test {
 /// Remaining limitation, and this one is a real boundary rather than a wish: raw
 /// string literals (`R"(...)"`) are not handled. Neither is a preprocessor
 /// conditional -- both arms are read. A scan is a scan, not a preprocessor.
+///
+/// One more normalisation (PR #43 fix round 4, items 11-12: the path guard
+/// in test_main_component_session_path_guard.cpp anchors on literal text
+/// like `.string(` and `.open(`, which only protects the EXACT spelling a
+/// pin was written against, not a new site spelled differently): a space
+/// directly before `(` is removed (after the whitespace-run collapse above
+/// already reduced any RUN of spaces to one) -- `.open (` or `.string ()`
+/// -- valid C++, and this codebase does not enforce one spelling --
+/// otherwise reads as a different token sequence than `.open(`/`.string()`
+/// and evades a literal anchor built on the no-space spelling.
+///
+/// `->` is deliberately NOT collapsed to `.` here (fix round 4 item 10 asked
+/// for it in this shared function; lane-end LOW batch, 2026-09-27, found why
+/// not): this function is shared with app/tests/test_spl_drain.cpp's D1,
+/// which counts `->peek(`/`->discard(` specifically as POINTER calls on a
+/// `rta::dsp::RingBuffer*` to prove the drain never opens a second ring
+/// read -- collapsing every `->` to `.` silently zeroed that count (0 == 3,
+/// caught by this repo's own ctest run, not by inspection) instead of
+/// catching the new hazard it was meant to. A caller that wants `->`/`.`
+/// treated alike for MEMBER ACCESS specifically -- the path guard's own
+/// reason -- normalises its OWN copy of this function's output; see that
+/// file's own `arrowsAsDots` helper. One shared reader, callers that need a
+/// different equivalence class build it themselves rather than changing
+/// what every caller sees (the same reasoning this file's own header
+/// comment gives for being shared at all).
 [[nodiscard]] inline std::string codeTextOf(const std::string& raw) {
     std::string stripped;
     stripped.reserve(raw.size());
@@ -139,7 +164,17 @@ namespace rta::test {
         inSpace = false;
         collapsed.push_back(ch);
     }
-    return collapsed;
+
+    // A single space directly before `(` is not load-bearing C++ syntax --
+    // drop it so `.open (` and `.string ()` read identically to `.open(`/
+    // `.string()` for a literal-anchor scan.
+    std::string final;
+    final.reserve(collapsed.size());
+    for (std::size_t i = 0; i < collapsed.size(); ++i) {
+        if (collapsed[i] == ' ' && i + 1 < collapsed.size() && collapsed[i + 1] == '(') continue;
+        final.push_back(collapsed[i]);
+    }
+    return final;
 }
 
 /// `codeTextOf` over a whole file. Split so the literal handling above can be

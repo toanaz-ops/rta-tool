@@ -169,6 +169,31 @@ bool looksLikeParameterList(const std::string& arg) {
     return arg.find('&') != std::string::npos;
 }
 
+/// `text` with every `->` rewritten to `.` -- fix round 4 items 10-12: a
+/// pointer's `->string()`/`->open(` is the exact same ACP hazard as a
+/// value's `.string()`/`.open(`, and an anchor spelled only with `.` would
+/// silently pass a new call site written through a pointer. This is a LOCAL
+/// copy on top of `rta::test::codeText`'s shared output, not a change to
+/// that shared function itself: `codeTextOf`'s own header comment explains
+/// why -- `->`/`.` need to read as DIFFERENT tokens for
+/// app/tests/test_spl_drain.cpp's D1, which counts them separately as
+/// pointer-vs-value ring-buffer calls, so this equivalence is this file's
+/// own to build, not something every caller of the shared reader should
+/// have imposed on it.
+std::string arrowsAsDots(const std::string& text) {
+    std::string result;
+    result.reserve(text.size());
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '-' && i + 1 < text.size() && text[i + 1] == '>') {
+            result.push_back('.');
+            ++i;
+            continue;
+        }
+        result.push_back(text[i]);
+    }
+    return result;
+}
+
 bool isAllowListed(const std::string& arg, const std::string& wholeFileText) {
     if (arg.find("tofspath(") != std::string::npos) return true;
     if (arg.find("utf8path(") != std::string::npos) return true;
@@ -198,14 +223,19 @@ void checkFile(const std::filesystem::path& file) {
 
     // R3-1: the throwing direction. No allowed spelling of `.string()`/
     // `.generic_string()` exists in scope at all -- utf8String() (SplLog.h)
-    // is the only way to get a path's bytes as a std::string here.
+    // is the only way to get a path's bytes as a std::string here. Scanned
+    // through `arrowText` (fix round 4 items 10-12), so `ptr->string()` is
+    // caught the same as `value.string()` -- see `arrowsAsDots`'s own
+    // comment for why this is a LOCAL normalisation, not one `codeText`
+    // itself applies.
+    const std::string arrowText = arrowsAsDots(text);
     INFO("file: " << file.string());
-    CHECK(text.find(".string()") == std::string::npos);
-    CHECK(text.find(".generic_string()") == std::string::npos);
+    CHECK(arrowText.find(".string()") == std::string::npos);
+    CHECK(arrowText.find(".generic_string()") == std::string::npos);
 
-    // R3-1: a `.open(` member call must open through the same allow list a
-    // free constructor does.
-    for (const auto& arg : dotOpenArgs(text)) {
+    // R3-1: a `.open(`/`->open(` member call must open through the same
+    // allow list a free constructor does.
+    for (const auto& arg : dotOpenArgs(arrowText)) {
         if (looksLikeParameterList(arg)) continue;
         INFO("file: " << file.string());
         INFO("type: .open(");
