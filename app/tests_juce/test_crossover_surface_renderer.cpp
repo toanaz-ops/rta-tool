@@ -67,6 +67,56 @@ CrossoverSurface makeAsked(rta::measure::Topology topology, ProcessorInversion i
     return surface;
 }
 
+// PR #45 round 4, LOW-4. `targetLineLabel` (tested above, pure-function
+// style) proves the LABEL TEXT follows the value; it does not prove the
+// RENDER pairs the right text with the right row -- an `isPrimary` swap at
+// the two `drawCandidateLine` call sites in CrossoverSurfaceRenderer.cpp
+// (paintCrossoverPhase's `Unknown` branch, this file's own kPi-scaled
+// degrees) would still leave both candidates labelled, just with each
+// other's text, and the existing "ambiguous paints substantially more ink"
+// test cannot tell the two labels apart -- only their combined pixel COUNT.
+// This is a bitmap-level re-implementation of `drawCandidateLine`'s own
+// label placement (constants copied from that function's own comment), so
+// it can render EACH candidate's claimed label in isolation and check it is
+// the one actually printed by the surface's own render, not merely present
+// somewhere.
+constexpr double kPairingPi = 3.14159265358979323846;
+constexpr float kPairingLabelWidth = 160.0f;
+constexpr float kPairingLabelHeight = 14.0f;
+constexpr float kPairingEdgeInsetPixels = 3.0f;
+
+juce::Image renderCandidateLabelOnly(const juce::String& text, double rowDeg, juce::Rectangle<int> area) {
+    const auto geometry = rta::view::crossoverPhaseGeometry(area);
+    juce::Image image(juce::Image::ARGB, area.getWidth(), area.getHeight(), true);
+    juce::Graphics g(image);
+    g.fillAll(az::ui::background);
+    const float rowY = geometry.yForDb(rowDeg);
+    const bool nearTopFrame = (rowY - geometry.top) < (kPairingEdgeInsetPixels + kPairingLabelHeight);
+    const float labelTop = nearTopFrame ? rowY + 2.0f : rowY - kPairingLabelHeight - 2.0f;
+    g.setColour(rta::view::axisText);
+    g.setFont(az::ui::monoFont(az::ui::tableFontSize));
+    g.drawText(text,
+               juce::Rectangle<float>(geometry.right - kPairingLabelWidth, labelTop, kPairingLabelWidth,
+                                      kPairingLabelHeight),
+               juce::Justification::centredRight, false);
+    return image;
+}
+
+// True if every ink pixel of `reference` (a single candidate's label,
+// rendered alone) is also ink in `render` (the real, full surface render) --
+// i.e. `reference`'s exact glyph shape at its exact position is reproduced.
+// The real render may have MORE ink around it (the grid, the other
+// candidate's own label); it may never have LESS where `reference` has some.
+bool labelFullyReproduced(const juce::Image& render, const juce::Image& reference) {
+    for (int y = 0; y < reference.getHeight(); ++y) {
+        for (int x = 0; x < reference.getWidth(); ++x) {
+            if (reference.getPixelAt(x, y) == az::ui::background) continue;
+            if (render.getPixelAt(x, y) == az::ui::background) return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 TEST_CASE("targetLineRowsDeg wraps a +/-180 candidate to both frame edges, inset",
@@ -165,4 +215,53 @@ TEST_CASE("the ambiguous render paints substantially more ink than the single-li
     const int ambiguousInk = countNonBackgroundPixels(ambiguousImage, az::ui::background);
     const int singleInk = countNonBackgroundPixels(singleImage, az::ui::background);
     CHECK(ambiguousInk - singleInk >= expectedMinimumDiff);
+}
+
+TEST_CASE("each ambiguous candidate's real render carries ITS OWN label, not the other's",
+         "[crossover_surface_renderer]") {
+    // LOW-4: a caller-side `isPrimary` swap at either of
+    // CrossoverSurfaceRenderer.cpp's two `drawCandidateLine(...)` call sites
+    // (paintCrossoverPhase, Unknown branch) survives every OTHER test in
+    // this file -- the pure-function `targetLineLabel` tests above never
+    // touch that call site, and the ink-count test only sums pixels, so two
+    // candidates wearing each other's label still pass it. This test reads
+    // the real render pixel-for-pixel against a reference render of ONLY
+    // the label each candidate is supposed to carry.
+    constexpr int kWidth = 800;
+    constexpr int kHeight = 400;
+    const juce::Rectangle<int> area(0, 0, kWidth, kHeight);
+    const auto geometry = rta::view::crossoverPhaseGeometry(area);
+    const double degPerPixel =
+        (geometry.dbTop - geometry.dbBottom) / static_cast<double>(geometry.bottom - geometry.top);
+    const double insetDeg = kPairingEdgeInsetPixels * degPerPixel;
+
+    for (const rta::measure::Topology topology :
+        { rta::measure::Topology{ CrossoverFamily::LinkwitzRiley, 2 },
+          rta::measure::Topology{ CrossoverFamily::LinkwitzRiley, 4 },
+          rta::measure::Topology{ CrossoverFamily::Butterworth, 1 } }) {
+        const auto surface = makeAsked(topology, ProcessorInversion::Unknown);
+        REQUIRE(surface.targetAmbiguous());
+        const double primaryDeg = surface.targetRadians() * 180.0 / kPairingPi;
+        const double alternativeDeg = surface.alternativeTargetRadians() * 180.0 / kPairingPi;
+        const auto render = renderPhase(surface, area);
+
+        struct Candidate { double deg; bool isPrimary; };
+        for (const Candidate candidate : { Candidate{ primaryDeg, true }, Candidate{ alternativeDeg, false } }) {
+            const auto rows = rta::view::targetLineRowsDeg(candidate.deg, insetDeg);
+            REQUIRE_FALSE(rows.empty());
+            const auto ownLabel = rta::view::targetLineLabel(candidate.deg, candidate.isPrimary);
+            const auto otherLabel = rta::view::targetLineLabel(candidate.deg, !candidate.isPrimary);
+            INFO("order " << topology.order << " candidate " << candidate.deg << " deg -> '" << ownLabel
+                          << "' at row " << rows.front());
+
+            const auto ownReference = renderCandidateLabelOnly(ownLabel, rows.front(), area);
+            const auto otherReference = renderCandidateLabelOnly(otherLabel, rows.front(), area);
+            // The mutant this test exists for: swap `isPrimary` at the call
+            // site, and the render carries `otherLabel` at this row instead
+            // of `ownLabel` -- the first CHECK goes false, the second goes
+            // true, either one enough to fail this test.
+            CHECK(labelFullyReproduced(render, ownReference));
+            CHECK_FALSE(labelFullyReproduced(render, otherReference));
+        }
+    }
 }
