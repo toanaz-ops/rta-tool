@@ -120,7 +120,12 @@ TEST_CASE("STORE on TRANSFER with no reference fed refuses and leaves the librar
     MainComponentTestAccess::storeClickedForTest(component);
 
     CHECK(library.entries().size() == sizeBefore);
-    CHECK(MainComponentTestAccess::storeReadoutForTest(component).isNotEmpty());
+    // The call site's OWN guard (MainComponentStore.cpp), independent of
+    // CaptureConverter's copy -- checked by its own distinct wording so a
+    // mutant deleting JUST this guard (T5's own named mutant) is caught even
+    // though CaptureConverter's internal check would still refuse and leave
+    // the library untouched either way.
+    CHECK(MainComponentTestAccess::storeReadoutForTest(component).contains("no reference fed"));
 }
 
 TEST_CASE("two STORE clicks in the same pane produce two distinct trace ids",
@@ -153,6 +158,12 @@ TEST_CASE("STORE button enable state follows the pane, via click and via session
     CHECK_FALSE(MainComponentTestAccess::storeButtonEnabledForTest(component));
     component.selectPaneView(PaneSelectorButton::Xover);
     CHECK_FALSE(MainComponentTestAccess::storeButtonEnabledForTest(component));
+    // Back to an ENABLED pane via the click path before the restore-path
+    // block below: only starting from enabled does a missing guard on
+    // restoreWorkspaceFromSession (which would leave the previous state
+    // untouched instead of disabling it) actually flip the next check red.
+    component.selectPaneView(PaneSelectorButton::Rta);
+    CHECK(MainComponentTestAccess::storeButtonEnabledForTest(component));
 
     // T6: the session-Open path (restoreWorkspaceFromSession) -- the exact
     // omission this shape already bit once for the pane selector buttons
@@ -171,13 +182,16 @@ TEST_CASE("STORE names and groups follow the pane label, distinctly per click",
 
     auto& library = MainComponentTestAccess::libraryForTest(component);
     MainComponentTestAccess::storeClickedForTest(component);
-    const auto& first = library.entries().back();
+    // Copied BY VALUE, not held as a reference: the second storeClickedForTest
+    // call below push_back()s into the same TraceLibrary, which may reallocate
+    // its backing vector and invalidate any reference taken before it.
+    const auto first = library.entries().back();
     CHECK_FALSE(first.name.empty());
     CHECK(first.group == "RTA");  // paneRtaButton_'s own text (T7's own mutant target)
 
     // T7: two clicks at least one second apart produce two distinct names.
     juce::Thread::sleep(1100);
     MainComponentTestAccess::storeClickedForTest(component);
-    const auto& second = library.entries().back();
+    const auto second = library.entries().back();
     CHECK(second.name != first.name);
 }
