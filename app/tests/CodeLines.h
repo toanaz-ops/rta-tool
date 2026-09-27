@@ -87,30 +87,27 @@ namespace rta::test {
 /// string literals (`R"(...)"`) are not handled. Neither is a preprocessor
 /// conditional -- both arms are read. A scan is a scan, not a preprocessor.
 ///
-/// One more normalisation (PR #43 fix round 4, items 11-12: the path guard
-/// in test_main_component_session_path_guard.cpp anchors on literal text
-/// like `.string(` and `.open(`, which only protects the EXACT spelling a
-/// pin was written against, not a new site spelled differently): a space
-/// directly before `(` is removed (after the whitespace-run collapse above
-/// already reduced any RUN of spaces to one) -- `.open (` or `.string ()`
-/// -- valid C++, and this codebase does not enforce one spelling --
-/// otherwise reads as a different token sequence than `.open(`/`.string()`
-/// and evades a literal anchor built on the no-space spelling.
-///
-/// `->` is deliberately NOT collapsed to `.` here (fix round 4 item 10 asked
-/// for it in this shared function; lane-end LOW batch, 2026-09-27, found why
-/// not): this function is shared with app/tests/test_spl_drain.cpp's D1,
-/// which counts `->peek(`/`->discard(` specifically as POINTER calls on a
-/// `rta::dsp::RingBuffer*` to prove the drain never opens a second ring
-/// read -- collapsing every `->` to `.` silently zeroed that count (0 == 3,
-/// caught by this repo's own ctest run, not by inspection) instead of
-/// catching the new hazard it was meant to. A caller that wants `->`/`.`
-/// treated alike for MEMBER ACCESS specifically -- the path guard's own
-/// reason -- normalises its OWN copy of this function's output; see that
-/// file's own `arrowsAsDots` helper. One shared reader, callers that need a
-/// different equivalence class build it themselves rather than changing
-/// what every caller sees (the same reasoning this file's own header
-/// comment gives for being shared at all).
+/// Lane-end LOW batch, 2026-09-27, round 1 (MEDIUM V1): this function used
+/// to ALSO strip a space directly before `(` (for the path guard's `.open (`/
+/// `.string ()` spelling gap, PR #43 fix round 4 items 11-12) and, briefly,
+/// collapse `->` to `.` (see the git history of this comment for that one --
+/// reverted the same round it landed, once it zeroed test_spl_drain.cpp's D1
+/// count). The space-strip looked safe by the same argument, but WAS NOT:
+/// `test_spl_publish.cpp`'s C3 anchors on the literal `"valuedb > "` (with
+/// its trailing space) to catch a re-derived alarm comparison; the strip
+/// turns `valueDb > (limitDb)` into `valuedb >(limitdb)`, and C3 no longer
+/// finds it -- a real MEDIUM, caught by round-1 verification via mutation
+/// (`return valueDb > (limitDb);` in `SplAlarms.cpp`, missed on the "fixed"
+/// tree, caught on `origin/main`'s), not by inspection. Both normalisations
+/// are now LOCAL to the one caller that wants them
+/// (test_main_component_session_path_guard.cpp's own `arrowsAsDots` and
+/// `spaceBeforeParenStripped`), never applied here: this function is SHARED
+/// (this file's own header comment explains why), and a normalisation safe
+/// for one caller is not provably safe for every caller until it is checked
+/// against every caller's own tests -- exactly the checking step the first
+/// attempt skipped. `codeTextOf` itself is back to its pre-2026-09-27
+/// behaviour: comments and literal contents stripped, whitespace runs
+/// collapsed to one space, nothing else.
 [[nodiscard]] inline std::string codeTextOf(const std::string& raw) {
     std::string stripped;
     stripped.reserve(raw.size());
@@ -164,17 +161,7 @@ namespace rta::test {
         inSpace = false;
         collapsed.push_back(ch);
     }
-
-    // A single space directly before `(` is not load-bearing C++ syntax --
-    // drop it so `.open (` and `.string ()` read identically to `.open(`/
-    // `.string()` for a literal-anchor scan.
-    std::string final;
-    final.reserve(collapsed.size());
-    for (std::size_t i = 0; i < collapsed.size(); ++i) {
-        if (collapsed[i] == ' ' && i + 1 < collapsed.size() && collapsed[i + 1] == '(') continue;
-        final.push_back(collapsed[i]);
-    }
-    return final;
+    return collapsed;
 }
 
 /// `codeTextOf` over a whole file. Split so the literal handling above can be
