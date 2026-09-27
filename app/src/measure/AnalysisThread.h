@@ -86,6 +86,15 @@ public:
     /// message thread, nothing else).
     [[nodiscard]] SnapshotPtr latest() const override;
 
+    /// station-3 STORE task T1: `baseConfig_` is fixed for the life of this
+    /// thread (constructor comment above), so a plain accessor is enough --
+    /// no atomic, no snapshot. Exists so a caller freezing a live measurement
+    /// (`CaptureConverter::traceFromSnapshot`) can read window/averaging
+    /// straight off the analyser that produced the data, rather than a
+    /// throwaway `Analyser::Config{}` that silently goes stale the day a
+    /// runtime control changes one of these fields.
+    [[nodiscard]] const Analyser::Config& config() const noexcept { return baseConfig_; }
+
     /// The last exception `run()` caught, or `Fault::Kind::None`. Mirrors
     /// `AudioIo::lastFault()`'s mutex-guarded shape (trap T-8: a
     /// `std::string`, never a `juce::String`, crosses this boundary).

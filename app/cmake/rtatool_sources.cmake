@@ -87,6 +87,14 @@ set(RTATOOL_SOURCES
     # new Xover branch.
     src/view/CrossoverSurfaceRenderer.cpp
     src/view/CrossoverPaneView.cpp
+    # MainComponentStore.cpp: station-3 STORE button (T5) -- this file's own
+    # 400-line-cap split, same shape as MainComponentDelay.cpp/
+    # MainComponentCalibration.cpp/MainComponentSpl.cpp. CaptureConverter.cpp
+    # is JUCE-free and also compiled into rtatool_analysis_tests, but this
+    # target names every source one by one (comment above
+    # MainComponentSession.cpp), so both have to be listed here too.
+    src/MainComponentStore.cpp
+    src/trace/CaptureConverter.cpp
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
     src/view/TraceStroke.cpp

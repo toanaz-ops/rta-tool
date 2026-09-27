@@ -94,6 +94,15 @@ void MainComponent::resized() {
     exportReportReadout_.setBounds(exportRow);
     rail.removeFromTop(az::ui::gap * 2);
 
+    // station-3 STORE (T5): one more fixed row, same shape as the export row
+    // above -- the button and its readout sharing what's left.
+    auto storeRow = rail.removeFromTop(az::ui::buttonCellHeight);
+    const int storeButtonWidth = (storeRow.getWidth() - az::ui::gap) / 4;
+    storeButton_.setBounds(storeRow.removeFromLeft(storeButtonWidth));
+    storeRow.removeFromLeft(az::ui::gap);
+    storeReadout_.setBounds(storeRow);
+    rail.removeFromTop(az::ui::gap * 2);
+
     // Session persistence: SAVE SESSION / OPEN SESSION share one row, the
     // readout takes the row below it -- see MainComponentSession::layout.
     auto sessionArea = rail.removeFromTop(az::ui::buttonCellHeight * 2 + az::ui::gap);

@@ -219,6 +219,11 @@ add_executable(rtatool_routing_live_tests
     # CaptureBus::prepare() bumps the epoch, no second enableSplLogging() call
     # rescues it. Same shape as test_spl_drain.cpp.
     test_spl_epoch_freeze.cpp
+    # test_analysis_thread_config.cpp: station-3 STORE plan task T1 --
+    # AnalysisThread::config() returns the exact Config it was constructed
+    # with, not Config{}'s compile-time defaults. Same real shape as every
+    # other file in this target.
+    test_analysis_thread_config.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------
     # The SPL feed AnalysisThread.cpp now calls: its own split-off half, the

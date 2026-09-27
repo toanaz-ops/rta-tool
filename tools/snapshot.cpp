@@ -58,6 +58,7 @@
 // file before the split.
 using rta::tools::renderComponent;
 using rta::tools::renderXoverSpecimens;
+using rta::tools::renderStoreXoverSpecimen;
 
 int main (int argc, char** argv)
 {
@@ -286,6 +287,11 @@ int main (int argc, char** argv)
     // snapshot_xover.h/.cpp (split out here, round 3, once a second
     // specimen -- UNKNOWN inversion -- joined the first).
     renderXoverSpecimens (outDir, failures);
+
+    // main-live-store-xover.png: station-3 STORE plan task T8 -- the
+    // end-to-end chain this whole lane exists to prove, real STORE presses
+    // feeding a real XOVER pick. See snapshot_xover.h's own comment.
+    renderStoreXoverSpecimen (outDir, failures);
 
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
     // tuning-visuals.md): paint-only components fed canned synthetic data,

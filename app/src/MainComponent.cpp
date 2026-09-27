@@ -83,6 +83,18 @@ MainComponent::MainComponent()
     exportReportReadout_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(exportReportReadout_);
 
+    // station-3 STORE (T5): one global button, enabled on RTA/TRANSFER and
+    // disabled on SPL/XOVER by selectPaneView()/restoreWorkspaceFromSession()
+    // (MainComponentPanes.cpp, T6) -- currentPaneView_ starts at Rta, so the
+    // button starts enabled to match.
+    storeButton_.getProperties().set(az::ui::hintProperty, "freezes the current RTA/TRANSFER curve");
+    storeButton_.onClick = [this] { storeClicked(); };
+    addAndMakeVisible(storeButton_);
+
+    storeReadout_.setText("store: nothing frozen yet", juce::dontSendNotification);
+    storeReadout_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(storeReadout_);
+
     // Session persistence: the seam this task exists for -- SessionStore/
     // SessionCodec were built and tested in lane L5a with no caller anywhere
     // in app/src until now.
@@ -243,6 +255,9 @@ void MainComponent::modeSwitchClicked() {
 //
 // startFreshSplLog / startFreshSplLogWithConfig / pollSplLogging /
 // exportReportClicked: MainComponentSpl.cpp, the same split.
+//
+// storeClicked: MainComponentStore.cpp (station-3 STORE task T5), the same
+// split.
 
 void MainComponent::timerCallback() {
     // routingMatrix_ caches its cell text (RoutingMatrix.h's own class

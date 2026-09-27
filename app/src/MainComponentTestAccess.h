@@ -7,17 +7,21 @@
 // only it) friendship, so the three stay private on the class itself and
 // every other caller sees the same public surface a shipped build exposes.
 //
-// Two callers, both privileged for a stated reason, not by accident:
+// Callers, each privileged for a stated reason, not by accident:
 //   - app/tests_juce/test_main_component_panes.cpp -- proves the wiring
 //     between `selectPaneView` and the real `makePaneFactory`/
 //     `analysisThread_` that no lower-level test can see (that file's own
 //     header comment).
+//   - app/tests_juce/test_main_component_store.cpp -- station-3 STORE
+//     (tasks T5/T6/T7): drives the real `storeClicked()` handler and reads
+//     back the library/readout/button state no lower-level test can reach.
 //   - tools/snapshot.cpp -- drives `analysisThread_` directly to start
 //     metering-only SPL logging before rendering main-live-spl.png, the
 //     same "the real seam a user's click uses" reasoning `setSyntheticMode`
 //     and `selectPaneView` already document there. Not a test binary, but
 //     not shipped in `rtatool` either -- a dev/render tool, same footing as
-//     the pane test.
+//     the pane test. T8's specimen (main-live-store-xover.png) uses this
+//     same seam to drive storeClicked() twice for real.
 #pragma once
 
 // Fix round PR #40 LOW F6: this header is test/tool-only (the comment above
@@ -33,6 +37,7 @@
 #endif
 
 #include "MainComponent.h"
+#include "rta/platform/ChannelConfig.h"
 
 struct MainComponentTestAccess {
     [[nodiscard]] static const juce::Component& pane(const MainComponent& c) {
@@ -83,5 +88,35 @@ struct MainComponentTestAccess {
     }
     [[nodiscard]] static juce::String readoutForTest(const MainComponent& c) {
         return c.session_.readoutForTest();
+    }
+
+    // station-3 STORE test seam: app/tests_juce/test_main_component_store.cpp
+    // and tools/snapshot.cpp's T8 specimen. Calls the exact production
+    // handler `storeButton_.onClick` is wired to (MainComponent.cpp's
+    // constructor) -- not a re-implementation, and not `triggerClick()`
+    // (delivered only by a pumped message loop this offscreen harness never
+    // runs, same reason MainComponentSession's save/open seam below calls
+    // its handler directly rather than through the button).
+    static void storeClickedForTest(MainComponent& c) { c.storeClicked(); }
+    [[nodiscard]] static juce::String storeReadoutForTest(const MainComponent& c) {
+        return c.storeReadout_.getText();
+    }
+    [[nodiscard]] static bool storeButtonEnabledForTest(const MainComponent& c) {
+        return c.storeButton_.isEnabled();
+    }
+    // T6: reaches the SAME private rebuild session Open drives
+    // (MainComponentSession::performOpen -> restorePaneView_ -> this), so a
+    // test can prove storeButton_'s enable state follows THIS path too, not
+    // only selectPaneView()'s click path.
+    static void restoreWorkspaceForTest(MainComponent& c, std::vector<rta::trace::PaneSpec> panes) {
+        c.restoreWorkspaceFromSession(std::move(panes));
+    }
+    // Lets test_main_component_store.cpp force the Reference role back off
+    // right after setSyntheticMode(true) -- the only way to reach a REAL,
+    // non-null, live Snapshot with hasReference == false (spectrumDb still
+    // publishes through the single-channel drainRole path): MainComponent
+    // does not otherwise expose audioIo_/bus() to any caller.
+    [[nodiscard]] static rta::platform::ChannelConfig& channelConfigForTest(MainComponent& c) {
+        return c.audioIo_.bus().config();
     }
 };

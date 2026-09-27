@@ -130,6 +130,12 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/MainComponentSpl.cpp
     src/export/SplLogPipeline.cpp
     src/export/SplLogWriter.cpp
+    # MainComponentStore.cpp / CaptureConverter.cpp: station-3 STORE button
+    # (T5), needed here for the same reason MainComponentSpl.cpp is -- T8's
+    # own specimen drives the real storeButton_ onClick through a
+    # MainComponent this target constructs.
+    src/MainComponentStore.cpp
+    src/trace/CaptureConverter.cpp
     # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /
     # SplReportSections.cpp: see the matching entry in rtatool's own source
     # list above -- task W2-E2b part B, needed here for the same reason.
