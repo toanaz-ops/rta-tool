@@ -147,6 +147,78 @@ TEST_CASE("a two-pane workspace gives both children the full width and the weigh
     CHECK(workspace.getChildComponent(1)->getWidth() == 1100);
 }
 
+// CATCHES: F4's own regression class (docs/HUMAN-QA-QUEUE.md D11) at the
+// WorkspaceView level, independent of MainComponent/MainComponentSession --
+// `paneSpecs()` dropping a pane, returning the WRONG number of specs, or
+// losing the view/weight for one of them would break Session Save even if
+// every wiring test elsewhere stayed green. Deleting `views_.reserve`,
+// `views_.push_back`, or any line of `paneSpecs()` itself (SURVIVED against
+// this file before this test existed) now goes RED here.
+TEST_CASE("paneSpecs returns the resolved view and normalised weight for every pane",
+          "[workspace-view]") {
+    const StaticSnapshotSource source;
+    std::vector<PaneSpec> panes{ PaneSpec{ "rta", 2.0f }, PaneSpec{ "transfer", 1.0f },
+                                PaneSpec{ "transfer", 1.0f } };
+
+    const WorkspaceView workspace(panes, makeFactory(source));
+    const auto specs = workspace.paneSpecs();
+
+    REQUIRE(specs.size() == 3u);
+    CHECK(specs[0].view == "rta");
+    CHECK(specs[1].view == "transfer");
+    CHECK(specs[2].view == "transfer");
+    // normalisePanes scales {2,1,1} to sum to 1 among themselves: 0.5/0.25/0.25
+    // -- the exact figures test_main_component_session_multipane.cpp checks
+    // one layer up, reproduced here with no MainComponent involved at all.
+    CHECK(specs[0].weight == 0.5f);
+    CHECK(specs[1].weight == 0.25f);
+    CHECK(specs[2].weight == 0.25f);
+}
+
+// CATCHES a `paneSpecs()` that stores the RAW, possibly-unrecognised `view`
+// string instead of what `resolvePaneView` actually resolved it to --
+// WorkspaceView.h's own comment on `views_` calls this out explicitly. An
+// unknown name still builds an `rta` pane (the test above this one proves
+// that); this proves Save would also WRITE "rta" for it, not the unknown
+// name verbatim (which a later Open would then have to fall back on AGAIN,
+// forever re-triggering the "pane unknown, showing RTA" readout on every
+// single round trip).
+TEST_CASE("paneSpecs names the RESOLVED view for a pane whose original name fell back",
+          "[workspace-view]") {
+    const StaticSnapshotSource source;
+    std::vector<PaneSpec> panes{ PaneSpec{ "spectrograph", 1.0f } };
+
+    const WorkspaceView workspace(panes, makeFactory(source));
+    const auto specs = workspace.paneSpecs();
+
+    REQUIRE(specs.size() == 1u);
+    CHECK(specs[0].view == "rta");
+}
+
+// CATCHES a paneSpecs()/normalisePanes round trip that is not actually
+// idempotent -- WorkspaceView::paneSpecs()'s own doc comment claims
+// "building a WorkspaceView from this output and calling it again returns
+// an equal result". Feeding a workspace's own paneSpecs() STRAIGHT BACK
+// into a fresh WorkspaceView's constructor and reading it a second time
+// is that claim, checked.
+TEST_CASE("paneSpecs is a fixed point: feeding it back in produces the same specs again",
+          "[workspace-view]") {
+    const StaticSnapshotSource source;
+    std::vector<PaneSpec> original{ PaneSpec{ "transfer", 3.0f }, PaneSpec{ "rta", 1.0f } };
+
+    const WorkspaceView first(original, makeFactory(source));
+    const auto firstSpecs = first.paneSpecs();
+
+    const WorkspaceView second(firstSpecs, makeFactory(source));
+    const auto secondSpecs = second.paneSpecs();
+
+    REQUIRE(firstSpecs.size() == secondSpecs.size());
+    for (std::size_t i = 0; i < firstSpecs.size(); ++i) {
+        CHECK(firstSpecs[i].view == secondSpecs[i].view);
+        CHECK(firstSpecs[i].weight == secondSpecs[i].weight);
+    }
+}
+
 // CATCHES: a WorkspaceView that DROPS a pane whose `view` string
 // `resolvePaneView` did not recognise, instead of falling back to `rta` --
 // task brief's own words: "a missing child would shift every child after
