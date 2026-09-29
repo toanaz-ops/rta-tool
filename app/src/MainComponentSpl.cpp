@@ -25,6 +25,50 @@
 // channel list on every routing change is a defensible follow-up this
 // task's own scope (W2-E2a, not W2-E2b) does not reach; the channel list is
 // read once, each time logging (re)starts.
+//
+// Field-by-field rationale for MainComponent's SPL-logging members (T0
+// file-length split, 2026-09-29: moved here from MainComponent.h's own
+// member comments -- comment text only, unchanged in substance):
+//
+// `splLoggingActive_` -- what `pollSplLogging()` last told `analysisThread_`,
+// the previous tick's `isSyntheticMode() || audioIo_.isRunning()`, so that
+// function can call `enableSplLogging`/`disableSplLogging` only on the
+// transition rather than once per tick.
+//
+// `lastSplEpoch_` -- station-4 fix round (PR #31, verifier finding 1, HIGH):
+// `audioIo_.bus().epoch()` as of the last tick `pollSplLogging()` acted on.
+// A sample-rate or device-list change restarts the device WITHOUT ever
+// clearing `AudioIo::isRunning()` (platform/src/AudioIo.cpp,
+// AudioIo_Devices.cpp), so `splLoggingActive_` alone cannot see a
+// mid-session reconfiguration -- the epoch, which
+// `AnalysisThread::rebuildAnalysersIfEpochChanged` already relies on for the
+// same reason, can. See measure/SplLoggingDecision.h.
+//
+// `currentSplSessionDir_` -- task W2-E2b: the folder
+// `startFreshSplLog`/`startFreshSplLogWithConfig` most recently created --
+// where a calibration record (`writeCalibrationRecordAndUpdateInvalidFlag`)
+// and `report.html` (`exportReportClicked`) are written. Empty until the
+// first log opens.
+//
+// `currentSplLoggedChannels_` -- the channel list that folder's log(s) were
+// opened for -- read back by `exportReportClicked()` so it asks the payload
+// builder for exactly the channels that are actually logging, not a
+// hardcoded one.
+//
+// `currentSplLogHasCalibratedOffset_` -- LOW follow-up batch, item 15: true
+// iff `currentSplSessionDir_` names a log `startFreshSplLogWithConfig`
+// opened WITH a calibrated config (`calibratorLevelDb.has_value()` at that
+// call -- the same fact `restartSplLoggingForCalibration()` supplies and
+// `startFreshSplLog()`, the device/epoch-triggered, always-uncalibrated
+// restart, does not). Set in `startFreshSplLogWithConfig` itself, the ONE
+// function that assigns `currentSplSessionDir_`, so the two can never drift
+// apart. Read by `writeCalibrationRecordAndUpdateInvalidFlag()` to state
+// whether THIS log actually carries the offset a completed calibration check
+// measured -- a START check with nothing logging yet has no session to
+// apply it to (`restartSplLoggingForCalibration`'s own early return), so an
+// operator who starts an ordinary log afterward and runs END against it gets
+// a `performed=1` record beside an uncalibrated log unless this says
+// otherwise.
 #include "MainComponent.h"
 
 #include "export/SplLog.h"

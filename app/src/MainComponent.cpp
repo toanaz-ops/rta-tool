@@ -1,6 +1,55 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Part of RTA Tool -- app/src. See
 // docs/plans/2026-08-27-audioio-rta-impl-plan.md §3.6 (Wave E / T10).
+//
+// MainComponent's own design rationale (T0, 2026-09-29: moved here from the
+// class comment in MainComponent.h to bring that header under the project's
+// 400-line cap -- comment text only, unchanged in substance).
+//
+// Composition root for one screen, not a DSP class and not a drawing class
+// beyond its own masthead and background. Left rail carries a LIVE/SYNTHETIC
+// mode switch, the device panel and the channel role table; the rest of the
+// window is `workspace_`, a 1..3 pane stack fed by `analysisThread_`
+// regardless of which source is currently writing into the bus underneath
+// it, plus `library_`, the stored-trace library every pane in it can draw
+// from (task 10: the seam that stayed unreached for a whole session --
+// docs/HANDOFF.md).
+//
+// ## Trap T-1: member declaration order is load-bearing
+//
+// `audioIo_` is declared BEFORE `analysisThread_` and `syntheticInput_`.
+// Members are destroyed in REVERSE declaration order, so both threads --
+// which keep reading `audioIo_.bus()` until their own destructors return --
+// are torn down before the bus (and the device feeding it) dies. Both
+// thread classes also call `stopThread()` in their own destructors as a
+// second, independent guarantee of the same thing (belt and braces, per the
+// plan): getting this wrong is a crash that happens only at shutdown, on a
+// customer's machine, once.
+//
+// The same rule extends to `library_` and `workspace_`: `workspace_` holds a
+// raw, non-owning pointer into `library_` (handed over by `setLibrary`),
+// so `library_` must be declared BEFORE `workspace_`. Declared earlier means
+// destroyed LATER (reverse declaration order again): `workspace_` -- and
+// every child pane torn down inside it -- unwinds first, while `library_` is
+// still alive, and only then does `library_` itself go. Reversing the two
+// would leave a child pane's destructor holding a pointer into an
+// already-destroyed library.
+//
+// ## One bus, one reader, two possible writers
+//
+// `analysisThread_` is constructed once, against `audioIo_.bus()`, and never
+// re-pointed: it reads whatever the bus's rings hold regardless of whether
+// `audioIo_`'s real device callback or `syntheticInput_`'s thread is the one
+// filling them. `setSyntheticMode()` is what makes sure exactly one of those
+// two is ever active at a time -- `CaptureBus::prepare()`'s own precondition
+// is that nothing else is concurrently writing.
+//
+// `apiServer_` (lane L-API Task J) is declared AFTER `analysisThread_` for
+// the same reverse-destruction reason: it holds `analysisThread_` as a
+// `SnapshotSource&`, so it must stop and join BEFORE the source it reads is
+// destroyed. It is a `unique_ptr` rather than a by-value member for one
+// reason: the API is off by default (record sec.8), and a null pointer is
+// the honest spelling of "the operator did not ask for this".
 #include "MainComponent.h"
 
 #include "trace/Workspace.h"

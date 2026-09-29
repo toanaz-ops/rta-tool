@@ -36,39 +36,14 @@
 /// not a DSP class and not a drawing class beyond its own masthead and
 /// background. Left rail carries a LIVE/SYNTHETIC mode switch, the device
 /// panel and the channel role table; the rest of the window is `workspace_`,
-/// a 1..3 pane stack fed by `analysisThread_` regardless of which source is
-/// currently writing into the bus underneath it, plus `library_`, the
-/// stored-trace library every pane in it can draw from (task 10: the seam
-/// that stayed unreached for a whole session -- docs/HANDOFF.md).
+/// a 1..3 pane stack fed by `analysisThread_`, plus `library_`, the
+/// stored-trace library every pane in it can draw from.
 ///
-/// ## Trap T-1: member declaration order is load-bearing
-///
-/// `audioIo_` is declared BEFORE `analysisThread_` and `syntheticInput_`.
-/// Members are destroyed in REVERSE declaration order, so both threads --
-/// which keep reading `audioIo_.bus()` until their own destructors return --
-/// are torn down before the bus (and the device feeding it) dies. Both
-/// thread classes also call `stopThread()` in their own destructors as a
-/// second, independent guarantee of the same thing (belt and braces, per the
-/// plan): getting this wrong is a crash that happens only at shutdown, on a
-/// customer's machine, once.
-///
-/// The same rule extends to `library_` and `workspace_`: `workspace_` holds
-/// a raw, non-owning pointer into `library_` (handed over by `setLibrary`
-/// below), so `library_` must be declared BEFORE `workspace_`. Declared
-/// earlier means destroyed LATER (reverse declaration order again):
-/// `workspace_` -- and every child pane torn down inside it -- unwinds
-/// first, while `library_` is still alive, and only then does `library_`
-/// itself go. Reversing the two would leave a child pane's destructor
-/// holding a pointer into an already-destroyed library.
-///
-/// ## One bus, one reader, two possible writers
-///
-/// `analysisThread_` is constructed once, against `audioIo_.bus()`, and
-/// never re-pointed: it reads whatever the bus's rings hold regardless of
-/// whether `audioIo_`'s real device callback or `syntheticInput_`'s thread
-/// is the one filling them. `setSyntheticMode()` is what makes sure exactly
-/// one of those two is ever active at a time -- `CaptureBus::prepare()`'s
-/// own precondition is that nothing else is concurrently writing.
+/// Full design rationale -- including trap T-1, why `audioIo_` is declared
+/// before `analysisThread_`/`syntheticInput_`/`apiServer_` and why `library_`
+/// is declared before `workspace_` (both load-bearing for destruction
+/// order) -- lives in MainComponent.cpp's own header comment (T0 file-length
+/// split, this class stayed the same either way).
 class MainComponent final : public juce::Component, private juce::Timer {
 public:
     MainComponent();
@@ -264,97 +239,33 @@ private:
     // ------------------------------------------------------------------------
 
     // --- L6a Wave 3: the calibration flow --------------------------------
-    /// Route 0's measurement channel, raw -- what a calibrator clipped onto
-    /// the mic capsule delivers (MainComponentCalibration.cpp's own original
-    /// comment). Hoisted to a class constant (task W2-E2b part A) so it is
-    /// one spelling shared by the calibration capture itself, the block-index
-    /// range a calibration record brackets, and the channel
-    /// `writeCalibrationRecordAndUpdateInvalidFlag()` marks invalid --
-    /// previously a `MainComponentCalibration.cpp`-local anonymous-namespace
-    /// constant that only that file could see.
+    // T0 file-length split (2026-09-29): the field-by-field rationale for
+    // every member below (why each exists, what fix round it traces to, who
+    // reads it) moved verbatim to MainComponentCalibration.cpp's own header
+    // comment -- comment text only, unchanged in substance.
     static constexpr int kCalibrationRouteIndex = 0;
 
     juce::TextButton calibrationStartButton_{"CAL START"};
     juce::TextButton calibrationEndButton_{"CAL END"};
     juce::Label calibrationReadout_;
     rta::measure::CalibrationSession calibrationSession_;
-    /// Guards the one shared capture accumulator against Locate and
-    /// Calibration both arming it at once.
     bool calibrationCaptureArmed_ = false;
     bool calibrationCaptureIsStart_ = false;
-    /// When the currently-armed capture was requested, read from
-    /// `juce::Time::getMillisecondCounterHiRes()` -- a MONOTONIC counter,
-    /// not wall time (W2-E2a fix: PR #27 round-2 verifier, LOW). `double`
-    /// because that is what the monotonic counter itself returns.
-    /// `captureTimedOut` (fix round finding 6) is what stops a
-    /// calibrator-only rig's missing REF channel from locking Locate out for
-    /// the rest of the session.
     double calibrationCaptureArmedAtMs_ = 0.0;
     std::shared_ptr<const rta::measure::LocateCapture> lastHandledCalibrationCapture_;
-    /// Fix round (verifier HIGH finding): `kCalibrationRouteIndex` is a ROUTE POSITION, resolved to
-    /// a CHANNEL NUMBER exactly once, in `pollCalibrationPipeline()`, via
-    /// `rta::measure::calibrationMeasurementChannel` against the routing plan the capture that just
-    /// completed actually used -- never re-derived later, and never the route index itself. -1 (no
-    /// channel resolved yet, or the last capture's route had none -- the calibrator-only, no-REF-
-    /// channel case) is what every channel-indexed `AnalysisThread` call already treats as a safe
-    /// no-op.
     int calibrationChannel_ = -1;
-    /// Fix round 3 (verifier MEDIUM, upgraded from LOW): `calibrationChannel_`
-    /// above is overwritten every time a capture completes -- START AND END
-    /// alike -- so by itself it cannot tell "the END check resolved to a
-    /// different channel than the START check did" (an operator can
-    /// reassign `ChannelRoleTable` roles in between, one click away). Set
-    /// ONLY when `calibrationCaptureIsStart_` is true, in
-    /// `pollCalibrationPipeline()`, and never touched at the END check --
-    /// `writeCalibrationRecordAndUpdateInvalidFlag()` compares it against
-    /// the freshly-resolved `calibrationChannel_` via
-    /// `rta::measure::decideCalibrationRecordChannel` before writing
-    /// anything.
     int calibrationStartChannel_ = -1;
-    /// True after the most recent END check was REFUSED (channel mismatch,
-    /// or no measurement channel resolved either time) -- read by
-    /// `updateCalibrationReadout()` so the operator sees why no drift/verdict
-    /// appeared, live, the same fact `SplCalibrationRecord.h`'s own
-    /// `CalibrationRecordRefusal` states in the written record and the
-    /// report's Calibration section states in the export.
     bool calibrationChannelRefused_ = false;
     // ----------------------------------------------------------------------
 
     // --- L6a task W2-E2a: SPL logging follows the bus, not a button --------
-    // What `pollSplLogging()` last told `analysisThread_` -- the previous
-    // tick's `isSyntheticMode() || audioIo_.isRunning()`, so that function
-    // can call `enableSplLogging`/`disableSplLogging` only on the transition
-    // rather than once per tick.
+    // T0 file-length split (2026-09-29): the field-by-field rationale for
+    // every member below moved verbatim to MainComponentSpl.cpp's own header
+    // comment -- comment text only, unchanged in substance.
     bool splLoggingActive_ = false;
-    /// Station-4 fix round (PR #31, verifier finding 1, HIGH): `audioIo_.
-    /// bus().epoch()` as of the last tick `pollSplLogging()` acted on. A
-    /// sample-rate or device-list change restarts the device WITHOUT ever
-    /// clearing `AudioIo::isRunning()` (platform/src/AudioIo.cpp,
-    /// AudioIo_Devices.cpp), so `splLoggingActive_` alone cannot see a
-    /// mid-session reconfiguration -- the epoch, which
-    /// `AnalysisThread::rebuildAnalysersIfEpochChanged` already relies on
-    /// for the same reason, can. See measure/SplLoggingDecision.h.
     std::uint64_t lastSplEpoch_ = 0;
-    /// Task W2-E2b: the folder `startFreshSplLog`/`startFreshSplLogWithConfig`
-    /// most recently created -- where a calibration record
-    /// (`writeCalibrationRecordAndUpdateInvalidFlag`) and `report.html`
-    /// (`exportReportClicked`) are written. Empty until the first log opens.
     std::string currentSplSessionDir_;
-    /// The channel list that folder's log(s) were opened for -- read back by
-    /// `exportReportClicked()` so it asks the payload builder for exactly the
-    /// channels that are actually logging, not a hardcoded one.
     std::vector<int> currentSplLoggedChannels_;
-    /// LOW follow-up batch, item 15: true iff `currentSplSessionDir_` names a log
-    /// `startFreshSplLogWithConfig` opened WITH a calibrated config (`calibratorLevelDb.has_value()`
-    /// at that call -- the same fact `restartSplLoggingForCalibration()` supplies and
-    /// `startFreshSplLog()` (the device/epoch-triggered, always-uncalibrated restart) does not). Set
-    /// in `startFreshSplLogWithConfig` itself, the ONE function that assigns
-    /// `currentSplSessionDir_`, so the two can never drift apart. Read by
-    /// `writeCalibrationRecordAndUpdateInvalidFlag()` to state whether THIS log actually carries the
-    /// offset a completed calibration check measured -- a START check with nothing logging yet has
-    /// no session to apply it to (`restartSplLoggingForCalibration`'s own early return), so an
-    /// operator who starts an ordinary log afterward and runs END against it gets a `performed=1`
-    /// record beside an uncalibrated log unless this says otherwise.
     bool currentSplLogHasCalibratedOffset_ = false;
     // ----------------------------------------------------------------------
 
