@@ -16,7 +16,7 @@ namespace {
 constexpr int kControlsWidth = 300;
 constexpr int kMaxBands = 16;
 constexpr int kButtonHeight = 30;
-constexpr int kReadoutHeight = 76;
+constexpr int kReadoutHeight = 118;
 /// Combo item id for a pick that has left the library ("(removed)").
 constexpr int kRemovedItemId = 9999;
 constexpr int kFlatItemId = 1;
@@ -65,9 +65,19 @@ EqPaneView::EqPaneView(EqPaneBinding binding) : binding_(std::move(binding)), mo
     exportFirTextButton_.onClick = [this, act] { act(binding_.actions.exportFirText); };
     exportFirWavButton_.onClick = [this, act] { act(binding_.actions.exportFirWav); };
     exportListButton_.onClick = [this, act] { act(binding_.actions.exportList); };
+    verifyButton_.onClick = [this] {
+        if (binding_.verify != nullptr) binding_.verify->press();
+        refreshFromModel();
+    };
+    adoptButton_.onClick = [this] {
+        if (binding_.verify != nullptr) binding_.verify->adopt();
+        refreshFromModel();
+    };
 
     autoEqButton_.getProperties().set(az::ui::hintProperty, "one shot: place, then solve the gains");
     suggestButton_.getProperties().set(az::ui::hintProperty, "top 3 one-step candidates");
+    verifyButton_.getProperties().set(az::ui::hintProperty, "LIVE only: pink noise -12 dBFS on output 1, re-measure, compare with the prediction");
+    adoptButton_.getProperties().set(az::ui::hintProperty, "after VERIFY: mark the predicted filters applied and bind the new measurement");
     peakToggle_.getProperties().set(az::ui::hintProperty, "scale the taps so the largest is 0 dBFS; the text header states the trim");
 
     filterPanel_.onAccept = [this](std::size_t i) { model_.acceptChip(i); refreshFromModel(); };
@@ -79,7 +89,7 @@ EqPaneView::EqPaneView(EqPaneBinding binding) : binding_(std::move(binding)), mo
     for (juce::Component* c : std::initializer_list<juce::Component*>{
              &measurementCombo_, &targetCombo_, &bandsCombo_, &firPhaseCombo_, &firTapsCombo_, &autoEqButton_,
              &suggestButton_, &clearButton_, &undeclineButton_, &peakToggle_, &exportFirTextButton_,
-             &exportFirWavButton_, &exportListButton_, &readout_, &filterPanel_}) {
+             &exportFirWavButton_, &exportListButton_, &verifyButton_, &adoptButton_, &readout_, &filterPanel_}) {
         addAndMakeVisible(*c);
     }
     refreshFromModel();
@@ -101,7 +111,14 @@ void EqPaneView::timerCallback() {
         if (library_ != nullptr) model_.syncLibrary(*library_);
         rebuildPickers();
     }
-    if (model_.revision() != lastModelRevision_) refreshFromModel();
+    if (model_.revision() != lastModelRevision_ || verifyReason() != lastVerifyReason_) refreshFromModel();
+}
+
+juce::String EqPaneView::verifyReason() const {
+    if (binding_.verify == nullptr) return rta::measure::verifyBlockText(rta::measure::VerifyBlock::NotAttached);
+    const auto blocker = binding_.verify->blocker();
+    // Running is not a reason VERIFY is unavailable, it is what it is doing.
+    return blocker.kind == rta::measure::VerifyBlock::Running ? juce::String() : juce::String(blocker.text);
 }
 
 void EqPaneView::rebuildPickers() {
@@ -180,6 +197,10 @@ void EqPaneView::refreshFromModel() {
     exportFirTextButton_.setEnabled(model_.canExportFir());
     exportFirWavButton_.setEnabled(model_.canExportFir());
     exportListButton_.setEnabled(model_.canExportList());
+    lastVerifyReason_ = verifyReason();
+    verifyButton_.setEnabled(binding_.verify != nullptr &&
+                             binding_.verify->blocker().kind == rta::measure::VerifyBlock::None);
+    adoptButton_.setEnabled(binding_.verify != nullptr && binding_.verify->canAdopt());
     filterPanel_.refresh(model_);
 
     hz_.clear();
@@ -198,6 +219,7 @@ void EqPaneView::refreshFromModel() {
         text += "\n" + juce::String(model_.trustReadout()) + " -- " + juce::String(model_.gateReadout());
         text += "\nTARGET " + targetName + " + c (c = " + juce::String(model_.session().levelOffsetDb(), 1) + " dB)";
         text += "\n" + juce::String(model_.limitsReadout());
+        if (lastVerifyReason_.isNotEmpty()) text += "\nVERIFY off: " + lastVerifyReason_;
     }
     readout_.setText(text, juce::dontSendNotification);
     repaint();
@@ -268,6 +290,7 @@ void EqPaneView::resized() {
     peakToggle_.setBounds(stack(az::ui::fieldHeight));
     halves(stack(az::ui::fieldHeight), firPhaseCombo_, firTapsCombo_);
     halves(stack(az::ui::fieldHeight), clearButton_, undeclineButton_);
+    halves(stack(kButtonHeight), verifyButton_, adoptButton_);
     filterPanel_.setBounds(controls);
 }
 

@@ -146,6 +146,10 @@ struct MainComponentTestAccess {
     // runs, same reason MainComponentSession's save/open seam below calls
     // its handler directly rather than through the button).
     static void storeClickedForTest(MainComponent& c) { c.storeClicked(); }
+    // L7-EQ wave B: one turn of the 2 Hz poll (`timerCallback`, private). The
+    // offscreen harness pumps no message loop, and VERIFY advances only from
+    // that callback, so a test drives it by hand exactly as the timer would.
+    static void timerTickForTest(MainComponent& c) { c.timerCallback(); }
     [[nodiscard]] static juce::String storeReadoutForTest(const MainComponent& c) {
         return c.storeReadout_.getText();
     }

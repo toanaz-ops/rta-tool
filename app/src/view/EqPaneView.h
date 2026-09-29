@@ -16,6 +16,7 @@
 #pragma once
 
 #include "measure/EqPaneModel.h"
+#include "measure/EqVerifyRunner.h"
 #include "view/EqFilterPanel.h"
 #include "view/PaneRegistry.h"
 #include "view/RepaintGate.h"
@@ -42,6 +43,10 @@ struct EqPaneActions {
 struct EqPaneBinding {
     rta::measure::EqPaneModel* model = nullptr;
     EqPaneActions actions;
+    /// VERIFY / ADOPT (wave B). Borrowed from MainComponentEq like `model`;
+    /// null in a pane built without one (its two buttons then stay disabled,
+    /// naming "not wired").
+    rta::measure::EqVerifyRunner* verify = nullptr;
 };
 
 class EqPaneView final : public juce::Component, public LibraryConsumer, private juce::Timer {
@@ -71,6 +76,11 @@ public:
     [[nodiscard]] juce::Button& peakToggleForTest() noexcept { return peakToggle_; }
     [[nodiscard]] juce::Button& clearButtonForTest() noexcept { return clearButton_; }
     [[nodiscard]] juce::Button& undeclineButtonForTest() noexcept { return undeclineButton_; }
+    [[nodiscard]] juce::Button& verifyButtonForTest() noexcept { return verifyButton_; }
+    [[nodiscard]] juce::Button& adoptButtonForTest() noexcept { return adoptButton_; }
+    [[nodiscard]] rta::measure::EqVerifyRunner* verifyRunnerForTest() noexcept { return binding_.verify; }
+    /// One turn of the pane's own 10 Hz timer (a test harness pumps no message loop).
+    void tickForTest() { timerCallback(); }
     [[nodiscard]] EqFilterPanel& filterPanelForTest() noexcept { return filterPanel_; }
     [[nodiscard]] const std::vector<std::string>& measurementIdsForTest() const noexcept { return measurementIds_; }
     [[nodiscard]] juce::String readoutForTest() const { return readout_.getText(); }
@@ -89,12 +99,17 @@ private:
     void measurementChanged();
     void targetChanged();
     [[nodiscard]] juce::String refusalMessage() const;
+    /// The reason VERIFY is unavailable right now, "" when it is available
+    /// or running. Polled by the timer: the device and the live snapshot
+    /// change without the model's revision moving.
+    [[nodiscard]] juce::String verifyReason() const;
 
     EqPaneBinding binding_;
     rta::measure::EqPaneModel& model_;
     const rta::trace::TraceLibrary* library_ = nullptr;
     GateState gate_;
     std::uint64_t lastModelRevision_ = ~std::uint64_t{ 0 };
+    juce::String lastVerifyReason_;
 
     std::vector<std::string> measurementIds_;  ///< combo item id i+1 names [i]
     std::vector<std::string> targetIds_;       ///< combo item id i+2 names [i]; id 1 is FLAT
@@ -110,6 +125,7 @@ private:
     juce::ToggleButton peakToggle_{ "NORMALISE TO 0 dBFS" };
     juce::TextButton exportFirTextButton_{ "EXPORT FIR TXT" }, exportFirWavButton_{ "EXPORT FIR WAV" };
     juce::TextButton exportListButton_{ "EXPORT LIST" };
+    juce::TextButton verifyButton_{ "VERIFY" }, adoptButton_{ "ADOPT" };
     juce::Label readout_;
     EqFilterPanel filterPanel_;
     juce::Rectangle<int> chartArea_;

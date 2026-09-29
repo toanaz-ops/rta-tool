@@ -163,7 +163,7 @@ Test hooks are `*ForTest` members of `EqPaneView` and `MainComponentEq`, named l
 
 ## Wave A: what was built, and where it differs from this plan
 
-*Written 2026-09-29 against the shipped code (CLAUDE.md rule 6). Wave B (T7 VERIFY, T8 ADOPT) is not built; `EqVerify.cpp` is still in no `rtatool` source list.*
+*Written 2026-09-29 against the shipped code (CLAUDE.md rule 6). Wave B (T7 VERIFY, T8 ADOPT) was not built in wave A; it is recorded in "Wave B: what was built" below.*
 
 Built: T0, T1, T2, T3, T4, T5, T6, T9. Differences, each measured or forced by the code:
 
@@ -180,4 +180,24 @@ Built: T0, T1, T2, T3, T4, T5, T6, T9. Differences, each measured or forced by t
 | `EXPORT FIR` enable rule: phase and length answered | also needs a measurement and at least one filter not marked applied | D11: nothing to realise means nothing to export |
 | chart y range: unspecified | follows the trusted bins; measured and ghost are drawn only where trusted | a SYNTHETIC capture reads +130 dB in bins with no reference energy, which flattened the trusted curve to a line |
 
-Not in this wave (T7, T8): the VERIFY and ADOPT buttons, `timerCallback` polling, the LOCATE guard. `EqVerify.cpp` therefore stays an orphan, as it was before this lane. `orphan_check --base` reports only files the range changes, so it does not list it.
+Not in this wave (T7, T8): the VERIFY and ADOPT buttons, `timerCallback` polling, the LOCATE guard. `EqVerify.cpp` therefore stayed an orphan through wave A. `orphan_check --base` reports only files the range changes, so it did not list it. Wave B (below) wires it.
+
+## Wave B: what was built, and where it differs from this plan
+
+*Written 2026-09-29 against the shipped code (CLAUDE.md rule 6).*
+
+Built: T7 (VERIFY) and T8 (ADOPT). `EqVerify.cpp` now has a production caller: `EqVerifyRunner` (`app/src/measure/`) drives `arm`, `poll`, `submitSnapshot` and, through them, `compareToPrediction`, `h1SigmaDb` and `renderVerifySummary`. **Human-try row B (hardware) remains the only end-to-end proof of VERIFY:** every CI test plays the excitation through a standalone `OutputEngine` rendered by hand, never through a device and a loudspeaker.
+
+| plan said | shipped | why |
+|---|---|---|
+| T7: logic in `MainComponentEqVerify.cpp` (ceiling 220) | the state machine, refusals, dwell, timeout and ADOPT live in `measure/EqVerifyRunner.h/.cpp` (JUCE-free, 167 + 303 lines); `MainComponentEqVerify.cpp` is 37 lines of wiring (`wireEqVerify`) | the whole loop is then provable in the OFF build against a standalone `OutputEngine`; only the device, the snapshot, the clock and the LOCATE/CAL flags are supplied by `MainComponent` through `EqVerifyHost` |
+| `timerCallback` calls `eq_.poll()` | `eq_.pollVerify()`, before the SYNTHETIC early return | the name says which poll |
+| refusals: device not running, no unapplied filter, grid differs, Exponential, engine not quiescent | those five, plus `NoMeasurement`, `NoTransfer` (no reference fed), `Synthetic` (a separate, named reason: SYNTHETIC stops the device), `CaptureBusy` (LOCATE or CAL) and `Running`. `blocker()` reports every reason except engine-not-quiescent before the press; `arm()` alone can see that one | the buttons are disabled with the reason printed in the readout (`VERIFY off: ...`), so an operator never meets a dark button with no explanation. `press()` still refuses by name, for a caller that ignores the button |
+| dwell: no snapshot earlier than depth*fftSize/fs after Measuring | counted in RENDERED samples since `poll()` first observed Measuring, at `engine.sampleRate()`; the poll cadence (2 Hz) only ever makes it later. `dwellSeconds()` reads `CaptureConfig::transferFifoDepth`, so a change of depth follows | the excitation's own clock; deterministic in a hand-rendered test |
+| Waiting longer than 5000 ms disarms | that, and additionally: a Measuring run with no usable snapshot within dwell + 5000 ms; the device stopping mid-run; the grid, the averaging mode, the measurement pick or the filter list changing mid-run. Each disarms and says so | a run that cannot finish must not leave the loudspeaker playing |
+| trusted bins | trusted in BOTH the bound measurement and the new capture's coherence (`EqTrustMask.h` floor); the target is `target + c` (T0's `levelOffsetDb`) | a bin the new capture refuses is not evidence either |
+| LOCATE refuses while a VERIFY runs | LOCATE, CAL START and CAL END each refuse, and VERIFY refuses while any of them holds the output or the shared capture (`EqVerifyEnvironment::captureBusy`) | CAL's calibrator would sit under VERIFY's noise |
+| STORE's snapshot-to-trace conversion | factored out of `storeClicked` into `MainComponent::freezeSnapshot`, shared with VERIFY's after-measurement (group `EQ`, name `VERIFY @ HH:MM:SS`) | one path, not a copy |
+| ADOPT | binds the VERIFY trace first, then marks every filter not yet applied; refuses if the filter list or the pick changed since the press | a refused bind must not leave filters marked against a measurement that lacks them |
+| file ceilings | `MainComponent.h` 340 (was 334), `MainComponentDelay.cpp` 129 (ceiling 126), `MainComponentCalibration.cpp` 326, `MainComponentStore.cpp` 202, `MainComponent.cpp` 397 (+2), `EqPaneView.cpp` 297 | the plan's `MainComponent.cpp` ceiling of 320 was already exceeded before this lane |
+| source lists | `rtatool_view_tests` also lists `EqVerifyRunner.cpp` and `EqVerify.cpp` (its `EqPaneView.cpp` now needs them) | link error found by the first ON build |

@@ -87,6 +87,12 @@ set(RTA_BASE_TEST_SOURCES
     test_eq_pane_model.cpp
     test_eq_pane_model_state.cpp
     test_eq_fir_design.cpp
+    # test_eq_verify_runner*.cpp: L7-EQ UI wave B (plan T7 VERIFY, T8 ADOPT) --
+    # the press/poll/adopt loop against a standalone OutputEngine rendered by
+    # hand and scripted snapshots. JUCE-free: OFF proves it.
+    test_eq_verify_runner.cpp
+    test_eq_verify_runner_flow.cpp
+    test_eq_verify_adopt.cpp
     # test_crossover_topology.cpp: lane L7-ALIGN task D (record docs/dsp/
     # 2026-09-06-l7-alignment-wizard.md Sec.3, Sec.10.2) -- the topology to
     # expected-offset lookup, JUCE-free like OutputPolicy, so it lives here.

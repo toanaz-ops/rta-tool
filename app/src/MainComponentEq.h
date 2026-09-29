@@ -17,6 +17,7 @@
 #pragma once
 
 #include "measure/EqPaneModel.h"
+#include "measure/EqVerifyRunner.h"
 #include "view/EqPaneView.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -47,6 +48,15 @@ public:
     /// until both FIR questions are answered.
     [[nodiscard]] juce::File defaultFirFile(const char* extension) const;
 
+    /// VERIFY / ADOPT (wave B, MainComponentEqVerify.cpp). `attachVerify` is
+    /// called once by MainComponent's constructor; `pollVerify` from its 2 Hz
+    /// timer; `verifyBusy` is what LOCATE and CAL read to refuse while an
+    /// excitation is playing.
+    void attachVerify(rta::platform::OutputEngine& engine, rta::trace::TraceLibrary& library,
+                      rta::measure::EqVerifyHost host);
+    void pollVerify() { verify_.poll(); }
+    [[nodiscard]] bool verifyBusy() const noexcept { return verify_.busy(); }
+
     [[nodiscard]] rta::measure::EqPaneModel& modelForTest() noexcept { return model_; }
 
 private:
@@ -54,5 +64,6 @@ private:
                     std::function<bool(const juce::File&)> perform);
 
     rta::measure::EqPaneModel model_;
+    rta::measure::EqVerifyRunner verify_{ model_ };  // declared after model_: it borrows it
     std::unique_ptr<juce::FileChooser> chooser_;
 };

@@ -13,6 +13,13 @@
 #include "rta/gen/Prng.h"
 
 void MainComponent::locateClicked() {
+    // L7-EQ VERIFY plays its own pink noise through the same output engine.
+    // This handler ignores setSource's return value and disarms at the end of
+    // its capture, so an overlap would silently kill VERIFY's excitation.
+    if (eq_.verifyBusy()) {
+        delayReadout_.setText("delay: refused -- VERIFY is running on the output", juce::dontSendNotification);
+        return;
+    }
     // L6a Wave 3: calibrationCaptureArmed_ shares the SAME accumulator
     // (MainComponentCalibration.cpp's own comment) -- refuse rather than
     // stomp on an in-flight calibration capture.

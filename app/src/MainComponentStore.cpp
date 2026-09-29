@@ -123,6 +123,19 @@ std::string mtwSummary(const std::vector<const rta::view::TransferView*>& views,
 
 }  // namespace
 
+std::optional<rta::trace::Trace> MainComponent::freezeSnapshot(const rta::measure::Snapshot& snapshot,
+                                                               rta::view::PaneView pane) {
+    const std::string deviceName =
+        isSyntheticMode() ? std::string("SYNTHETIC") : audioIo_.currentState().deviceName;
+    const std::string channelRoles = channelRolesSummary(audioIo_.bus().config());
+
+    // Fix round 1, MEDIUM F2: `captureConfig()`, never `config()` -- see
+    // AnalysisThread.h's own comment on why a reference into `baseConfig_`
+    // is not safe for the message thread to hold.
+    return rta::trace::traceFromSnapshot(snapshot, pane, analysisThread_.captureConfig(), deviceName,
+                                         channelRoles);
+}
+
 void MainComponent::storeClicked() {
     const auto snapshot = analysisThread_.latest();
     if (!snapshot) {
@@ -135,23 +148,14 @@ void MainComponent::storeClicked() {
     // The call site's OWN guard, independent of CaptureConverter's copy
     // (T4's internal check) -- the same "refuse at a label before doing any
     // work" convention exportReportClicked already uses. Checked before
-    // building deviceName/channelRoles below: neither is needed for a
-    // refusal this cheap to see coming.
+    // freezing below: nothing is needed for a refusal this cheap to see coming.
     if (pane == rta::view::PaneView::Transfer && !snapshot->hasReference) {
         storeReadout_.setText("store: TRANSFER has no reference fed -- nothing to freeze",
                               juce::dontSendNotification);
         return;
     }
 
-    const std::string deviceName =
-        isSyntheticMode() ? std::string("SYNTHETIC") : audioIo_.currentState().deviceName;
-    const std::string channelRoles = channelRolesSummary(audioIo_.bus().config());
-
-    // Fix round 1, MEDIUM F2: `captureConfig()`, never `config()` -- see
-    // AnalysisThread.h's own comment on why a reference into `baseConfig_`
-    // is not safe for the message thread to hold.
-    auto trace = rta::trace::traceFromSnapshot(*snapshot, pane, analysisThread_.captureConfig(), deviceName,
-                                               channelRoles);
+    auto trace = freezeSnapshot(*snapshot, pane);
     if (!trace.has_value()) {
         // Unreachable from RTA/TRANSFER given the guard above and T6's own
         // enable/disable -- kept as a stated refusal (never a silent no-op,

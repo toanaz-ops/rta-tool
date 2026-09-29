@@ -144,6 +144,9 @@ add_executable(rtatool_view_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqPaneModel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqTraceGrid.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqSession.cpp
+    # Wave B: EqPaneView drives the VERIFY runner (and the runner, EqVerify).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerifyRunner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:
