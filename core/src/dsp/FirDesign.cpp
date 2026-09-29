@@ -101,7 +101,8 @@ std::vector<float> sampleTargetMagnitude(const FirTarget& target, double sampleR
 ///     N/2-1 and N/2 straddle it and must both carry h_zero at t = +/-1/2,
 ///     not h_zero(0). Reading the plain IDFT gives h_zero(0) to BOTH of them
 ///     (this function used to), which realises the delta component twice:
-///     |H(DC)| = 2.04 for a flat 0 dB target instead of 1.0.
+///     Sum(taps) = |H(DC)| = 2*w[N/2-1] = 1 + cos(2*pi/N) ~ 2 for a flat
+///     0 dB target (1.99998 at N = 1024) instead of 1.0.
 ///
 ///     Sampling h_zero at half-integer times on the same M-grid is a shift of
 ///     the SPECTRUM, not of the time axis: with H[k] the real, even target,
@@ -117,7 +118,10 @@ std::vector<float> sampleTargetMagnitude(const FirTarget& target, double sampleR
 ///     Nyquist (k = M/2), where the factor is e^{+j*pi/2} = j -- the spectrum
 ///     of a real sequence cannot carry an imaginary Nyquist bin. It is set to
 ///     0, which is also a structural fact rather than a repair: an even-length
-///     symmetric FIR (Type II) always has H(pi) = 0.
+///     symmetric FIR (Type II) always has H(pi) = 0. (Multiplying that bin by
+///     j instead would read the same, since RealFft::inverse drops the
+///     imaginary part of the Nyquist bin; what must not happen is leaving H
+///     itself there, which adds an alternating (-1)^j / M term to every tap.)
 ///
 /// The odd-N path is deliberately left byte-for-byte untouched (no phase
 /// multiply at all), so its committed goldens do not move.

@@ -96,10 +96,27 @@ def design_linear_phase(n: int, window: str = "hann") -> tuple[np.ndarray, int]:
     exact by construction, the same reason the C++ side does it that way
     (a periodic window's own coefficients are symmetric about N/2, not about
     (N-1)/2 -- see FirDesign.cpp's comment on this exact point).
+
+    Odd and even N differ, exactly as in the C++ (record Sec.4 amendment
+    2026-09-29). The symmetry axis (N-1)/2 is a sample for odd N and a
+    half-integer for even N:
+      - odd N:  tap (N-1)/2 + d is h_zero(d); read the plain irfft circularly.
+      - even N: tap N/2 + j is h_zero(j + 1/2). Sample that by shifting the
+        SPECTRUM, g = irfft(H[k] * e^{+j*pi*k/M}), g[j] = h_zero(j + 1/2)
+        (numpy's irfft kernel is e^{+j...}, same as RealFft::inverse). The
+        Nyquist bin k = M/2 cannot carry the imaginary factor e^{+j*pi/2}
+        in a real sequence, so it is set to 0 -- a Type II FIR has H(pi) = 0.
+        Then tap N/2-1-j is the mirror of tap N/2+j.
     """
     m = next_pow2(8 * n)
     magnitude = sample_target_magnitude(m)
-    h_zero = np.fft.irfft(magnitude.astype(complex), n=m)
+    spectrum = magnitude.astype(complex)
+    even_n = (n % 2 == 0)
+    if even_n:
+        k = np.arange(m // 2)
+        spectrum[: m // 2] *= np.exp(1j * np.pi * k / m)
+        spectrum[m // 2] = 0.0
+    h_zero = np.fft.irfft(spectrum, n=m)
 
     # fftbins=True: PERIODIC, matching rta::dsp::Window (Window.h's own
     # docstring) -- fftbins=False ("for use in filter design") is the trap
@@ -109,9 +126,11 @@ def design_linear_phase(n: int, window: str = "hann") -> tuple[np.ndarray, int]:
     half = (n - 1) // 2
     taps = np.zeros(n)
     for i in range(half + 1):
-        offset = i - half
-        idx = offset % m
-        value = h_zero[idx] * w[i]
+        if even_n:
+            source = h_zero[half - i]          # g[j], j = half - i
+        else:
+            source = h_zero[(i - half) % m]    # h_zero(d), d = i - half
+        value = source * w[i]
         taps[i] = value
         taps[n - 1 - i] = value
     return taps, m

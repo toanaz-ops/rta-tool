@@ -3,8 +3,9 @@
 // Even-N FIR design (defect fixed 2026-09-29). Before the fix, designFir()
 // with an even tap count wrote the zero-phase centre sample h_zero[0] to BOTH
 // taps N/2-1 and N/2, realising the target's delta component twice: a flat
-// 0 dB target read |H(DC)| = 2.04 at N = 1024 and 4096, minimum phase
-// included (it reuses the linear design). Every magnitude test in this
+// 0 dB target read |H(DC)| = 1.99998 at N = 1024 and 1.99999 at N = 4096
+// (closed form 2*w[N/2-1] = 1 + cos(2*pi/N)), minimum phase included (it
+// reuses the linear design). Every magnitude test in this
 // directory used an odd N, where the construction is exact, so nothing saw it.
 //
 // Every expectation here is closed form (docs/dsp/2026-09-06-l7-fir-export.md,
@@ -74,7 +75,13 @@ void checkFlatEven(const FirResult& result, std::size_t n, FirPhase phase) {
     // DC from the only spectral feature, the Nyquist null, is a Hann kernel
     // tail at n/2 bins (~1/(pi k^3) ~ 1e-7 for N >= 1024); the rest is float
     // FFT noise (~1e-6). 1e-3 is a stated margin over both; the defect read
-    // 1.04 above it.
+    // about 1.0 above it (Sum = 1 + cos(2*pi/N)).
+    //
+    // Minimum phase misses 1 for a different reason: truncating the cepstral
+    // reconstruction to N taps, and the -120 dB floor applied at the Type II
+    // Nyquist null (the log of a floored bin is a large cepstral feature
+    // that the truncation clips). Measured 7.3e-5 (N=1024) and 1.7e-5
+    // (N=4096); 1e-3 covers that with more than a decade to spare.
     const double dc = sumOf(result.taps);
     CAPTURE(n, phaseName(phase), dc);
     CHECK(std::abs(dc - 1.0) <= 1e-3);
@@ -110,6 +117,18 @@ void checkFlatEven(const FirResult& result, std::size_t n, FirPhase phase) {
     }
     CAPTURE(worst);
     CHECK(worst <= 5e-7);
+
+    // REGRESSION LOCK, not a derived value: forcing H(pi) = 0 leaves a
+    // Gibbs edge just below Nyquist that the Hann window only partly
+    // removes, so a flat even-N design reports a small positive peakGainDb
+    // (measured 0.103 dB at N=1024 and 0.107 dB at N=4096, at about 23.9 kHz
+    // for fs 48 kHz, cross-checked with the numpy port in tools/gen_fir_algo.py;
+    // odd N reads -2e-5). The bound only pins that it stays a small edge
+    // effect; coefficientPeak is the centre tap, 2/pi * w[N/2-1].
+    CAPTURE(result.peakGainDb, result.coefficientPeak);
+    CHECK(result.peakGainDb > 0.05);
+    CHECK(result.peakGainDb < 0.2);
+    CHECK(std::abs(result.coefficientPeak - 2.0 / kPi) <= 1e-3);
 }
 
 }  // namespace
@@ -124,7 +143,7 @@ TEST_CASE("Even N, flat 0 dB target: DC gain is 1 and the delta is realised once
     }
 }
 
-TEST_CASE("Even N through the per-bin overload (the route L7-EQ uses)", "[fir_design]") {
+TEST_CASE("Even N through the per-bin overload (D2)", "[fir_design]") {
     constexpr std::size_t n = 4096;
     const std::size_t m = designGridSize(n);
     const std::vector<float> grid(m / 2 + 1, 1.0f);

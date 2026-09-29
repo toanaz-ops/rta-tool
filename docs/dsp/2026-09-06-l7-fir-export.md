@@ -65,8 +65,10 @@ sibling" identity the report proposed as the key test holds only for the
 
 **Decision.** G10 v1 designs by **frequency sampling**: the target magnitude
 (and, for linear phase, zero phase) is sampled on an `M`-point linear grid
-(`M` a power of two, `M ≥ 8N`), inverted with `RealFft::inverse`, circularly
-shifted so the zero-phase response is centred, windowed with a **periodic**
+(`M` a power of two, `M ≥ 8N`), inverted with `RealFft::inverse`, placed so the
+zero-phase response is centred at `(N−1)/2` -- a circular shift for odd `N`,
+a half-sample spectral shift for even `N` (§4 amendment 2026-09-29) --
+windowed with a **periodic**
 `Window` of length `N`, and truncated to `N` taps. Weighted least-squares in
 the Selesnick/`firls` form is **adopted as the second method** — Type I
 (odd `N`), Toeplitz-plus-Hankel normal equations, Cholesky in double with a
@@ -265,10 +267,14 @@ using `H` real and even. That holds at every bin except **Nyquist**
 (`k = M/2`), where the shift factor is `e^{+jπ/2} = j` and a real sequence's
 spectrum cannot carry an imaginary Nyquist bin. The code sets that bin to
 exactly 0. That is a structural fact, not a repair: an even-length symmetric
-FIR (Type II) always has `H(π) = 0`. (`RealFft::inverse` ignores the imaginary
-part of the Nyquist bin, so this assignment is what fixes the value; it is
-also why the shipped tests cannot distinguish it from not zeroing it -- see
-below.)
+FIR (Type II) always has `H(π) = 0`. What the tests can and cannot see here
+(mutations run 2026-09-29): leaving `H` itself at Nyquist, unshifted, adds an
+alternating `(−1)^j / M` to every tap (1.2e-4 at `N = 1024`, `M = 8192`) and
+**is** caught -- against the 5e-7 tap tolerance below. Multiplying the Nyquist
+bin by `e^{+jπ/2}` instead of zeroing it is **not** caught: `RealFft::inverse`
+drops the imaginary part of the Nyquist bin, and the real part of `H · j` is
+about 6e-17, so the two read identically. The explicit zero states the intent;
+it is not separately checkable.
 
 *Closed forms the tests assert* (`core/tests/test_fir_design_even.cpp`).
 With a flat target the grid is 1 on bins `0 … M/2−1` and 0 at Nyquist, and
@@ -361,7 +367,9 @@ struct Result {
     std::vector<float> taps;           // as designed; normalisation is the writer's job
     double   sampleRate;
     PhaseType phase; Method method; WindowType window;
-    std::size_t groupDelaySamples;     // (N-1)/2 for linear; 0 reported for minimum
+    std::size_t groupDelaySamples;     // linear: N/2 (integer division) -- exact (N-1)/2 for odd N,
+                                       // half a sample above the true (N-1)/2 for even N (§4
+                                       // amendment 2026-09-29); 0 reported for minimum
     double   peakGainDb, coefficientPeak;
     std::optional<double> truncationLossDb;   // minimum phase only
     std::size_t designFftSize;         // M, or n_fft for minimum phase
@@ -421,9 +429,17 @@ needs 1e-4 is hiding a bug.
    gives a delta at the centre tap (`1.0 ± 1e-5`, all others `≤ 1e-5`); for
    **even `N`** there is no centre tap, and the answer is the half-sample sinc
    of the §4 amendment (two equal centre taps ≈ 2/π before windowing, DC gain
-   1). Minimum phase gives a
-   delta at tap 0. Flat +6.0206 dB: the same with amplitude 2. `peakGainDb`
-   and `coefficientPeak` read those values.
+   1). For odd `N`, minimum phase gives a
+   delta at tap 0. Flat +6.0206 dB: the same with amplitude 2. For odd `N`,
+   `peakGainDb` and `coefficientPeak` read those values. For **even `N`**
+   (linear phase, flat Hann design) they do not: `coefficientPeak` is the
+   centre tap, `2/π · w[N/2−1] ≈ 0.6366`, and `peakGainDb` is ≈ +0.10 dB
+   (measured 0.103 at `N = 1024`, 0.107 at `N = 4096`, both at ≈ 23.9 kHz for
+   fs 48 kHz; odd `N` reads −2e-5). That is the Gibbs edge of the forced
+   `H(π) = 0` (§4 amendment), confined just below Nyquist and only partly
+   removed by the Hann window; it is not a gain error at any band an EQ uses.
+   The even-`N` numbers are a regression lock (`test_fir_design_even.cpp`
+   bounds 0.05 to 0.2 dB), not a derived value.
 5. **Grid interpolation.** Breakpoints `(100 Hz, 0 dB), (1000 Hz, +6 dB)`
    interpolate to `+3 dB` at `316.2 Hz` (`√10 · 100`), exactly, in double.
 6. **Floor.** A target with a −200 dB notch produces a minimum-phase result
