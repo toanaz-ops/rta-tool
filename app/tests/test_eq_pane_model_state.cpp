@@ -18,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -78,7 +79,7 @@ TEST_CASE("EqPaneModel: every state change advances the revision; a no-op does n
     CHECK(r.moves([&] { m.clearFilters(); }));
     CHECK(r.moves([&] { m.runAutoEq(); }));
     CHECK(r.moves([&] { m.setFirPhase(rta::dsp::FirPhase::Linear); }));
-    CHECK(r.moves([&] { m.setFirTaps(4095); }));
+    CHECK(r.moves([&] { m.setFirTaps(4096); }));
     CHECK(r.moves([&] { m.setPeakNormalised(true); }));
     CHECK(r.moves([&] { m.setStatus("x"); }));
 
@@ -320,8 +321,8 @@ TEST_CASE("EqPaneModel: readouts and export gates", "[eq_pane_model_state]") {
     m.setFirPhase(rta::dsp::FirPhase::Minimum);
     CHECK(m.firPhase() == rta::dsp::FirPhase::Minimum);
     CHECK_FALSE(m.canExportFir());
-    m.setFirTaps(1023);
-    CHECK(m.firTaps() == 1023);
+    m.setFirTaps(1024);
+    CHECK(m.firTaps() == 1024);
     CHECK(m.canExportFir());
     m.setPeakNormalised(true);
     CHECK(m.normalization() == rta::firexport::Normalization::Peak0dBFS);
@@ -333,20 +334,19 @@ TEST_CASE("EqPaneModel: readouts and export gates", "[eq_pane_model_state]") {
     CHECK(m.canExportList());       // but the list still records them
 }
 
-TEST_CASE("EqPaneModel: the FIR lengths offered are odd, designable, and labelled with fs/N and (N-1)/(2fs)",
+TEST_CASE("EqPaneModel: the FIR lengths offered are the plan's D9 four, designable, and labelled with fs/N and (N-1)/(2fs)",
           "[eq_pane_model_state]") {
-    // Odd because FirDesign counts h[0] twice for an even length; each
-    // must fit its own design grid (taps <= M/2, FirDesign.h).
+    // Each must fit its own design grid (taps <= M/2, FirDesign.h).
     for (const std::size_t taps : rta::measure::kEqFirTapChoices) {
         CAPTURE(taps);
-        CHECK(taps % 2 == 1);
         CHECK(taps <= rta::measure::eqFirGridSize(taps) / 2);
     }
-    CHECK(rta::measure::kEqFirTapChoices.front() < rta::measure::kEqFirTapChoices.back());
-    // 48000/4095 = 11.72 -> "12 Hz"; 4094/96000 s = 42.65 ms -> "42.6 ms" (one decimal).
-    CHECK(rta::measure::eqFirTapsLabel(4095, 48000.0) == "4095 taps  12 Hz  42.6 ms");
-    // 44100/1023 = 43.1 -> "43 Hz"; 1022/88200 s = 11.59 ms -> "11.6 ms".
-    CHECK(rta::measure::eqFirTapsLabel(1023, 44100.0) == "1023 taps  43 Hz  11.6 ms");
+    CHECK(rta::measure::kEqFirTapChoices ==
+          std::array<std::size_t, 4>{ 1024, 4096, 6144, 8192 });
+    // 48000/4096 = 11.72 -> "12 Hz"; 4095/96000 s = 42.656 ms -> "42.7 ms" (one decimal).
+    CHECK(rta::measure::eqFirTapsLabel(4096, 48000.0) == "4096 taps  12 Hz  42.7 ms");
+    // 44100/1024 = 43.07 -> "43 Hz"; 1023/88200 s = 11.599 ms -> "11.6 ms".
+    CHECK(rta::measure::eqFirTapsLabel(1024, 44100.0) == "1024 taps  43 Hz  11.6 ms");
 }
 
 TEST_CASE("EqTraceGrid: a target with no usable bin is FLAT, and bins below its first read that bin's value",

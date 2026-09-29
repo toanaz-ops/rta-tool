@@ -4,7 +4,6 @@
 #include "rta/eq/BiquadDesign.h"
 
 #include <cmath>
-#include <stdexcept>
 
 namespace rta::measure {
 
@@ -35,11 +34,6 @@ std::vector<float> eqFirMagnitudeHalfGrid(std::span<const CommittedFilter> filte
 
 rta::dsp::FirResult designEqFir(std::span<const CommittedFilter> filters, double sampleRate,
                                 std::size_t taps, rta::dsp::FirPhase phase) {
-    if (taps % 2 == 0) {
-        throw std::invalid_argument(
-            "designEqFir: even tap counts are refused -- FirDesign realises an even-length "
-            "filter with the wrong gain (see EqFirDesign.h)");
-    }
     const auto grid = eqFirMagnitudeHalfGrid(filters, sampleRate, taps);
     return rta::dsp::designFir(grid, sampleRate, taps, phase);
 }

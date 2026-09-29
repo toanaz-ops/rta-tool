@@ -189,13 +189,13 @@ than odd `N` -- see **Amendment 2026-09-29** at the end of this section; the
 first shipped even-`N` design reused the odd-`N` construction and read 2x
 gain at DC.
 
-**Amendment, 2026-09-29 — even `N` is not exact in the shipped code; the EQ
-export refuses it.** Building the EQ pane's FIR export (docs/plans/
+**Amendment, 2026-09-29 — how the even-`N` defect was found (fixed in core by
+PR #62; the construction is the half-sample amendment at the end of this
+section).** Building the EQ pane's FIR export (docs/plans/
 2026-09-29-eq-ui-lane-plan.md, D9) measured that `designLinearPhaseCore`
-(`core/src/dsp/FirDesign.cpp`) realises an even-length filter at the wrong
-gain. It builds `taps[0..half]` with `half = (N−1)/2` (floored) and mirrors
-(`FirDesign.cpp:129-139` writes each windowed `h_zero` sample to both `taps[i]`
-and `taps[N−1−i]`), so for even `N` the zero-phase impulse's centre sample
+(`core/src/dsp/FirDesign.cpp`) realised an even-length filter at the wrong
+gain. It built `taps[0..half]` with `half = (N−1)/2` (floored) and mirrored
+(each windowed `h_zero` sample went to both `taps[i]` and `taps[N−1−i]`), so for even `N` the zero-phase impulse's centre sample
 `h_zero[0]` lands on both central taps, `taps[N/2−1] == taps[N/2]`: `h[0]` is
 counted twice, which adds a second copy of a weight-`h_zero[0]` sample to the
 response. `h_zero[0]` is the mean of the target magnitude, 1.0 for a flat
@@ -206,14 +206,11 @@ dB), against `1.00001` for `N = 4095` and `1.00011` for `N = 1023`. For a +6 dB
 peaking filter at 1500 Hz (`Q = 2`, 48 kHz) the even lengths read `3.0195` and
 the odd ones `1.9945`, where the target is `1.99526`; `3.0195 − 1.9945` is the
 extra centre sample, about 1.0. (An earlier draft of this amendment gave 2.04
-for the flat target; that number belongs to the peaking fixture, not to flat.) Every magnitude test in `core/tests` uses odd `N` (1023,
-511, 255); the even-`N` cases check bitwise symmetry, metadata and phase
-linearity, which the defect leaves intact. Nothing here fixes it (a half-sample
-design is a core change with its own goldens). `app/src/measure/EqFirDesign.cpp`
-refuses an even tap count, and the EQ pane offers 1023, 4095, 6143 and 8191,
-which share their design grids with 1024, 4096, 6144 and 8192 (`8N` rounds to
-the same power of two). The refusal and the odd list are deleted together with
-the fix.
+for the flat target; that number belongs to the peaking fixture, not to flat.) Every magnitude test in
+`core/tests` then used odd `N` (1023, 511, 255); the even-`N` cases checked bitwise symmetry, metadata and phase
+linearity, which the defect leaves intact. The fix is in core (PR #62), so
+`designEqFir` no longer refuses an even tap count and the EQ pane offers 1024,
+4096, 6144 and 8192 (the plan's D9 lengths).
 
 **Minimum phase, derived.** Homomorphic (real-cepstrum) method, as verified
 line-by-line from scipy's `minimum_phase` source this session and as

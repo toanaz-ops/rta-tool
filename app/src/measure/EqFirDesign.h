@@ -34,20 +34,12 @@ namespace rta::measure {
                                                         double sampleRate, std::size_t taps);
 
 /// designFir over that grid. Throws what designFir throws (taps < 8, taps >
-/// M/2, sampleRate <= 0), and ALSO refuses an EVEN `taps`.
-///
-/// Why even is refused (found building this lane, 2026-09-29): FirDesign.cpp's
-/// linear-phase core puts the zero-phase impulse's centre sample at BOTH
-/// central taps of an even-length filter (taps[N/2-1] == taps[N/2] ==
-/// h0[0]*w), so h[0] is counted twice. Measured on a flat target: |H(0)| =
-/// 2.00000 at N = 4096 (+6.02 dB), against 1.00001 for N = 4095 and 1.00011
-/// for N = 1023; a +6 dB peaking filter reads 3.0195 (even) vs 1.9945 (odd).
-/// Every magnitude test in core/tests uses odd N (1023, 511, 255), so nothing
-/// there sees it. Until
-/// FirDesign designs even N on a half-sample grid, an even-N export would be a
-/// filter with the wrong gain and a correct-looking header; odd lengths are
-/// exact (Type I linear phase, an integer group delay of (N-1)/2).
-/// @throws std::invalid_argument on even `taps`.
+/// M/2, sampleRate <= 0). Even and odd `taps` are both exact: core's
+/// linear-phase design samples an even-length filter on the half-sample grid
+/// (FIR record Sec.4, amendment 2026-09-29), so a flat target reads |H| = 1 at
+/// DC for N = 1024 and 4096 alike. (Until that fix an even `taps` doubled the
+/// DC gain -- flat 2.0, the +6 dB peaking fixture 2.04 -- and this function
+/// refused it; the picker offered N-1 instead.)
 [[nodiscard]] rta::dsp::FirResult designEqFir(std::span<const CommittedFilter> filters,
                                               double sampleRate, std::size_t taps,
                                               rta::dsp::FirPhase phase);

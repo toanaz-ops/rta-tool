@@ -7,8 +7,8 @@
 // WAV bitwise equal to the designed taps, and the filter list keeping its
 // `applied` token (EQ record Sec.7, amendment 2).
 //
-// N is 4095, not the plan's 4096: FirDesign counts h[0] twice for an
-// even-length filter, so the lane offers the odd neighbour (EqFirDesign.h).
+// N is the plan's 4096 (D9); core's even-N design is exact since the
+// half-sample fix (FIR record Sec.4, amendment 2026-09-29).
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -27,7 +27,7 @@
 
 namespace {
 
-constexpr std::size_t kTaps = 4095;
+constexpr std::size_t kTaps = 4096;
 
 /// A scratch folder that removes itself, so a failed assertion cannot leave a
 /// stale file for the next run to read (same convention as test_fir_wav.cpp).
@@ -71,7 +71,7 @@ TEST_CASE("EXPORT FIR TXT writes the header keys and one coefficient per line", 
 
     const std::string text = readText(file);
     CHECK(text.find("sample_rate_hz=48000") != std::string::npos);
-    CHECK(text.find("taps=4095") != std::string::npos);
+    CHECK(text.find("taps=4096") != std::string::npos);
     CHECK(text.find("phase=linear") != std::string::npos);
     CHECK(text.find("normalization=as_designed") != std::string::npos);  // D12's default
 
@@ -94,12 +94,12 @@ TEST_CASE("EXPORT FIR TXT writes the header keys and one coefficient per line", 
 
 TEST_CASE("the FIR file stem is eq_<fs>Hz_<N>taps_<lin|min>", "[main_component_eq_export]") {
     Rig linear(true, rta::dsp::FirPhase::Linear);
-    CHECK(linear.eq.defaultFirFile(".txt").getFileName() == "eq_48000Hz_4095taps_lin.txt");
-    CHECK(linear.eq.defaultFirFile(".wav").getFileName() == "eq_48000Hz_4095taps_lin.wav");
+    CHECK(linear.eq.defaultFirFile(".txt").getFileName() == "eq_48000Hz_4096taps_lin.txt");
+    CHECK(linear.eq.defaultFirFile(".wav").getFileName() == "eq_48000Hz_4096taps_lin.wav");
     CHECK(linear.eq.defaultFirFile(".txt").getParentDirectory().getFileName() == "fir");
 
     Rig minimum(true, rta::dsp::FirPhase::Minimum);
-    CHECK(minimum.eq.defaultFirFile(".txt").getFileName() == "eq_48000Hz_4095taps_min.txt");
+    CHECK(minimum.eq.defaultFirFile(".txt").getFileName() == "eq_48000Hz_4096taps_min.txt");
 
     Rig unanswered(false);
     CHECK(unanswered.eq.defaultFirFile(".txt") == juce::File{});  // no stem until both are asked
