@@ -134,8 +134,11 @@ jobs:
         with:
           python-version: "3.14"
 
+      # numpy/scipy pinned to the local venv's versions: without them
+      # test_gen_fir_algo.py's importorskip turns the even-N reference check
+      # into a silent skip here.
       - name: Install pytest
-        run: pip install pytest==9.1.1
+        run: pip install pytest==9.1.1 numpy==2.5.2 scipy==1.18.1
 
       - name: Run tools test suite
         run: python -m pytest tools -q

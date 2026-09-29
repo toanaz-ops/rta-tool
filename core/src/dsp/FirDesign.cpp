@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <numbers>
 #include <stdexcept>
 
 namespace rta::dsp {
@@ -85,11 +86,45 @@ std::vector<float> sampleTargetMagnitude(const FirTarget& target, double sampleR
 }
 
 /// The frequency-sampling core (record Sec.2): sample the (zero-phase, for
-/// linear) magnitude on an M-point grid, IDFT, circularly shift so the
-/// zero-phase response centres at (N-1)/2, window with a periodic Window(N),
-/// truncate to N. Builds the symmetric half EXPLICITLY and mirrors it, so
+/// linear) magnitude on an M-point grid, IDFT, place the zero-phase response
+/// so it is centred at (N-1)/2, window with a periodic Window(N), truncate to
+/// N. Builds the symmetric half EXPLICITLY and mirrors it, so
 /// taps[n]==taps[N-1-n] is bitwise (record Sec.4), not a hope resting on the
 /// window's own symmetry surviving float rounding.
+///
+/// Odd and even N differ in WHERE the symmetry axis (N-1)/2 falls:
+///
+///   Odd N  -- an integer. The axis is a sample, tap (N-1)/2 is h_zero(0), and
+///     tap (N-1)/2 + d is h_zero(d): read the plain IDFT circularly.
+///
+///   Even N -- a half-integer. No tap sits on the axis; the two centre taps
+///     N/2-1 and N/2 straddle it and must both carry h_zero at t = +/-1/2,
+///     not h_zero(0). Reading the plain IDFT gives h_zero(0) to BOTH of them
+///     (this function used to), which realises the delta component twice:
+///     Sum(taps) = |H(DC)| = 2*w[N/2-1] = 1 + cos(2*pi/N) ~ 2 for a flat
+///     0 dB target (1.99998 at N = 1024) instead of 1.0.
+///
+///     Sampling h_zero at half-integer times on the same M-grid is a shift of
+///     the SPECTRUM, not of the time axis: with H[k] the real, even target,
+///         g = IDFT_M{ H[k] * e^{+j*pi*k/M} },   g[j] = h_zero(j + 1/2),
+///     because e^{+j*2*pi*k*j/M} (the inverse kernel, RealFft::inverse) times
+///     e^{+j*pi*k/M} is e^{+j*2*pi*k*(j+1/2)/M}. Tap N/2+j is then g[j], and
+///     the mirror puts the same value at tap N/2-1-j.
+///
+///     g is symmetric about -1/2 (g[-1-n] == g[n]): DFT{g[-1-n]}[k] =
+///     e^{+j*2*pi*k/M} * G[-k] = e^{+j*2*pi*k/M} * H[k] * e^{-j*pi*k/M} =
+///     G[k], using H real and even. That needs e^{+j*pi*k/M} to be a
+///     legitimate half-sample delay at every bin, and it fails at exactly one:
+///     Nyquist (k = M/2), where the factor is e^{+j*pi/2} = j -- the spectrum
+///     of a real sequence cannot carry an imaginary Nyquist bin. It is set to
+///     0, which is also a structural fact rather than a repair: an even-length
+///     symmetric FIR (Type II) always has H(pi) = 0. (Multiplying that bin by
+///     j instead would read the same, since RealFft::inverse drops the
+///     imaginary part of the Nyquist bin; what must not happen is leaving H
+///     itself there, which adds an alternating (-1)^j / M term to every tap.)
+///
+/// The odd-N path is deliberately left byte-for-byte untouched (no phase
+/// multiply at all), so its committed goldens do not move.
 std::vector<float> designLinearPhaseCore(std::span<const float> magnitudeHalfGrid,
                                           std::size_t m, std::size_t n, WindowType windowType) {
     RealFft fft(m);
@@ -97,20 +132,29 @@ std::vector<float> designLinearPhaseCore(std::span<const float> magnitudeHalfGri
         throw std::invalid_argument("designFir: magnitude grid size does not match M/2+1");
     }
 
+    const bool evenN = (n % 2 == 0);
+
     std::vector<std::complex<float>> spectrum(fft.numBins());
     for (std::size_t k = 0; k < spectrum.size(); ++k) {
         spectrum[k] = std::complex<float>(magnitudeHalfGrid[k], 0.0f);
     }
+    if (evenN) {
+        // Half-sample shift, angle in double and cast per bin (see above).
+        const std::size_t nyquist = m / 2;
+        for (std::size_t k = 0; k < nyquist; ++k) {
+            const double angle = std::numbers::pi * static_cast<double>(k) / static_cast<double>(m);
+            spectrum[k] *= std::complex<float>(static_cast<float>(std::cos(angle)),
+                                               static_cast<float>(std::sin(angle)));
+        }
+        spectrum[nyquist] = std::complex<float>(0.0f, 0.0f);
+    }
 
     std::vector<float> hZero(m);
-    fft.inverse(spectrum, hZero);
+    fft.inverse(spectrum, hZero);   // odd N: h_zero[d]; even N: g[j] = h_zero(j + 1/2)
 
-    // Circular shift: h_zero[0] is the centre of the (even, zero-phase)
-    // impulse response; sample n of the final N-tap filter is h_zero at
-    // circular offset (n - (N-1)/2) mod M. Building only n <= (N-1)/2 and
-    // mirroring the WINDOWED value (not the raw sample -- see below) makes
-    // the symmetry bitwise instead of trusting that two independently
-    // computed halves land on identical floats.
+    // Building only n <= (N-1)/2 and mirroring the WINDOWED value (not the raw
+    // sample -- see below) makes the symmetry bitwise instead of trusting that
+    // two independently computed halves land on identical floats.
     //
     // A PERIODIC window's own coefficients (Window.h: w[k] = f(2*pi*k/N)) are
     // symmetric about k=N/2, not about k=(N-1)/2 -- those two axes coincide
@@ -121,27 +165,32 @@ std::vector<float> designLinearPhaseCore(std::span<const float> magnitudeHalfGri
     // the windowed value once per source sample (i in [0, half], using
     // coefficients_[i] only) and mirroring THAT value sidesteps the mismatch
     // entirely: the periodic window's true asymmetry never gets a chance to
-    // show up in the taps, at the cost of the window's own literal peak
-    // sample (index N/2) never being read for even N -- coefficients_[half]
-    // (index (N-2)/2, the nearest sample below the true half-integer centre)
-    // stands in for it on both sides, which is what "the symmetric half,
-    // mirrored" (record Sec.4, plan F1) means construction-wise.
-    const std::size_t half = (n - 1) / 2;   // floor; correct for both odd and even N
+    // show up in the taps. For even N the window's own literal peak sample
+    // (index N/2) is never read; coefficients_[half] (index (N-2)/2, the
+    // nearest sample below the true half-integer centre) stands in for it on
+    // both sides, which is what "the symmetric half, mirrored" (record Sec.4,
+    // plan F1) means construction-wise.
+    const std::size_t half = (n - 1) / 2;   // floor; N/2-1 for even N
     Window window(windowType, n);
     const std::span<const float> coeffs = window.coefficients();
     std::vector<float> taps(n);
     for (std::size_t i = 0; i <= half; ++i) {
-        const long long offset = static_cast<long long>(i) - static_cast<long long>(half);
-        const long long idx = ((offset % static_cast<long long>(m)) + static_cast<long long>(m)) %
-                               static_cast<long long>(m);
-        const float windowedValue = hZero[static_cast<std::size_t>(idx)] * coeffs[i];
+        float source;
+        if (evenN) {
+            source = hZero[half - i];   // g[j], j = half - i = N/2-1-i (tap N/2+j is its mirror)
+        } else {
+            const long long offset = static_cast<long long>(i) - static_cast<long long>(half);
+            const long long idx = ((offset % static_cast<long long>(m)) + static_cast<long long>(m)) %
+                                   static_cast<long long>(m);
+            source = hZero[static_cast<std::size_t>(idx)];
+        }
+        const float windowedValue = source * coeffs[i];
         taps[i] = windowedValue;
         taps[n - 1 - i] = windowedValue;
     }
-    // For even N the loop fills [0..half] and mirrors to [half+1..N-1], which
-    // covers every index exactly once (half == n/2 - 1 there); for odd N
-    // index `half` is written twice with the identical value from the same
-    // source sample and the same coefficient, which is a no-op, not a bug.
+    // Even N: [0..half] and its mirror [half+1..N-1] cover every index exactly
+    // once. Odd N: index `half` is written twice with the identical value from
+    // the same source sample and coefficient, a no-op, not a bug.
     return taps;
 }
 
@@ -193,8 +242,11 @@ FirResult designFirCore(std::span<const float> magnitudeHalfGrid, std::size_t m,
 
     if (phase == FirPhase::Linear) {
         result.taps = designLinearPhaseCore(magnitudeHalfGrid, m, taps, window);
-        result.groupDelaySamples = taps / 2;   // N/2 for even N (half-sample delay, record Sec.4);
-                                                // (N-1)/2 for odd N since integer division floors.
+        // The field is integral. Odd N: (N-1)/2, exact. Even N: the true delay
+        // is (N-1)/2 = N/2 - 0.5 samples, a half-sample, which an integer
+        // cannot hold; this reports N/2 (rounded UP by half a sample). Use
+        // (N-1)/2 in double where the exact latency matters (record Sec.4).
+        result.groupDelaySamples = taps / 2;
     } else {
         // F2: minimum-phase mode via the frozen Wave 0 cepstral kernel
         // (record Sec.4). h_lin is the SAME frequency-sampling design as the

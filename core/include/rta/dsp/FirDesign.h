@@ -38,7 +38,9 @@ struct FirResult {
     FirPhase    phase  = FirPhase::Linear;
     FirMethod   method = FirMethod::FrequencySampling;
     WindowType  window = WindowType::Hann;
-    std::size_t groupDelaySamples = 0;        // (N-1)/2 for linear; 0 reported for minimum
+    std::size_t groupDelaySamples = 0;        // linear: N/2 (integer division); exact (N-1)/2 for odd N, but
+                                              // N/2 is half a sample ABOVE the true (N-1)/2 for even N;
+                                              // 0 reported for minimum
     double      peakGainDb = 0.0;             // max 20*log10|H| over the design grid
     double      coefficientPeak = 0.0;        // max |taps[n]|
 

@@ -11,8 +11,12 @@
 #   window form:      scipy.signal.get_window(..., fftbins=True) -- PERIODIC,
 #                      matching rta::dsp::Window; fftbins=False is the trap.
 #   IDFT normalisation: numpy.fft.irfft includes 1/N, matching RealFft::inverse.
-#   circular-shift:    build taps[0..(N-1)/2] explicitly, mirror the WINDOWED
-#                      value (not the raw sample) to taps[N-1-n].
+#   centring:          build taps[0..(N-1)/2] explicitly, mirror the WINDOWED
+#                      value (not the raw sample) to taps[N-1-n]. Odd N reads
+#                      the plain irfft circularly (tap (N-1)/2 = h_zero(0)).
+#                      Even N reads g = irfft(H*e^{+j*pi*k/M}), Nyquist bin 0,
+#                      so tap N/2+j = h_zero(j+1/2) (record Sec.4 amendment
+#                      2026-09-29); the goldens here are odd N only.
 #   floor:             -120 dB (kMinPhaseFloorDb), multiplicative on |H|.
 #   half:              False (scipy) -- |H_min| == |H_lin|, not its square root.
 #   normalization:     as_designed (no peak-0dBFS trim baked into these taps).
