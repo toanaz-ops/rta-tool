@@ -377,14 +377,20 @@ TEST_CASE("EqTraceGrid: a target with no usable bin is FLAT, and bins below its 
     CHECK_FALSE(rta::measure::allFinite(std::vector<float>{ 1.0f, std::numeric_limits<float>::infinity() }));
 }
 
-TEST_CASE("EqFirDesign: the even-length refusal names its reason", "[eq_pane_model_state]") {
-    const std::vector<rta::measure::CommittedFilter> none;
-    try {
-        (void)rta::measure::designEqFir(none, kFs, 4096, rta::dsp::FirPhase::Linear);
-        FAIL("an even tap count must throw");
-    } catch (const std::invalid_argument& e) {
-        const std::string what = e.what();
-        CHECK(what.find("even tap counts are refused") != std::string::npos);
-        CHECK(what.find("wrong gain") != std::string::npos);
-    }
+TEST_CASE("EqPaneModel: AUTO EQ drops stale chips; a target that left the library reads removed",
+          "[eq_pane_model_state]") {
+    Rig r;
+    auto& m = r.model;
+    REQUIRE(m.selectMeasurement(r.library, r.bump));
+    m.suggest();
+    REQUIRE_FALSE(m.chips().empty());
+    m.runAutoEq();
+    CHECK(m.chips().empty());  // ranked before the set the run replaced
+
+    REQUIRE(m.selectTarget(r.library, r.flat));
+    CHECK_FALSE(m.target().removed);
+    REQUIRE(r.library.setVisible(r.flat, false));
+    m.syncLibrary(r.library);
+    CHECK(m.target().removed);
+    CHECK(m.target().name == "Flat");  // the label survives, the numbers were copied
 }

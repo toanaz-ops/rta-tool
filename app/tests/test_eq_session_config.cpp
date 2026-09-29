@@ -111,3 +111,10 @@ TEST_CASE("EqSession::setMaxFilters caps what Auto EQ commits", "[eq_session_con
         CHECK(capped.committed().size() >= 3);
     }
 }
+
+TEST_CASE("EqSession::levelOffsetDb is 0 before any measurement, not a throw", "[eq_session_config]") {
+    // The allocator's validate() refuses an empty grid; the pane draws
+    // "target + c" while nothing is picked yet, so the session answers 0.
+    const EqSession session;
+    CHECK(session.levelOffsetDb() == 0.0);
+}

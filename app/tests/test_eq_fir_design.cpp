@@ -21,6 +21,7 @@
 #include <complex>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using rta::dsp::FirPhase;
@@ -137,6 +138,14 @@ TEST_CASE("EqFirDesign: an EVEN tap count is refused, not designed at twice the 
     const std::vector<CommittedFilter> none;
     CHECK_THROWS_AS(designEqFir(none, kFs, 4096, FirPhase::Linear), std::invalid_argument);
     CHECK_THROWS_AS(designEqFir(none, kFs, 1024, FirPhase::Minimum), std::invalid_argument);
+    // ...and the operator-facing reason names both the rule and the defect.
+    try {
+        (void)designEqFir(none, kFs, 4096, FirPhase::Linear);
+    } catch (const std::invalid_argument& e) {
+        const std::string what = e.what();
+        CHECK(what.find("even tap counts are refused") != std::string::npos);
+        CHECK(what.find("wrong gain") != std::string::npos);
+    }
     // The odd neighbour of a flat target is a unit-gain delta.
     const auto flat = designEqFir(none, kFs, kTaps, FirPhase::Linear);
     CHECK(dftMagnitude(flat.taps, 0.0) == Catch::Approx(1.0).epsilon(1e-3));
