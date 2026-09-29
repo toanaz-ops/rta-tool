@@ -193,9 +193,17 @@ TEST_CASE("A stale Reference past the bus's channel count does not freeze the RT
     const std::array<int, 1> tone{2};
     pushBlocks(bus, tone, 4, 16, 40);
 
+    // NOT `latest() != nullptr`: publishIfDue publishes every 50 ms whether or
+    // not anything was drained, so an empty snapshot would satisfy that (round 2
+    // verifier). `framesAnalysed` is the measurement engine's frame count --
+    // only a real drain of channel 2 advances it.
     const auto deadline = juce::Time::getMillisecondCounter() + 2000u;
-    while (thread.latest() == nullptr && juce::Time::getMillisecondCounter() < deadline) {
+    auto framesNow = [&]() -> std::uint64_t {
+        const auto snapshot = thread.latest();
+        return snapshot ? snapshot->framesAnalysed : 0u;
+    };
+    while (framesNow() == 0 && juce::Time::getMillisecondCounter() < deadline) {
         juce::Thread::sleep(5);
     }
-    CHECK(thread.latest() != nullptr);
+    CHECK(framesNow() > 0);
 }
