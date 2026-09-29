@@ -85,6 +85,7 @@ set(RTA_BASE_TEST_SOURCES
     # T2 and T3 -- the JUCE-free half of the EQ pane, so OFF proves it.
     test_eq_session_config.cpp
     test_eq_pane_model.cpp
+    test_eq_pane_model_state.cpp
     test_eq_fir_design.cpp
     # test_crossover_topology.cpp: lane L7-ALIGN task D (record docs/dsp/
     # 2026-09-06-l7-alignment-wizard.md Sec.3, Sec.10.2) -- the topology to
