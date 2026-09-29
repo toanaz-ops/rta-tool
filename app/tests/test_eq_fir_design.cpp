@@ -140,11 +140,11 @@ TEST_CASE("EqFirDesign: even N realises the peaking filter's closed-form gain (t
     // kernel, whose variance is sigma^2 = fs^2/(2 N^2) (from w''(0) of a Hann
     // of length N/fs seconds), so the design reads |H(fc)| + (1/2) sigma^2
     // |H''(fc)|. |H''(fc)| = 2.15e-5 per Hz^2 for this filter (second
-    // difference of the biquad's own response), sigma^2 = 68.6 Hz^2 at
+    // difference of the biquad's own response), sigma^2 = 68.7 Hz^2 at
     // N = 4096, giving a smoothing of -7.4e-4. 1.5e-3 is twice that. The odd
     // control 4095 is asserted against the SAME closed form and bound, so a
     // parity-specific error cannot hide inside it. DC: the peak's skirt is
-    // 1500 Hz away = 128 bins, so 1e-3 is a margin, not a fit.
+    // 1500 Hz away = 128 bins of fs/N (11.7 Hz), so 1e-3 is a margin, not a fit.
     const std::vector<CommittedFilter> filters{ peak1500(6.0, false) };
     const double target = std::pow(10.0, 6.0 / 20.0);
 

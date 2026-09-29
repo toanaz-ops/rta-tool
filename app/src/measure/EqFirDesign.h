@@ -37,8 +37,9 @@ namespace rta::measure {
 /// M/2, sampleRate <= 0). Even and odd `taps` are both exact: core's
 /// linear-phase design samples an even-length filter on the half-sample grid
 /// (FIR record Sec.4, amendment 2026-09-29), so a flat target reads |H| = 1 at
-/// DC for N = 1024 and 4096 alike. (Until that fix an even `taps` read 2.04 at
-/// DC and this function refused it; the picker offered N-1 instead.)
+/// DC for N = 1024 and 4096 alike. (Until that fix an even `taps` doubled the
+/// DC gain -- flat 2.0, the +6 dB peaking fixture 2.04 -- and this function
+/// refused it; the picker offered N-1 instead.)
 [[nodiscard]] rta::dsp::FirResult designEqFir(std::span<const CommittedFilter> filters,
                                               double sampleRate, std::size_t taps,
                                               rta::dsp::FirPhase phase);
