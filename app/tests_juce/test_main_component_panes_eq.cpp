@@ -258,8 +258,8 @@ TEST_CASE("EXPORT FIR stays disabled until BOTH the phase and the length are ans
     CHECK(pane.exportFirWavButtonForTest().isEnabled());
 
     // The picker prints fs/N and (N-1)/(2fs) beside each length (D9), at the
-    // measurement's own rate: 48000/4095 = 11.7 -> "12 Hz"; 4094/96000 = 42.6 ms.
-    CHECK(pane.firTapsComboForTest().getItemText(1) == "4095 taps  12 Hz  42.6 ms");
+    // measurement's own rate: 48000/4096 = 11.7 -> "12 Hz"; 4095/96000 = 42.7 ms.
+    CHECK(pane.firTapsComboForTest().getItemText(1) == "4096 taps  12 Hz  42.7 ms");
 }
 
 TEST_CASE("the export buttons call the bound actions, and only when enabled", "[main_component_panes_eq]") {
@@ -274,7 +274,7 @@ TEST_CASE("the export buttons call the bound actions, and only when enabled", "[
     pickFirstMeasurement(pane);
     pane.autoEqButtonForTest().onClick();
     pane.firPhaseComboForTest().setSelectedId(2, juce::sendNotificationSync);  // MINIMUM
-    pane.firTapsComboForTest().setSelectedId(1, juce::sendNotificationSync);   // 1023
+    pane.firTapsComboForTest().setSelectedId(1, juce::sendNotificationSync);   // 1024
     REQUIRE(pane.exportFirTextButtonForTest().isEnabled());
 
     pane.exportFirTextButtonForTest().onClick();

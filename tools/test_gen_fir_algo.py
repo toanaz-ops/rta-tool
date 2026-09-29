@@ -7,8 +7,9 @@ Sec.4, amendment 2026-09-29): before that fix the function reproduced the
 C++'s defect (Sum taps ~ 2 for even N) while its docstring claimed a bit-for-
 bit mirror. Expectations are closed form, not "whatever the code printed".
 
-numpy and scipy are not installed in CI's `tools (pytest)` job (it installs
-pytest only), so this module skips there; it runs in the project venv.
+CI's `tools (pytest)` job installs numpy and scipy at the project venv's pinned
+versions (ci.yml, d4f36ee), so this module runs there; `importorskip` only
+keeps it from failing a bare environment that has pytest alone.
 """
 
 from __future__ import annotations
@@ -69,9 +70,12 @@ def test_odd_n_flat_design_is_the_plain_circular_read_unchanged(flat_target):
     n = 1023
     taps, m = algo.design_linear_phase(n)
 
-    # The pre-fix construction, written out independently: plain irfft, read
-    # circularly at offset i - (N-1)/2. For odd N that was always correct and
-    # must not move (the committed goldens are odd N).
+    # The pre-fix loop, transcribed as a did-not-move lock (it shares its shape
+    # with the code under test, so it is NOT independent evidence): plain irfft,
+    # read circularly at offset i - (N-1)/2. For odd N that was always correct
+    # and must not move (the committed goldens are odd N). The independent part
+    # of this test is the closed-form checks below it: unit DC gain and the
+    # argmax at the centre tap.
     magnitude = algo.sample_target_magnitude(m)
     h_zero = np.fft.irfft(magnitude.astype(complex), n=m)
     w = algo.signal.get_window("hann", n, fftbins=True)

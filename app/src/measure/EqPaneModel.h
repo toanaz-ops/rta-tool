@@ -38,11 +38,12 @@ namespace rta::measure {
 /// regime of FIR record Sec.2. 65536 is excluded (its minimum-phase design is
 /// the 16.8M-point transform Sec.11 flags, on the message thread).
 ///
-/// ODD, one below the plan's 1024 / 4096 / 6144 / 8192: FirDesign counts h[0]
-/// twice for an even-length filter (EqFirDesign.h), so the even
-/// neighbours are not offered. Each pair shares its design grid M (8N rounds
-/// to the same power of two), so the resolution and latency read the same.
-inline constexpr std::array<std::size_t, 4> kEqFirTapChoices{ 1023, 4095, 6143, 8191 };
+/// Even, as the plan states them: core's design samples an even-length filter
+/// on the half-sample grid, so no length is offered as a workaround for a
+/// gain defect (FIR record Sec.4, amendment 2026-09-29). Linear phase has a
+/// half-sample delay at an even N, (N-1)/(2 fs), which eqFirTapsLabel prints
+/// exactly.
+inline constexpr std::array<std::size_t, 4> kEqFirTapChoices{ 1024, 4096, 6144, 8192 };
 
 /// "4096 taps  12 Hz  42.7 ms": fs/N and (N-1)/(2 fs), the two numbers FIR
 /// record Sec.9 prints. Frequency in whole hertz (project convention).

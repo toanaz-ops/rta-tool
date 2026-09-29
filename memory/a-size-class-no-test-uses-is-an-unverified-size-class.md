@@ -4,11 +4,11 @@
 independently while writing the FIR export's test, not by any existing test.
 Nothing in `core/tests` was red.
 
-`designFir` (`core/src/dsp/FirDesign.cpp`, `designLinearPhaseCore`) builds
-`taps[0..half]`, `half = (N-1)/2`, and mirrors. For odd `N` that is exact. For
-even `N` the zero-phase impulse's centre sample lands on **both** central taps,
-so `h[0]` is counted twice (`FirDesign.cpp:129-139` writes `hZero[0]` to both
-`taps[half]` and `taps[N-1-half]`). Measured by a direct DFT of the taps: a flat
+`designFir` (`core/src/dsp/FirDesign.cpp`, `designLinearPhaseCore`) built
+`taps[0..half]`, `half = (N-1)/2`, and mirrored. For odd `N` that is exact. For
+even `N` the zero-phase impulse's centre sample landed on **both** central taps,
+so `h[0]` was counted twice (`hZero[0]` went to both `taps[half]` and
+`taps[N-1-half]`). Measured by a direct DFT of the taps: a flat
 0 dB target at `N = 4096` reads `|H(0)| = 2.00000` (both centre taps 1.0),
 against `1.00001` for `N = 4095`; a +6 dB peaking filter reads `3.0195` (even)
 versus `1.9945` (odd) for a target of `1.99526`. (2.04, in an earlier draft of
@@ -37,9 +37,8 @@ existing suite had certified for months.
 
 ## What was done here
 
-Not fixed in this lane (a half-sample design is a core change with goldens; a
-follow-up owns it). `EqFirDesign` refuses an even tap count and the EQ pane
-offers 1023 / 4095 / 6143 / 8191; FIR record Sec.4 carries the amendment. Delete
-the refusal, restore the even list, and delete this file's "what was done" **and
-the "until fixed" clause of its `memory/MEMORY.md` index line** once
-`designLinearPhaseCore` has an even-`N` magnitude test that fails without the fix.
+Fixed in core by PR #62: `designLinearPhaseCore` designs even `N` on the
+half-sample grid (FIR record Sec.4, half-sample amendment), and
+`core/tests/test_fir_design_even.cpp` asserts the even-`N` closed forms and goes
+red without the fix. `EqFirDesign` no longer refuses an even tap count and the
+EQ pane offers 1024 / 4096 / 6144 / 8192 again.
