@@ -14,6 +14,11 @@
 namespace rta::tools
 {
 
+// Tall enough that the OUTER rail (device panel + matrix + role table) fits
+// without scrolling, so the picture shows the routing matrix's own inner
+// scroll -- at 800 px the rail's outer viewport hides the matrix below the fold.
+constexpr int kHeight = 1500;
+
 void renderRoutingSpecimen (const juce::File& outDir, int& failures)
 {
     MainComponent component;
@@ -35,7 +40,7 @@ void renderRoutingSpecimen (const juce::File& outDir, int& failures)
     config.setRole (1, ChannelRole::Reference);
     config.setRole (2, ChannelRole::Measurement);
 
-    component.setSize (1280, 800);
+    component.setSize (1280, kHeight);
     component.resized();
     MainComponentTestAccess::routingMatrixWidget (component).refreshFromConfig();
 
@@ -46,7 +51,7 @@ void renderRoutingSpecimen (const juce::File& outDir, int& failures)
         MainComponentTestAccess::routingMatrixWidget (component).viewportForTest());
     viewport.setViewPositionProportionately (0.0, 1.0);
 
-    if (! renderComponent (component, outDir, "main-live-routing16.png", 1280, 800))
+    if (! renderComponent (component, outDir, "main-live-routing16.png", 1280, kHeight))
         ++failures;
 }
 
