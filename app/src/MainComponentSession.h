@@ -44,12 +44,27 @@ public:
     /// report reaching all the way to the readout (fix round, PR #43
     /// verifier MEDIUM F2).
     using RestorePaneView = std::function<rta::view::PaneResolution(std::vector<rta::trace::PaneSpec>)>;
-    /// What Save should write for the pane CURRENTLY showing. MainComponent
-    /// supplies this because only it knows `currentPaneView_`.
-    using CurrentPaneSpec = std::function<rta::trace::PaneSpec()>;
+    /// What Save should write: every pane in the workspace CURRENTLY showing,
+    /// in pane order. F4 (docs/HUMAN-QA-QUEUE.md D11): this used to be a
+    /// single `PaneSpec` (`currentPaneView_` alone), which collapsed a
+    /// multi-pane workspace to one pane on re-save -- MainComponent supplies
+    /// `WorkspaceView::paneSpecs()` here because only it knows `workspace_`.
+    using CurrentPaneSpecs = std::function<std::vector<rta::trace::PaneSpec>()>;
 
-    MainComponentSession(rta::trace::TraceLibrary& library, CurrentPaneSpec currentPaneSpec,
-                         RestorePaneView restorePaneView);
+    /// F6 (docs/HUMAN-QA-QUEUE.md D11): asks OK/Cancel before Save writes
+    /// into a folder that already holds a session -- `respond(true)`
+    /// proceeds with the write, `respond(false)` (or never responding)
+    /// leaves the folder untouched. Injected the same way `RestorePaneView`/
+    /// `CurrentPaneSpecs` are, so a test can answer synchronously instead of
+    /// pumping a message loop to drive a real, modal `juce::AlertWindow` --
+    /// this offscreen/CI environment never runs one. A default-constructed
+    /// (empty) `std::function` here means "use the real AlertWindow",
+    /// resolved in the constructor body so this header does not need to
+    /// declare that default's implementation.
+    using ConfirmOverwrite = std::function<void(const juce::File& folder, std::function<void(bool)> respond)>;
+
+    MainComponentSession(rta::trace::TraceLibrary& library, CurrentPaneSpecs currentPaneSpecs,
+                         RestorePaneView restorePaneView, ConfirmOverwrite confirmOverwrite = nullptr);
 
     /// Adds the two buttons and the readout directly into `parent` -- no
     /// intervening container, the same flat shape `exportReportButton_`/
@@ -69,9 +84,17 @@ private:
     void saveClicked();
     void openClicked();
 
+    /// F6: the check-and-confirm half of Save, split out of `saveClicked()`'s
+    /// FileChooser callback so a test can drive it directly (through
+    /// `MainComponentTestAccess`) with no dialog and no chooser involved. A
+    /// folder with no `session.index` yet writes straight through --
+    /// `confirmOverwrite_` is never even called for a genuinely empty folder.
+    void maybeConfirmAndSave(const juce::File& folder);
+
     rta::trace::TraceLibrary& library_;
-    CurrentPaneSpec currentPaneSpec_;
+    CurrentPaneSpecs currentPaneSpecs_;
     RestorePaneView restorePaneView_;
+    ConfirmOverwrite confirmOverwrite_;
 
     juce::TextButton saveButton_{"SAVE SESSION"};
     juce::TextButton openButton_{"OPEN SESSION"};

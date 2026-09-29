@@ -60,6 +60,20 @@ public:
     /// (`getChildComponent`) always agree.
     void resized() override;
 
+    /// The `PaneSpec` for every pane currently showing, in pane order --
+    /// F4 (docs/HUMAN-QA-QUEUE.md D11): Session Save used to write only
+    /// `currentPaneSpec_()`, collapsing a multi-pane workspace to one pane on
+    /// re-save. `view` is the RESOLVED view name (`paneViewName`, never the
+    /// original, possibly-unrecognised string a loaded session supplied --
+    /// this workspace already fell back to `Rta` for that pane at
+    /// construction, and saving the name it actually resolved to is what
+    /// keeps a re-save idempotent), `weight` is the normalised weight this
+    /// constructor already computed. Building a `WorkspaceView` from this
+    /// output and calling it again returns an equal (already-normalised)
+    /// result -- `normalisePanes` is itself idempotent on already-normalised
+    /// input.
+    [[nodiscard]] std::vector<rta::trace::PaneSpec> paneSpecs() const;
+
 private:
     /// Owns the children; `addAndMakeVisible` registers them in the
     /// component hierarchy but takes no ownership of its own, so this vector
@@ -69,6 +83,16 @@ private:
     /// Parallel to `children_` by index -- pane i's normalised weight is
     /// `weights_[i]`, fed to `az::ui::splitVertically` on every `resized()`.
     std::vector<float> weights_;
+
+    /// Parallel to `children_`/`weights_` by index -- pane i's RESOLVED view
+    /// (`resolvePaneView(spec.view).view`, computed once in the constructor).
+    /// Kept because the constructor only ever hands the resolved `PaneView`
+    /// to `factory`, never storing the original (possibly-unrecognised)
+    /// string anywhere -- `paneSpecs()` reads this back rather than
+    /// re-deriving it from the built child's concrete type, which would need
+    /// this file to know every pane class (the exact composition-root
+    /// dependency this class's own header comment says it must not carry).
+    std::vector<PaneView> views_;
 
     const rta::trace::TraceLibrary* library_ = nullptr;
 

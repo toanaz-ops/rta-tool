@@ -40,13 +40,33 @@ struct LoadedTrace {
     bool visible = true;
 };
 
+/// F6's production default: a real, modal-but-async OK/Cancel AlertWindow.
+/// `showAsync` returns immediately; the write (or refusal) happens later,
+/// from `respond`, when the operator dismisses the box -- never blocking the
+/// message thread the way the synchronous `AlertWindow::show` would.
+void showRealOverwriteConfirmation(const juce::File& folder, std::function<void(bool)> respond) {
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions::makeOptionsOkCancel(
+            juce::MessageBoxIconType::WarningIcon, "Overwrite session?",
+            "A session already exists in \"" + folder.getFullPathName() +
+                "\".\nSaving here will overwrite it.",
+            "Overwrite", "Cancel"),
+        // MessageBoxOptions::makeOptionsOkCancel's own two-button contract
+        // (juce_AlertWindow.h): button[0] ("Overwrite") returns 1, button[1]
+        // ("Cancel") returns 0.
+        [respond = std::move(respond)](int result) { respond(result == 1); });
+}
+
 }  // namespace
 
 MainComponentSession::MainComponentSession(rta::trace::TraceLibrary& library,
-                                           CurrentPaneSpec currentPaneSpec,
-                                           RestorePaneView restorePaneView)
-    : library_(library), currentPaneSpec_(std::move(currentPaneSpec)),
-      restorePaneView_(std::move(restorePaneView)) {
+                                           CurrentPaneSpecs currentPaneSpecs,
+                                           RestorePaneView restorePaneView,
+                                           ConfirmOverwrite confirmOverwrite)
+    : library_(library), currentPaneSpecs_(std::move(currentPaneSpecs)),
+      restorePaneView_(std::move(restorePaneView)),
+      confirmOverwrite_(confirmOverwrite ? std::move(confirmOverwrite)
+                                        : ConfirmOverwrite(&showRealOverwriteConfirmation)) {
     saveButton_.getProperties().set(az::ui::hintProperty, "writes traces + layout to a folder");
     saveButton_.onClick = [this] { saveClicked(); };
 
@@ -82,7 +102,7 @@ void MainComponentSession::saveClicked() {
     chooser_->launchAsync(flags, [this](const juce::FileChooser& fc) {
         const auto result = fc.getResult();
         if (result == juce::File{}) return;  // cancelled
-        performSave(result);
+        maybeConfirmAndSave(result);
     });
 }
 
@@ -99,11 +119,35 @@ void MainComponentSession::openClicked() {
     });
 }
 
+void MainComponentSession::maybeConfirmAndSave(const juce::File& folder) {
+    // F6 (docs/HUMAN-QA-QUEUE.md D11): "session.index" is SessionStore's own
+    // index filename (trace/SessionStore.cpp's private kIndexName) -- named
+    // here rather than exported from that file, since checking for its
+    // EXISTENCE (never reading or writing it) needs no more of SessionStore's
+    // contract than this literal already states. An empty/new folder has no
+    // such file -- confirmOverwrite_ is never even called for it, matching
+    // the acceptance "empty folder -> no prompt".
+    if (!folder.getChildFile("session.index").existsAsFile()) {
+        performSave(folder);
+        return;
+    }
+    confirmOverwrite_(folder, [this, folder](bool proceed) {
+        if (proceed) performSave(folder);
+        // Refused: nothing here writes anything, so the folder's existing
+        // session.index (and every trace blob beside it) is left exactly as
+        // it was found -- acceptance's "refused -> folder bytes unchanged".
+    });
+}
+
 void MainComponentSession::performSave(const juce::File& folder) {
     const rta::trace::SessionStore store(toFsPath(folder));
 
     rta::trace::SessionDocument doc;
-    doc.panes = {currentPaneSpec_()};
+    // F4 (docs/HUMAN-QA-QUEUE.md D11): every pane in the CURRENT workspace,
+    // not only the one `currentPaneView_` names -- see `CurrentPaneSpecs`'s
+    // own comment (MainComponentSession.h) for why this used to collapse a
+    // multi-pane session to one pane on re-save.
+    doc.panes = currentPaneSpecs_();
 
     // Traces are written BEFORE the index names them: a write that fails
     // partway (disk full, permission lost mid-session) must never leave an

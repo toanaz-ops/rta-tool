@@ -79,12 +79,15 @@ MainComponent::MainComponent()
       // to a different single pane; the shape it starts in is unchanged.
       workspace_(std::make_unique<rta::view::WorkspaceView>(
           std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_))),
-      // Session persistence: Save reads currentPaneView_ (this class's own
-      // member) through a callback rather than a stored pointer, matching
+      // Session persistence: Save reads EVERY pane in `workspace_` (F4,
+      // docs/HUMAN-QA-QUEUE.md D11) through `WorkspaceView::paneSpecs()`,
+      // via a callback rather than a stored pointer, matching
       // makePaneFactory's own "hand over exactly the capability needed"
       // shape; Open's rebuild is restoreWorkspaceFromSession (MainComponentPanes.cpp).
+      // F6's overwrite confirmation is left at its default (the real
+      // AlertWindow) -- production has no reason to override it.
       session_(
-          library_, [this] { return rta::trace::PaneSpec{rta::view::paneViewName(currentPaneView_), 1.0f}; },
+          library_, [this] { return workspace_->paneSpecs(); },
           [this](std::vector<rta::trace::PaneSpec> panes) { return restoreWorkspaceFromSession(std::move(panes)); }) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
