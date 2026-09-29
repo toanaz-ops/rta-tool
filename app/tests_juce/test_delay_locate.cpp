@@ -69,6 +69,19 @@ std::shared_ptr<const rta::measure::LocateCapture> waitForCapture(const Analysis
     return thread.locateCapture();
 }
 
+// Polls a condition the production code guarantees, bounded -- never a fixed
+// sleep followed by a hope. Returns the predicate's final value.
+template <typename Predicate>
+bool waitUntil(Predicate&& predicate, int timeoutMs) {
+    const auto deadline =
+            juce::Time::getMillisecondCounter() + static_cast<std::uint32_t>(timeoutMs);
+    while (juce::Time::getMillisecondCounter() < deadline) {
+        if (predicate()) return true;
+        juce::Thread::sleep(5);
+    }
+    return predicate();
+}
+
 }  // namespace
 
 TEST_CASE("the armed accumulator sees the engine's hops, same order",
@@ -125,36 +138,68 @@ TEST_CASE("Apply rebuilds and takes effect: referenceDelaySamples, then the gate
 
     // Clear frames through the ORIGINAL config so a real transfer function
     // exists to check coherence on at all.
-    pushRamp(bus, 0, 1, 2, 64, 12);
-    juce::Thread::sleep(300);
+    constexpr int kFramesBeforeApply = 12;
+    pushRamp(bus, 0, 1, 2, 64, kFramesBeforeApply);
+
+    // WAIT FOR THE DRAIN, do not sleep for it. `runBody` applies a pending
+    // Apply BEFORE it drains (rebuild, then drain()), so an Apply that lands
+    // while pre-Apply audio is still in the ring rebuilds first and then feeds
+    // that audio to the FRESH analyser -- 12 frames, gate open, and the
+    // closed-gate check below fails. A fixed sleep(300) hid this until the
+    // analysis thread was starved for longer than that; with the sleep
+    // removed the case fails 20/20 at the CHECK_FALSE below. What production
+    // guarantees is that routeHopCount(0) reaches one hop per pushed block
+    // and that a snapshot with a transfer block is published after it.
+    REQUIRE(waitUntil(
+        [&] { return thread.routeHopCount(0) >= static_cast<std::uint64_t>(kFramesBeforeApply); },
+        10000));
+    // Also proves the premise the closed-gate check below depends on: the gate
+    // WAS open before Apply (12 frames >= minimumEffectiveAverages' 8), so
+    // "closed afterwards" is a change and not the state the case started in.
+    REQUIRE(waitUntil(
+        [&] {
+            const auto s = thread.latest();
+            return s && s->transfer.has_value() && s->transfer->coherence.has_value() &&
+                   s->framesAnalysed >= static_cast<std::uint64_t>(kFramesBeforeApply);
+        },
+        10000));
     REQUIRE(thread.appliedReferenceDelaySamples() == 0);
 
     thread.applyReferenceDelay(37);
 
     // The rebuild lands on the analysis thread's next poll (kPollMs = 10 ms
-    // in AnalysisThread.cpp); wait for appliedReferenceDelaySamples() to
-    // confirm it happened before reading anything gate-related.
-    const auto deadline = juce::Time::getMillisecondCounter() + 3000;
-    while (thread.appliedReferenceDelaySamples() != 37 &&
-           juce::Time::getMillisecondCounter() < deadline) {
-        juce::Thread::sleep(5);
-    }
-    REQUIRE(thread.appliedReferenceDelaySamples() == 37);
+    // in AnalysisThread.cpp); appliedReferenceDelaySamples() confirms it.
+    REQUIRE(waitUntil([&] { return thread.appliedReferenceDelaySamples() == 37; }, 10000));
 
-    // Immediately after the rebuild, the fresh Analyser has zero frames --
-    // the coherence gate is closed again (record sec.1.6's accepted
-    // ~16-frame re-fill), even though frames were flowing before Apply.
-    const auto rightAfter = thread.latest();
-    if (rightAfter != nullptr && rightAfter->transfer.has_value()) {
-        CHECK_FALSE(rightAfter->transfer->coherence.has_value());
-    }
+    // Fewer fresh frames than minimumEffectiveAverages' default of 8 -- the
+    // rebuilt Analyser must be refilling with the gate still closed (record
+    // sec.1.6's accepted ~16-frame re-fill), even though 12 frames were
+    // flowing before Apply. Pushed only AFTER the rebuild is confirmed, so
+    // every one of them reaches the new Analyser. The old snapshot may still
+    // be `latest()` (publish is throttled to 50 ms), and it is told apart from
+    // the rebuilt one by frame count: 12 before, 0 < n < 12 after. Without the
+    // rebuild the count would climb to 16 and this wait would time out.
+    constexpr int kFramesRefilling = 4;
+    pushRamp(bus, 0, 1, 2, 64, kFramesRefilling);
+    std::shared_ptr<const rta::measure::Snapshot> refilling;
+    REQUIRE(waitUntil(
+        [&] {
+            refilling = thread.latest();
+            return refilling && refilling->framesAnalysed > 0 &&
+                   refilling->framesAnalysed < static_cast<std::uint64_t>(kFramesBeforeApply);
+        },
+        10000));
+    REQUIRE(refilling->transfer.has_value());
+    CHECK_FALSE(refilling->transfer->coherence.has_value());
 
     // Push enough fresh frames (well past minimumEffectiveAverages' default
     // of 8) for the gate to re-open on the REBUILT Analyser.
     pushRamp(bus, 0, 1, 2, 64, 20);
-    juce::Thread::sleep(400);
-    const auto later = thread.latest();
-    REQUIRE(later != nullptr);
-    REQUIRE(later->transfer.has_value());
-    CHECK(later->transfer->coherence.has_value());
+    REQUIRE(waitUntil(
+        [&] {
+            const auto later = thread.latest();
+            return later && later->transfer.has_value() && later->transfer->coherence.has_value();
+        },
+        10000));
 }
+

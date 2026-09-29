@@ -67,11 +67,17 @@ public:
     /// original, possibly-unrecognised string a loaded session supplied --
     /// this workspace already fell back to `Rta` for that pane at
     /// construction, and saving the name it actually resolved to is what
-    /// keeps a re-save idempotent), `weight` is the normalised weight this
+    /// keeps a re-save stable), `weight` is the normalised weight this
     /// constructor already computed. Building a `WorkspaceView` from this
-    /// output and calling it again returns an equal (already-normalised)
-    /// result -- `normalisePanes` is itself idempotent on already-normalised
-    /// input.
+    /// output and calling it again returns the same views, and the same
+    /// weights to within float rounding -- NOT bitwise in general:
+    /// `normalisePanes` divides in double and narrows to float, so a weight
+    /// set whose float sum is not exactly 1 (`{1,3,5}` -> 0.11111111 on pass
+    /// 1, 0.111111104 on pass 2) can move one float ULP on a re-save. It is
+    /// exactly a fixed point when the weights are dyadic (`{0.75, 0.25}`),
+    /// which is what `test_workspace_view.cpp` pins; a 1-ULP drift is far
+    /// below one pixel of layout, so the rule was left as it is rather than
+    /// special-casing "already summing to 1".
     [[nodiscard]] std::vector<rta::trace::PaneSpec> paneSpecs() const;
 
 private:

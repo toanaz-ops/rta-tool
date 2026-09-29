@@ -195,12 +195,14 @@ TEST_CASE("paneSpecs names the RESOLVED view for a pane whose original name fell
     CHECK(specs[0].view == "rta");
 }
 
-// CATCHES a paneSpecs()/normalisePanes round trip that is not actually
-// idempotent -- WorkspaceView::paneSpecs()'s own doc comment claims
-// "building a WorkspaceView from this output and calling it again returns
-// an equal result". Feeding a workspace's own paneSpecs() STRAIGHT BACK
-// into a fresh WorkspaceView's constructor and reading it a second time
-// is that claim, checked.
+// CATCHES a paneSpecs()/normalisePanes round trip that is not a fixed point
+// -- WorkspaceView::paneSpecs()'s doc comment: feeding it back in returns the
+// same views and, for weights whose float sum is exactly 1, bitwise the same
+// weights. {3,1} normalises to the dyadic {0.75, 0.25}, so `==` is a valid
+// check HERE; it is NOT valid for e.g. {1,3,5}, which drifts one float ULP
+// on the first re-normalisation (see that comment). Feeding a workspace's own
+// paneSpecs() STRAIGHT BACK into a fresh WorkspaceView's constructor and
+// reading it a second time is that claim, checked.
 TEST_CASE("paneSpecs is a fixed point: feeding it back in produces the same specs again",
           "[workspace-view]") {
     const StaticSnapshotSource source;
