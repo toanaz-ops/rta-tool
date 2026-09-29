@@ -272,6 +272,15 @@ private:
     // --- L6a task W2-E2b part B: export the report from a live session -----
     juce::TextButton exportReportButton_{"EXPORT REPORT"};
     juce::Label exportReportReadout_;
+    /// D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4 item 14): the export try/catch's
+    /// "EXPORT FAILED" branch (MainComponentSpl.cpp) had no test -- nothing
+    /// in this tree can make `buildReportPayload`/`utf8Path` throw through
+    /// the public API. When true, `exportReportClicked()` throws before
+    /// doing any work, so a test can prove the catch branch runs without
+    /// needing a real filesystem failure. Always false outside
+    /// `MainComponentTestAccess::forceExportThrowForTest` -- inert in every
+    /// shipped build.
+    bool forceExportThrowForTest_ = false;
     // ----------------------------------------------------------------------
     // STORE (station-3): freezes the live measurement into TraceLibrary.
     juce::TextButton storeButton_{"STORE"};

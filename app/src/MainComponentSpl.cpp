@@ -84,6 +84,7 @@
 #include <exception>
 #include <fstream>
 #include <span>
+#include <stdexcept>
 #include <string>
 
 void MainComponent::startFreshSplLog(std::uint64_t epoch) {
@@ -159,7 +160,11 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
 }
 
 void MainComponent::exportReportClicked() {
-    if (currentSplSessionDir_.empty() || currentSplLoggedChannels_.empty()) {
+    // D7 test seam: bypasses the "no session" guard below so a test needs no
+    // real SPL session set up to reach the catch branch -- see
+    // `forceExportThrowForTest_`'s own comment (MainComponent.h).
+    if (!forceExportThrowForTest_ &&
+        (currentSplSessionDir_.empty() || currentSplLoggedChannels_.empty())) {
         exportReportReadout_.setText("export: no SPL session logged yet", juce::dontSendNotification);
         return;
     }
@@ -176,6 +181,13 @@ void MainComponent::exportReportClicked() {
     // here is `std::terminate`, not a JUCE alert box -- a one-off user
     // action failing must end at this readout, never at the whole app.
     try {
+        // D7 test seam: thrown before any real work, and BEFORE `request` is
+        // even built, so the test needs no session directory, no channel
+        // list and no live snapshot -- only this flag.
+        if (forceExportThrowForTest_) {
+            throw std::runtime_error("forced by MainComponentTestAccess::forceExportThrowForTest (D7)");
+        }
+
         rta::splexport::SplReportBuildRequest request;
         request.sessionDir = currentSplSessionDir_;
         request.channels = currentSplLoggedChannels_;
