@@ -91,7 +91,11 @@ SplAlarms.cpp had no caller and so were never added to a source list either,
 at the commit before their wiring landed) -- see
 orphan_targets.not_in_target_reason and orphan_targets.not_in_any_target_reason
 for the exact checks and their two distinct orphan reasons ("compiled only
-into rtatool_snapshot, never rtatool" vs. "not compiled into any target").
+into rtatool_snapshot, never rtatool" vs. "not compiled into rtatool or
+rtatool_snapshot" -- fix round 5, D4: the second reason used to read "not
+compiled into any target", which is false whenever a TEST target this tool
+never reads compiles the file; see orphan_targets.not_in_any_target_reason's
+own docstring).
 Both fix round 1's first cut (any unlisted `.cpp` was non-failing) and fix
 round 2's narrower one (only a TRULY unlisted `.cpp` failed; a
 snapshot-listed one was still exempted) silently defeated some version of

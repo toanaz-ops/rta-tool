@@ -43,11 +43,51 @@ string literal, and not counted above.
 from __future__ import annotations
 
 
+# A char/string literal PREFIX -- `L'x'`, `u8'x'`, `u'x'`, `U'x'` -- ends in
+# an ordinary alphanumeric letter, exactly like the digit or hex-digit letter
+# that legitimately precedes a C++14 digit separator (`1'700'000'000`,
+# `0xFF'FF'FF`). Longest prefix first so "u8" is matched whole rather than as
+# a lone "u" one character short of the real prefix.
+_CHAR_LITERAL_PREFIXES = ("u8", "u", "U", "L")
+
+
+def _char_literal_prefix_precedes(text: str, index: int) -> bool:
+    """True if the `'` at `index` is immediately preceded by one of the
+    C++ char-literal prefixes (`u8`, `u`, `U`, `L`) as its OWN token -- i.e.
+    a real prefixed char literal (`L'x'`) opens here, never a digit
+    separator. `index` must be the position of the prefixed literal's
+    OPENING quote for this to fire; `L'x'`'s CLOSING quote is preceded by
+    `x`, not by the prefix, so this correctly returns False there and the
+    ordinary (non-digit-separator) literal-close path in each caller handles
+    it.
+
+    D5 (docs/HUMAN-QA-QUEUE.md "Lane-end LOW triage -- 2026-09-27", orphan_
+    check.py F4): `_is_digit_separator_quote`'s rule -- "the preceding
+    character is alphanumeric" -- also matches a prefix LETTER, so `L'/*'`
+    used to be misread as an inert digit-separator quote; the literal `/*`
+    right after it then opened what `strip_comments` believed was an
+    unterminated block comment, discarding the rest of the file. Checked
+    BEFORE the digit-separator rule in `_is_digit_separator_quote` so a
+    prefix always wins even though its own last letter is alnum too.
+    """
+    for prefix in _CHAR_LITERAL_PREFIXES:
+        start = index - len(prefix)
+        if start < 0 or text[start:index] != prefix:
+            continue
+        before = text[start - 1] if start > 0 else ""
+        if before.isalnum() or before == "_":
+            continue  # part of a longer identifier, not a standalone prefix
+        return True
+    return False
+
+
 def _is_digit_separator_quote(text: str, index: int) -> bool:
     """True if the `'` at `index` is a C++14 DIGIT SEPARATOR
     (`1'700'000'000`, `0xFF'FF'FF`) rather than the opening quote of a real
     char literal. A real char literal is never preceded by a digit, a
-    letter, or another `'` -- only a digit separator is.
+    letter, or another `'` -- only a digit separator is -- UNLESS that
+    letter is itself a char-literal prefix token (`L`, `u8`, `u`, `U`), which
+    `_char_literal_prefix_precedes` checks first (fix round 5 / D5).
 
     Fix round 4 (verifier): round 3 gave this exact rule to
     `strip_string_and_char_literals` alone. `strip_comments` still opened a
@@ -59,6 +99,8 @@ def _is_digit_separator_quote(text: str, index: int) -> bool:
     code, undoing `strip_comments`' own whole reason to exist. Shared here so
     the two scanners' char-literal rule cannot drift apart a third time.
     """
+    if _char_literal_prefix_precedes(text, index):
+        return False
     prev = text[index - 1] if index > 0 else ""
     return prev.isalnum() or prev == "'"
 

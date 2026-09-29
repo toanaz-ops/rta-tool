@@ -195,7 +195,7 @@ def test_cpp_absent_from_every_source_list_is_an_orphan(tmp_path, capsys):
     )
     out = capsys.readouterr().out
     assert exit_code == 1
-    assert "not compiled into any target" in out
+    assert "not compiled into rtatool or rtatool_snapshot" in out
     assert "neverCalled" in out
     assert "NOT IN TARGET" not in out
 
@@ -231,7 +231,7 @@ def test_body_only_edit_to_an_unlisted_cpp_still_fails(tmp_path, capsys):
     )
     out = capsys.readouterr().out
     assert exit_code == 1
-    assert "not compiled into any target" in out
+    assert "not compiled into rtatool or rtatool_snapshot" in out
 
 
 def test_source_list_case_mismatch_still_counts_as_listed(tmp_path, capsys):
@@ -239,7 +239,7 @@ def test_source_list_case_mismatch_still_counts_as_listed(tmp_path, capsys):
     # build accepts a .cmake source-list entry whose case does not exactly
     # match the file's own path as git spells it -- a case-SENSITIVE `in`
     # check would then treat a genuinely compiled file as absent from its
-    # own source list, inventing a false "not compiled into any target"
+    # own source list, inventing a false "not compiled into rtatool or rtatool_snapshot"
     # orphan for perfectly wired, live code.
     repo = tmp_path / "repo"
     (repo / "app" / "src" / "Measure").mkdir(parents=True)
@@ -267,7 +267,7 @@ def test_source_list_case_mismatch_still_counts_as_listed(tmp_path, capsys):
     )
     out = capsys.readouterr().out
     assert exit_code == 0
-    assert "not compiled into any target" not in out
+    assert "not compiled into rtatool or rtatool_snapshot" not in out
     assert "NOT IN TARGET" not in out
 
 
