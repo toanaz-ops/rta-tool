@@ -26,20 +26,6 @@ void validate(const EqInput& input) {
     }
 }
 
-/// Step 1 (EqAllocator.h doc comment): the gamma^2/f-weighted mean of
-/// residualDb over every trusted, non-excluded bin -- the "anchor band"
-/// taken as the whole trusted region (a labelled simplification).
-double autoOffset(const EqInput& input) {
-    double num = 0.0, den = 0.0;
-    for (std::size_t k = 0; k < input.hz.size(); ++k) {
-        if (!input.trusted[k] || input.excluded[k] || !(input.hz[k] > 0.0f)) continue;
-        const double w = static_cast<double>(input.coherence[k]) / static_cast<double>(input.hz[k]);
-        num += w * static_cast<double>(input.residualDb[k]);
-        den += w;
-    }
-    return (den > 0.0) ? num / den : 0.0;
-}
-
 /// Walks from `start` in `direction` (+1 or -1) while `sign*residual` is
 /// non-increasing (still descending away from the fStar extremum), stopping
 /// at the first bin where it would increase again -- that bin is the
@@ -208,9 +194,21 @@ std::vector<float> negated(std::span<const float> values) {
 
 }  // namespace
 
+double autoOffsetDb(const EqInput& input) {
+    validate(input);
+    double num = 0.0, den = 0.0;
+    for (std::size_t k = 0; k < input.hz.size(); ++k) {
+        if (!input.trusted[k] || input.excluded[k] || !(input.hz[k] > 0.0f)) continue;
+        const double w = static_cast<double>(input.coherence[k]) / static_cast<double>(input.hz[k]);
+        num += w * static_cast<double>(input.residualDb[k]);
+        den += w;
+    }
+    return (den > 0.0) ? num / den : 0.0;
+}
+
 std::vector<Candidate> rankCandidates(const EqInput& input, int maxCandidates) {
     validate(input);
-    const double c = autoOffset(input);
+    const double c = autoOffsetDb(input);
     const auto working = computeWorkingResidual(input, c);
     const auto placements = greedyPlace(input, working, maxCandidates);
 
@@ -235,7 +233,7 @@ std::vector<Candidate> rankCandidates(const EqInput& input, int maxCandidates) {
 
 std::vector<FilterSpec> autoEq(const EqInput& input) {
     validate(input);
-    const double c = autoOffset(input);
+    const double c = autoOffsetDb(input);
     const auto working = computeWorkingResidual(input, c);
     const auto placements = greedyPlace(input, working, input.maxFilters);
     if (placements.empty()) return {};

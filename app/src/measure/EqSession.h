@@ -6,8 +6,9 @@
 // of auto-EQ: the committed FilterSpec set, the *applied* marks, the session
 // exclusion mask, and the two modes (Auto EQ one-shot, Suggest one greedy
 // step) expressed over the core allocator. Device-free and GUI-free, so the
-// whole model is provable in ctest (EQ-R4: the chip surface is a dev-preview
-// specimen, NOT a MainComponent binding -- do not hunt for a hook).
+// whole model is provable in ctest. The operator-facing surface is the EQ
+// pane (docs/plans/2026-09-29-eq-ui-lane-plan.md): EqPaneModel owns one of
+// these, EqPaneView draws it. (EQ-R4's dev-preview specimen was never built.)
 //
 // EQ-R3: "apply" here writes FilterSpecs and draws the ghost. It does NOT
 // filter audio -- the virtual processor is G11 (L7-ALIGN, Wave 3) and
@@ -138,6 +139,19 @@ public:
     [[nodiscard]] std::span<const std::uint8_t> excluded() const noexcept { return excluded_; }
     [[nodiscard]] std::span<const float> hz() const noexcept { return hz_; }
     [[nodiscard]] const EqSessionConfig& config() const noexcept { return config_; }
+
+    /// The N cap on the BANDS control (record sec.2: "capped by a UI control").
+    /// Clamped to [1, 16]: 16 is solveGains's own ceiling (EqGainSolve.h
+    /// throws above it) and 0 would make Auto EQ a silent no-op. Affects the
+    /// next runAutoEq only; already-committed filters are never trimmed.
+    void setMaxFilters(int maxFilters) noexcept;
+
+    /// The auto-offset c the allocator would subtract from the CURRENT
+    /// working residual -- rta::eq::autoOffsetDb over the same input
+    /// runAutoEq/suggest build, so "target + c" is where the allocator
+    /// actually aims. 0 when there is no measurement, or when nothing is
+    /// trusted (the allocator's own refusal cases).
+    [[nodiscard]] double levelOffsetDb() const;
 
     /// ghost_k = m_k + sum_i responseDb(spec_i, fs, f_k) over committed
     /// filters NOT marked applied -- the predicted post-EQ trace (record

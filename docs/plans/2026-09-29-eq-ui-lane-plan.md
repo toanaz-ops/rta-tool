@@ -160,3 +160,24 @@ Test hooks are `*ForTest` members of `EqPaneView` and `MainComponentEq`, named l
 - 65536-tap FIR, other export rates, and least-squares FIR design.
 - A NotMinimumPhase chip opening V2 (EQ record §12.4).
 - The G11 virtual processor (EQ-R3).
+
+## Wave A: what was built, and where it differs from this plan
+
+*Written 2026-09-29 against the shipped code (CLAUDE.md rule 6). Wave B (T7 VERIFY, T8 ADOPT) is not built; `EqVerify.cpp` is still in no `rtatool` source list.*
+
+Built: T0, T1, T2, T3, T4, T5, T6, T9. Differences, each measured or forced by the code:
+
+| plan said | shipped | why |
+|---|---|---|
+| D9 lengths 1024, 4096, 6144, 8192 | **1023, 4095, 6143, 8191**; `designEqFir` refuses an even count | `FirDesign` counts `h[0]` twice for an even-length filter (flat target: \|H(0)\| = 2.00000 at N = 4096, 1.00001 at N = 4095; a +6 dB peaking filter reads 3.0195 even vs 1.9945 odd against 1.99526). Every core magnitude test uses odd N. Amended in the FIR record §4; `memory/a-size-class-no-test-uses-is-an-unverified-size-class.md`. 8N rounds to the same M for each pair, so T3's grid numbers (M = 32768, 16385 bins, fc on bin 1024) hold unchanged. The T6 stem is `eq_48000Hz_4095taps_lin`. |
+| T2: `EqPaneModel` alone | plus `EqTraceGrid.h/.cpp` (trace to grid, complex H, target resample) | keeps `EqPaneModel.cpp` under its 250-line ceiling |
+| T5: `EqPaneView` and `EqChartRenderer` | plus `EqFilterPanel.h/.cpp` (chips, committed list) | keeps `EqPaneView.cpp` under 300 |
+| Risk 2: measure G24 at fftSize 4096; above 100 ms move it to a worker | 57 ms for one AUTO EQ on a −8 dB dip (a boost, so the gate runs): 56.2 to 60.3 ms over five warm Release runs, 257 ms on the first cold run after a rebuild. Not moved to a worker. fftSize 8192 was not measured; the transform is 2x the size, so expect about 2x | under the 100 ms line warm. Each SUGGEST, ACCEPT and DECLINE re-runs the allocator and pays it again whenever a boost candidate exists. `test_eq_pane_model.cpp` prints the figure on every run (a `WARN`, not a gate). |
+| T9: `snapshot.cpp` +2 lines | +2 lines, 342 total | it was already 340 when this lane opened |
+| `MainComponent.h` ceiling H1 + 3 | 334, +6 lines (328 on `origin/main`) | include, button, member, plus the three-line comment on the member's declaration order |
+| test file ceiling 350 | `test_eq_pane_model_state.cpp` 396 lines (under the 400 hard cap) | the state-machine survivors from `diffmut` (60 on the first run) needed the cases; the FIR message check went to `test_eq_fir_design.cpp` to stay under 400 |
+| `MainComponent.cpp` ceiling 320 | 395, net 0 lines | it was already 395 after H1/H2; this lane changed one line in it |
+| `EXPORT FIR` enable rule: phase and length answered | also needs a measurement and at least one filter not marked applied | D11: nothing to realise means nothing to export |
+| chart y range: unspecified | follows the trusted bins; measured and ghost are drawn only where trusted | a SYNTHETIC capture reads +130 dB in bins with no reference energy, which flattened the trusted curve to a line |
+
+Not in this wave (T7, T8): the VERIFY and ADOPT buttons, `timerCallback` polling, the LOCATE guard. `EqVerify.cpp` therefore stays an orphan, as it was before this lane. `orphan_check --base` reports only files the range changes, so it does not list it.

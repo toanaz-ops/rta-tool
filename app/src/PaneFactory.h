@@ -4,6 +4,7 @@
 #pragma once
 
 #include "measure/SnapshotSource.h"
+#include "view/EqPaneView.h"
 #include "view/WorkspaceView.h"
 
 /// `MainComponent`'s pane factory (`workspace_` is built with this) -- the
@@ -24,5 +25,12 @@
 /// switch, which is what happened here: its `PaneView::Spl` branch was
 /// missing entirely and every SPL pane silently built an `RtaView` instead
 /// (fix round, PR #26).
+///
+/// `eq` (L7-EQ UI lane, plan T4) is the EQ pane's wiring: the model it draws
+/// and the export actions it calls. Both are owned by `MainComponentEq`, which
+/// outlives every pane built here, so the committed filter list survives the
+/// pane being rebuilt on a selector click. Required, never defaulted: a
+/// factory with no model would have to build SOMETHING for `PaneView::Eq`, and
+/// building the wrong pane silently is exactly the defect described above.
 [[nodiscard]] rta::view::WorkspaceView::PaneFactory makePaneFactory(
-    rta::measure::SnapshotSource& source);
+    rta::measure::SnapshotSource& source, rta::view::EqPaneBinding eq);

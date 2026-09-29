@@ -81,7 +81,7 @@ MainComponent::MainComponent()
       // a session yet. The pane selector (`selectPaneView`) can rebuild this
       // to a different single pane; the shape it starts in is unchanged.
       workspace_(std::make_unique<rta::view::WorkspaceView>(
-          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_))),
+          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_, eq_.binding()))),
       // Session persistence: Save reads EVERY pane in `workspace_` (F4,
       // docs/HUMAN-QA-QUEUE.md D11) through `WorkspaceView::paneSpecs()`,
       // via a callback rather than a stored pointer, matching

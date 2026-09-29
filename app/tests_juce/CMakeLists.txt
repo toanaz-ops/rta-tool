@@ -135,6 +135,15 @@ add_executable(rtatool_view_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CrossoverTopology.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/VirtualTrace.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurfaceRenderer.cpp
+    # L7-EQ UI: PaneFactory.cpp's Eq branch builds EqPaneView, whose chain is
+    # the chart, the chip/list panel, the model and the session (all JUCE-free
+    # but the first three).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/EqPaneView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/EqFilterPanel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/EqChartRenderer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqPaneModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqTraceGrid.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqSession.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:

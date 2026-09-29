@@ -7,6 +7,7 @@
 // doing more than one job -- split it along the seam that made it long";
 // solve vs. placement is exactly that seam).
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "rta/eq/BiquadDesign.h"
@@ -331,4 +332,57 @@ TEST_CASE("rankCandidates/autoEq refuse malformed input and degrade honestly oth
         CHECK(result.size() < 6);
         CHECK_FALSE(result.empty());
     }
+}
+
+// L7-EQ UI task T0: the auto-offset c, exposed as autoOffsetDb (docs/plans/
+// 2026-09-29-eq-ui-lane-plan.md). The expected value is the closed form of
+// record Sec.3 step 1, worked by hand -- never read off the function.
+TEST_CASE("autoOffsetDb is the gamma^2/f-weighted mean of the residual", "[eq_allocator]") {
+    const std::vector<float> hz{ 100.0f, 200.0f, 400.0f, 800.0f };
+    const std::vector<float> coherence{ 1.0f, 1.0f, 1.0f, 1.0f };
+    const std::vector<float> residual{ 0.0f, 3.0f, 100.0f, -100.0f };
+    // Bins 400 and 800 are the ones the mean must ignore: one untrusted, one
+    // excluded. Their residuals are absurd on purpose, so any leak shows.
+    const std::vector<std::uint8_t> trusted{ 1, 1, 0, 1 };
+    const std::vector<std::uint8_t> excluded{ 0, 0, 0, 1 };
+
+    EqInput input;
+    input.hz = hz;
+    input.residualDb = residual;
+    input.coherence = coherence;
+    input.trusted = trusted;
+    input.excluded = excluded;
+    input.sampleRate = 48000.0;
+
+    // w = gamma^2/f = 1/100 and 1/200, so
+    //   c = (0.01*0 + 0.005*3) / (0.01 + 0.005) = 0.015/0.015 = 1
+    // mathematically; the margin only covers double rounding of 0.005*3 vs
+    // 0.01+0.005. The unweighted mean of the same two residuals is 1.5,
+    // which is what a dropped weight would return.
+    CHECK(autoOffsetDb(input) == Catch::Approx(1.0).margin(1e-12));
+
+    SECTION("no trusted, non-excluded bin carries weight: 0, not NaN") {
+        const std::vector<std::uint8_t> none{ 0, 0, 0, 0 };
+        input.trusted = none;
+        CHECK(autoOffsetDb(input) == 0.0);
+    }
+    SECTION("the length precondition is the allocator's own") {
+        const std::vector<float> shortCoherence{ 1.0f };
+        input.coherence = shortCoherence;
+        CHECK_THROWS_AS(autoOffsetDb(input), std::invalid_argument);
+    }
+}
+
+TEST_CASE("autoOffsetDb is the offset autoEq removes before placing", "[eq_allocator]") {
+    // A residual that is the SAME 5 dB at every trusted bin has c = 5 and a
+    // working residual of exactly 0, so the allocator has nothing to place.
+    // Were c not subtracted (or a different c used), 5 dB clears
+    // kMinPlacementDb and a filter would land.
+    auto fixture = flatGrid(129, 48000.0);
+    std::fill(fixture.residualDb.begin(), fixture.residualDb.end(), 5.0f);
+    fixture.trusted[0] = 0;  // DC has no place in a log-weighted mean
+    const auto input = makeInput(fixture, 48000.0);
+    CHECK(autoOffsetDb(input) == Catch::Approx(5.0).margin(1e-6));
+    CHECK(autoEq(input).empty());
+    CHECK(rankCandidates(input, 3).empty());
 }

@@ -22,7 +22,8 @@ void MainComponent::wirePaneSelectorButtons() {
     // others off" contract modeSwitch_ gives itself alone with
     // setClickingTogglesState(true).
     constexpr int kPaneSelectorRadioGroupId = 1;
-    for (auto* button : {&paneRtaButton_, &paneTransferButton_, &paneSplButton_, &paneXoverButton_}) {
+    for (auto* button : {&paneRtaButton_, &paneTransferButton_, &paneSplButton_, &paneXoverButton_,
+                         &paneEqButton_}) {
         button->setRadioGroupId(kPaneSelectorRadioGroupId, juce::dontSendNotification);
         button->setClickingTogglesState(true);
     }
@@ -37,31 +38,35 @@ void MainComponent::wirePaneSelectorButtons() {
     paneSplButton_.getProperties().set(az::ui::hintProperty, "SPL meter -- Leq, dose, Ln");
     paneXoverButton_.getProperties().set(az::ui::hintProperty,
                                          "crossover alignment -- G18, two stored traces");
+    paneEqButton_.getProperties().set(az::ui::hintProperty, "auto EQ -- one stored TRANSFER trace");
 
     paneRtaButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Rta); };
     paneTransferButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Transfer); };
     paneSplButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Spl); };
     paneXoverButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Xover); };
+    paneEqButton_.onClick = [this] { selectPaneView(rta::view::PaneSelectorButton::Eq); };
 
     addAndMakeVisible(paneRtaButton_);
     addAndMakeVisible(paneTransferButton_);
     addAndMakeVisible(paneSplButton_);
     addAndMakeVisible(paneXoverButton_);
+    addAndMakeVisible(paneEqButton_);
 }
 
 void MainComponent::layoutPaneSelectorRow(juce::Rectangle<int> row) {
     // Same "(width - N-1 gaps) / N" shape MainComponent::resized() already
-    // uses for the LOCATE/APPLY and CAL START/CAL END rows -- four equal
-    // cells, three gaps between them (grown from three cells/two gaps when
-    // XOVER was added, ALIGN-R8 reversal).
-    const int buttonWidth = (row.getWidth() - az::ui::gap * 3) / 4;
+    // uses for the LOCATE/APPLY and CAL START/CAL END rows -- five equal
+    // cells, four gaps between them (grown from four when EQ was added).
+    const int buttonWidth = (row.getWidth() - az::ui::gap * 4) / 5;
     paneRtaButton_.setBounds(row.removeFromLeft(buttonWidth));
     row.removeFromLeft(az::ui::gap);
     paneTransferButton_.setBounds(row.removeFromLeft(buttonWidth));
     row.removeFromLeft(az::ui::gap);
     paneSplButton_.setBounds(row.removeFromLeft(buttonWidth));
     row.removeFromLeft(az::ui::gap);
-    paneXoverButton_.setBounds(row);
+    paneXoverButton_.setBounds(row.removeFromLeft(buttonWidth));
+    row.removeFromLeft(az::ui::gap);
+    paneEqButton_.setBounds(row);
 }
 
 void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
@@ -78,7 +83,7 @@ void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
     // detaches a child from its parent automatically -- no explicit
     // removeChildComponent needed before this line.
     std::vector<rta::trace::PaneSpec> panes{rta::trace::PaneSpec{resolution.requested}};
-    workspace_ = std::make_unique<rta::view::WorkspaceView>(std::move(panes), makePaneFactory(analysisThread_));
+    workspace_ = std::make_unique<rta::view::WorkspaceView>(std::move(panes), makePaneFactory(analysisThread_, eq_.binding()));
     workspace_->setLibrary(&library_);
     addAndMakeVisible(*workspace_);
     currentPaneView_ = resolution.view;
@@ -89,8 +94,9 @@ void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
     paneSplButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Spl, juce::dontSendNotification);
     paneXoverButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Xover,
                                     juce::dontSendNotification);
+    paneEqButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Eq, juce::dontSendNotification);
     // station-3 STORE task T6: enabled only on RTA/TRANSFER -- SPL has no
-    // per-bin curve and XOVER is a consumer, not a producer, of stored
+    // per-bin curve and XOVER/EQ are consumers, not producers, of stored
     // traces (research C2).
     storeButton_.setEnabled(currentPaneView_ == rta::view::PaneView::Rta ||
                             currentPaneView_ == rta::view::PaneView::Transfer);
@@ -125,7 +131,7 @@ rta::view::PaneResolution MainComponent::restoreWorkspaceFromSession(std::vector
     const auto firstView =
         panes.empty() ? rta::view::PaneView::Rta : rta::view::resolvePaneView(panes.front().view).view;
 
-    workspace_ = std::make_unique<rta::view::WorkspaceView>(std::move(panes), makePaneFactory(analysisThread_));
+    workspace_ = std::make_unique<rta::view::WorkspaceView>(std::move(panes), makePaneFactory(analysisThread_, eq_.binding()));
     workspace_->setLibrary(&library_);
     addAndMakeVisible(*workspace_);
     currentPaneView_ = firstView;
@@ -140,6 +146,7 @@ rta::view::PaneResolution MainComponent::restoreWorkspaceFromSession(std::vector
     // selector button unlit even though the xover pane itself was showing.
     paneXoverButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Xover,
                                     juce::dontSendNotification);
+    paneEqButton_.setToggleState(currentPaneView_ == rta::view::PaneView::Eq, juce::dontSendNotification);
     // T6 acceptance: this path (session Open) needs the same sync
     // selectPaneView() above already gets, not only the button-click half --
     // see that function's own comment on the identical omission this exact

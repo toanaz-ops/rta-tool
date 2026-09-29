@@ -50,6 +50,12 @@ set(RTA_IMPL_TEST_SOURCES
     # EqVerify.cpp: lane L7-EQ task F (record Sec.8) -- test_eq_verify.cpp
     # calls straight into it.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.cpp
+    # EqPaneModel.cpp / EqTraceGrid.cpp / EqFirDesign.cpp: L7-EQ UI wave A tasks T2/T3 (plan
+    # docs/plans/2026-09-29-eq-ui-lane-plan.md), JUCE-free, linked by
+    # test_eq_pane_model.cpp / test_eq_fir_design.cpp.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqPaneModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqTraceGrid.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqFirDesign.cpp
     # CrossoverTopology.cpp: lane L7-ALIGN task D (record Sec.3) --
     # test_crossover_topology.cpp calls straight into it.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CrossoverTopology.cpp

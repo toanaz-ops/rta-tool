@@ -12,6 +12,7 @@
 // this composition root can name it at all (lane L-API Task I, D2).
 #include "api/ApiServer.h"
 #include "api/ApiSettings.h"
+#include "MainComponentEq.h"
 #include "MainComponentRail.h"
 #include "MainComponentSession.h"
 #include "measure/AnalysisThread.h"
@@ -304,11 +305,16 @@ private:
     juce::TextButton paneTransferButton_{"TRANSFER"};
     juce::TextButton paneSplButton_{"SPL"};
     juce::TextButton paneXoverButton_{"XOVER"};  // ALIGN-R8 reversal: G18 live pane
+    juce::TextButton paneEqButton_{"EQ"};        // L7-EQ UI lane: the auto-EQ pane
     rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
 
     // --- library_ before workspace_ is load-bearing too. See the class
     // comment's extension of trap T-1.
     rta::trace::TraceLibrary library_;
+    // L7-EQ UI (MainComponentEq.h): owns the EQ model, so the committed filters
+    // survive workspace_ rebuilding the pane. Before workspace_: every EqPaneView
+    // holds a pointer into it, and members are destroyed in reverse order.
+    MainComponentEq eq_;
     // A pointer: selectPaneView rebuilds it wholesale (WorkspaceView's
     // factory is consumed once, in its own constructor).
     std::unique_ptr<rta::view::WorkspaceView> workspace_;
