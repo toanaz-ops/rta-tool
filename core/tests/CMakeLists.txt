@@ -39,6 +39,7 @@ add_executable(rta_core_tests
     test_minimum_phase.cpp
     test_fir_design.cpp
     test_fir_design_minphase.cpp
+    test_fir_design_even.cpp
     test_fir_golden.cpp
     test_biquad_design.cpp
     test_virtual_processor.cpp
