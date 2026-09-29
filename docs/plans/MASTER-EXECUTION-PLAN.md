@@ -36,7 +36,9 @@ by any lane then scheduled:
    2026-09-26 section below committed to is suspended pending another plan
    review after STORE lands. **STORE landed 2026-09-27 (PR #51, `beb40a7`).
    The next step is that second plan review; no lane below is opened until
-   it happens.**
+   it happens.** **CORRECTED 2026-09-29:** that second plan review ran — see
+   "Plan review #2 — 2026-09-29" below for the adopted lane order (EQ-UI →
+   Sweep→IR → ALIGN-UI → RT60 UI; `CaptureSequencer` still deferred).
 2. **Every plan task table gains an "operator path" column** naming the
    button or action by which a human produces each runtime input the task
    consumes, in the running `rtatool.exe`. From now on "BUILT" means an
@@ -54,6 +56,74 @@ touching `MainComponent*` — are process/CI decisions with no plan-table
 consequence; they are recorded in `docs/GIT-WORKFLOW.md` and the workflow
 files, not here.)
 
+## Plan review #2 — 2026-09-29
+
+Planner: Opus 5.5 (Plan agent), read at `ea036d5` == `origin/main` `d06ab21`
+content. Owner said "execute autonomously" on the recommendations below.
+
+**Key findings**
+- ALIGN-UI is only partly blocked by Sweep→IR: `AlignmentWizard` takes
+  transfer traces (`AlignmentWizard.h:223` `submitCapture(Trace)`), which
+  STORE already produces; IRs are optional (`supplyImpulseResponses`,
+  `AlignmentWizard.h:204`). Without IRs the wizard asks for the cycle
+  integer (`AlignmentWizard.cpp:282-290`, `AskingCycle`) and loses the
+  `findPolarity`/rho polarity signals (`AlignmentWizardSignals.cpp:24`).
+- Sweep→IR has a template to build from: `locateClicked()` /
+  `pollLocatePipeline()` (`MainComponentDelay.cpp:15-70`); the `OutputEngine`
+  source variant already has `gen::Sweep` (`OutputEngine.h:31-32`);
+  `armLocateCapture(route, length)` (`app/src/measure/AnalysisThread.h:145`)
+  can already hold a 5 s capture. The L4a record names this app lane "L4c"
+  (`docs/dsp/2026-08-30-sweep-ir-l4a.md:22`).
+- `app/src/MainComponent.h` is exactly 400 lines (257 of them comments) — the
+  first hot lane (H1) must make room before adding anything.
+
+**Dependency table**
+
+| # | Item | Blocks | Blocked by | Irreversible? | Size | Hot? | Decision |
+|---|---|---|---|---|---|---|---|
+| 1 | Sweep→IR producer (L4c) | ALIGN-UI full result, RT60 UI | research/plan station | no (IRs in memory only) | L | yes | Plan now (P5), build as H4 |
+| 2 | Lane order | — | 1 for ALIGN/RT60 | no | — | yes | EQ-UI → Sweep→IR → ALIGN-UI → RT60 UI; `CaptureSequencer` deferred |
+| 3 | D1 `RoutingMatrix` 8 rows | slot assignment for channel 9+ (a functional gap, not only a visibility one: `MainComponent.cpp:25` passes `kMaxTransferFunctions`; `RoutingMatrix.cpp:61-72,118`) | H1 (`MainComponent.h` room) | no | S-M | yes | rows = device channel count ≤ `kMaxChannels`, scroll in the existing 220 px slot (H2) |
+| 4a | F5 blob truncation (+ D9 id validation) | — | — | format unchanged | S | no | tmp-then-rename in `SessionStore::writeTrace` (`SessionStore.cpp:94`) (P2+P4) |
+| 4b | F4 multi-pane save, F6 overwrite prompt (+ K8/K9, D7) | — | — | save behaviour | S | yes | H1 |
+| 5 | 3 over-cap scripts | — | — | no | 0 | no | KEEP (golden generator + frozen research evidence cited by line); next editor of one splits it in the same PR |
+| 6 | MTW storage | MTW-based STORE | EQ/ALIGN findings, L5 amendment | YES (schema v4) | L | — | UNSCHEDULED; revisit after EQ-UI and ALIGN-UI |
+| 7 | QA-queue DEFER rows + carry-over LOWs | — | — | no | S | no | citations fixed (P1); D2 keep; D3 closed as documented limit; D4/D5 → P3; D6 → P2+P4; D7 → H1; D8 → H2; D9 → P2+P4; D10 research, unscheduled |
+
+"PR #51 LOWs F4/F6" in the carry-over list = K8/K9 (the readout that
+describes only the first TRANSFER pane; the snapshot re-fetched for the
+readout) — PR #51's own body has no F4/F6 rows.
+
+**Adopted lane order**
+
+Parallel (no hot files — none touches `MainComponent*`/`app/src/view`, safe
+to run concurrently):
+- **P1** `docs/plan-review-2` — this docs lane (merges first, so later lanes
+  cite a settled plan).
+- **P2+P4** `app/persist-robustness` — F5 (blob tmp-then-rename), D9 (id
+  validation), D6 (uncaught `utf8Path` on the writer thread).
+- **P3** `tools/orphan-lows` — D4, D5.
+- **P5** `plans` — research/plan station for Sweep→IR (stations 1-3) and
+  EQ-UI (station 3); no code.
+
+Sequential (hot — each shares `MainComponent*` or another hot file with the
+next, so these run one at a time, in this order):
+`H1 app/session-ux` → `H2 app/routing-matrix-64` → `H3 app/eq-ui` →
+`H4 app/sweep-ir` → `H5 app/align-ui` → `H6 app/rt60-ui`.
+
+**Status: H1 and H2 are next to open. H3, H4, H5 and H6 are PLANNED, not
+BUILT** — no code exists yet for EQ-UI, Sweep→IR, ALIGN-UI or RT60 UI; each
+earns "BUILT" only once ctest proves it AND an operator can reach it in
+`rtatool.exe` (2026-09-27 decision 2, this document's own rule above).
+
+**Not in this run:** `CaptureSequencer` (still deferred — 2026-09-26 decision,
+table below), MTW storage (item 6 above), D10 (research, unscheduled).
+
+**Needs the human (not blocking the build):** a real-hardware try of SWEEP
+and ALIGN (interface + loopback, or speaker + mic) — a synthetic loopback
+cannot show clock drift or acoustic latency, so H4/H5's DSP claims are proven
+in `core/` but the operator experience needs a live run before it ships.
+
 ## Wiring debt and the next lanes — 2026-09-26 (owner decisions)
 
 `tools/orphan_check.py` (PR #39) found that 16 `app/src/*.cpp` files were
@@ -65,6 +135,9 @@ DELAY). The evidence table is in the 2026-09-26 section of
 
 **Suspended by the 2026-09-27 plan review** (see the section above): the next
 lane order below is on hold pending another review; **STORE** goes first.
+**CORRECTED 2026-09-29:** plan review #2 ran; the lane order for the rows
+below is EQ-UI (H3) → Sweep→IR (H4) → ALIGN-UI (H5) → RT60 UI (H6),
+`CaptureSequencer` still deferred — see "Plan review #2 — 2026-09-29" above.
 
 | Group | Decision | Where |
 |---|---|---|
@@ -73,8 +146,8 @@ lane order below is on hold pending another review; **STORE** goes first.
 | G18 crossover surface (`CrossoverSurface`, `CrossoverTopology`, `VirtualTrace`) | ~~wire now as a live `XOVER` pane — **ALIGN-R8 reversed**~~ **BUILT 2026-09-27** — the XOVER pane, reached via the RTA/TRANSFER/SPL/XOVER pane selector, is the operator path | PR #45 merged `4fc6b6e`, branch `app/crossover-pane` |
 | `DelayLocator` | delete, superseded by `MainComponentDelay.cpp` | branch `app/unwired-cleanup` |
 | `SyntheticSnapshot` | not a gap (test and tool fixture); move out of `app/src` | branch `app/unwired-cleanup` |
-| EQ + FIR export (`EqSession`, `EqVerify`, `FirTextWriter`, `FirWavWriter`) | **suspended 2026-09-27** — was next lane L7-EQ-UI. The stated reason has changed: STORE now produces a stored trace (PR #51), so the input this lane needs exists; `EqSession` itself is still not bound to `MainComponent`. Still suspended pending the second plan review, not by input availability | — |
-| `AlignmentWizard` (+ `Signals`) | **suspended 2026-09-27** — was L7-ALIGN-UI; consumes a captured sweep/IR, which the missing Sweep→IR producer lane has not built. Unaffected by STORE landing | — |
+| EQ + FIR export (`EqSession`, `EqVerify`, `FirTextWriter`, `FirWavWriter`) | ~~**suspended 2026-09-27** — was next lane L7-EQ-UI. The stated reason has changed: STORE now produces a stored trace (PR #51), so the input this lane needs exists; `EqSession` itself is still not bound to `MainComponent`. Still suspended pending the second plan review, not by input availability~~ **CORRECTED 2026-09-29: PLANNED as H3** `app/eq-ui`, first of the four sequential hot lanes — see "Plan review #2 — 2026-09-29" above | — |
+| `AlignmentWizard` (+ `Signals`) | ~~**suspended 2026-09-27** — was L7-ALIGN-UI; consumes a captured sweep/IR, which the missing Sweep→IR producer lane has not built. Unaffected by STORE landing~~ **CORRECTED 2026-09-29: PLANNED as H5** `app/align-ui`, after H4 `app/sweep-ir` builds the missing producer — see "Plan review #2 — 2026-09-29" above | — |
 | `CaptureSequencer` | deferred: operators solo by hand (L6b plan line 231). Scheduled for the next multichannel lane; until then orphan_check blocks any PR that edits it without wiring it | — |
 
 From now on, "BUILT" in this document means **reachable from `rtatool.exe`**.
