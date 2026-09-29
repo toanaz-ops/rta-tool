@@ -12,6 +12,7 @@ WorkspaceView::WorkspaceView(std::vector<rta::trace::PaneSpec> panes, PaneFactor
     auto normalised = rta::trace::normalisePanes(std::move(panes));
     children_.reserve(normalised.size());
     weights_.reserve(normalised.size());
+    views_.reserve(normalised.size());
 
     for (auto& spec : normalised) {
         // resolvePaneView() already performs the fallback-and-report record
@@ -38,11 +39,24 @@ WorkspaceView::WorkspaceView(std::vector<rta::trace::PaneSpec> panes, PaneFactor
         auto child = factory(resolution.view);
         addAndMakeVisible(*child);
         weights_.push_back(spec.weight);
+        views_.push_back(resolution.view);
         children_.push_back(std::move(child));
     }
 }
 
 WorkspaceView::~WorkspaceView() = default;
+
+std::vector<rta::trace::PaneSpec> WorkspaceView::paneSpecs() const {
+    // views_/weights_ are parallel to children_ by construction above --
+    // zipped the same way resized() already zips weights_ against
+    // children_.
+    std::vector<rta::trace::PaneSpec> specs;
+    specs.reserve(views_.size());
+    for (std::size_t i = 0; i < views_.size(); ++i) {
+        specs.push_back(rta::trace::PaneSpec{paneViewName(views_[i]), weights_[i]});
+    }
+    return specs;
+}
 
 void WorkspaceView::setLibrary(const rta::trace::TraceLibrary* library) {
     library_ = library;

@@ -82,6 +82,13 @@ TransferView& liveTransferView(MainComponent& component) {
         const_cast<juce::Component&>(MainComponentTestAccess::pane(component)));
 }
 
+/// Same as `liveTransferView` above but for pane `index` of a multi-pane
+/// workspace (K8's own test below).
+TransferView& transferViewAt(MainComponent& component, int index) {
+    return dynamic_cast<TransferView&>(
+        const_cast<juce::Component&>(MainComponentTestAccess::paneAtForTest(component, index)));
+}
+
 }  // namespace
 
 TEST_CASE("STORE on the RTA pane freezes a magnitude-only trace", "[main_component_store]") {
@@ -252,4 +259,46 @@ TEST_CASE("STORE names and groups follow the pane label, distinctly per click",
     MainComponentTestAccess::storeClickedForTest(component);
     const auto second = library.entries().back();
     CHECK(second.name != first.name);
+}
+
+// K8 (docs/HUMAN-QA-QUEUE.md, PR #51 round-2 R6): with two TRANSFER panes in
+// one workspace, the old `findTransferView()` returned on the FIRST
+// `dynamic_cast` match, so the STORE readout's MTW clause described only
+// that one pane -- the second pane's MTW state went unreported.
+TEST_CASE("STORE readout on a two-TRANSFER-pane workspace names both panes, distinctly",
+         "[main_component_store]") {
+    MainComponent component;
+    enableSyntheticWithReference(component);
+    MainComponentTestAccess::restoreWorkspaceForTest(
+        component, {rta::trace::PaneSpec{"transfer", 1.0f}, rta::trace::PaneSpec{"transfer", 1.0f}});
+    REQUIRE(component.currentPaneView() == PaneView::Transfer);
+
+    // Pane 1 (index 0) stays at every plot's MTW default. Pane 2 (index 1)
+    // flips PHASE to FIXED -- pane 2's own clause must therefore omit PHASE
+    // while pane 1's still names it, proving the readout is genuinely PER
+    // PANE, not one summary that happens to be right for pane 1 alone (the
+    // mutant this test catches: `findTransferView` returning only the first
+    // match would produce exactly pane 1's clause and say nothing about
+    // pane 2 at all).
+    transferViewAt(component, 1).sourceToggle(TransferPane::Phase).clickFixedButton();
+
+    MainComponentTestAccess::storeClickedForTest(component);
+    const auto readout = MainComponentTestAccess::storeReadoutForTest(component);
+    INFO(readout.toStdString());
+
+    CHECK(readout.contains("TRANSFER 1"));
+    CHECK(readout.contains("TRANSFER 2"));
+    const auto pane1Start = readout.indexOf("TRANSFER 1");
+    const auto pane2Start = readout.indexOf("TRANSFER 2");
+    REQUIRE(pane1Start >= 0);
+    REQUIRE(pane2Start > pane1Start);
+    const auto pane1Clause = readout.substring(pane1Start, pane2Start);
+    const auto pane2Clause = readout.substring(pane2Start);
+
+    CHECK(pane1Clause.contains("MAG"));
+    CHECK(pane1Clause.contains("PHASE"));
+    CHECK(pane1Clause.contains("COH"));
+    CHECK(pane2Clause.contains("MAG"));
+    CHECK(pane2Clause.contains("COH"));
+    CHECK_FALSE(pane2Clause.contains("PHASE"));
 }

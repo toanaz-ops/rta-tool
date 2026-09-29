@@ -69,6 +69,17 @@ public:
     /// silently drifts from what `renderTo()` actually draws.
     [[nodiscard]] TransferSource effectiveSource(TransferPane pane) const noexcept;
 
+    /// Same rule as `effectiveSource(pane)` above, computed from an
+    /// ALREADY-HELD `Snapshot` rather than a fresh `source_->latest()` fetch.
+    /// K9 (docs/HUMAN-QA-QUEUE.md, PR #51 round-2 R7): `storeClicked()`
+    /// (MainComponentStore.cpp) freezes one snapshot at the top of the click
+    /// and must report MTW availability for THAT snapshot -- a second,
+    /// independent `latest()` call here could see a newer snapshot publish
+    /// between the freeze and the readout being built, and disagree with the
+    /// trace the click actually stored.
+    [[nodiscard]] TransferSource effectiveSource(TransferPane pane,
+                                                 const rta::measure::Snapshot& snapshot) const noexcept;
+
     /// The on-screen control for `pane`'s source toggle (docs/reports/
     /// 005-mtw-engine.md "Known gaps": this used to be an API with no
     /// control). Production API existing so a test can drive the actual

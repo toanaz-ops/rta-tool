@@ -39,9 +39,17 @@
 #include "MainComponent.h"
 #include "rta/platform/ChannelConfig.h"
 
+#include <utility>
+
 struct MainComponentTestAccess {
     [[nodiscard]] static const juce::Component& pane(const MainComponent& c) {
         return c.paneComponentForTest();
+    }
+    // K8 test seam: a multi-pane workspace has more than one child -- this
+    // reaches pane `index` directly, the same `workspace_` this struct
+    // already has friend access to via `pane()`/`paneSpecsForTest()` above.
+    [[nodiscard]] static const juce::Component& paneAtForTest(const MainComponent& c, int index) {
+        return *c.workspace_->getChildComponent(index);
     }
     [[nodiscard]] static rta::measure::AnalysisThread& analysisThread(MainComponent& c) {
         return c.analysisThreadForTest();
@@ -90,6 +98,21 @@ struct MainComponentTestAccess {
         return c.session_.readoutForTest();
     }
 
+    // F6 test seam: app/tests_juce/test_main_component_session_overwrite.cpp.
+    // `setConfirmOverwriteForTest` replaces the
+    // real, modal AlertWindow with a synchronous stand-in the test controls
+    // directly; `maybeConfirmAndSaveForTest` drives the exact check-and-save
+    // path `saveClicked()`'s FileChooser callback uses, with no chooser and
+    // no message loop involved -- same "drive the real seam a click uses"
+    // reasoning this struct already gives for `saveSessionForTest` above.
+    static void setConfirmOverwriteForTest(MainComponent& c,
+                                          MainComponentSession::ConfirmOverwrite confirm) {
+        c.session_.confirmOverwrite_ = std::move(confirm);
+    }
+    static void maybeConfirmAndSaveForTest(MainComponent& c, const juce::File& folder) {
+        c.session_.maybeConfirmAndSave(folder);
+    }
+
     // station-3 STORE test seam: app/tests_juce/test_main_component_store.cpp
     // and tools/snapshot.cpp's T8 specimen. Calls the exact production
     // handler `storeButton_.onClick` is wired to (MainComponent.cpp's
@@ -111,6 +134,13 @@ struct MainComponentTestAccess {
     static void restoreWorkspaceForTest(MainComponent& c, std::vector<rta::trace::PaneSpec> panes) {
         c.restoreWorkspaceFromSession(std::move(panes));
     }
+    // F4 test seam: reads back the LIVE workspace's own pane specs (the same
+    // `WorkspaceView::paneSpecs()` Save now calls) -- proves both that Save
+    // reads every pane and that Open rebuilt the same shape it was given,
+    // without inferring pane count/kind from pixels.
+    [[nodiscard]] static std::vector<rta::trace::PaneSpec> paneSpecsForTest(const MainComponent& c) {
+        return c.workspace_->paneSpecs();
+    }
     // Lets test_main_component_store.cpp force the Reference role back off
     // right after setSyntheticMode(true) -- the only way to reach a REAL,
     // non-null, live Snapshot with hasReference == false (spectrumDb still
@@ -118,5 +148,17 @@ struct MainComponentTestAccess {
     // does not otherwise expose audioIo_/bus() to any caller.
     [[nodiscard]] static rta::platform::ChannelConfig& channelConfigForTest(MainComponent& c) {
         return c.audioIo_.bus().config();
+    }
+
+    // D7 test seam: app/tests_juce/test_main_component_export.cpp. Drives
+    // the real `exportReportButton_.onClick` handler (not a
+    // re-implementation), the same "call the exact production handler"
+    // reasoning `storeClickedForTest` above already gives.
+    static void forceExportThrowForTest(MainComponent& c, bool force) {
+        c.forceExportThrowForTest_ = force;
+    }
+    static void exportReportClickedForTest(MainComponent& c) { c.exportReportClicked(); }
+    [[nodiscard]] static juce::String exportReportReadoutForTest(const MainComponent& c) {
+        return c.exportReportReadout_.getText();
     }
 };

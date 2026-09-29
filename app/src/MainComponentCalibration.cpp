@@ -5,6 +5,58 @@
 // 400-line cap -- the same reason MainComponentDelay.cpp exists.
 // Member-function definitions, declared in MainComponent.h, no different in
 // kind from anything else in that class.
+//
+// Field-by-field rationale for MainComponent's calibration members (T0
+// file-length split, 2026-09-29: moved here from MainComponent.h's own
+// member comments -- comment text only, unchanged in substance):
+//
+// `kCalibrationRouteIndex` -- route 0's measurement channel, raw, what a
+// calibrator clipped onto the mic capsule delivers. Hoisted to a class
+// constant (task W2-E2b part A) so it is one spelling shared by the
+// calibration capture itself, the block-index range a calibration record
+// brackets, and the channel `writeCalibrationRecordAndUpdateInvalidFlag()`
+// marks invalid -- previously a `MainComponentCalibration.cpp`-local
+// anonymous-namespace constant that only this file could see.
+//
+// `calibrationCaptureArmed_`/`calibrationCaptureIsStart_` -- guard the one
+// shared capture accumulator against Locate and Calibration both arming it
+// at once.
+//
+// `calibrationCaptureArmedAtMs_` -- when the currently-armed capture was
+// requested, read from `juce::Time::getMillisecondCounterHiRes()`, a
+// MONOTONIC counter, not wall time (W2-E2a fix: PR #27 round-2 verifier,
+// LOW). `double` because that is what the monotonic counter itself returns.
+// `captureTimedOut` (fix round finding 6) is what stops a calibrator-only
+// rig's missing REF channel from locking Locate out for the rest of the
+// session.
+//
+// `calibrationChannel_` -- fix round (verifier HIGH finding):
+// `kCalibrationRouteIndex` is a ROUTE POSITION, resolved to a CHANNEL NUMBER
+// exactly once, in `pollCalibrationPipeline()`, via
+// `rta::measure::calibrationMeasurementChannel` against the routing plan the
+// capture that just completed actually used -- never re-derived later, and
+// never the route index itself. -1 (no channel resolved yet, or the last
+// capture's route had none -- the calibrator-only, no-REF-channel case) is
+// what every channel-indexed `AnalysisThread` call already treats as a safe
+// no-op.
+//
+// `calibrationStartChannel_` -- fix round 3 (verifier MEDIUM, upgraded from
+// LOW): `calibrationChannel_` above is overwritten every time a capture
+// completes -- START AND END alike -- so by itself it cannot tell "the END
+// check resolved to a different channel than the START check did" (an
+// operator can reassign `ChannelRoleTable` roles in between, one click
+// away). Set ONLY when `calibrationCaptureIsStart_` is true, in
+// `pollCalibrationPipeline()`, and never touched at the END check --
+// `writeCalibrationRecordAndUpdateInvalidFlag()` compares it against the
+// freshly-resolved `calibrationChannel_` via
+// `rta::measure::decideCalibrationRecordChannel` before writing anything.
+//
+// `calibrationChannelRefused_` -- true after the most recent END check was
+// REFUSED (channel mismatch, or no measurement channel resolved either
+// time) -- read by `updateCalibrationReadout()` so the operator sees why no
+// drift/verdict appeared, live, the same fact `SplCalibrationRecord.h`'s own
+// `CalibrationRecordRefusal` states in the written record and the report's
+// Calibration section states in the export.
 #include "MainComponent.h"
 
 #include "export/SplCalibrationRecord.h"

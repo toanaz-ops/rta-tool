@@ -99,6 +99,13 @@ TransferSource TransferView::effectiveSource(TransferPane pane) const noexcept {
     return resolveEffectiveSource(source(pane), hasFixed, hasMtw);
 }
 
+TransferSource TransferView::effectiveSource(TransferPane pane,
+                                             const rta::measure::Snapshot& snapshot) const noexcept {
+    // K9: the SAME rule as the overload above, against the CALLER'S snapshot
+    // rather than a fresh source_->latest() -- never re-fetched here.
+    return resolveEffectiveSource(source(pane), snapshot.transfer.has_value(), snapshot.mtw.has_value());
+}
+
 void TransferView::setLibrary(const rta::trace::TraceLibrary* library) {
     library_ = library;
     storedMagnitude_.forget();

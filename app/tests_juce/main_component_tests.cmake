@@ -52,9 +52,22 @@ add_executable(rtatool_main_component_tests
     test_main_component_session.cpp
     test_main_component_session_fixround.cpp
     test_main_component_session_path_guard.cpp
+    # test_main_component_session_multipane.cpp: F4 (docs/HUMAN-QA-QUEUE.md
+    # D11) -- Save used to collapse a multi-pane workspace to one pane on
+    # re-save. New file rather than growing fixround.cpp/path_guard.cpp,
+    # both already near the 400-line cap.
+    test_main_component_session_multipane.cpp
+    # test_main_component_session_overwrite.cpp: F6 (docs/HUMAN-QA-QUEUE.md
+    # D11) -- Save had no overwrite prompt. Same reason as multipane.cpp
+    # above for being a new file.
+    test_main_component_session_overwrite.cpp
     # test_main_component_store.cpp: station-3 STORE button (T5/T6/T7) --
     # against a real MainComponent, same shape as test_main_component_panes.cpp.
+    # Also carries K8's multi-TRANSFER-pane readout case.
     test_main_component_store.cpp
+    # test_main_component_export.cpp: D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4
+    # item 14) -- exportReportClicked()'s catch branch had no test at all.
+    test_main_component_export.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 
