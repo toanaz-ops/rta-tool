@@ -139,7 +139,7 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # FirTextWriter.cpp / FirWavWriter.cpp were built and unit-tested in lane
     # L7-EQ/L7-FIR with NO caller in this target (orphans until now). This
     # target names every source one by one, so each has to be listed.
-    # EqVerify.cpp is Wave B (VERIFY) and stays unlisted until that PR wires it.
+    # EqVerify.cpp is wired by wave B (below): EqVerifyRunner.cpp calls it.
     src/MainComponentEq.cpp
     src/measure/EqSession.cpp
     src/measure/EqPaneModel.cpp
@@ -151,6 +151,14 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/view/EqFilterPanel.cpp
     src/view/EqChartRenderer.cpp
     # --- end L7-EQ UI wave A ----------------------------------------------------
+    # --- L7-EQ UI wave B: VERIFY and ADOPT (plan tasks T7, T8) ------------------
+    # EqVerify.cpp (arm/poll/submitSnapshot/compareToPrediction/h1SigmaDb/
+    # renderVerifySummary) had no caller in this target until EqVerifyRunner
+    # drove it; MainComponentEqVerify.cpp is the composition root's half.
+    src/MainComponentEqVerify.cpp
+    src/measure/EqVerify.cpp
+    src/measure/EqVerifyRunner.cpp
+    # --- end L7-EQ UI wave B ----------------------------------------------------
     src/MainComponentStore.cpp
     src/trace/CaptureConverter.cpp
     # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /

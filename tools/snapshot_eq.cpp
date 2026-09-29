@@ -47,6 +47,17 @@ void renderEqSpecimen (const juce::File& outDir, int& failures)
         ++failures;
         return;
     }
+    // Wave B: SYNTHETIC stops the device, so VERIFY (and ADOPT) must be dark
+    // and the pane must say WHY on screen -- a disabled button with no reason
+    // is the failure this specimen exists to show.
+    pane.tickForTest();
+    if (pane.verifyButtonForTest().isEnabled() || pane.adoptButtonForTest().isEnabled()
+        || ! pane.readoutForTest().contains ("VERIFY off:") || ! pane.readoutForTest().contains ("SYNTHETIC"))
+    {
+        std::printf ("FAILED: SYNTHETIC must leave VERIFY and ADOPT disabled with the reason on screen\n");
+        ++failures;
+        return;
+    }
     if (! renderComponent (component, outDir, "main-live-eq.png", 1280, 800))
         ++failures;
 }

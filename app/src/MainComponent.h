@@ -187,6 +187,12 @@ private:
     void exportReportClicked();
 
     void storeClicked();  // MainComponentStore.cpp (station-3 T5): freezes the pane's Snapshot into library_
+    /// STORE's conversion, shared with VERIFY's after-measurement (MainComponentStore.cpp).
+    [[nodiscard]] std::optional<rta::trace::Trace> freezeSnapshot(const rta::measure::Snapshot& snapshot,
+                                                                  rta::view::PaneView pane);
+    /// L7-EQ UI wave B: hands `eq_` the device, the live snapshot and the
+    /// LOCATE/CAL flags VERIFY needs (MainComponentEqVerify.cpp).
+    void wireEqVerify();
 
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from

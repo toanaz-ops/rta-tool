@@ -34,12 +34,18 @@ bool writeTextFile(const juce::File& file, const std::string& text) {
 
 MainComponentEq::MainComponentEq() = default;
 
+void MainComponentEq::attachVerify(rta::platform::OutputEngine& engine, rta::trace::TraceLibrary& library,
+                                   rta::measure::EqVerifyHost host) {
+    verify_.attach(engine, library, std::move(host));
+}
+
 rta::view::EqPaneBinding MainComponentEq::binding() {
     rta::view::EqPaneBinding out;
     out.model = &model_;
     out.actions.exportFirText = [this] { exportFirTextClicked(); };
     out.actions.exportFirWav = [this] { exportFirWavClicked(); };
     out.actions.exportList = [this] { exportListClicked(); };
+    out.verify = &verify_;
     return out;
 }
 

@@ -154,6 +154,7 @@ MainComponent::MainComponent()
     // SessionCodec were built and tested in lane L5a with no caller anywhere
     // in app/src until now.
     session_.attachTo(*this);
+    wireEqVerify();
 
     rail_.attachTo(*this);
 
@@ -325,6 +326,7 @@ void MainComponent::timerCallback() {
     refreshMembershipFromSnapshot();
     pollLocatePipeline();
     pollCalibrationPipeline();
+    eq_.pollVerify();  // L7-EQ VERIFY: before the SYNTHETIC early return below
     pollSplLogging();
 
     if (isSyntheticMode()) {
