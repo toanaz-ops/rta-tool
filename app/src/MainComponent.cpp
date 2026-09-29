@@ -339,6 +339,26 @@ void MainComponent::refreshChannelNamesFromDevice() {
 
 void MainComponent::applyChannelNames(std::vector<std::string> names) {
     if (names != lastChannelNames_) {
+        // A device that reports a NON-ZERO channel count leaves no row for a
+        // channel past it, so a role/tf still held there could never be seen
+        // or cleared again -- and a stale role is not harmless: with no valid
+        // Measurement left, AnalysisThread::drainRole finds no ring for it
+        // and the RTA plot freezes under an all-UNUSED table (the failure
+        // setSyntheticMode already documents for its own case). Clear them,
+        // exactly as setSyntheticMode does. A count of ZERO is a transient
+        // "device closed" (a sample-rate change reopens it), not a smaller
+        // device: roles are kept so the operator's assignment survives it.
+        if (!names.empty()) {
+            auto& config = audioIo_.bus().config();
+            const int count = static_cast<int>(
+                std::min(names.size(), static_cast<std::size_t>(rta::platform::kMaxChannels)));
+            for (int ch = count; ch < rta::platform::kMaxChannels; ++ch) {
+                if (config.role(ch) != rta::platform::ChannelRole::Unused) {
+                    config.setRole(ch, rta::platform::ChannelRole::Unused);
+                }
+                if (config.transferFunction(ch) != 0) config.setTransferFunction(ch, 0);
+            }
+        }
         lastChannelNames_ = std::move(names);
         // Feeds channelRoleTable_ AND routingMatrix_ (MainComponentRail.h).
         rail_.setChannelNames(lastChannelNames_);

@@ -177,3 +177,53 @@ TEST_CASE("rail: the membership plan uses the bus's channel count, not the TF ca
     CHECK(plan.routes[0].measurementChannel == 11);
     CHECK(plan.routes[0].tfIndex == 3);
 }
+
+TEST_CASE("channel names: a smaller non-zero device clears the roles past its end",
+         "[main_component_rail]") {
+    // H2 verifier round 1. A role on a channel with no row can never be
+    // cleared again, and with no valid Measurement left the RTA drain freezes
+    // (setSyntheticMode's own documented failure). 16 inputs, Measurement on
+    // channel 11 only, then an 8-input device: channel 11 must be Unused,
+    // tf 0, and nothing holds the role.
+    MainComponent component;
+    auto& config = MainComponentTestAccess::channelConfigForTest(component);
+    using rta::platform::ChannelRole;
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    REQUIRE(config.setRole(11, ChannelRole::Measurement));
+    REQUIRE(config.setTransferFunction(11, 3));
+    REQUIRE(config.role(11) == ChannelRole::Measurement);  // a 16-input device keeps it
+
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(8));
+
+    CHECK(config.role(11) == ChannelRole::Unused);
+    CHECK(config.transferFunction(11) == 0);
+    CHECK(config.firstChannelWithRole(ChannelRole::Measurement) < 0);
+}
+
+TEST_CASE("channel names: roles inside the new count survive a shrink",
+         "[main_component_rail]") {
+    MainComponent component;
+    auto& config = MainComponentTestAccess::channelConfigForTest(component);
+    using rta::platform::ChannelRole;
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    REQUIRE(config.setRole(5, ChannelRole::Reference));
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(8));
+    CHECK(config.role(5) == ChannelRole::Reference);
+}
+
+TEST_CASE("channel names: a transient zero-channel report keeps the roles",
+         "[main_component_rail]") {
+    // A device close between two sample-rate changes reports 0 channels; the
+    // operator's assignment must survive it and be there when the device returns.
+    MainComponent component;
+    auto& config = MainComponentTestAccess::channelConfigForTest(component);
+    using rta::platform::ChannelRole;
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    REQUIRE(config.setRole(11, ChannelRole::Measurement));
+
+    MainComponentTestAccess::applyChannelNamesForTest(component, {});
+    CHECK(config.role(11) == ChannelRole::Measurement);
+
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    CHECK(config.role(11) == ChannelRole::Measurement);
+}

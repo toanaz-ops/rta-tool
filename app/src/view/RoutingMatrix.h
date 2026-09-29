@@ -49,15 +49,15 @@ public:
     /// clip). Row labels are the names (an empty name falls back to the
     /// 1-based channel number, the same numbering `ChannelRoleTable` shows).
     ///
-    /// SHRINKING does NOT touch `ChannelConfig`: a role/tf a dropped channel
-    /// still holds is left where it is (decision, lane H2). It is harmless
-    /// while the channel is off the end -- `planRouting` and
-    /// `ChannelConfig::snapshot` both clamp to the channel count the bus
-    /// actually has, so no route can name it -- and it is the operator's own
-    /// assignment coming back if the same interface is reattached, exactly as
-    /// `ChannelRoleTable` (which also keeps roles it no longer lists) behaves.
-    /// Clearing here would instead wipe assignments on every transient
-    /// "device closed" blip between two sample-rate changes.
+    /// This widget never touches `ChannelConfig` when it shrinks. The caller
+    /// owns that policy (`MainComponent::applyChannelNames`, lane H2): a
+    /// device reporting a NON-ZERO smaller count has its roles/tf past the
+    /// end CLEARED (a role on a channel with no row can never be cleared
+    /// again, and with no valid Measurement left it freezes the RTA drain --
+    /// the `setSyntheticMode` failure), while a count of ZERO (a transient
+    /// "device closed" between two sample-rate changes) KEEPS them. Either
+    /// way `planRouting` and `ChannelConfig::snapshot` clamp to the bus's
+    /// channel count, so no route ever names a channel past it.
     void setChannelNames(std::vector<std::string> names);
 
     /// Rows currently shown.

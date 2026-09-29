@@ -185,12 +185,12 @@ TEST_CASE("The AVG column shows a route on a channel past row 8", "[routing_matr
     CHECK(matrix.grid().cellText(12, 1) == "AVG");
 }
 
-TEST_CASE("Shrinking the channel list drops rows and leaves the config alone",
+TEST_CASE("Shrinking the channel list drops rows; the WIDGET leaves the config alone",
           "[routing_matrix]") {
-    // Decision (RoutingMatrix::setChannelNames): a role on a dropped channel is
-    // NOT cleared. It cannot route (planRouting clamps to the bus's channel
-    // count), it is not silently rewritten behind ChannelRoleTable's back, and
-    // it survives a transient device close.
+    // The widget itself never edits ChannelConfig on a shrink -- clearing is
+    // MainComponent::applyChannelNames's policy (test_main_component_rail_
+    // layout.cpp). Here: a stale role cannot route (planRouting clamps to the
+    // channel count) and no row remains to click or show it.
     ChannelConfig config;
     RoutingMatrix matrix(config, 0);
     matrix.setChannelNames(namesOf(16));
