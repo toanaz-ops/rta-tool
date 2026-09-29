@@ -4,11 +4,9 @@
 // along its own natural seam: this file's ONE subject is disableSplLogging()
 // actually calling through to SplLogPipeline::disable(), not a no-op that
 // "stays green" only because a background writer happens to catch up on its
-// own. This proves the CALL happens, deterministically -- it does not, and
-// cannot without a slow-writer test hook this batch does not add, prove that
-// the drain+join it starts has already FINISHED by the time this test reads
-// the files (see the TEST_CASE's own comment for why a timing race cannot
-// prove that here); SplLogPipeline::disable()'s own drain-then-join
+// own. This proves the CALL happens, deterministically. It reads the files
+// only after `splBlockCount` resets, which happens after that drain+join has
+// finished (`waitForSplRequestLanded`); SplLogPipeline::disable()'s own drain-then-join
 // correctness is proven directly, at its own level, by
 // test_spl_log_pipeline.cpp. See test_spl_log_wiring.cpp's own header
 // comment for the wiring this file shares its subject with.
@@ -106,6 +104,21 @@ bool waitForSplLoggingOff(const AnalysisThread& thread, int timeoutMs) {
     return !thread.isSplLoggingEnabledForTest();
 }
 
+/// `running_` going false (above) is the FIRST step of `disable()`, before the
+/// writer's final drain and file close -- reading the CSVs then raced that
+/// drain (CI: 19 == 20). `applyPendingSplRequest()` resets `splBlockCount` to
+/// 0 only AFTER `disable()` has joined (AnalysisThreadSpl.cpp's own comment),
+/// so 0 means every file is closed. No audio is fed, so nothing re-raises it.
+bool waitForSplRequestLanded(const AnalysisThread& thread, int channel, int timeoutMs) {
+    const auto deadline =
+        juce::Time::getMillisecondCounter() + static_cast<std::uint32_t>(timeoutMs);
+    while (juce::Time::getMillisecondCounter() < deadline) {
+        if (thread.splBlockCount(channel) == 0) return true;
+        juce::Thread::sleep(5);
+    }
+    return thread.splBlockCount(channel) == 0;
+}
+
 std::string readWholeFile(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     std::ostringstream ss;
@@ -179,12 +192,13 @@ TEST_CASE("disableSplLogging() actually calls through to SplLogPipeline::disable
 
     thread.disableSplLogging();
     REQUIRE(waitForSplLoggingOff(thread, 2000));
+    REQUIRE(waitForSplRequestLanded(thread, 0, 2000));
 
     // Secondary check, still real regression protection even though it is
     // not what catches the no-op mutant above (see this test's own header
-    // comment for why a timing race cannot catch it): once the pipeline
-    // reports itself disabled, the files it wrote should be complete, not
-    // merely non-empty.
+    // comment for why a timing race cannot catch it): once the disable has
+    // fully landed (drain + join + close), the files it wrote should be
+    // complete, not merely non-empty.
     const auto files = csvFilesIn(dir.path);
     REQUIRE_FALSE(files.empty());
     std::size_t totalBlocks = 0;
