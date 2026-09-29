@@ -83,7 +83,7 @@ TEST_CASE("EqPaneModel: stored phase is RADIANS -- m = 20*log10(0.5), phi = pi/2
     EqPaneModel model;
     REQUIRE(model.selectMeasurement(library, id));
 
-    const auto h = model.hHalfGrid();
+    const auto h = model.hHalfGridForTest();
     REQUIRE(h.size() == 33);
     for (std::size_t k = 0; k < h.size(); ++k) {
         CHECK(std::abs(h[k]) == Catch::Approx(0.5).margin(1e-6));
@@ -103,7 +103,7 @@ TEST_CASE("EqPaneModel: a trace with no phase has an empty H and says the G24 ga
         "NoPhase");
     EqPaneModel model;
     REQUIRE(model.selectMeasurement(library, id));
-    CHECK(model.hHalfGrid().empty());
+    CHECK(model.hHalfGridForTest().empty());
     CHECK(model.gateReadout().find("G24 gate off") != std::string::npos);
 }
 
@@ -142,15 +142,15 @@ TEST_CASE("EqPaneModel: FLAT is the default target; a same-grid target is copied
 
     EqPaneModel model;
     REQUIRE(model.selectMeasurement(library, mid));
-    REQUIRE(model.targetDb().size() == kBins64);
-    CHECK(std::all_of(model.targetDb().begin(), model.targetDb().end(), [](float v) { return v == 0.0f; }));
+    REQUIRE(model.targetDbForTest().size() == kBins64);
+    CHECK(std::all_of(model.targetDbForTest().begin(), model.targetDbForTest().end(), [](float v) { return v == 0.0f; }));
 
     REQUIRE(model.selectTarget(library, tid));
-    REQUIRE(model.targetDb().size() == kBins64);
-    CHECK(std::equal(shaped.begin(), shaped.end(), model.targetDb().begin()));  // bitwise
+    REQUIRE(model.targetDbForTest().size() == kBins64);
+    CHECK(std::equal(shaped.begin(), shaped.end(), model.targetDbForTest().begin()));  // bitwise
 
     REQUIRE(model.selectTarget(library, ""));  // back to FLAT
-    CHECK(std::all_of(model.targetDb().begin(), model.targetDb().end(), [](float v) { return v == 0.0f; }));
+    CHECK(std::all_of(model.targetDbForTest().begin(), model.targetDbForTest().end(), [](float v) { return v == 0.0f; }));
 }
 
 TEST_CASE("EqPaneModel: a -3 dB/oct tilt on another grid resamples to -3*log2(f/f0)", "[eq_pane_model]") {
@@ -173,7 +173,7 @@ TEST_CASE("EqPaneModel: a -3 dB/oct tilt on another grid resamples to -3*log2(f/
     REQUIRE(model.selectMeasurement(library, mid));
     REQUIRE(model.selectTarget(library, tid));
 
-    const auto target = model.targetDb();
+    const auto target = model.targetDbForTest();
     REQUIRE(target.size() == kBins64);
     for (std::size_t k = 1; k < kBins64; ++k) {  // 750 Hz .. Nyquist, inside the source's range
         const double expected = -3.0 * std::log2(static_cast<double>(k) * 750.0 / kF0);
@@ -213,15 +213,15 @@ TEST_CASE("EqPaneModel: AUTO EQ on an 8 dB bump commits and the ghost lands near
     const std::size_t bump = 43;
     const auto ghost = model.session().ghostDb();
     const double measured = static_cast<double>(model.measuredDb()[bump]);
-    CHECK(std::abs(ghost[bump] - static_cast<double>(model.targetDb()[bump])) <
-          std::abs(measured - static_cast<double>(model.targetDb()[bump])));
+    CHECK(std::abs(ghost[bump] - static_cast<double>(model.targetDbForTest()[bump])) <
+          std::abs(measured - static_cast<double>(model.targetDbForTest()[bump])));
 
     // The correction strip is exactly ghost - measured.
     const auto correction = model.correctionDb();
     CHECK(correction[bump] == Catch::Approx(ghost[bump] - measured).margin(1e-12));
     // ...and the target line sits at target + c (T0), with c the session's own.
     CHECK(model.targetLineDb()[bump] ==
-          Catch::Approx(static_cast<double>(model.targetDb()[bump]) + model.session().levelOffsetDb())
+          Catch::Approx(static_cast<double>(model.targetDbForTest()[bump]) + model.session().levelOffsetDb())
               .margin(1e-12));
 }
 
@@ -243,7 +243,7 @@ TEST_CASE("EqPaneModel: G24 excessPhase cost at fftSize 4096 is measured, not as
         library, makeEqTrace("g24", 4096, kFs, magnitude, coherence, std::vector<float>(2049, 0.0f)), "G24");
     EqPaneModel model;
     REQUIRE(model.selectMeasurement(library, id));
-    REQUIRE_FALSE(model.hHalfGrid().empty());
+    REQUIRE_FALSE(model.hHalfGridForTest().empty());
 
     const auto t0 = std::chrono::steady_clock::now();
     model.runAutoEq();

@@ -97,8 +97,8 @@ public:
     [[nodiscard]] const EqTracePick& target() const noexcept { return target_; }
     [[nodiscard]] double sampleRate() const noexcept { return sampleRate_; }
     [[nodiscard]] std::span<const float> measuredDb() const noexcept { return measuredDb_; }
-    [[nodiscard]] std::span<const float> targetDb() const noexcept { return targetDb_; }
-    [[nodiscard]] std::span<const std::complex<double>> hHalfGrid() const noexcept { return h_; }
+    [[nodiscard]] std::span<const float> targetDbForTest() const noexcept { return targetDb_; }
+    [[nodiscard]] std::span<const std::complex<double>> hHalfGridForTest() const noexcept { return h_; }
     [[nodiscard]] const std::vector<rta::eq::Candidate>& chips() const noexcept { return chips_; }
     [[nodiscard]] const std::string& status() const noexcept { return status_; }
     [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }

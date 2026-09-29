@@ -148,7 +148,7 @@ TEST_CASE("AUTO EQ through the real combo and the real button lands filters near
     REQUIRE_FALSE(model.session().committed().empty());
     // The invariant of test_eq_session.cpp ("Auto EQ leaves the ghost closer
     // to target than the measurement"), reached through the button.
-    const double target = static_cast<double>(model.targetDb()[kBumpBin]);
+    const double target = static_cast<double>(model.targetDbForTest()[kBumpBin]);
     const double measured = static_cast<double>(model.measuredDb()[kBumpBin]);
     const double ghost = model.session().ghostDb()[kBumpBin];
     CHECK(std::abs(ghost - target) < std::abs(measured - target));

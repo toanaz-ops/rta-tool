@@ -57,8 +57,8 @@ TEST_CASE("the target combo starts on FLAT and a stored trace becomes the target
     targetCombo.setSelectedId(3, juce::sendNotificationSync);  // item 3 = the second library entry
     CHECK(rig.model.target().name == "Shaped");
     // Same grid: the target is the stored curve, copied bitwise.
-    REQUIRE(rig.model.targetDb().size() == shaped.size());
-    CHECK(std::equal(shaped.begin(), shaped.end(), rig.model.targetDb().begin()));
+    REQUIRE(rig.model.targetDbForTest().size() == shaped.size());
+    CHECK(std::equal(shaped.begin(), shaped.end(), rig.model.targetDbForTest().begin()));
     CHECK(rig.pane.readoutForTest().contains("TARGET Shaped"));
 
     targetCombo.setSelectedId(1, juce::sendNotificationSync);  // back to FLAT
