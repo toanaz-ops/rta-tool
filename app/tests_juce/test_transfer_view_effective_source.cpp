@@ -102,3 +102,30 @@ TEST_CASE("effectiveSource falls back to MTW when fixed is absent, even though t
 
     CHECK(view.effectiveSource(TransferPane::Magnitude) == TransferSource::Mtw);
 }
+
+// K9 (docs/HUMAN-QA-QUEUE.md, PR #51 round-2 R7): the two-argument overload
+// must answer for the SNAPSHOT PASSED IN, never re-fetching `source_->
+// latest()` on its own -- `MainComponentStore.cpp`'s STORE readout freezes
+// one snapshot per click and must describe THAT one, even if the live
+// source has since published something else (an APPLY rebuild landing
+// between the freeze and the readout being built, say).
+TEST_CASE("effectiveSource(pane, snapshot) answers for the given snapshot, "
+         "not whatever the live source currently holds",
+         "[transfer-view][effective-source]") {
+    // The LIVE source disagrees with the snapshot passed explicitly below --
+    // the mutant this catches (an implementation that ignores its own
+    // `snapshot` parameter and calls `source_->latest()` instead) would
+    // answer as if `liveSnapshot` were current, not `frozenSnapshot`.
+    const auto liveSnapshot = snapshotWith(/*hasFixed=*/true, /*hasMtw=*/false);
+    const StaticSnapshotSource source(liveSnapshot);
+    TransferView view(source);
+
+    const auto frozenSnapshot = snapshotWith(/*hasFixed=*/true, /*hasMtw=*/true);
+    CHECK(view.effectiveSource(TransferPane::Magnitude, *frozenSnapshot) == TransferSource::Mtw);
+    CHECK(view.effectiveSource(TransferPane::Phase, *frozenSnapshot) == TransferSource::Mtw);
+    CHECK(view.effectiveSource(TransferPane::Coherence, *frozenSnapshot) == TransferSource::Mtw);
+
+    // The single-argument overload is unaffected -- it still reads the LIVE
+    // source, which has no mtw block, so it falls back to Fixed.
+    CHECK(view.effectiveSource(TransferPane::Magnitude) == TransferSource::Fixed);
+}

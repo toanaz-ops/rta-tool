@@ -53,17 +53,22 @@ std::string channelRolesSummary(const rta::platform::ChannelConfig& config) {
 // (a multi-pane session is not required to put it first -- see
 // MainComponentPanes.cpp's own restoreWorkspaceFromSession comment on why
 // currentPaneView_ only tracks the FIRST pane), so this scans rather than
-// assuming index 0. Returns null when the current workspace has no TRANSFER
+// assuming index 0. K8 (docs/HUMAN-QA-QUEUE.md, PR #51 round-2 R6): returns
+// EVERY TRANSFER pane, in workspace order, not only the first match -- a
+// multi-pane layout can show TRANSFER more than once, and the old
+// first-match-wins scan left every pane after the first silently unreported
+// in the STORE readout. Empty when the current workspace has no TRANSFER
 // pane at all -- storeClicked() only calls this once it already knows
-// `pane == PaneView::Transfer`, but a null result is still handled rather
+// `pane == PaneView::Transfer`, but an empty result is still handled rather
 // than assumed unreachable.
-const rta::view::TransferView* findTransferView(const juce::Component& workspace) {
+std::vector<const rta::view::TransferView*> findTransferViews(const juce::Component& workspace) {
+    std::vector<const rta::view::TransferView*> views;
     for (int i = 0; i < workspace.getNumChildComponents(); ++i) {
         if (auto* view = dynamic_cast<const rta::view::TransferView*>(workspace.getChildComponent(i))) {
-            return view;
+            views.push_back(view);
         }
     }
-    return nullptr;
+    return views;
 }
 
 // Fix round 1, HIGH F1: names, in Magnitude/Phase/Coherence order, exactly
@@ -71,7 +76,14 @@ const rta::view::TransferView* findTransferView(const juce::Component& workspace
 // preference plus availability, the same fallback renderTo() draws with) is
 // Mtw right now. Empty when none is -- the caller appends no clause at all
 // in that case, rather than a clause naming nothing.
-std::string mtwPaneNames(const rta::view::TransferView& view) {
+//
+// K9 (docs/HUMAN-QA-QUEUE.md, PR #51 round-2 R7): takes the snapshot
+// `storeClicked()` already froze at the top of the click, rather than
+// calling `TransferView::effectiveSource(pane)` (which would re-fetch
+// `source_->latest()` on its own) -- the readout must describe the SAME
+// snapshot the stored trace was built from, not whatever published in the
+// meantime.
+std::string mtwPaneNames(const rta::view::TransferView& view, const rta::measure::Snapshot& snapshot) {
     using rta::view::TransferPane;
     using rta::view::TransferSource;
     static constexpr std::pair<TransferPane, const char*> kPanes[] = {
@@ -81,9 +93,30 @@ std::string mtwPaneNames(const rta::view::TransferView& view) {
     };
     std::string out;
     for (const auto& [pane, label] : kPanes) {
-        if (view.effectiveSource(pane) != TransferSource::Mtw) continue;
+        if (view.effectiveSource(pane, snapshot) != TransferSource::Mtw) continue;
         if (!out.empty()) out += ", ";
         out += label;
+    }
+    return out;
+}
+
+// K8: one clause per TRANSFER pane that has anything to report, prefixed
+// with which pane it belongs to ONLY when there is more than one -- a
+// single-TRANSFER-pane workspace (still the common case) keeps the exact
+// wording station-3's own fix round 1 already shipped and tested.
+std::string mtwSummary(const std::vector<const rta::view::TransferView*>& views,
+                       const rta::measure::Snapshot& snapshot) {
+    std::vector<std::string> clauses;
+    for (std::size_t i = 0; i < views.size(); ++i) {
+        auto names = mtwPaneNames(*views[i], snapshot);
+        if (names.empty()) continue;
+        clauses.push_back(views.size() > 1 ? "TRANSFER " + std::to_string(i + 1) + ": " + names
+                                           : names);
+    }
+    std::string out;
+    for (std::size_t i = 0; i < clauses.size(); ++i) {
+        if (i > 0) out += "; ";
+        out += clauses[i];
     }
     return out;
 }
@@ -152,12 +185,13 @@ void MainComponent::storeClicked() {
         // panes are showing MTW right now (fix round 1, HIGH F1), never a
         // constant: an operator can flip any pane to FIXED
         // (TransferSourceToggle), and MTW can simply be unavailable
-        // (mtwEnabled=false, or no reference fed yet).
-        if (const auto* transferView = findTransferView(*workspace_)) {
-            const auto mtwPanes = mtwPaneNames(*transferView);
-            if (!mtwPanes.empty()) {
-                message += " -- screen shows MTW on " + juce::String(mtwPanes);
-            }
+        // (mtwEnabled=false, or no reference fed yet). K8/K9: every TRANSFER
+        // pane is named, against the SAME `snapshot` frozen at the top of
+        // this click -- never a second, independent `latest()` fetch.
+        const auto transferViews = findTransferViews(*workspace_);
+        const auto mtwPanes = mtwSummary(transferViews, *snapshot);
+        if (!mtwPanes.empty()) {
+            message += " -- screen shows MTW on " + juce::String(mtwPanes);
         }
     }
     storeReadout_.setText(message, juce::dontSendNotification);
