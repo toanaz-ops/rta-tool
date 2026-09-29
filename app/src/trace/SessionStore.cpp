@@ -94,7 +94,10 @@ StoreStatus SessionStore::writeIndex(const SessionDocument& doc) const {
         if (!out) return StoreStatus::IoError;
         const std::string encoded = encodeIndex(stamped);
         out.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
-        if (!out) return StoreStatus::IoError;
+        // Same reasoning as writeTrace: a flush failure surfaces at close(),
+        // and must stop the rename below from committing a truncated index.
+        out.close();
+        if (out.fail()) return StoreStatus::IoError;
     }
 
     // The rename is the atomic step: a crash before it leaves only a stray
@@ -146,12 +149,18 @@ StoreStatus SessionStore::writeTrace(const Trace& trace) const {
             return StoreStatus::IoError;
         }
         out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
-        if (!out) {
-            out.close();
+        // close() is checked explicitly (PR #55 verifier LOW): a buffered
+        // write's ENOSPC/EIO can surface only at the final flush inside
+        // close(), where the destructor would swallow it -- and the
+        // truncated tmp would then be renamed over the good blob. close()
+        // also releases the handle before remove() on Windows. fail()
+        // covers both a failed write() above and a failed close().
+        out.close();
+        if (out.fail()) {
             std::filesystem::remove(tmpPath, ec);
             return StoreStatus::IoError;
         }
-    }  // `out` closes here -- its bytes must be flushed to the OS before rename() below.
+    }
 
     std::filesystem::rename(tmpPath, finalPath, ec);
     if (ec) {

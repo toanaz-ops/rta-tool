@@ -54,14 +54,23 @@ void SplLogWriter::openSegment() {
     // records) -- caught anyway, because the cost of a try/catch here is
     // nothing next to a crash, and it turns a theoretical one into the SAME
     // reported, recoverable failure an unwritable directory already gets two
-    // lines down: `writeFailed_` set, this segment skipped, whatever called
+    // lines down: `writeFailed_` set, the segment still recorded but never
+    // written to (see the catch below for why it must be), whatever called
     // `write()` keeps running against a stream that silently no-ops rather
     // than unwinding out of the writer thread.
     try {
         stream_.open(utf8Path(path), std::ios::out | std::ios::trunc);
     } catch (const std::exception&) {
+        // NO early return (PR #55 verifier MEDIUM): fall through to the
+        // same tail an unopenable directory takes. Returning here skipped
+        // `segmentPaths_.push_back` -- SplLogPipeline::setupWriters() calls
+        // `segmentPaths().back()` right after construction, which is UB on
+        // an empty vector -- and skipped `blocksInSegment_ = 0`, so after a
+        // failed rotation every later write() would re-enter openSegment()
+        // and throw/catch per block with segmentIndex_ climbing unbounded.
+        // `stream_` is closed here (closed at the top, never opened), so the
+        // header writes below are the same silent no-ops.
         writeFailed_ = true;
-        return;
     }
     if (!stream_.is_open()) {
         // Station-4 fix round (PR #31, finding 6): a directory that does not
