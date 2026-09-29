@@ -175,3 +175,83 @@ TEST_CASE("a loaded v1 session is written back at the current schema version", "
     std::getline(in, firstLine);
     CHECK(firstLine == "schema=" + std::to_string(kSchemaVersion));
 }
+
+TEST_CASE("writeTrace and readTrace reject an id outside [A-Za-z0-9_-] before touching the filesystem",
+         "[store]") {
+    // D9 (HUMAN-QA-QUEUE): `id` is concatenated straight into a filesystem
+    // path. '/' and '\\' let it navigate OUT of traces/ (operator/ treats
+    // them as more path structure, not filename bytes); ".." is refused even
+    // with no separator at all because '.' itself is outside the allowed
+    // set; a bare space and a non-ASCII byte round out what a hand-edited or
+    // foreign index could hand readTrace, which trusts its input the same
+    // way.
+    TempDir dir("bad-id");
+    SessionStore store(dir.path);
+
+    const std::vector<std::string> badIds = {
+        "../escape", "sub/evil", "back\\slash", "..", "has space", "caf\xC3\xA9", "",
+    };
+    for (const auto& id : badIds) {
+        auto t = Trace::make(meta(id), std::vector<float>{1.f, 2.f, 3.f, 4.f, 5.f});
+        REQUIRE(t.has_value());
+        CHECK(store.writeTrace(*t) == StoreStatus::Malformed);
+
+        std::optional<Trace> back;
+        CHECK(store.readTrace(meta(id), back) == StoreStatus::Malformed);
+        CHECK_FALSE(back.has_value());
+    }
+
+    // Nothing was ever created -- the check runs before create_directories,
+    // so not even traces/ itself exists.
+    CHECK_FALSE(std::filesystem::exists(dir.path / "traces"));
+    // And "../escape" did not actually escape into the TempDir's own parent.
+    CHECK_FALSE(std::filesystem::exists(dir.path.parent_path() / "escape.bin"));
+}
+
+TEST_CASE("writeTrace accepts nextCaptureId's own id shape", "[store]") {
+    // Regression: nextCaptureId() (CaptureConverter.cpp) always produces
+    // "capture-<uint64_t>" -- confirm D9's validation does not reject the one
+    // shape every real capture actually uses, at the widest that type gets.
+    TempDir dir("valid-id");
+    SessionStore store(dir.path);
+    auto t = Trace::make(meta("capture-18446744073709551615"),
+                         std::vector<float>{1.f, 2.f, 3.f, 4.f, 5.f});
+    REQUIRE(t.has_value());
+    CHECK(store.writeTrace(*t) == StoreStatus::Ok);
+}
+
+TEST_CASE("an interrupted writeTrace leaves the previous blob byte-identical", "[store]") {
+    // F5 (HUMAN-QA-QUEUE): writeTrace used to open the EXISTING blob with
+    // `trunc`, so an interruption mid-write lost the old blob with no way
+    // back. This proves the tmp-then-rename replacement by injecting a
+    // failure that only a tmp-then-rename implementation can even see: a
+    // DIRECTORY planted at the exact tmp path writeTrace must use. An
+    // in-place `trunc` write never looks at that path at all, so it would
+    // sail through, overwrite the blob with the NEW content, and report
+    // Ok -- failing both checks below and going RED under that mutant.
+    TempDir dir("atomic-trace");
+    SessionStore store(dir.path);
+
+    auto original = Trace::make(meta("t1"), std::vector<float>{1.f, 2.f, 3.f, 4.f, 5.f});
+    REQUIRE(original.has_value());
+    REQUIRE(store.writeTrace(*original) == StoreStatus::Ok);
+
+    const auto blobPath = dir.path / "traces" / "t1.bin";
+    REQUIRE(std::filesystem::exists(blobPath));
+    std::ifstream origIn(blobPath, std::ios::binary);
+    const std::string originalBytes((std::istreambuf_iterator<char>(origIn)),
+                                    std::istreambuf_iterator<char>());
+    REQUIRE_FALSE(originalBytes.empty());
+
+    const auto tmpPath = dir.path / "traces" / "t1.bin.tmp";
+    std::filesystem::create_directory(tmpPath);
+
+    auto updated = Trace::make(meta("t1"), std::vector<float>{9.f, 9.f, 9.f, 9.f, 9.f});
+    REQUIRE(updated.has_value());
+    CHECK(store.writeTrace(*updated) != StoreStatus::Ok);
+
+    std::ifstream afterIn(blobPath, std::ios::binary);
+    const std::string afterBytes((std::istreambuf_iterator<char>(afterIn)),
+                                 std::istreambuf_iterator<char>());
+    CHECK(afterBytes == originalBytes);
+}

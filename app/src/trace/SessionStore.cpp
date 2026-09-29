@@ -3,6 +3,8 @@
 // by the measure_has_no_framework_deps ctest. See spec §3.
 #include "trace/SessionStore.h"
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 
 namespace rta::trace {
@@ -11,6 +13,33 @@ namespace {
 constexpr const char* kIndexName = "session.index";
 constexpr const char* kIndexTmpName = "session.index.tmp";
 constexpr const char* kTracesDirName = "traces";
+constexpr const char* kTraceBlobExt = ".bin";
+constexpr const char* kTraceBlobTmpExt = ".bin.tmp";
+
+// D9 (HUMAN-QA-QUEUE): `id` reaches `traceBlobPath` as a bare `std::string`
+// concatenated straight into a `path` via `operator/` -- a string containing
+// '/' or '\\' is not one path COMPONENT to `operator/`, it is more path
+// structure, so an id like "../../evil" or "sub/evil" escapes `traces/`
+// entirely rather than merely producing an odd filename inside it. Bounded
+// to the POSIX "portable filename character set" minus '.' (so ".."
+// specifically can never reach `traceBlobPath` even with no separator in
+// it) -- every id this app writes today already satisfies this:
+// `nextCaptureId()` (CaptureConverter.cpp) always produces
+// "capture-<uint64_t>" and Open only ever round-trips an id a PREVIOUS Save
+// wrote (itself always `nextCaptureId()`-shaped, or another build's
+// equivalent of it).
+constexpr std::size_t kMaxTraceIdLength = 128;  // generous against
+                                                 // "capture-<uint64_t>" (<=
+                                                 // ~26 chars); just a ceiling
+                                                 // against an absurd id, not
+                                                 // a tight fit to today's format.
+
+bool isValidTraceId(const std::string& id) {
+    if (id.empty() || id.size() > kMaxTraceIdLength) return false;
+    return std::all_of(id.begin(), id.end(), [](unsigned char c) {
+        return std::isalnum(c) != 0 || c == '_' || c == '-';
+    });
+}
 
 /// The codec's DecodeStatus and the store's StoreStatus overlap on purpose --
 /// this is the one place that translation happens, so callers never see the
@@ -26,7 +55,11 @@ StoreStatus fromDecodeStatus(DecodeStatus status) {
 }
 
 std::filesystem::path traceBlobPath(const std::filesystem::path& root, const std::string& id) {
-    return root / kTracesDirName / (id + ".bin");
+    return root / kTracesDirName / (id + kTraceBlobExt);
+}
+
+std::filesystem::path traceBlobTmpPath(const std::filesystem::path& root, const std::string& id) {
+    return root / kTracesDirName / (id + kTraceBlobTmpExt);
 }
 
 }  // namespace
@@ -85,22 +118,56 @@ StoreStatus SessionStore::readIndex(SessionDocument& out) const {
 }
 
 StoreStatus SessionStore::writeTrace(const Trace& trace) const {
+    // D9: reject before any path is formed -- traceBlobPath/traceBlobTmpPath
+    // below both concatenate this id straight into a filesystem path.
+    if (!isValidTraceId(trace.meta().id)) return StoreStatus::Malformed;
+
     std::error_code ec;
     const auto tracesDir = root_ / kTracesDirName;
     std::filesystem::create_directories(tracesDir, ec);
     if (ec) return StoreStatus::IoError;
 
-    const auto path = traceBlobPath(root_, trace.meta().id);
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return StoreStatus::IoError;
+    // F5: write to a tmp file, then rename over the final blob -- the same
+    // pattern writeIndex already uses for session.index (rename is the
+    // atomic step). Unlike writeIndex, a leftover .tmp is deliberately
+    // cleaned up on every failure path below: writeIndex's stray-.tmp case
+    // is a genuine mid-write crash the NEXT run has to tolerate finding,
+    // whereas here `remove` runs synchronously in the same call that
+    // detected the failure, so there is no reason to leave the litter
+    // behind.
+    const auto finalPath = traceBlobPath(root_, trace.meta().id);
+    const auto tmpPath = traceBlobTmpPath(root_, trace.meta().id);
 
     const std::vector<std::byte> blob = encodeTraceBlob(trace);
-    out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
-    if (!out) return StoreStatus::IoError;
+    {
+        std::ofstream out(tmpPath, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            std::filesystem::remove(tmpPath, ec);
+            return StoreStatus::IoError;
+        }
+        out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
+        if (!out) {
+            out.close();
+            std::filesystem::remove(tmpPath, ec);
+            return StoreStatus::IoError;
+        }
+    }  // `out` closes here -- its bytes must be flushed to the OS before rename() below.
+
+    std::filesystem::rename(tmpPath, finalPath, ec);
+    if (ec) {
+        std::filesystem::remove(tmpPath, ec);
+        return StoreStatus::IoError;
+    }
     return StoreStatus::Ok;
 }
 
 StoreStatus SessionStore::readTrace(const CaptureMeta& meta, std::optional<Trace>& out) const {
+    // D9: same reasoning as writeTrace -- meta.id reaches traceBlobPath the
+    // same way, whether it came from a fresh capture or from an on-disk
+    // index Open just parsed (a hand-edited or foreign index is exactly the
+    // untrusted-id case this guards against).
+    if (!isValidTraceId(meta.id)) return StoreStatus::Malformed;
+
     const auto path = traceBlobPath(root_, meta.id);
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return StoreStatus::NotFound;

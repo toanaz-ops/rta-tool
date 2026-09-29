@@ -82,3 +82,33 @@ TEST_CASE("a write() failure AFTER a successful open sets writeFailed(), "
     writer.write(blockAtLevel(2, 48000, 80.0));
     CHECK(writer.writeFailed());
 }
+
+TEST_CASE("a malformed path caught in openSegment sets writeFailed() instead of terminating the process",
+         "[spl_log_write_failure]") {
+    // D6 (HUMAN-QA-QUEUE): utf8Path() (SplLog.h) throws on ill-formed UTF-8,
+    // and openSegment() -- called from the CONSTRUCTOR, on the writer
+    // thread, not the message thread any MainComponent-level try/catch
+    // guards -- used to call it uncaught. Nothing this app actually produces
+    // reaches that throw today (basePath_ always descends from a
+    // well-formed-UTF-8 juce::File path); this plants a bare UTF-8
+    // continuation byte (0x80, never valid on its own, with no lead byte in
+    // front of it) directly into basePath_ to force it anyway. If the catch
+    // this fix round adds were removed, the exception would unwind straight
+    // out of the constructor above and crash this whole test binary --
+    // itself the RED signature the "remove the catch" mutant produces, since
+    // there is no surviving assertion to fail against a dead process.
+    TempDir dir("malformed-path");
+    std::string basePath = (dir.path / "channel").string();
+    basePath += '\x80';
+
+    SplConfig config;
+    SplLogWriter writer(basePath, config, headerInfo(), 3600);
+    CHECK(writer.writeFailed());
+
+    // The writer must stay usable (no crash) for whatever the caller does
+    // next -- a write against the never-opened stream is the same silent
+    // no-op an unwritable directory already produces two lines above
+    // openSegment()'s catch.
+    writer.write(blockAtLevel(0, 48000, 80.0));
+    CHECK(writer.writeFailed());
+}

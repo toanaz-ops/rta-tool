@@ -14,6 +14,7 @@
 #include "export/SplLog.h"
 #include "export/SplSessionHeader.h"
 
+#include <exception>
 #include <fstream>
 
 namespace rta::splexport {
@@ -41,18 +42,27 @@ void SplLogWriter::openSegment() {
     // std::string overload decodes through the ACTIVE CODE PAGE on MSVC, not
     // UTF-8 -- see SplLog.h's own comment on utf8Path.
     //
-    // Left uncaught (fix round 4, LOW-6): utf8Path() throws on malformed
-    // UTF-8 (that function's own comment), and this call is on the writer
-    // thread (SplLogWriter is never touched from the analysis/audio thread --
-    // record its own real-time-safety note), not the message thread any
-    // MainComponent-level try/catch guards. `path` is built one line above
-    // from `basePath_`, itself always a `juce::File`-derived, well-formed
-    // UTF-8 string -- no known input reaches this throw. Deferred rather
-    // than fixed here because a catch needs an owner decision on the actual
-    // fallback behaviour (mark `writeFailed_` and skip the segment, the way
-    // a failed `is_open()` already does two lines down, vs. propagate and
-    // let the session end) -- session/log semantics, not a mechanical fix.
-    stream_.open(utf8Path(path), std::ios::out | std::ios::trunc);
+    // D6 (HUMAN-QA-QUEUE, fix round): utf8Path() throws on malformed UTF-8
+    // (that function's own comment), and this call is on the writer thread
+    // (SplLogWriter is never touched from the analysis/audio thread -- record
+    // its own real-time-safety note), not the message thread any
+    // MainComponent-level try/catch guards -- an uncaught throw here would
+    // terminate the whole process, not just this one log. `path` is built one
+    // line above from `basePath_`, itself always a `juce::File`-derived,
+    // well-formed UTF-8 string, so no input this app produces reaches the
+    // throw today (same "zero realistic trigger" the queue's own entry
+    // records) -- caught anyway, because the cost of a try/catch here is
+    // nothing next to a crash, and it turns a theoretical one into the SAME
+    // reported, recoverable failure an unwritable directory already gets two
+    // lines down: `writeFailed_` set, this segment skipped, whatever called
+    // `write()` keeps running against a stream that silently no-ops rather
+    // than unwinding out of the writer thread.
+    try {
+        stream_.open(utf8Path(path), std::ios::out | std::ios::trunc);
+    } catch (const std::exception&) {
+        writeFailed_ = true;
+        return;
+    }
     if (!stream_.is_open()) {
         // Station-4 fix round (PR #31, finding 6): a directory that does not
         // exist or is not writable makes `open()` fail silently -- no

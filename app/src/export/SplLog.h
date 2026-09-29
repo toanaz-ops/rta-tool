@@ -63,9 +63,11 @@ namespace rta::splexport {
 /// one, and JUCE's own `String` is always well-formed UTF-8 by construction
 /// -- so the throw has no known way to trigger with a real path this app
 /// produces, not a guarantee the type signature makes. `SplLogWriter.cpp`'s
-/// `openSegment()` calls this uncaught on the writer thread; see that
-/// function's own comment for why that gap is left open rather than fixed
-/// here.
+/// `openSegment()` (the writer thread, not the message thread any
+/// MainComponent-level try/catch guards) now catches this around its own
+/// call (D6, HUMAN-QA-QUEUE fix round) and reports it through the same
+/// `writeFailed_` flag an unopenable directory already sets, rather than
+/// letting it unwind out of that thread and terminate the process.
 [[nodiscard]] inline std::filesystem::path utf8Path(const std::string& utf8) {
     return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
 }
