@@ -154,6 +154,49 @@ def test_strip_comments_does_not_swallow_a_comment_after_a_digit_separator():
     assert "void run() {}" in result
 
 
+def test_prefixed_char_literal_is_not_misread_as_a_digit_separator():
+    # D5 (docs/HUMAN-QA-QUEUE.md "Lane-end LOW triage -- 2026-09-27", orphan_
+    # check.py F4): _is_digit_separator_quote's rule ("the preceding char is
+    # alnum") also matches the L/u8/u/U prefix LETTER of a real char literal
+    # -- so the opening `'` of `L'/*'` used to be misread as an inert digit
+    # separator, and the literal `/*` right after it then opened what
+    # strip_comments believed was an UNTERMINATED block comment. strip_
+    # comments `break`s outright on an unterminated `/*` (see its own loop),
+    # discarding the rest of the file -- "int x;" would vanish entirely.
+    text = "wchar_t w = L'/*'; int x;\n"
+    result = cpp_text.strip_comments(text)
+    assert "int x;" in result
+    assert result == text  # nothing on this line is a real comment
+
+
+def test_prefixed_char_literal_content_is_stripped():
+    # The same misreading in strip_string_and_char_literals does not lose
+    # data outright the way strip_comments does, but it DOES fail to hide
+    # the literal's interior -- exactly what this function exists to do (see
+    # its own docstring). Covers all four prefixes the finding names.
+    for prefix in ("L", "u8", "u", "U"):
+        text = f"wchar_t w = {prefix}'x';\n"
+        result = cpp_text.strip_string_and_char_literals(text)
+        assert result == f"wchar_t w = {prefix}'';\n", prefix
+
+
+def test_prefixed_char_literal_mixed_with_a_digit_separator_on_one_line():
+    # Mixing both shapes on ONE line so a fix to the prefix rule cannot
+    # regress the digit-separator rule the two real fixtures depend on
+    # (test_spl_session_folder_name.cpp's `1'700'000'000`, test_api_serialise
+    # .cpp's `20'000`), or vice versa.
+    text = (
+        "constexpr std::time_t kInstant = 1'700'000'000; wchar_t w = L'x';\n"
+        "void run() { thing.enableSplLoggingForTest(); }\n"
+    )
+    stripped_comments = cpp_text.strip_comments(text)
+    assert "enableSplLoggingForTest" in stripped_comments
+    result = cpp_text.strip_string_and_char_literals(stripped_comments)
+    assert "1'700'000'000" in result
+    assert "L''" in result
+    assert "enableSplLoggingForTest" in result
+
+
 def test_strip_comments_does_not_swallow_several_comments_after_a_separator():
     # The other real repo instance: app/tests/test_api_serialise.cpp:127's
     # `20'000` (ONE separator, still an odd count), followed here by several

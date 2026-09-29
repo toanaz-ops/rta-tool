@@ -142,11 +142,21 @@ def not_in_any_target_reason(
     is compiled into `rtatool_snapshot` instead. Both shapes are a real,
     failing orphan (fix round 3, MEDIUM-1 -- see `not_in_target_reason`'s
     own docstring for the bypass this replaces):
-      - never compiled into ANY target at all: "not compiled into any
-        target" (the L6a shape a `.cpp` with no caller lands in -- never
-        added to a source list either, at the commit before its wiring).
+      - absent from BOTH `rtatool_sources.cmake` and `rtatool_snapshot_
+        sources.cmake`: "not compiled into rtatool or rtatool_snapshot" (the
+        L6a shape a `.cpp` with no caller lands in -- never added to either
+        source list, at the commit before its wiring).
       - compiled only into `rtatool_snapshot`: "compiled only into
         rtatool_snapshot" (built and previewed, never wired into the app).
+
+    Fix round 5 (D4, docs/HUMAN-QA-QUEUE.md "Lane-end LOW triage --
+    2026-09-27"): the first message used to read "not compiled into any
+    target", which is LITERALLY FALSE whenever the file is compiled into a
+    TEST target -- this function never reads app/tests*/CMakeLists.txt's own
+    source list, so it has no basis to claim "any". The confirmed real
+    instance: `AlignmentWizard.cpp`/`EqVerify.cpp` compile cleanly into
+    `rtatool_analysis_tests` while absent from both lists this function DOES
+    read. The wording now names exactly the two targets actually checked.
 
     Requires BOTH source lists to be readable (not None) to fire: an
     unreadable list means this run cannot tell "not compiled anywhere" apart
@@ -165,7 +175,7 @@ def not_in_any_target_reason(
         return None
     if normalized in snapshot_sources:
         return "compiled only into rtatool_snapshot, never rtatool"
-    return "not compiled into any target"
+    return "not compiled into rtatool or rtatool_snapshot"
 
 
 def test_hook_is_referenced(name: str, source_dir: Path) -> bool:
