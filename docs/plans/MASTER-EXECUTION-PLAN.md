@@ -104,7 +104,13 @@ to run concurrently):
   validation), D6 (uncaught `utf8Path` on the writer thread).
 - **P3** `tools/orphan-lows` — D4, D5.
 - **P5** `plans` — research/plan station for Sweep→IR (stations 1-3) and
-  EQ-UI (station 3); no code.
+  EQ-UI (station 3); no code. Delivered 2026-09-29: **H3 EQ-UI plan**
+  `docs/plans/2026-09-29-eq-ui-lane-plan.md`; **H4 SWEEP** research
+  `docs/research/2026-09-29-sweep-ir-app.md` and plan
+  `docs/plans/2026-09-29-sweep-ir-lane-plan.md`. The research doc corrects
+  the H4 lane's name: `docs/dsp/2026-08-30-sweep-ir-l4a.md:22` already uses
+  "L4c" for a different scope (IR gate, min/excess-phase display, offline
+  WAV), so H4 is called **SWEEP**, not L4c.
 
 Sequential (hot — each shares `MainComponent*` or another hot file with the
 next, so these run one at a time, in this order):
