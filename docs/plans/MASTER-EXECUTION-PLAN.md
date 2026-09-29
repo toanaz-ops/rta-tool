@@ -32,9 +32,9 @@ line.
 | 11 | L6b multichannel | done | routing matrix (roles, AVG column) `view/RoutingMatrix.cpp`; rows follow the device channel count (PR #58). **Gap:** TF slots 1..7 unreachable (row 2); `CaptureSequencer` has no caller (deferred) | BUILT (partial) | report 006; PR #58 |
 | 12 | L-API remote API | done | **none.** `MainComponent.cpp:189` builds `ApiSettings` with `enabled=false`; no config file, environment variable or UI reads it — enabling it means editing that line and rebuilding | CORE ONLY | report 008; PR #16, #18 |
 | 13 | L7-OUT output engine | done | LOCATE only (`MainComponent.cpp:101` → `MainComponentDelay.cpp:15`: pink noise, output channel 1, one-shot). No output / generator control an operator can choose | BUILT (partial) | report 007 |
-| 14 | L7-FIR FIR design/export | done | none today; EXPORT FIR TXT/WAV arrive with EQ-UI | IN PROGRESS | H3a `app/eq-ui` building; plan `docs/plans/2026-09-29-eq-ui-lane-plan.md` |
+| 14 | L7-FIR FIR design/export | done | ~~none today; EXPORT FIR TXT/WAV arrive with EQ-UI~~ **updated after #64:** EQ pane button `MainComponentPanes.cpp:47` → EXPORT FIR TXT / EXPORT FIR WAV `view/EqPaneView.cpp:65,66` → `exportFirTextClicked` `MainComponentEq.cpp:71` / `exportFirWavClicked` `:80` (FIR PHASE and FIR LENGTH must be answered first, `canExportFir`; tap counts even again after #62/#63) | BUILT (was IN PROGRESS at `34fd38e`) | H3 `app/eq-ui`, PR #60 (wave A) + #62 + #63; plan `docs/plans/2026-09-29-eq-ui-lane-plan.md` |
 | 15 | L7-DELAY | done | LOCATE `MainComponent.cpp:101` → APPLY `:105` (`MainComponentDelay.cpp:15,112`) | BUILT | report 007 |
-| 16 | L7-EQ | done | none today: `EqSession` has no caller outside `measure/` | IN PROGRESS | H3a, same plan as row 14 |
+| 16 | L7-EQ | done | ~~none today: `EqSession` has no caller outside `measure/`~~ **updated after #64:** EQ pane button `MainComponentPanes.cpp:47` (declared `MainComponent.h:314`); pane built by `PaneFactory.cpp:27-30`; AUTO EQ `view/EqPaneView.cpp:59` → `EqPaneModel::runAutoEq` `measure/EqPaneModel.cpp:135`; SUGGEST `EqPaneView.cpp:60` → `EqPaneModel::suggest` `:148`; VERIFY `EqPaneView.cpp:68` → `EqVerifyRunner::press` `measure/EqVerifyRunner.cpp:120`; ADOPT `EqPaneView.cpp:72` → `EqVerifyRunner::adopt` `:275`; `wireEqVerify()` called at `MainComponent.cpp:157`. **Not verified on hardware:** VERIFY needs a live device (speaker on output 1, mic, loopback REF); SYNTHETIC refuses it by design | BUILT (was IN PROGRESS at `34fd38e`) | H3 `app/eq-ui`, PR #60 (wave A), #64 (wave B); ctest proves the runner, a human try of VERIFY is pending (`docs/HUMAN-QA-QUEUE.md`) |
 | 17 | L7-ALIGN | done (core + headless `AlignmentWizard`) | none: `AlignmentWizard` is constructed nowhere in `app/src` | PLANNED | H5 `app/align-ui`; its full result also needs H4's IR |
 | 18 | L7-XOVER crossover pane | done | XOVER pane button `MainComponentPanes.cpp:44`, built by `PaneFactory.cpp:19-24` | BUILT | PR #45 |
 | 19 | P9 productization | no | none | NOT STARTED | i18n, installers, manual |
@@ -60,13 +60,31 @@ Notes on (c):
   gaps in rows 1, 9, 11, 13 (no scheduled lane adds a generator panel, a
   multi-pane selector or TF-slot assignment).
 
+**Updated after #64 (origin/main `9e5bf55`, 2026-09-29).** The table above
+keeps its `34fd38e` numbers; this block restates them with the same formulas
+and the same equal-weight caveat. Rows 14 and 16 flip to BUILT (H3 EQ-UI,
+PRs #60, #62, #63, #64); every other row is unchanged.
+
+| | formula | list counted | value at `34fd38e` | value after #64 |
+|---|---|---|---|---|
+| (a) engine built | engine done / 19 | unchanged: 15 rows | 15 / 19 = 78.9 % | **15 / 19 = 78.9 %** |
+| (b) operator-reachable (BUILT + partial) | / 19 | rows 1, 2, 3, 7, 9, 10, 11, 13, 14, 15, 16, 18 = 12 | 10 / 19 = 52.6 % | **12 / 19 = 63.2 %** |
+| (b-strict) BUILT, no partial flag | / 19 | rows 2, 3, 7, 10, 14, 15, 16, 18 = 8 | 6 / 19 = 31.6 % | **8 / 19 = 42.1 %** |
+| (c) projection, H4-H6 landed | (b) + units the remaining lanes flip | 12 + H5 (row 17) + H6 (row 4) = 14 | 14 / 19 = 73.7 % | **14 / 19 = 73.7 %** |
+
+(c) does not move because H3 was already inside the earlier projection: it
+has now been measured instead of projected. What is left in (c) is H5 and H6;
+H4 SWEEP still flips nothing by itself. Rows 14 and 16 count as strict BUILT
+because the operator path exists and ctest proves the runner; the
+real-hardware VERIFY try is unmeasured and sits in the QA queue.
+
 **Gaps found while verifying (none appears in an earlier status table):**
 1. `RoutingMatrix::setActiveTransferFunction` has zero callers — TF slots 1..7
    are unreachable, so multichannel can average positions into one TF but
    cannot address a second one. No lane schedules the fix.
 2. L-API's on/off switch is a source edit; "BUILT and MERGED" (2026-09-18)
    was true of the engine, and the operator path is none.
-3. No generator control exists beyond LOCATE and, from H3a, VERIFY.
+3. No generator control exists beyond LOCATE and, from H3 (#64), VERIFY. **updated after #64:** both play fixed pink noise on output 1 for their own job; the operator still cannot choose a signal, level or output channel.
 
 **Not verified by this pass:** the M2/M7 hardware steps of P1 (a person with
 an interface and a mic), and whether a multi-pane workspace can be produced by
@@ -183,10 +201,20 @@ next, so these run one at a time, in this order):
 `H1 app/session-ux` → `H2 app/routing-matrix-64` → `H3 app/eq-ui` →
 `H4 app/sweep-ir` → `H5 app/align-ui` → `H6 app/rt60-ui`.
 
-**Status: H1 and H2 are next to open. H3, H4, H5 and H6 are PLANNED, not
+~~**Status: H1 and H2 are next to open. H3, H4, H5 and H6 are PLANNED, not
 BUILT** — no code exists yet for EQ-UI, Sweep→IR, ALIGN-UI or RT60 UI; each
 earns "BUILT" only once ctest proves it AND an operator can reach it in
-`rtatool.exe` (2026-09-27 decision 2, this document's own rule above).
+`rtatool.exe` (2026-09-27 decision 2, this document's own rule above).~~
+
+**Status, updated 2026-09-29 after #64:** P1 (#54), P2+P4 (#55), P3 (#53) and
+P5 (#56) merged. **H1 DONE** (`app/session-ux`, #57). **H2 DONE**
+(`app/routing-matrix-64`, #58). **H3 DONE** (`app/eq-ui`, EQ-UI: #60 wave A,
+#62 core FirDesign even-N fix, #63 EQ even tap counts, #64 wave B
+VERIFY/ADOPT) — operator-reachable, see rows 14 and 16 of the status snapshot
+above. **Next lane: H4 SWEEP** (`app/sweep-ir`, plan
+`docs/plans/2026-09-29-sweep-ir-lane-plan.md`). H4, H5 and H6 are PLANNED, not
+BUILT; each earns "BUILT" only once ctest proves it AND an operator can reach
+it in `rtatool.exe` (2026-09-27 decision 2, this document's own rule above).
 
 **Not in this run:** `CaptureSequencer` (still deferred — 2026-09-26 decision,
 table below), MTW storage (item 6 above), D10 (research, unscheduled).
@@ -470,6 +498,8 @@ operator can reach it in `rtatool.exe` is the table in "Status snapshot —
 2026-09-29" above (BUILT there = operator-reachable, CLAUDE.md rule 5); P4 and
 L-API are green here but CORE ONLY there. P7 moved from green to amber: its
 core is built, and its UI (EQ-UI H3a, ALIGN-UI H5) is what is being opened.
+**Updated after #64 (2026-09-29):** the EQ-UI half of P7 is now BUILT (H3, rows 14
+and 16 of the status snapshot); ALIGN-UI (H5) is still open.
 
 `cepstrum / wavelet (G23)` moved OUT of P5 into the DSP lanes, because it is
 DSP. Sitting it beside "draw a trace" confused two layers.

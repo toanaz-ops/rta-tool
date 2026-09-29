@@ -1004,6 +1004,57 @@ originate in this lane's own backlog, not in an owner DEFER:
 
 <!-- Lane-end LOW triage — 2026-09-27, commits on app/lane-end-lows -->
 
+## Lane-end LOW triage — 2026-09-29
+
+Closeout of the EQ-UI phase (H3). Source: the LOW list gathered by the review
+loop across the plan-review-#2 run (PRs #53-#65). Every `file:line` below was
+re-read at `origin/main` `9e5bf55` on 2026-09-29, not copied from the PR body
+that reported it; where a line had moved, the new line is given. Dispositions
+are the closeout session's proposals: **FIX-next-batch** (small, mechanical,
+no owner call), **DEFER** (a real decision or a scheduled lane owns it),
+**NEW-LANE** (an operator-path gap that needs its own lane under CLAUDE.md
+rule 5), **KNOWN-LIMIT** (documented, left as is), **STALE** (already fixed —
+the fixing PR is named). Nothing in this table is a HIGH or MEDIUM.
+
+| # | Finding | File:line at `9e5bf55` | Disposition |
+|---|---|---|---|
+| Z1 | PR #53: `orphan_targets.py` docstrings still say "compiled anywhere" | `grep -n "compiled anywhere" tools/orphan_targets.py` → no match | **STALE** — reworded by #59 |
+| Z2 | XOVER ignores `CaptureMeta.appliedDelaySamples`: a trace STOREd after APPLY, summed with one stored before, gets a wrong relative delay | the field is stored (`app/src/trace/Trace.h:46`) but `CrossoverPaneView.cpp`, `view/CrossoverSurface.cpp`, `trace/VirtualTrace.cpp` and `measure/CrossoverTopology.cpp` never read it (0 matches each); ALIGN reconciles it at `AlignmentWizard.cpp:249-250`. SWEEP traces carry 0, so H4 does not make it reachable | **NEW-LANE** — XOVER delay reconciliation; unscheduled |
+| Z3 | LOCATE hangs in SYNTHETIC: `pollLocatePipeline` waits for `output().renderedSamples()` and SYNTHETIC stops the only caller of `OutputEngine::render` (`platform/src/AudioIo.cpp:147`); `locateWaitingForSettle_` then refuses every later LOCATE and CAL | `MainComponentDelay.cpp:59` (the wait), `:26` (the refusal); no `isSyntheticMode()` guard in the file | **DEFER** — scheduled: H4 SWEEP task T2 (`docs/plans/2026-09-29-sweep-ir-lane-plan.md`) |
+| Z4 | XOVER sums two traces by bin index with no axis check (a 44.1 kHz Open beside a 48 kHz STORE mis-sums silently) | `core/src/dsp/VirtualProcessor.cpp:58-65` (`min(a.size(), b.size())`); `app/src/view/CrossoverPaneView.cpp:141` (`refreshFromLibrary`) admits any visible trace with phase | **DEFER** — scheduled: H4 SWEEP task T7 |
+| Z5 | PR #57 LOW 1: `WorkspaceView.h` comment claimed `paneSpecs`/`normalisePanes` idempotent; `{1,3,5}` drifts 1 float ULP | `app/src/view/WorkspaceView.h:66-78` now says "NOT bitwise in general" and why | **STALE** — comment corrected by #59 |
+| Z6 | PR #57 LOW 2: the STORE MTW clause is gated on the FIRST pane being TRANSFER, so `[rta, transfer, transfer]` names no TRANSFER pane | gate `pane == PaneView::Transfer` at `MainComponentStore.cpp:186` (was `:182`); `pane` is `currentPaneView()` (`:146`), which tracks the first pane only (`:55` comment). A multi-pane workspace exists only after OPEN (Z14) | **KNOWN-LIMIT** — revisit with the multi-pane NEW-LANE |
+| Z7 | PR #57 LOW 3: "TRANSFER N" in the STORE readout numbers among TRANSFER panes, not workspace positions | `MainComponentStore.cpp:113` | **KNOWN-LIMIT** — same trigger as Z6 |
+| Z8 | PR #57 LOW 4: `forceExportThrowForTest_` is the first behavioural test flag in a production class; the pattern is not written down where the next author looks | flag `MainComponent.h:298`, consumers `MainComponentSpl.cpp:166,187`, seam `MainComponentTestAccess.h:186-187` | **FIX-next-batch** — one comment in the `MainComponentTestAccess.h` header |
+| Z9 | Pre-existing flake: `routing_live` "Apply rebuilds and takes effect", `CHECK_FALSE(coherence.has_value())` failing about 1 in 20 under load | was `test_delay_locate.cpp:149`; the ring still held pre-Apply audio | **STALE** — fixed in the test by #59 (50/50 alone, 25/25 loaded) |
+| Z10 | Operator-path gap: TF slots 1..7 unreachable. `RoutingMatrix::setActiveTransferFunction` has zero callers; its reader `activeTfIndex_` is always 0; the session store writes no `tfIndex`. Multi-TF cannot be called BUILT without a picker | `app/src/view/RoutingMatrix.h:84` (the only mention in `app/src`) | **NEW-LANE** — TF slot picker |
+| Z11 | PR #58 LOW: the no-device `main-live.png` shows an empty matrix (it used to show 8 blank rows) | `tools/snapshot.cpp` never gives the matrix channel names; rows follow the count at `app/src/view/RoutingMatrix.cpp:93` | **FIX-next-batch** — feed names in the snapshot tool |
+| Z12 | Pre-existing flake (15 % alone): STORE `mixed` section, `readout.contains("screen shows MTW on")` false 3 in 20 — the first fixed-FFT frame has no transfer block yet | was `test_main_component_store.cpp:170-172` | **STALE** — helper now waits for `hasReference && transfer && mtw`, #59 (50/50, 25/25 loaded) |
+| Z13 | PR #59 builder LOW: the comment on the "nothing to freeze on this pane" branch calls it unreachable; it is reachable in the first fixed-FFT frame after start. The refusal is stated, so behaviour is right | `app/src/MainComponentStore.cpp:160-163` (comment), refusal `:164` | **FIX-next-batch** — hot file; batch with H4's `MainComponentStore.cpp` edit |
+| Z14 | Operator-path gap: a multi-pane workspace can be produced only by OPEN; the selector always builds ONE pane | `app/src/MainComponentPanes.cpp:44-47` (each button calls `selectPaneView`, one pane) | **NEW-LANE** — multi-pane selector |
+| Z15 | Operator-path gap: L-API is CORE ONLY — `ApiSettings` is built with `enabled=false` and no config file, environment variable or UI reads it; enabling it means editing that line and rebuilding | `app/src/MainComponent.cpp:190` (the master plan's snapshot cites `:189`; the comment block above it is `:184-189`) | **NEW-LANE** — L-API enable switch |
+| Z16 | Operator-path gap: no generator or output control beyond LOCATE; VERIFY also plays fixed pink noise (-12 dBFS, output 1). The operator cannot pick a signal, a level or an output channel | `app/src/MainComponentDelay.cpp:35-37` (LOCATE), `app/src/measure/EqVerifyRunner.cpp:148` (VERIFY) | **NEW-LANE** — generator/output control |
+| Z17 | PR #60 L1: an isolated trusted bin sets the y-range but `curvePath` draws a 1-bin run as nothing (one `startNewSubPath`, no `lineTo`), so the axis follows an invisible point (a 120 dB axis in the synthetic STORE specimen) | `app/src/view/EqChartRenderer.cpp:144-161` (`scan`), `:46-63` (`curvePath`) | **FIX-next-batch** |
+| Z18 | Note: after the core even-N `FirDesign` fix, the EQ picker returns to plan D9's even sizes 1024/4096/6144/8192; FIR record §4, the memory note and its index line must lose their "until the core fix lands" clause | `docs/dsp/2026-09-06-l7-fir-export.md`, `memory/a-size-class-no-test-uses-is-an-unverified-size-class.md`, `memory/MEMORY.md` | **STALE** — done by #62 + #63 (#63's body lists the four files) |
+| Z19 | Seen again on #60's base: `test_main_component_store.cpp:120` "STORE press landed nothing" (2 reds under load) | line 120 sits in the STORE helper that #59 fixed | **STALE** — #59; no red seen on main since. Re-open if it returns |
+| Z20 | Flake on main pushes (`ae5f43e`, `34fd38e`, `2def288`): `test_spl_log_wiring_disable.cpp` `totalBlocks == kBlocks` failed 19 == 20 | was `:196`, now `:210` | **STALE** — fixed in the test by #65 (200/200 repeats) |
+| Z21 | PR #65 LOW 1: the fix relies on `AnalysisThreadSpl.cpp` resetting `blockCounts` only AFTER `logPipeline.disable()` joins; only a comment guards that order | `app/src/measure/AnalysisThreadSpl.cpp:141` (`disable`), `:148` (reset), comment `:145` | **DEFER** — a test would need a probe seam; the comment is the guard for now |
+| Z22 | PR #65 LOW 2: the test comment points at "this test's own header comment", but the prose lives in the TEST_CASE's leading comment | `app/tests_juce/test_spl_log_wiring_disable.cpp:198-199` | **FIX-next-batch** |
+| Z23 | PR #65 LOW 3: wording of the probe placement | PR #65 body only | **STALE** — fixed in the PR body |
+| Z24 | PR #64 (a): destroying `MainComponent` mid-VERIFY does not disarm the excitation — `EqVerifyRunner` has no destructor, `audioIo_` outlives `eq_`, the device closes at exit | no `~EqVerifyRunner` in `app/src/measure/EqVerifyRunner.h` or `.cpp` | **FIX-next-batch** — a speaker on a live rig; fold into Z25 |
+| Z25 | PR #64 (b): the output-owner expression is copy-pasted in 4 places and `verifyBusy()` read in 3; H4 must edit every one | `locateWaitingForSettle_ \|\| locateCaptureArmed_ \|\| calibrationCaptureArmed_` at `MainComponentCalibration.cpp:94,110`, `MainComponentDelay.cpp:26`, `MainComponentEqVerify.cpp:26`; `eq_.verifyBusy()` at `MainComponentCalibration.cpp:90,106`, `MainComponentDelay.cpp:19` | **FIX-next-batch** — first task of H4: one "output owner" accessor, then SWEEP adds itself to it |
+| Z26 | PR #64 (c): ADOPT stays enabled after an `inputsUnchanged()` refusal | `EqVerifyRunner.cpp:280-283` sets `outcome_`, but `canAdopt()` (`:77-80`) ignores it | **DEFER** — harmless (a second press refuses again for the same reason); fix with the next EQ-pane edit |
+| Z27 | PR #64 (d): `trySubmit` reports a pick change to a different-grid trace as "live fftSize or sample rate changed mid-run" | `EqVerifyRunner.cpp:234-237` (size test; message at `:236`) | **DEFER** — wording; with Z26 |
+| Z28 | PR #64 (e): the Settling state has no timeout | `EqVerifyRunner.cpp:186-192` (no `stalled()` check, unlike Waiting and Measuring) | **DEFER** — bounded in practice by the device-stopped abort (`:165`); needs the real-hardware try (human-try row B) first |
+| Z29 | PR #64 (f): `EqVerifyRunner.h` is 170 lines, the plan text says 167 | `app/src/measure/EqVerifyRunner.h` (170 lines), `docs/plans/2026-09-29-eq-ui-lane-plan.md:193` | **FIX-next-batch** — one number in the plan |
+| Z30 | Pre-existing flake: `rtatool_snapshot` exits 1 intermittently, "fewer than two STORE presses landed in the library" (main 1 in 4, #64 head 3 in 6); likely the same first-frame-no-transfer race #59 fixed in tests | `tools/snapshot_xover.cpp:117` (the failure); no wait for a transfer block before the STORE presses | **FIX-next-batch** — give `snapshot_xover` the wait #59 gave the test helper |
+| Z31 | Stale doc: `docs/HANDOFF.md:37` said no generator control exists beyond LOCATE; VERIFY now plays pink noise too, and there is still no operator generator control | was `docs/HANDOFF.md:37`, now `:115` after this PR's new top entry | **STALE** — struck through and reworded in this PR |
+
+**Count by disposition (31 rows):** FIX-next-batch 9, DEFER 6,
+NEW-LANE 5, KNOWN-LIMIT 2, STALE 9.
+
+<!-- Lane-end LOW triage — 2026-09-29, closeout of EQ-UI (H3) -->
+
 ## Từ phiên EP06 (2026-08-30)
 
 - [ ] **`[!]` ISO 3382-1 — mua, hay dựng từ nguồn mở? CHỦ NHÂN HOÃN CÓ CHỦ Ý.**

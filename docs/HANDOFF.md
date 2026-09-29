@@ -5,6 +5,84 @@
 
 ---
 
+# 2026-09-29 (tối) — **Phase EQ-UI (H3) BUILT, operator-reachable. Mười ba PR merge, main = `9e5bf55`.**
+
+*H3 `app/eq-ui` xong: EQ pane với AUTO EQ, SUGGEST, EXPORT FIR TXT/WAV, VERIFY, ADOPT. Kế tiếp là H4 SWEEP.*
+
+## Phần trăm sau #64
+
+Cùng công thức và cùng cách đếm (unit trọng số bằng nhau, không phải phần trăm
+công sức) như mục "Status snapshot — 2026-09-29" của
+`docs/plans/MASTER-EXECUTION-PLAN.md`; block "Updated after #64" ở đó giữ nguyên
+số cũ bên cạnh số mới. Hàng 14 (L7-FIR) và 16 (L7-EQ) chuyển sang BUILT.
+
+| | lúc `34fd38e` | sau #64 |
+|---|---|---|
+| (a) engine built | 15 / 19 = 78.9 % | 15 / 19 = 78.9 % |
+| (b) operator-reachable (BUILT, gồm partial) | 10 / 19 = 52.6 % | **12 / 19 = 63.2 %** |
+| (b-strict) BUILT không partial | 6 / 19 = 31.6 % | **8 / 19 = 42.1 %** |
+| (c) dự phóng sau H4–H6 | 14 / 19 = 73.7 % | 14 / 19 = 73.7 % (H3 đã đo, không còn là dự phóng) |
+
+## PR đã merge trong đợt này (đối chiếu bằng `gh pr view N --json title,mergeCommit`)
+
+| PR | merge | what |
+|---|---|---|
+| #53 | `3894a17` | `orphan_check` D4 (wording), D5 (prefixed literal trong `cpp_text`) |
+| #54 | `75405d4` | Plan review #2 — quyết định và thứ tự lane |
+| #55 | `2def288` | Ghi trace blob atomic, validate trace id, SPL writer báo lỗi khi không mở được file |
+| #56 | `0fbe329` | Research + plan SWEEP, plan EQ-UI |
+| #57 | `8cb4134` | Session UX (H1): lưu mọi pane, hỏi trước khi ghi đè, readout STORE theo từng pane, test export-failure |
+| #58 | `cddea78` | Routing matrix: hàng theo số kênh của device, xoá role cũ khi đổi device (H2) |
+| #59 | `34fd38e` | Sửa hai flake timing + LOW doc |
+| #60 | `ae5f43e` | EQ pane wave A: AUTO EQ, SUGGEST, EXPORT FIR (T0 `autoOffsetDb`) |
+| #61 | `c949df9` | Status snapshot 2026-09-29 (roadmap percent) |
+| #62 | `e4b3c22` | `core`: `FirDesign` với N chẵn (DC gain từng bị 2x) — từ phiên riêng |
+| #63 | `1409e5b` | EQ lại cho chọn tap chẵn `{1024, 4096, 6144, 8192}` sau #62 |
+| #64 | `9e5bf55` | EQ wave B: VERIFY và ADOPT |
+| #65 | `a71a04d` | Flake tắt SPL log (`19 == 20`) — từ phiên riêng |
+
+## Baseline (measured, không copy)
+
+- **Tally cục bộ gần nhất, tại head của PR #64 (`f6545a5`, trên nền `1409e5b`):** OFF (`RTA_BUILD_APP=OFF`) **1102 / 1102**; ON (`RTA_BUILD_APP=ON`) **1309 / 1309** ở lần chạy trước commit đổi tên cuối, lần sau đó có 1 fail đúng là flake SPL-log mà #65 đã sửa; warnings theo pattern CI `warning( [A-Z]+[0-9]+)?:` = **0**. Đây là số của `f6545a5`, không phải của `9e5bf55` (merge commit).
+- **CI trên main (`gh run list --branch main --limit 4`, lúc viết):** `9e5bf55` — run `36593844129` (CI) đang chạy, `36593844099` (CI app ON) đang pending; `a71a04d` — CI `36593086269` **success**, app ON `36593086128` đang chạy; `1409e5b` — cả CI `36584292762` và app ON `36584292724` **success**. Chưa có run xanh đầy đủ cho `9e5bf55` khi viết: phiên sau chạy lại lệnh trên trước khi tin hoặc trích số này.
+
+## Human try — MỘT việc thử trước
+
+Không cần phần cứng. Trong `rtatool.exe`:
+
+1. Bật **SYNTHETIC**, chọn pane **TRANSFER**, bấm **STORE**.
+2. Chọn pane **EQ**, ở combo measurement chọn trace **`TRANSFER @ hh:mm:ss`**.
+3. Bấm **AUTO EQ**. Sẽ thấy: status `AUTO EQ: N filter(s) -- see the ghost curve`, danh sách filter đã commit, đường ghost trên biểu đồ.
+4. Đổi combo **BANDS** sang 2, bấm **AUTO EQ** lần nữa: danh sách còn tối đa 2 filter.
+5. Trả lời **FIR PHASE = Linear** và **FIR LENGTH = 4096** (nút EXPORT FIR bị tắt cho tới khi cả hai được chọn), bấm **EXPORT FIR TXT**, lưu file (tên gợi ý `eq_48000Hz_4096taps_lin.txt` trong thư mục export `fir`).
+6. Mở file. Sẽ thấy các dòng header `# sample_rate_hz`, `# taps`, `# phase`: `48000`, `4096`, `linear`, rồi `# group_delay_samples` (chỉ có với Linear), rồi dòng `# --- coefficients follow ---` và 4096 hệ số.
+
+Nếu trục y của biểu đồ trông rộng bất thường (tới ~120 dB) thì đó là LOW đã biết Z17 trong `docs/HUMAN-QA-QUEUE.md`, chỉ là thẩm mỹ.
+
+**Hàng B (cần phần cứng) — VERIFY:** loa ở output 1, mic, loopback REF. Trình tự: LOCATE → APPLY → TRANSFER → STORE → EQ → AUTO EQ → chỉnh processor theo danh sách filter → **VERIFY** → đọc `VERIFY: x of y bins trusted, z flagged; residual a -> b dB` → **ADOPT**. **SYNTHETIC từ chối VERIFY theo thiết kế** (nó dừng device nên excitation không bao giờ phát ra). Đây là bằng chứng end-to-end duy nhất của VERIFY: mọi test CI phát excitation qua một `OutputEngine` đứng riêng.
+
+## Quyết định chờ chủ nhân (không cái nào chặn build)
+
+1. Thử VERIFY trên phần cứng thật (hàng B ở trên), và sau này thử SWEEP — cả hai cần người và một interface.
+2. Xếp các lane NEW-LANE (TF slot picker, L-API enable switch, generator/output control, multi-pane selector, XOVER `appliedDelaySamples`) **trước hay sau H4**. Khuyến nghị: sau H4. H4 sửa cùng các file hot (`MainComponent*`) và task đầu của nó đã là dọn output-owner (xem pitfall bên dưới); chen một lane khác vào giữa làm tăng nguy cơ xung đột `MainComponent.h` (đang sát trần 400 dòng) mà không mở khoá gì H4 cần. Cái giá của việc chờ: TF slot 1..7 và L-API còn "CORE ONLY / partial" thêm một lane nữa. Không cái nào không đảo ngược được.
+3. Bảng LOW `docs/HUMAN-QA-QUEUE.md` mục "Lane-end LOW triage — 2026-09-29": 31 dòng (9 FIX-next-batch, 6 DEFER, 5 NEW-LANE, 2 KNOWN-LIMIT, 9 STALE). Duyệt disposition đề xuất.
+
+## Pitfall học được trong đợt này
+
+- **Báo cáo của planner agent đến dưới dạng agent-message, không nằm trong file `.output`.** Đọc `.output` sẽ thấy trống và tưởng agent chưa xong.
+- **Script mutant phải in `file:line` của test đỏ.** Ở PR #58, script builder tính mọi exit code khác 0 là RED; một flake wall-clock không liên quan dưới tải bị ghi cho mutant, còn test đáng lẽ chứng minh (`latest() != nullptr`) thì rỗng — verifier chạy lại thì GREEN. Xem `memory/a-mutant-counted-red-must-name-the-failing-line.md`.
+- **Hook Write của agent chạy trong worktree cô lập chặn ghi vào worktree khác** (kể cả thư mục scratchpad của phiên khác). Ghi file trung gian vào chính worktree của mình rồi xoá.
+- **Cờ "output owner" bị copy-paste ở 4 + 3 chỗ:** biểu thức `locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_` ở `MainComponentCalibration.cpp:94,110`, `MainComponentDelay.cpp:26`, `MainComponentEqVerify.cpp:26`; `eq_.verifyBusy()` ở `MainComponentCalibration.cpp:90,106`, `MainComponentDelay.cpp:19`. **H4 phải gom chúng vào MỘT accessor trước tiên**, rồi mới thêm SWEEP vào (Z25 trong bảng LOW).
+- LOCATE treo trong SYNTHETIC (không có ai gọi `OutputEngine::render`): H4 task T2 sửa; đừng thử LOCATE dưới SYNTHETIC trước đó.
+
+## Kế tiếp
+
+**H4 `app/sweep-ir` (SWEEP)** — plan `docs/plans/2026-09-29-sweep-ir-lane-plan.md`, research `docs/research/2026-09-29-sweep-ir-app.md` → **H5 `app/align-ui`** → **H6 `app/rt60-ui`**. `CaptureSequencer` vẫn hoãn; MTW storage vẫn chưa xếp lịch.
+
+Handoff dùng chung: `D:\DEV CAVE EP3\shared\handoff\handoff-20260929-rta-eq-ui.md`.
+
+---
+
 # 2026-09-29 (cuối ngày) — **Bảy PR merge, main = `34fd38e`. Dự án: 15/19 unit có engine, 10/19 operator-reachable.**
 
 Trả lời câu hỏi "được bao nhiêu phần trăm": bảng 19 unit, công thức và danh
@@ -32,9 +110,9 @@ phần trăm công sức.
 
 ## Đang làm và kế tiếp
 
-- **Đang làm:** H3a `app/eq-ui` (EQ-UI wave A, xuất FIR) — phiên song song, không đụng các doc trên.
+- ~~**Đang làm:** H3a `app/eq-ui` (EQ-UI wave A, xuất FIR) — phiên song song, không đụng các doc trên.~~ **Sửa 2026-09-29 sau #64:** H3 xong (#60, #62, #63, #64), xem mục đầu file.
 - **Kế tiếp, tuần tự (hot files):** H4 `app/sweep-ir` (SWEEP) → H5 `app/align-ui` → H6 `app/rt60-ui`.
-- **Lỗ hổng mới phát hiện khi verify operator path** (chưa lane nào lo): `RoutingMatrix::setActiveTransferFunction` không có caller nên TF slot 1..7 không với tới được; L-API bật/tắt chỉ bằng sửa `MainComponent.cpp:189` rồi build lại; chưa có control generator nào ngoài LOCATE. P1 vẫn còn T12 hardware M2/M7 chờ người.
+- **Lỗ hổng mới phát hiện khi verify operator path** (chưa lane nào lo): `RoutingMatrix::setActiveTransferFunction` không có caller nên TF slot 1..7 không với tới được; L-API bật/tắt chỉ bằng sửa `MainComponent.cpp:189` rồi build lại; ~~chưa có control generator nào ngoài LOCATE~~ **sửa 2026-09-29 sau #64:** vẫn chưa có control generator nào cho operator chọn (tín hiệu, mức, kênh output) — LOCATE và, từ #64, VERIFY chỉ phát pink noise cố định trên output 1; `MainComponent.cpp:189` nay là `:190`. P1 vẫn còn T12 hardware M2/M7 chờ người.
 
 ---
 
