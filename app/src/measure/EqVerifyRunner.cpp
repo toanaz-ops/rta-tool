@@ -72,14 +72,14 @@ bool EqVerifyRunner::busy() const noexcept {
     return s == VerifyState::Waiting || s == VerifyState::Measuring || s == VerifyState::Settling;
 }
 
-VerifyState EqVerifyRunner::state() const noexcept { return verify_ ? verify_->state() : VerifyState::Idle; }
+VerifyState EqVerifyRunner::stateForTest() const noexcept { return verify_ ? verify_->state() : VerifyState::Idle; }
 
 bool EqVerifyRunner::canAdopt() const noexcept {
     return verify_ && verify_->state() == VerifyState::Done && verify_->report().has_value() &&
            !afterTraceId_.empty();
 }
 
-const std::optional<VerifyReport>& EqVerifyRunner::report() const noexcept {
+const std::optional<VerifyReport>& EqVerifyRunner::reportForTest() const noexcept {
     static const std::optional<VerifyReport> kNone;
     return verify_ ? verify_->report() : kNone;
 }

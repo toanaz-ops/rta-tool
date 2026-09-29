@@ -30,10 +30,10 @@ void requireRefused(Rig& rig, VerifyBlock kind, const std::string& textPart) {
     CHECK(blocker.text.find(textPart) != std::string::npos);
 
     CHECK_FALSE(rig.runner.press());
-    CHECK(rig.runner.lastRefusal() == kind);
+    CHECK(rig.runner.lastRefusalForTest() == kind);
     CHECK(rig.model.status().find("VERIFY refused") != std::string::npos);
     CHECK(rig.model.status().find(textPart) != std::string::npos);
-    CHECK(rig.runner.state() == VerifyState::Idle);
+    CHECK(rig.runner.stateForTest() == VerifyState::Idle);
     CHECK_FALSE(rig.runner.busy());
     // Nothing armed, nothing routed: the refusal came before the engine.
     CHECK(rig.engine.role(0) == rta::platform::OutputRole::None);
@@ -47,7 +47,7 @@ TEST_CASE("VERIFY: a fully-set-up rig is startable, and the excitation is D14's"
     REQUIRE(rig.model.unappliedCount() > 0);
     CHECK(rig.runner.blocker().kind == VerifyBlock::None);
     REQUIRE(rig.runner.press());
-    CHECK(rig.runner.state() == VerifyState::Waiting);
+    CHECK(rig.runner.stateForTest() == VerifyState::Waiting);
     CHECK(rig.runner.busy());
     // D14: output 0, and the level/corridor/sigma constants the plan names.
     CHECK(rig.engine.role(0) == rta::platform::OutputRole::Routed);
@@ -162,9 +162,9 @@ TEST_CASE("VERIFY refuses when the engine is not quiescent, and leaves the other
 
     CHECK(rig.runner.blocker().kind == VerifyBlock::None);  // only arm() can see this one
     CHECK_FALSE(rig.runner.press());
-    CHECK(rig.runner.lastRefusal() == VerifyBlock::EngineNotQuiescent);
+    CHECK(rig.runner.lastRefusalForTest() == VerifyBlock::EngineNotQuiescent);
     CHECK(rig.model.status().find("not quiescent") != std::string::npos);
-    CHECK(rig.runner.state() == VerifyState::Idle);
+    CHECK(rig.runner.stateForTest() == VerifyState::Idle);
     CHECK_FALSE(rig.runner.busy());
     CHECK(rig.engine.role(1) == rta::platform::OutputRole::Routed);  // theirs, untouched
     CHECK(rig.engine.role(0) == rta::platform::OutputRole::None);    // VERIFY's, never taken
@@ -175,8 +175,8 @@ TEST_CASE("VERIFY refuses to start a second run while one is in flight") {
     REQUIRE(rig.runner.press());
     CHECK(rig.runner.blocker().kind == VerifyBlock::Running);
     CHECK_FALSE(rig.runner.press());
-    CHECK(rig.runner.lastRefusal() == VerifyBlock::Running);
-    CHECK(rig.runner.state() == VerifyState::Waiting);  // the first run is undisturbed
+    CHECK(rig.runner.lastRefusalForTest() == VerifyBlock::Running);
+    CHECK(rig.runner.stateForTest() == VerifyState::Waiting);  // the first run is undisturbed
 }
 
 TEST_CASE("VERIFY without an attached engine says so instead of dereferencing null") {

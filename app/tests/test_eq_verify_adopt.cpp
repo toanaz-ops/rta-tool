@@ -23,7 +23,7 @@ TEST_CASE("ADOPT marks every predicted filter applied and binds the VERIFY trace
     const std::size_t predicted = rig.model.session().committed().size();
     REQUIRE(predicted >= 1);
     REQUIRE(rig.model.unappliedCount() == predicted);
-    const std::string afterId = rig.runner.afterTraceId();
+    const std::string afterId = rig.runner.afterTraceIdForTest();
 
     REQUIRE(rig.runner.adopt());
 
@@ -44,7 +44,7 @@ TEST_CASE("ADOPT marks every predicted filter applied and binds the VERIFY trace
         CHECK(measured[k] == rig.post->transfer->magnitudeDb[k]);
     }
 
-    CHECK(rig.runner.outcome() == VerifyOutcome::Adopted);
+    CHECK(rig.runner.outcomeForTest() == VerifyOutcome::Adopted);
     CHECK_FALSE(rig.runner.canAdopt());  // one result, adopted once
     CHECK(rig.model.status().find("ADOPT: " + std::to_string(predicted) + " filter(s)") != std::string::npos);
 
@@ -68,7 +68,7 @@ TEST_CASE("ADOPT refuses, changing nothing, when the filter list changed since V
         REQUIRE(rig.runToDone());
         rig.model.clearFilters();
         CHECK_FALSE(rig.runner.adopt());
-        CHECK(rig.runner.outcome() == VerifyOutcome::InputsChanged);
+        CHECK(rig.runner.outcomeForTest() == VerifyOutcome::InputsChanged);
         CHECK(rig.model.measurement().id == "bump");
         CHECK(rig.model.status().find("changed since VERIFY") != std::string::npos);
     }

@@ -80,7 +80,7 @@ struct LiveEq {
         engine.prepare(eqfixture::kFs, verifyfixture::kChannels);
         runner = pane->verifyRunnerForTest();
         REQUIRE(runner != nullptr);
-        auto host = runner->host();
+        auto host = runner->hostForTest();
         const auto realEnvironment = host.environment;
         host.environment = [realEnvironment] {
             auto env = realEnvironment();  // the component's own synthetic and LOCATE/CAL flags
@@ -139,7 +139,7 @@ TEST_CASE("VERIFY on the real pane in SYNTHETIC mode is refused by name, and bot
     CHECK(pane->readoutForTest().contains("VERIFY off:"));
     CHECK(pane->readoutForTest().contains("SYNTHETIC"));
     CHECK_FALSE(runner->press());
-    CHECK(runner->lastRefusal() == VerifyBlock::Synthetic);
+    CHECK(runner->lastRefusalForTest() == VerifyBlock::Synthetic);
 }
 
 TEST_CASE("VERIFY in LIVE mode with no device open is refused as a stopped device, not as SYNTHETIC",
@@ -165,7 +165,7 @@ TEST_CASE("the VERIFY and ADOPT buttons drive a full run through the 2 Hz poll",
     REQUIRE(rig.pane->verifyButtonForTest().isEnabled());
     CHECK_FALSE(rig.pane->adoptButtonForTest().isEnabled());
     rig.pane->verifyButtonForTest().onClick();
-    CHECK(rig.runner->state() == VerifyState::Waiting);
+    CHECK(rig.runner->stateForTest() == VerifyState::Waiting);
     CHECK(rig.engine.role(0) == rta::platform::OutputRole::Routed);  // D14: output 0
     CHECK_FALSE(rig.pane->verifyButtonForTest().isEnabled());        // running: not pressable again
     CHECK(rig.pane->readoutForTest().contains("VERIFY: pink noise"));
@@ -173,21 +173,21 @@ TEST_CASE("the VERIFY and ADOPT buttons drive a full run through the 2 Hz poll",
     // timerCallback -> eq_.pollVerify(): the ONLY thing that advances a run.
     rig.render(1);
     rig.tick();
-    CHECK(rig.runner->state() == VerifyState::Measuring);
+    CHECK(rig.runner->stateForTest() == VerifyState::Measuring);
     rig.render(130);  // past 512 + depth * fftSize rendered samples
     rig.tick();
-    CHECK(rig.runner->state() == VerifyState::Settling);
+    CHECK(rig.runner->stateForTest() == VerifyState::Settling);
     CHECK_FALSE(rig.pane->adoptButtonForTest().isEnabled());
     rig.render(8);
     rig.tick();
-    REQUIRE(rig.runner->state() == VerifyState::Done);
+    REQUIRE(rig.runner->stateForTest() == VerifyState::Done);
     CHECK(rig.pane->readoutForTest().contains("VERIFY: "));
     CHECK(rig.pane->readoutForTest().contains("0 flagged"));
     REQUIRE(rig.pane->adoptButtonForTest().isEnabled());  // ADOPT lights at Done
 
     rig.pane->adoptButtonForTest().onClick();
     CHECK(model.unappliedCount() == 0);
-    CHECK(model.measurement().id == rig.runner->afterTraceId());
+    CHECK(model.measurement().id == rig.runner->afterTraceIdForTest());
     CHECK_FALSE(rig.pane->adoptButtonForTest().isEnabled());
     // The after-measurement is in the library, in group EQ.
     const auto* entry = MainComponentTestAccess::libraryForTest(rig.component).entry(model.measurement().id);
@@ -207,7 +207,7 @@ TEST_CASE("LOCATE refuses while a VERIFY runs, and leaves VERIFY's excitation al
     CHECK(readout.contains("VERIFY"));
     CHECK_FALSE(readout.contains("locating"));
     // VERIFY is undisturbed.
-    CHECK(rig.runner->state() == VerifyState::Waiting);
+    CHECK(rig.runner->stateForTest() == VerifyState::Waiting);
     CHECK(rig.runner->busy());
 }
 
@@ -242,7 +242,7 @@ TEST_CASE("VERIFY refuses while LOCATE runs (the component's own flag reaches th
 
     CHECK(rig.runner->blocker().kind == VerifyBlock::CaptureBusy);
     CHECK_FALSE(rig.runner->press());
-    CHECK(rig.runner->lastRefusal() == VerifyBlock::CaptureBusy);
+    CHECK(rig.runner->lastRefusalForTest() == VerifyBlock::CaptureBusy);
     CHECK_FALSE(rig.runner->busy());
     CHECK(rig.engine.role(0) == rta::platform::OutputRole::None);  // VERIFY's engine untouched
     rig.tick();
@@ -257,6 +257,6 @@ TEST_CASE("VERIFY refuses while CAL owns the shared capture", "[main_component_e
 
     CHECK(rig.runner->blocker().kind == VerifyBlock::CaptureBusy);
     CHECK_FALSE(rig.runner->press());
-    CHECK(rig.runner->lastRefusal() == VerifyBlock::CaptureBusy);
+    CHECK(rig.runner->lastRefusalForTest() == VerifyBlock::CaptureBusy);
     CHECK_FALSE(rig.runner->busy());
 }

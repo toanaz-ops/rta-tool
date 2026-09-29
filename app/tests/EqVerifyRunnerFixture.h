@@ -140,8 +140,8 @@ struct Rig {
     }
     /// Pumps until `state` (bounded), returning whether it was reached.
     bool pumpUntil(rta::measure::VerifyState state, int maxBlocks = 400) {
-        for (int b = 0; b < maxBlocks && runner.state() != state; ++b) pump(1);
-        return runner.state() == state;
+        for (int b = 0; b < maxBlocks && runner.stateForTest() != state; ++b) pump(1);
+        return runner.stateForTest() == state;
     }
     /// press + run to Done (the pre/post physics does the rest).
     bool runToDone() {

@@ -46,10 +46,10 @@ TEST_CASE("VERIFY: the dwell is depth * fftSize / fs, 1.365 s at the defaults (A
 TEST_CASE("VERIFY never submits a snapshot earlier than the dwell after Measuring, and never the pre-excitation one") {
     Rig rig;
     REQUIRE(rig.runner.press());
-    CHECK(rig.runner.state() == VerifyState::Waiting);
+    CHECK(rig.runner.stateForTest() == VerifyState::Waiting);
 
     rig.pump(1);  // 512 rendered: past the 10 ms (480 sample) settle, Measuring is observed here
-    REQUIRE(rig.runner.state() == VerifyState::Measuring);
+    REQUIRE(rig.runner.stateForTest() == VerifyState::Measuring);
     const std::uint64_t measuringAt = rig.engine.renderedSamples();
     CHECK(measuringAt == static_cast<std::uint64_t>(kBlock));
 
@@ -59,19 +59,19 @@ TEST_CASE("VERIFY never submits a snapshot earlier than the dwell after Measurin
     // from Measuring) would submit here -- and one with no dwell long before.
     while (rig.engine.renderedSamples() + kBlock < measuringAt + dwellSamples()) rig.pump(1);
     CHECK(rig.engine.renderedSamples() >= dwellSamples());  // the post snapshot IS being served
-    CHECK(rig.runner.state() == VerifyState::Measuring);
-    CHECK_FALSE(rig.runner.report().has_value());
+    CHECK(rig.runner.stateForTest() == VerifyState::Measuring);
+    CHECK_FALSE(rig.runner.reportForTest().has_value());
     CHECK(rig.freezes == 0);
 
     rig.pump(1);  // the dwell since Measuring is now complete
-    REQUIRE(rig.runner.state() == VerifyState::Settling);
-    REQUIRE(rig.runner.report().has_value());
+    REQUIRE(rig.runner.stateForTest() == VerifyState::Settling);
+    REQUIRE(rig.runner.reportForTest().has_value());
     CHECK(rig.engine.renderedSamples() == measuringAt + dwellSamples());
 
     // What was submitted is the POST room: it sits on its own prediction. The
     // pre-excitation room would have missed the prediction by the whole
     // correction (a bump of 8 dB against a corridor of 3).
-    const auto& report = *rig.runner.report();
+    const auto& report = *rig.runner.reportForTest();
     CHECK(report.flaggedCount == 0);
     for (const auto& bin : report.bins) CHECK(std::abs(bin.deltaDb) < 1e-4);
 }
@@ -84,28 +84,28 @@ TEST_CASE("VERIFY: the pre-excitation snapshot, submitted, would report the unch
     rig.serveAlwaysPre = true;  // the FIFO never turns over
     REQUIRE(rig.runner.press());
     rig.pump(1);
-    REQUIRE(rig.runner.state() == VerifyState::Measuring);
+    REQUIRE(rig.runner.stateForTest() == VerifyState::Measuring);
     rig.pump(300);  // long past the dwell in rendered samples: it submits what it is served
-    REQUIRE(rig.runner.report().has_value());
-    CHECK(rig.runner.report()->flaggedCount > 0);
+    REQUIRE(rig.runner.reportForTest().has_value());
+    CHECK(rig.runner.reportForTest()->flaggedCount > 0);
 }
 
 TEST_CASE("VERIFY: Done reads exactly renderVerifySummary, and the after-measurement lands in group EQ") {
     Rig rig;
     REQUIRE(rig.runToDone());
-    REQUIRE(rig.runner.report().has_value());
-    CHECK(rig.runner.outcome() == VerifyOutcome::Done);
+    REQUIRE(rig.runner.reportForTest().has_value());
+    CHECK(rig.runner.outcomeForTest() == VerifyOutcome::Done);
     CHECK_FALSE(rig.runner.busy());
-    CHECK(rig.model.status() == rta::measure::renderVerifySummary(*rig.runner.report()));
+    CHECK(rig.model.status() == rta::measure::renderVerifySummary(*rig.runner.reportForTest()));
     CHECK(rig.model.status().find("0 flagged") != std::string::npos);
 
-    const auto* entry = rig.library.entry(rig.runner.afterTraceId());
+    const auto* entry = rig.library.entry(rig.runner.afterTraceIdForTest());
     REQUIRE(entry != nullptr);
     CHECK(entry->group == "EQ");
     CHECK(entry->name == "VERIFY @ 12:34:56");
     CHECK(rig.freezes == 1);
     // The trace stored is the snapshot that was compared, not another one.
-    const auto* trace = rig.library.trace(rig.runner.afterTraceId());
+    const auto* trace = rig.library.trace(rig.runner.afterTraceIdForTest());
     REQUIRE(trace != nullptr);
     const auto stored = trace->field(rta::trace::Field::Magnitude);
     REQUIRE(stored.size() == rig.post->transfer->magnitudeDb.size());
@@ -118,15 +118,15 @@ TEST_CASE("VERIFY waits for the coherence gate: a post snapshot without coherenc
     rig.post = verifyfixture::makeSnapshot(withCoherence->transfer->magnitudeDb, {});  // gate not open yet
     REQUIRE(rig.runner.press());
     rig.pump(1);
-    REQUIRE(rig.runner.state() == VerifyState::Measuring);
+    REQUIRE(rig.runner.stateForTest() == VerifyState::Measuring);
     rig.pump(200);  // 200 blocks: far past the dwell
-    CHECK(rig.runner.state() == VerifyState::Measuring);
-    CHECK_FALSE(rig.runner.report().has_value());
+    CHECK(rig.runner.stateForTest() == VerifyState::Measuring);
+    CHECK_FALSE(rig.runner.reportForTest().has_value());
 
     rig.post = withCoherence;  // the gate opens
     rig.pump(1);
-    CHECK(rig.runner.state() == VerifyState::Settling);
-    CHECK(rig.runner.report().has_value());
+    CHECK(rig.runner.stateForTest() == VerifyState::Settling);
+    CHECK(rig.runner.reportForTest().has_value());
 }
 
 TEST_CASE("VERIFY waiting longer than 5000 ms disarms and says so") {
@@ -137,14 +137,14 @@ TEST_CASE("VERIFY waiting longer than 5000 ms disarms and says so") {
     // (captureTimedOut compares with >).
     rig.nowMs += 5000.0;
     rig.runner.poll();
-    CHECK(rig.runner.state() == VerifyState::Waiting);
+    CHECK(rig.runner.stateForTest() == VerifyState::Waiting);
     CHECK(rig.runner.busy());
 
     rig.nowMs += 1.0;
     rig.runner.poll();
-    CHECK(rig.runner.state() == VerifyState::Idle);
+    CHECK(rig.runner.stateForTest() == VerifyState::Idle);
     CHECK_FALSE(rig.runner.busy());
-    CHECK(rig.runner.outcome() == VerifyOutcome::TimedOut);
+    CHECK(rig.runner.outcomeForTest() == VerifyOutcome::TimedOut);
     CHECK(rig.model.status().find("timed out") != std::string::npos);
     CHECK(rig.model.status().find("5000 ms") != std::string::npos);
     // It DISARMED: rendering the ramp out brings the engine to quiescence, so
@@ -158,7 +158,7 @@ TEST_CASE("VERIFY: a stalled dwell (no more rendering, no usable snapshot) also 
     Rig rig;
     REQUIRE(rig.runner.press());
     rig.pump(1);
-    REQUIRE(rig.runner.state() == VerifyState::Measuring);
+    REQUIRE(rig.runner.stateForTest() == VerifyState::Measuring);
     const double dwellMs = dwellSeconds() * 1000.0;
 
     // The allowance is dwell + 5000 ms from Measuring. Either side of it by a
@@ -167,12 +167,12 @@ TEST_CASE("VERIFY: a stalled dwell (no more rendering, no usable snapshot) also 
     const double measuringAt = rig.nowMs;
     rig.nowMs = measuringAt + dwellMs + rta::measure::kEqVerifyTimeoutMs - 1.0;
     rig.runner.poll();
-    CHECK(rig.runner.state() == VerifyState::Measuring);
+    CHECK(rig.runner.stateForTest() == VerifyState::Measuring);
 
     rig.nowMs = measuringAt + dwellMs + rta::measure::kEqVerifyTimeoutMs + 1.0;
     rig.runner.poll();
-    CHECK(rig.runner.state() == VerifyState::Idle);
-    CHECK(rig.runner.outcome() == VerifyOutcome::TimedOut);
+    CHECK(rig.runner.stateForTest() == VerifyState::Idle);
+    CHECK(rig.runner.outcomeForTest() == VerifyOutcome::TimedOut);
     rig.renderOnly(8);
     CHECK(rig.engine.sourceIsQuiescent());
 }
@@ -185,7 +185,7 @@ TEST_CASE("VERIFY aborts, disarmed, when the device stops mid-run") {
     rig.env.deviceRunning = false;
     rig.runner.poll();
     CHECK_FALSE(rig.runner.busy());
-    CHECK(rig.runner.outcome() == VerifyOutcome::DeviceStopped);
+    CHECK(rig.runner.outcomeForTest() == VerifyOutcome::DeviceStopped);
     CHECK(rig.model.status().find("device stopped") != std::string::npos);
     rig.renderOnly(8);
     CHECK(rig.engine.sourceIsQuiescent());
@@ -198,7 +198,7 @@ TEST_CASE("VERIFY aborts, disarmed, when the grid changes under it or the operat
         rig.pump(1);
         rig.post = verifyfixture::makeSnapshot(std::vector<float>(1025, 0.0f), rig.coherence, 2048);
         rig.pump(200);
-        CHECK(rig.runner.outcome() == VerifyOutcome::SettingsChanged);
+        CHECK(rig.runner.outcomeForTest() == VerifyOutcome::SettingsChanged);
         CHECK_FALSE(rig.runner.busy());
         rig.renderOnly(8);
         CHECK(rig.engine.sourceIsQuiescent());
@@ -209,7 +209,7 @@ TEST_CASE("VERIFY aborts, disarmed, when the grid changes under it or the operat
         rig.pump(1);
         rig.config.transferAveraging = rta::dsp::TransferAveraging::Exponential;
         rig.pump(200);
-        CHECK(rig.runner.outcome() == VerifyOutcome::SettingsChanged);
+        CHECK(rig.runner.outcomeForTest() == VerifyOutcome::SettingsChanged);
     }
     SECTION("the filter list is edited") {
         Rig rig;
@@ -217,8 +217,8 @@ TEST_CASE("VERIFY aborts, disarmed, when the grid changes under it or the operat
         rig.pump(1);
         rig.model.clearFilters();
         rig.pump(200);
-        CHECK(rig.runner.outcome() == VerifyOutcome::InputsChanged);
-        CHECK_FALSE(rig.runner.report().has_value());
+        CHECK(rig.runner.outcomeForTest() == VerifyOutcome::InputsChanged);
+        CHECK_FALSE(rig.runner.reportForTest().has_value());
         rig.renderOnly(8);
         CHECK(rig.engine.sourceIsQuiescent());
     }
@@ -227,18 +227,18 @@ TEST_CASE("VERIFY aborts, disarmed, when the grid changes under it or the operat
 TEST_CASE("VERIFY builds a FRESH EqVerify per press: a second press after Done is not refused") {
     Rig rig;
     REQUIRE(rig.runToDone());
-    const std::string first = rig.runner.afterTraceId();
+    const std::string first = rig.runner.afterTraceIdForTest();
     REQUIRE_FALSE(first.empty());
 
     // EqVerify::arm refuses unless Idle (EqVerify.cpp), so a reused instance
     // would refuse here with AlreadyRunning.
     REQUIRE(rig.runner.press());
-    CHECK(rig.runner.state() == VerifyState::Waiting);
-    CHECK(rig.runner.lastRefusal() == VerifyBlock::None);
-    CHECK(rig.runner.outcome() == VerifyOutcome::None);
+    CHECK(rig.runner.stateForTest() == VerifyState::Waiting);
+    CHECK(rig.runner.lastRefusalForTest() == VerifyBlock::None);
+    CHECK(rig.runner.outcomeForTest() == VerifyOutcome::None);
     CHECK_FALSE(rig.runner.canAdopt());  // the earlier result is superseded, not adoptable mid-run
     REQUIRE(rig.pumpUntil(VerifyState::Done));
-    CHECK(rig.runner.afterTraceId() != first);
+    CHECK(rig.runner.afterTraceIdForTest() != first);
 }
 
 TEST_CASE("ADOPT is enabled only at Done") {

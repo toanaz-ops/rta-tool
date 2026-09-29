@@ -106,12 +106,12 @@ public:
     /// borrowed. Called by MainComponent (MainComponentEqVerify.cpp).
     void attach(rta::platform::OutputEngine& engine, rta::trace::TraceLibrary& library,
                 EqVerifyHost host);
-    [[nodiscard]] const EqVerifyHost& host() const noexcept { return host_; }
+    [[nodiscard]] const EqVerifyHost& hostForTest() const noexcept { return host_; }
 
     /// Why VERIFY cannot start right now (kind None: it can).
     [[nodiscard]] VerifyBlocker blocker() const;
     /// Idle -> Waiting. false, with the reason in `model.status()` and
-    /// `lastRefusal()`, when blocked or when the engine refuses.
+    /// `lastRefusalForTest()`, when blocked or when the engine refuses.
     bool press();
     /// Advances the run. Called from MainComponent::timerCallback at 2 Hz.
     void poll();
@@ -119,15 +119,18 @@ public:
     /// A run is in flight (Waiting, Measuring or Settling). LOCATE and CAL
     /// read this and refuse while it is true.
     [[nodiscard]] bool busy() const noexcept;
-    [[nodiscard]] VerifyState state() const noexcept;
+    [[nodiscard]] VerifyState stateForTest() const noexcept;
     /// ADOPT is enabled at Done only.
     [[nodiscard]] bool canAdopt() const noexcept;
     bool adopt();
 
-    [[nodiscard]] VerifyBlock lastRefusal() const noexcept { return refusal_; }
-    [[nodiscard]] VerifyOutcome outcome() const noexcept { return outcome_; }
-    [[nodiscard]] const std::optional<VerifyReport>& report() const noexcept;
-    [[nodiscard]] const std::string& afterTraceId() const noexcept { return afterTraceId_; }
+    // Read-back for the tests only (each name is referenced whole-word from
+    // app/tests*; orphan_check's TEST HOOK category). Production reads the
+    // outcome through `model.status()`, which is what the operator sees.
+    [[nodiscard]] VerifyBlock lastRefusalForTest() const noexcept { return refusal_; }
+    [[nodiscard]] VerifyOutcome outcomeForTest() const noexcept { return outcome_; }
+    [[nodiscard]] const std::optional<VerifyReport>& reportForTest() const noexcept;
+    [[nodiscard]] const std::string& afterTraceIdForTest() const noexcept { return afterTraceId_; }
     /// depth * fftSize / fs, in seconds: how long after Measuring the live
     /// transfer FIFO must have been fed the excitation alone (Analyser.h
     /// CaptureConfig::transferFifoDepth).
