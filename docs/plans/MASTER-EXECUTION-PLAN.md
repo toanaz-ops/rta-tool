@@ -7,6 +7,72 @@ session prompt is: "Read docs/plans/MASTER-EXECUTION-PLAN.md lane <X>, then
 docs/reports/README.md, then the decision records it names. Continue the
 pipeline from the current git state."*
 
+## Status snapshot — 2026-09-29
+
+Owner question: "how many percent has the project achieved?" Every "operator
+path" cell below was re-grepped in `app/src` at `origin/main` `34fd38e` — none
+is copied from an older document. **BUILT** = an operator can reach it in
+`rtatool.exe` (CLAUDE.md rule 5, plan review 2026-09-27 decision 2). A status
+of "BUILT (partial)" is counted as BUILT in the headline and is listed again
+in the strict count below. P8 (research lanes) is excluded: it has no finish
+line.
+
+| # | unit | engine (core+tests) | operator path today | status | evidence |
+|---|---|---|---|---|---|
+| 1 | P1 RTA / SPL / generator | done | device START/STOP `view/DevicePanel.cpp:53`; SYNTHETIC toggle `MainComponent.cpp:97`; RTA and SPL pane buttons `MainComponentPanes.cpp:41,43`. **Generator gap:** the only output control is LOCATE's one-shot pink noise (`MainComponent.cpp:101`); no continuous generator / signal-type / level control exists | BUILT (partial) | report 002; T12 hardware steps **M2/M7 still pending a human** (`docs/reports/T12-hardware-run.md`) |
+| 2 | P2 dual-FFT (TRANSFER) | done | TRANSFER pane button `MainComponentPanes.cpp:42`; roles by the routing matrix (`view/RoutingMatrix.cpp:124`). **Gap:** TF slots 1..7 have no operator path — `RoutingMatrix::setActiveTransferFunction` (`RoutingMatrix.h:84`) has zero callers, so every assigned channel gets `tfIndex` 0 | BUILT | report 003 |
+| 3 | P3 MTW | done | MTW / FIXED toggle `view/TransferSourceToggle.cpp:18-19` inside the TRANSFER pane | BUILT | report 005 |
+| 4 | L4a + L4b sweep/IR core | done | none — grep for `rt60`, `schroeder`, `lundeby`, `deconvol` in `app/src` (outside `dev/`) is empty | CORE ONLY | `docs/dsp/2026-08-30-sweep-ir-l4a.md`; SWEEP (H4) and RT60 UI (H6) are PLANNED |
+| 5 | L4c IR gate / min-phase / offline WAV | no (only the `MinimumPhase` / `ExcessPhase` kernels, built for L7-EQ) | none | NOT STARTED | no plan yet; scope at `docs/dsp/2026-08-30-sweep-ir-l4a.md:22` |
+| 6 | P4b THD / STI | no | none | BLOCKED | needs IEC 60268-16 (a purchase); no THD/STI code in `core/` |
+| 7 | L5a trace library + session (STORE, Save/Open) | done | STORE `MainComponent.cpp:146` → `storeClicked` `MainComponentStore.cpp:126`; SAVE `MainComponentSession.cpp:71`; OPEN `:74` | BUILT | PR #43, #51; hardening #55, #57 |
+| 8 | L5b targets / corridor / score | no (dev preview only: `app/src/dev/preview/TargetMatchPreview.cpp`) | none | BLOCKED | needs ISO 2969 or SMPTE ST 202 (a purchase) |
+| 9 | L5c Bode layout + workspaces | done | TRANSFER pane draws the Bode layout (button `MainComponentPanes.cpp:42`). **Partial:** the selector always builds ONE pane (`selectPaneView`); a multi-pane workspace exists only when OPEN restores a saved session (PR #57 saves all panes) | BUILT (partial) | report 004 |
+| 10 | L6a SPL-pro | done | SPL pane `MainComponentPanes.cpp:43`; CAL START `MainComponent.cpp:118`, CAL END `:123`; EXPORT REPORT `:134`; logging starts itself from `pollSplLogging` (`MainComponentSpl.cpp`) | BUILT | report 009; Wave 4b (web viewer) cut 2026-09-25 |
+| 11 | L6b multichannel | done | routing matrix (roles, AVG column) `view/RoutingMatrix.cpp`; rows follow the device channel count (PR #58). **Gap:** TF slots 1..7 unreachable (row 2); `CaptureSequencer` has no caller (deferred) | BUILT (partial) | report 006; PR #58 |
+| 12 | L-API remote API | done | **none.** `MainComponent.cpp:189` builds `ApiSettings` with `enabled=false`; no config file, environment variable or UI reads it — enabling it means editing that line and rebuilding | CORE ONLY | report 008; PR #16, #18 |
+| 13 | L7-OUT output engine | done | LOCATE only (`MainComponent.cpp:101` → `MainComponentDelay.cpp:15`: pink noise, output channel 1, one-shot). No output / generator control an operator can choose | BUILT (partial) | report 007 |
+| 14 | L7-FIR FIR design/export | done | none today; EXPORT FIR TXT/WAV arrive with EQ-UI | IN PROGRESS | H3a `app/eq-ui` building; plan `docs/plans/2026-09-29-eq-ui-lane-plan.md` |
+| 15 | L7-DELAY | done | LOCATE `MainComponent.cpp:101` → APPLY `:105` (`MainComponentDelay.cpp:15,112`) | BUILT | report 007 |
+| 16 | L7-EQ | done | none today: `EqSession` has no caller outside `measure/` | IN PROGRESS | H3a, same plan as row 14 |
+| 17 | L7-ALIGN | done (core + headless `AlignmentWizard`) | none: `AlignmentWizard` is constructed nowhere in `app/src` | PLANNED | H5 `app/align-ui`; its full result also needs H4's IR |
+| 18 | L7-XOVER crossover pane | done | XOVER pane button `MainComponentPanes.cpp:44`, built by `PaneFactory.cpp:19-24` | BUILT | PR #45 |
+| 19 | P9 productization | no | none | NOT STARTED | i18n, installers, manual |
+
+**Percentages.** This is an **equal-weight unit count**: each of the 19 units
+weighs 1, whether it is one button or a whole solver. It is **not**
+effort-weighted, and must not be read as "percent of the work done".
+
+| | formula | list counted | value |
+|---|---|---|---|
+| (a) engine built | units with the engine done / 19 | rows 1, 2, 3, 4, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 = 15 | **15 / 19 = 78.9 %** |
+| (b) operator-reachable (BUILT) | units BUILT or BUILT (partial) / 19 | rows 1, 2, 3, 7, 9, 10, 11, 13, 15, 18 = 10 | **10 / 19 = 52.6 %** |
+| (b-strict) | units BUILT with no partial flag / 19 | rows 2, 3, 7, 10, 15, 18 = 6 | 6 / 19 = 31.6 % |
+| (c) projection, H3–H6 landed | (b) plus the units those lanes flip / 19 | H3a flips rows 14 and 16 (+2), H5 flips row 17 (+1), H6 flips row 4 (+1) = 14 | **14 / 19 = 73.7 %** |
+
+Notes on (c):
+- H4 SWEEP alone flips nothing: it gives the operator a SWEEP button and an IR
+  trace, but row 4 also contains L4b (RT60), which waits for H6.
+- (c) assumes each lane earns BUILT under rule 5; it is a projection, not a
+  measurement. (a) does not move: H3–H6 are `app/` lanes.
+- Not reached even in (c): row 5 (no plan), rows 6 and 8 (blocked on
+  purchases), row 12 (no enabling path is scheduled), row 19, and the partial
+  gaps in rows 1, 9, 11, 13 (no scheduled lane adds a generator panel, a
+  multi-pane selector or TF-slot assignment).
+
+**Gaps found while verifying (none appears in an earlier status table):**
+1. `RoutingMatrix::setActiveTransferFunction` has zero callers — TF slots 1..7
+   are unreachable, so multichannel can average positions into one TF but
+   cannot address a second one. No lane schedules the fix.
+2. L-API's on/off switch is a source edit; "BUILT and MERGED" (2026-09-18)
+   was true of the engine, and the operator path is none.
+3. No generator control exists beyond LOCATE and, from H3a, VERIFY.
+
+**Not verified by this pass:** the M2/M7 hardware steps of P1 (a person with
+an interface and a mic), and whether a multi-pane workspace can be produced by
+any route other than OPEN. Passing-test counts are deliberately not restated
+here (`docs/HANDOFF.md` carries the baseline).
+
 ## Plan review — 2026-09-27: lanes built on inputs nobody produces
 
 Verified at `origin/main` `e2c67a1`. The 2026-09-26 wiring-debt pass asked
@@ -356,17 +422,17 @@ loopback cable). Both need a person, not another agent — see
 
 ```mermaid
 graph LR
-    P1["<b>P1</b> · RTA / SPL / generator<br/><i>built — M2 + M7 by hand</i>"]
+    P1["<b>P1</b> · RTA / SPL / generator<br/><i>built — M2 + M7 by hand · generator = LOCATE only (2026-09-29)</i>"]
     P2["<b>P2</b> · dual-FFT engine<br/><i>BUILT 2026-08-29 · report 003</i>"]
     P3["<b>P3</b> · MTW<br/><i>BUILT 2026-09-06</i>"]
     P4["<b>P4</b> · sweep / IR<br/><i>L4a+L4b core only, no UI — 2026-08-30 (CORRECTED 2026-09-27)</i>"]
     P4b["<b>P4b</b> · THD / STI<br/><i>needs IEC 60268-16</i>"]
-    L5a["<b>L5a</b> · trace library + session<br/><i>BUILT · wired by L5c</i>"]
+    L5a["<b>L5a</b> · trace library + session<br/><i>BUILT · operator-reachable: STORE #51, Save/Open #43 (CORRECTED 2026-09-29)</i>"]
     L5b["<b>L5b</b> · targets / corridor / score<br/><i>needs ISO 2969 or SMPTE ST 202</i>"]
     L5c["<b>L5c</b> · Bode layout + workspaces<br/><i>BUILT 2026-08-29</i>"]
-    P6["<b>P6</b> · SPL-pro + multichannel<br/><i>L6b BUILT 2026-09-06 · L6a BUILT 2026-09-26 (Wave 4b cut)</i>"]
-    LAPI["<b>L-API</b> · remote API (read-only)<br/><i>BUILT + MERGED 2026-09-18 · report 008</i>"]
-    P7["<b>P7</b> · solvers<br/><i>BUILT + MERGED 2026-09-16 · report 007</i>"]
+    P6["<b>P6</b> · SPL-pro + multichannel<br/><i>L6b BUILT 2026-09-06, TF slots 1..7 no UI · L6a BUILT 2026-09-26 (Wave 4b cut)</i>"]
+    LAPI["<b>L-API</b> · remote API (read-only)<br/><i>engine BUILT + MERGED 2026-09-18 · no operator enable path (CORRECTED 2026-09-29) · report 008</i>"]
+    P7["<b>P7</b> · solvers<br/><i>core BUILT + MERGED 2026-09-16 · UI: DELAY, XOVER only; EQ/FIR in progress, ALIGN planned (CORRECTED 2026-09-29) · report 007</i>"]
     P8["<b>P8</b> · research lanes<br/><i>read-only, safe anytime</i>"]
     P9["<b>P9</b> · productization<br/><i>i18n, installers, manual</i>"]
 
@@ -390,13 +456,20 @@ graph LR
     classDef blocked fill:#3d1f1f,stroke:#f87171,stroke-width:2px,color:#fde8e8
     classDef later fill:#26262b,stroke:#71717a,stroke-width:1px,color:#d4d4d8
 
-    class P1,P2,P3,P4,L5a,L5c,P7,LAPI,P6 done
+    class P1,P2,P3,P4,L5a,L5c,LAPI,P6 done
+    class P7 next
     class L5b,P4b blocked
     class P8,P9 later
 ```
 
 **Green** is built. **Amber** is what to open next. **Red** is blocked on a
 purchase, not on engineering. **Grey** is later.
+
+**CORRECTED 2026-09-29:** green means the *engine* is built. Whether an
+operator can reach it in `rtatool.exe` is the table in "Status snapshot —
+2026-09-29" above (BUILT there = operator-reachable, CLAUDE.md rule 5); P4 and
+L-API are green here but CORE ONLY there. P7 moved from green to amber: its
+core is built, and its UI (EQ-UI H3a, ALIGN-UI H5) is what is being opened.
 
 `cepstrum / wavelet (G23)` moved OUT of P5 into the DSP lanes, because it is
 DSP. Sitting it beside "draw a trace" confused two layers.

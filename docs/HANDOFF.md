@@ -5,6 +5,39 @@
 
 ---
 
+# 2026-09-29 (cuối ngày) — **Bảy PR merge, main = `34fd38e`. Dự án: 15/19 unit có engine, 10/19 operator-reachable.**
+
+Trả lời câu hỏi "được bao nhiêu phần trăm": bảng 19 unit, công thức và danh
+sách từng con số nằm ở `docs/plans/MASTER-EXECUTION-PLAN.md` mục "Status
+snapshot — 2026-09-29". Đây là **đếm unit trọng số bằng nhau**, không phải
+phần trăm công sức.
+
+| | giá trị |
+|---|---|
+| (a) engine built | 15 / 19 = 78.9 % |
+| (b) operator-reachable (BUILT, rule 5) | 10 / 19 = 52.6 % (strict, bỏ 4 unit "partial": 6 / 19 = 31.6 %) |
+| (c) dự phóng sau H3–H6 | 14 / 19 = 73.7 % |
+
+## PR đã merge 2026-09-29
+
+| PR | merge | what |
+|---|---|---|
+| #53 | `3894a17` | `orphan_check`: wording (D4), prefixed literal trong `cpp_text` (D5) |
+| #54 | `75405d4` | Plan review #2 — quyết định và thứ tự lane |
+| #55 | `2def288` | Ghi trace blob atomic (tmp rồi rename), validate trace id, SPL writer báo lỗi khi không mở được file |
+| #56 | `0fbe329` | Research + plan SWEEP (Sweep→IR), plan EQ-UI |
+| #57 | `8cb4134` | Session UX: lưu mọi pane, hỏi trước khi ghi đè, readout STORE theo từng pane, test export-failure |
+| #58 | `cddea78` | Hàng của routing matrix theo số kênh của device (D1, D8), xoá role cũ khi đổi device |
+| #59 | `34fd38e` | Sửa hai flake timing (STORE mixed readout, routing_live Apply) + LOW doc |
+
+## Đang làm và kế tiếp
+
+- **Đang làm:** H3a `app/eq-ui` (EQ-UI wave A, xuất FIR) — phiên song song, không đụng các doc trên.
+- **Kế tiếp, tuần tự (hot files):** H4 `app/sweep-ir` (SWEEP) → H5 `app/align-ui` → H6 `app/rt60-ui`.
+- **Lỗ hổng mới phát hiện khi verify operator path** (chưa lane nào lo): `RoutingMatrix::setActiveTransferFunction` không có caller nên TF slot 1..7 không với tới được; L-API bật/tắt chỉ bằng sửa `MainComponent.cpp:189` rồi build lại; chưa có control generator nào ngoài LOCATE. P1 vẫn còn T12 hardware M2/M7 chờ người.
+
+---
+
 # 2026-09-29 — **Plan review #2: bảy mục "chờ chủ nhân" bên dưới đã có quyết định.**
 
 Đầy đủ: dependency table, thứ tự lane (P1, P2+P4, P3, P5 song song; H1→H6
