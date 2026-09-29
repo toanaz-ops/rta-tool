@@ -103,9 +103,11 @@ def rtatool_snapshot_sources(source_dir: Path) -> set[str] | None:
     """Every `app/src/...` path listed in
     app/cmake/rtatool_snapshot_sources.cmake -- the OTHER target this tool
     does not build or check reachability for, but whose own source list is
-    still ground truth for "is this file compiled anywhere at all". Both
-    this file and rtatool_sources.cmake were introduced in the same commit
-    (9a2862a), so in practice one exists iff the other does.
+    still ground truth for "is this file compiled into rtatool or
+    rtatool_snapshot" (a test target may still compile it; this tool never
+    reads test source lists). Both this file and rtatool_sources.cmake were
+    introduced in the same commit (9a2862a), so in practice one exists iff
+    the other does.
     """
     return _cmake_source_list(source_dir / "app" / "cmake" / "rtatool_snapshot_sources.cmake")
 
@@ -159,9 +161,9 @@ def not_in_any_target_reason(
     read. The wording now names exactly the two targets actually checked.
 
     Requires BOTH source lists to be readable (not None) to fire: an
-    unreadable list means this run cannot tell "not compiled anywhere" apart
-    from "compiled via a list this tool cannot see", and the safe default on
-    an unanswerable question is to let the candidate fall through to the
+    unreadable list means this run cannot tell "not compiled into rtatool
+    or rtatool_snapshot" apart from "compiled via a list this tool cannot
+    see", and the safe default on an unanswerable question is to let the candidate fall through to the
     ordinary liveness check rather than invent a claim either way.
     """
     if target_sources is None or snapshot_sources is None:

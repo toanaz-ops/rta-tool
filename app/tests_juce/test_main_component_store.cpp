@@ -36,16 +36,28 @@ bool waitUntil(const std::function<bool()>& predicate, int timeoutMs) {
     return predicate();
 }
 
-/// Enables SYNTHETIC mode and waits for a live Snapshot whose `hasReference`
-/// is true -- the TRANSFER-with-a-fed-reference case (T5 acceptance (b)).
+/// Enables SYNTHETIC mode and waits for a live Snapshot a TRANSFER STORE can
+/// actually freeze (T5 acceptance (b)): `hasReference` AND the fixed-FFT
+/// `transfer` block AND the `mtw` block. `hasReference` alone is NOT enough --
+/// Analyser::publish latches it on the first pushPair, and so it does `mtw`
+/// (mtwEngaged_), but `transfer` needs a whole fixed-FFT frame
+/// (`dual_.frameCount() > 0`), which the synthetic feed delivers a
+/// frame-length later. A click in that gap reads "store: nothing to freeze on
+/// this pane" (traceFromSnapshot has no TransferBlock to convert); 15/40 runs
+/// alone under CPU load hit exactly that (readout above, hasRef=1, tf=0,
+/// mtw=1). `mtw` is waited for too because the readout's "screen shows MTW
+/// on" clause is read off `snapshot.mtw` (TransferView::effectiveSource). The
+/// feed is continuous, so all three conditions are guaranteed to arrive; the
+/// timeout only bounds a hung feed.
 void enableSyntheticWithReference(MainComponent& component) {
     component.setSyntheticMode(true);
     REQUIRE(waitUntil(
         [&] {
             const auto snapshot = MainComponentTestAccess::analysisThread(component).latest();
-            return snapshot && snapshot->hasReference;
+            return snapshot && snapshot->hasReference && snapshot->transfer.has_value() &&
+                   snapshot->mtw.has_value();
         },
-        3000));
+        15000));
 }
 
 /// Enables SYNTHETIC mode, then immediately forces the Reference role back to
