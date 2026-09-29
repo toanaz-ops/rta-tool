@@ -5,6 +5,17 @@
 
 ---
 
+# 2026-09-29 — **Plan review #2: bảy mục "chờ chủ nhân" bên dưới đã có quyết định.**
+
+Đầy đủ: dependency table, thứ tự lane (P1, P2+P4, P3, P5 song song; H1→H6
+tuần tự), và mục "needs the human" — `docs/plans/MASTER-EXECUTION-PLAN.md`
+mục "Plan review #2 — 2026-09-29". Citation D1/D11/F11 trong
+`docs/HUMAN-QA-QUEUE.md` cũng được sửa lại trong cùng lane này (P1). Bảy mục
+dưới "Quyết định chờ chủ nhân (đợt plan review thứ hai)" ngay dưới đây (mục
+2026-09-27) đã có chú thích quyết định tại từng dòng.
+
+---
+
 # 2026-09-27 — **STORE lane BUILT, operator-reachable. Tám PR merge, main = `c0a4624`.**
 
 *Mỗi PR merge chỉ sau khi verifier SOUND và 0 CI check không xanh.*
@@ -41,13 +52,33 @@ ctest --test-dir build-on -C Release   (RTA_BUILD_APP=ON)  -> 1182/1182
 
 ## Quyết định chờ chủ nhân (đợt plan review thứ hai)
 
+*Cả 7 mục dưới đây đã có quyết định — plan review #2, 2026-09-29. Chi tiết:
+`docs/plans/MASTER-EXECUTION-PLAN.md` mục "Plan review #2 — 2026-09-29".*
+
 1. Lane sản xuất Sweep→IR: chưa có plan nào; ALIGN-UI và RT60 UI chờ nó.
+   **Quyết định 2026-09-29:** plan hoá ở **P5** (station 1-3), build ở **H4**
+   `app/sweep-ir`, dependency table mục 1.
 2. Thứ tự lane giữa EQ-UI, Sweep→IR, ALIGN-UI, CaptureSequencer.
+   **Quyết định 2026-09-29:** EQ-UI (H3) → Sweep→IR (H4) → ALIGN-UI (H5) →
+   RT60 UI (H6); `CaptureSequencer` vẫn deferred, không nằm trong đợt này.
 3. `RoutingMatrix` chỉ hiện 8 hàng trong khi kênh 9–64 vẫn role-assignable và routable — vô hình với operator (QA queue D1). Cần một lane chủ.
+   **Quyết định 2026-09-29:** lên lịch **H2** `app/routing-matrix-64` — rows
+   = số kênh thiết bị, chặn ở `kMaxChannels`, cuộn trong khung 220px hiện có.
 4. Nợ session persistence từ #43 (QA queue D11): F5 — ghi đè blob tại chỗ, mất dữ liệu nếu bị ngắt giữa chừng; F4 — nhiều pane sụp còn một khi save lại; F6 — Save không hỏi ghi đè.
+   **Quyết định 2026-09-29:** F5 (+D9) → **P2+P4** `app/persist-robustness`
+   (tmp-then-rename tại `SessionStore.cpp:94`); F4/F6 (+K8/K9, D7) → **H1**
+   `app/session-ux`.
 5. Giữ hay chia 3 script vượt trần được miễn bằng exact path (`gen_generator.py` 452, `probe_align_order4.py` 519, `probe_l4b_truncation.py` 534 dòng).
+   **Quyết định 2026-09-29:** GIỮ (golden generator + bằng chứng nghiên cứu
+   đông cứng, trích dẫn theo dòng ở nơi khác); người sửa file kế tiếp chia
+   nhỏ trong cùng PR đó.
 6. MTW storage — cần L5 frequency-vector amendment trước.
+   **Quyết định 2026-09-29:** vẫn UNSCHEDULED — quay lại sau khi EQ-UI (H3)
+   và ALIGN-UI (H5) xong; đổi schema (v4), không đảo ngược được.
 7. Các dòng DEFER còn lại trong QA queue triage (D2–D10).
+   **Quyết định 2026-09-29:** citation đã sửa (P1, cùng PR này); D2 giữ; D3
+   đóng vì là giới hạn đã ghi nhận; D4/D5 → P3; D6 → P2+P4; D7 → H1; D8 →
+   H2; D9 → P2+P4; D10 nghiên cứu, chưa lên lịch. Xem `docs/HUMAN-QA-QUEUE.md`.
 
 ## Bẫy phiên này
 
