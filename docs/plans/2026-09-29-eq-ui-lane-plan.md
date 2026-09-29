@@ -160,3 +160,22 @@ Test hooks are `*ForTest` members of `EqPaneView` and `MainComponentEq`, named l
 - 65536-tap FIR, other export rates, and least-squares FIR design.
 - A NotMinimumPhase chip opening V2 (EQ record §12.4).
 - The G11 virtual processor (EQ-R3).
+
+## Wave A: what was built, and where it differs from this plan
+
+*Written 2026-09-29 against the shipped code (CLAUDE.md rule 6). Wave B (T7 VERIFY, T8 ADOPT) is not built; `EqVerify.cpp` is still in no `rtatool` source list.*
+
+Built: T0, T1, T2, T3, T4, T5, T6, T9. Differences, each measured or forced by the code:
+
+| plan said | shipped | why |
+|---|---|---|
+| D9 lengths 1024, 4096, 6144, 8192 | **1023, 4095, 6143, 8191**; `designEqFir` refuses an even count | `FirDesign` realises an even-length filter at twice the gain (flat target: \|H\| = 2.04 at DC for N = 4096, 1.00001 for N = 4095). Every core magnitude test uses odd N. Amended in the FIR record §4; `memory/a-size-class-no-test-uses-is-an-unverified-size-class.md`. 8N rounds to the same M for each pair, so T3's grid numbers (M = 32768, 16385 bins, fc on bin 1024) hold unchanged. The T6 stem is `eq_48000Hz_4095taps_lin`. |
+| T2: `EqPaneModel` alone | plus `EqTraceGrid.h/.cpp` (trace to grid, complex H, target resample) | keeps `EqPaneModel.cpp` under its 250-line ceiling |
+| T5: `EqPaneView` and `EqChartRenderer` | plus `EqFilterPanel.h/.cpp` (chips, committed list) | keeps `EqPaneView.cpp` under 300 |
+| Risk 2: measure G24 at fftSize 4096 | 257 ms for one AUTO EQ on a −8 dB dip (needs a boost, so the gate runs); flagged, not moved to a worker | above the 100 ms line. Each SUGGEST, ACCEPT and DECLINE re-runs the allocator and pays it again whenever a boost candidate exists. A worker needs the session copied and applied back on the message thread; that is its own change. |
+| T9: `snapshot.cpp` +2 lines | +2 lines, 342 total | it was already 340 when this lane opened |
+| `MainComponent.cpp` ceiling 320 | 395, net 0 lines | it was already 395 after H1/H2; this lane changed one line in it |
+| `EXPORT FIR` enable rule: phase and length answered | also needs a measurement and at least one filter not marked applied | D11: nothing to realise means nothing to export |
+| chart y range: unspecified | follows the trusted bins; measured and ghost are drawn only where trusted | a SYNTHETIC capture reads +130 dB in bins with no reference energy, which flattened the trusted curve to a line |
+
+Not in this wave and not orphaned by it: `EqVerify.cpp`, the VERIFY and ADOPT buttons, `timerCallback` polling, the LOCATE guard (T7, T8).

@@ -27,7 +27,13 @@ namespace rta::view {
 /// docs/dsp/2026-09-06-l7-alignment-wizard.md): the G18 crossover surface
 /// becomes a live pane. Same no-version-bump shape as `Spl` -- an older
 /// build reading `"xover"` falls back to `Rta` and reports it.
-enum class PaneView { Rta, Transfer, Spl, Xover };
+///
+/// `Eq` added by the L7-EQ UI lane (docs/plans/2026-09-29-eq-ui-lane-plan.md
+/// T4): the auto-EQ pane, fifth selector button. Same no-version-bump shape --
+/// an older build reading `"eq"` falls back to `Rta` and reports it. EQ state
+/// itself (picks, committed filters) is NOT in the session file (plan risk 4);
+/// only the pane choice round-trips.
+enum class PaneView { Rta, Transfer, Spl, Xover, Eq };
 
 struct PaneResolution {
     PaneView view = PaneView::Rta;
@@ -44,6 +50,7 @@ struct PaneResolution {
     if (name == "transfer") { out.view = PaneView::Transfer; return out; }
     if (name == "spl") { out.view = PaneView::Spl; return out; }
     if (name == "xover") { out.view = PaneView::Xover; return out; }
+    if (name == "eq") { out.view = PaneView::Eq; return out; }
     out.fellBack = true;   // falls back to Rta, and says so
     return out;
 }
@@ -61,6 +68,7 @@ struct PaneResolution {
     // test_pane_view_name_round_trip.cpp for the guard that would have
     // caught it: a round trip over EVERY `PaneView` enumerator.
     if (view == PaneView::Xover) return "xover";
+    if (view == PaneView::Eq) return "eq";
     return "rta";
 }
 

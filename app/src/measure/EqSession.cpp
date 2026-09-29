@@ -112,6 +112,20 @@ rta::eq::EqInput EqSession::makeInput(std::span<const float> residual) const {
     return input;
 }
 
+void EqSession::setMaxFilters(int maxFilters) noexcept {
+    config_.maxFilters = std::clamp(maxFilters, 1, 16);
+}
+
+double EqSession::levelOffsetDb() const {
+    if (hz_.empty()) return 0.0;
+    const std::vector<float> residual = workingResidualDb();
+    try {
+        return rta::eq::autoOffsetDb(makeInput(residual));
+    } catch (const std::invalid_argument&) {
+        return 0.0;  // no coherence vector: nothing trusted, so no offset to report
+    }
+}
+
 std::vector<rta::eq::Candidate> EqSession::suggest(int maxCandidates) const {
     if (hz_.empty()) return {};
     const std::vector<float> residual = workingResidualDb();

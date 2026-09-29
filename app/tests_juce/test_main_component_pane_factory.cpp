@@ -14,12 +14,15 @@
 #include "PaneFactory.h"
 #include "measure/SnapshotSource.h"
 #include "view/CrossoverPaneView.h"
+#include "view/EqPaneView.h"
 #include "view/RtaView.h"
 #include "view/SplView.h"
 #include "view/TransferView.h"
 
 using rta::measure::StaticSnapshotSource;
 using rta::view::CrossoverPaneView;
+using rta::view::EqPaneBinding;
+using rta::view::EqPaneView;
 using rta::view::PaneView;
 using rta::view::RtaView;
 using rta::view::SplView;
@@ -28,7 +31,8 @@ using rta::view::TransferView;
 TEST_CASE("makePaneFactory builds an SplView, not an RtaView, for PaneView::Spl",
          "[main_component_pane_factory]") {
     StaticSnapshotSource source;
-    auto factory = makePaneFactory(source);
+    rta::measure::EqPaneModel eqModel;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} });
 
     auto pane = factory(PaneView::Spl);
     REQUIRE(pane != nullptr);
@@ -42,7 +46,8 @@ TEST_CASE("makePaneFactory builds an SplView, not an RtaView, for PaneView::Spl"
 TEST_CASE("makePaneFactory still builds Transfer and Rta panes correctly",
          "[main_component_pane_factory]") {
     StaticSnapshotSource source;
-    auto factory = makePaneFactory(source);
+    rta::measure::EqPaneModel eqModel;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} });
 
     auto transferPane = factory(PaneView::Transfer);
     REQUIRE(transferPane != nullptr);
@@ -58,10 +63,32 @@ TEST_CASE("makePaneFactory builds a CrossoverPaneView for PaneView::Xover",
     // ALIGN-R8 reversal (owner, 2026-09-26): the same "own branch, own
     // concrete type" property the Spl case above pins, one enumerator later.
     StaticSnapshotSource source;
-    auto factory = makePaneFactory(source);
+    rta::measure::EqPaneModel eqModel;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} });
 
     auto xoverPane = factory(PaneView::Xover);
     REQUIRE(xoverPane != nullptr);
     CHECK(dynamic_cast<CrossoverPaneView*>(xoverPane.get()) != nullptr);
     CHECK(dynamic_cast<RtaView*>(xoverPane.get()) == nullptr);
+}
+
+TEST_CASE("makePaneFactory builds an EqPaneView, on the model it was handed, for PaneView::Eq",
+         "[main_component_pane_factory]") {
+    // L7-EQ UI lane, plan T4: the same "own branch, own concrete type" property
+    // the Spl and Xover cases pin, one enumerator later. The model is the
+    // caller's, so a pane rebuilt by a selector click reads the SAME committed
+    // list the previous pane wrote (plan T5's survive-a-rebuild acceptance).
+    StaticSnapshotSource source;
+    rta::measure::EqPaneModel eqModel;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} });
+
+    auto first = factory(PaneView::Eq);
+    REQUIRE(first != nullptr);
+    auto* eqPane = dynamic_cast<EqPaneView*>(first.get());
+    REQUIRE(eqPane != nullptr);
+    CHECK(dynamic_cast<RtaView*>(first.get()) == nullptr);
+    CHECK(&eqPane->modelForTest() == &eqModel);
+
+    auto second = factory(PaneView::Eq);
+    CHECK(&dynamic_cast<EqPaneView&>(*second).modelForTest() == &eqModel);
 }

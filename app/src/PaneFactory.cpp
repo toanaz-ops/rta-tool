@@ -8,8 +8,9 @@
 #include "view/SplView.h"
 #include "view/TransferView.h"
 
-rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSource& source) {
-    return [&source](rta::view::PaneView view) -> std::unique_ptr<juce::Component> {
+rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSource& source,
+                                                      rta::view::EqPaneBinding eq) {
+    return [&source, eq](rta::view::PaneView view) -> std::unique_ptr<juce::Component> {
         if (view == rta::view::PaneView::Transfer) {
             return std::make_unique<rta::view::TransferView>(source);
         }
@@ -22,6 +23,11 @@ rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSour
             // "THERE IS NO OBJECTIVE HERE"). Its own setLibrary is what
             // WorkspaceView::setLibrary reaches through LibraryConsumer.
             return std::make_unique<rta::view::CrossoverPaneView>();
+        }
+        if (view == rta::view::PaneView::Eq) {
+            // Model and actions come from MainComponentEq, not from `source`:
+            // the pane equalises an already-stored trace, like XOVER.
+            return std::make_unique<rta::view::EqPaneView>(eq);
         }
         return std::make_unique<rta::view::RtaView>(source);
     };

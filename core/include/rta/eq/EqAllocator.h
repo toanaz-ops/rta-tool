@@ -10,6 +10,23 @@
 
 namespace rta::eq {
 
+/// Step 1 of the placement below, exposed (L7-EQ UI task T0): the
+/// gamma^2/f-weighted mean of `input.residualDb` over every trusted,
+/// non-excluded bin with f > 0,
+///
+///     c = sum_k (gamma^2_k / f_k) r_k  /  sum_k (gamma^2_k / f_k)
+///
+/// or 0 when no bin carries weight. This is the SAME function
+/// rankCandidates and autoEq subtract from the residual before placing --
+/// not a second copy -- so a caller drawing "where the allocator aimed"
+/// (target + c) or scoring a residual against the target reads the number
+/// the allocator itself used. `residualDb` is the pre-offset curve m - t
+/// (see step 1).
+///
+/// @throws std::invalid_argument on the same length / sampleRate conditions
+///         rankCandidates refuses.
+[[nodiscard]] double autoOffsetDb(const EqInput& input);
+
 /// One placement, its estimated ghost-preview gain, and the G24 verdict it
 /// was placed under -- Suggest's chip vocabulary (record Sec.2).
 struct Candidate {

@@ -134,6 +134,23 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # (T5), needed here for the same reason MainComponentSpl.cpp is -- T8's
     # own specimen drives the real storeButton_ onClick through a
     # MainComponent this target constructs.
+    # --- L7-EQ UI wave A (docs/plans/2026-09-29-eq-ui-lane-plan.md) ------------
+    # The EQ pane and everything it reaches. EqSession.cpp / EqVerify.cpp /
+    # FirTextWriter.cpp / FirWavWriter.cpp were built and unit-tested in lane
+    # L7-EQ/L7-FIR with NO caller in this target (orphans until now). This
+    # target names every source one by one, so each has to be listed.
+    # EqVerify.cpp is Wave B (VERIFY) and stays unlisted until that PR wires it.
+    src/MainComponentEq.cpp
+    src/measure/EqSession.cpp
+    src/measure/EqPaneModel.cpp
+    src/measure/EqTraceGrid.cpp
+    src/measure/EqFirDesign.cpp
+    src/export/FirTextWriter.cpp
+    src/export/FirWavWriter.cpp
+    src/view/EqPaneView.cpp
+    src/view/EqFilterPanel.cpp
+    src/view/EqChartRenderer.cpp
+    # --- end L7-EQ UI wave A ----------------------------------------------------
     src/MainComponentStore.cpp
     src/trace/CaptureConverter.cpp
     # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /

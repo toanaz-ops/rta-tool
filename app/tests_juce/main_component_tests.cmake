@@ -68,6 +68,12 @@ add_executable(rtatool_main_component_tests
     # test_main_component_export.cpp: D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4
     # item 14) -- exportReportClicked()'s catch branch had no test at all.
     test_main_component_export.cpp
+    # L7-EQ UI wave A (docs/plans/2026-09-29-eq-ui-lane-plan.md): the EQ pane
+    # against a real MainComponent (T4/T5), and the EQ exports through
+    # MainComponentEq's perform* halves (T6).
+    test_main_component_panes_eq.cpp
+    test_main_component_panes_eq_widgets.cpp
+    test_main_component_eq_export.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 
@@ -87,6 +93,7 @@ target_link_libraries(rtatool_main_component_tests PRIVATE
     rta::platform
     rta_httplib
     juce::juce_gui_extra
+    juce::juce_audio_formats
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
     Catch2::Catch2WithMain

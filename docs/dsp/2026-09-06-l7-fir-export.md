@@ -184,6 +184,26 @@ the default; even `N` is accepted (a power-of-two tap budget is common) and
 documented as a half-sample group delay, which a convolver does not care
 about and a test must (§7, item 2).
 
+**Amendment, 2026-09-29 — even `N` is not exact in the shipped code; the EQ
+export refuses it.** Building the EQ pane's FIR export (docs/plans/
+2026-09-29-eq-ui-lane-plan.md, D9) measured that `designLinearPhaseCore`
+(`core/src/dsp/FirDesign.cpp`) realises an even-length filter at the wrong
+gain. It builds `taps[0..half]` with `half = (N−1)/2` (floored) and mirrors, so
+for even `N` the zero-phase impulse's centre sample `h_zero[0]` lands on both
+central taps, `taps[N/2−1] == taps[N/2]`, and the target's delta component is
+counted twice. A direct DFT of the taps for a flat 0 dB target reads `|H| =
+2.04` at DC for `N = 4096` and `N = 1024` (+6.2 dB), against `1.00001` for
+`N = 4095` and `1.00011` for `N = 1023`; for a +6 dB peaking filter at 1500 Hz
+(`Q = 2`, 48 kHz) the even lengths read `3.02` where the target is `1.995`, the
+odd ones `1.9945`. Every magnitude test in `core/tests` uses odd `N` (1023,
+511, 255); the even-`N` cases check bitwise symmetry, metadata and phase
+linearity, which the defect leaves intact. Nothing here fixes it (a half-sample
+design is a core change with its own goldens). `app/src/measure/EqFirDesign.cpp`
+refuses an even tap count, and the EQ pane offers 1023, 4095, 6143 and 8191,
+which share their design grids with 1024, 4096, 6144 and 8192 (`8N` rounds to
+the same power of two). The refusal and the odd list are deleted together with
+the fix.
+
 **Minimum phase, derived.** Homomorphic (real-cepstrum) method, as verified
 line-by-line from scipy's `minimum_phase` source this session and as
 Oppenheim & Schafer derive it (book not opened; the scipy source is the

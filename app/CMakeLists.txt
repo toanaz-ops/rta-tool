@@ -175,6 +175,8 @@ target_sources(rtatool_snapshot PRIVATE
     # snapshot_routing.cpp: lane H2's main-live-routing16.png, split out of
     # tools/snapshot.cpp for the same reason.
     ${CMAKE_SOURCE_DIR}/tools/snapshot_routing.cpp
+    # snapshot_eq.cpp: L7-EQ UI wave A's main-live-eq*.png, same reason.
+    ${CMAKE_SOURCE_DIR}/tools/snapshot_eq.cpp
 )
 
 target_include_directories(rtatool_snapshot PRIVATE
@@ -182,7 +184,10 @@ target_include_directories(rtatool_snapshot PRIVATE
     # app/dev-support: SyntheticSnapshot.h/.cpp's home (moved out of
     # app/src/measure -- it is never part of the shipped app, only this
     # offline snapshot tool and the test suites; see its own header comment).
-    ${CMAKE_CURRENT_SOURCE_DIR})
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    # app/tests: EqTraceFixture.h, so tools/snapshot_eq.cpp renders the very
+    # trace the EQ pane tests assert on.
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 
 target_compile_definitions(rtatool_snapshot PRIVATE
     JUCE_WEB_BROWSER=0
@@ -208,6 +213,9 @@ target_link_libraries(rtatool_snapshot PRIVATE
     # this target constructs MainComponent, which owns an ApiServer.
     rta_httplib
     juce::juce_gui_extra
+    # juce_audio_formats: FirWavWriter.cpp (EXPORT FIR WAV, L7-EQ UI). rtatool
+    # gets it through juce_audio_utils; this console target lists what it uses.
+    juce::juce_audio_formats
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
