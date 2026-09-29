@@ -127,7 +127,9 @@ TEST_CASE("VERIFY refuses with no TRANSFER measurement published: no snapshot, a
 
 TEST_CASE("VERIFY refuses when fftSize or sample rate differ from the bound trace, naming both") {
     Rig fft;
-    fft.pre = verifyfixture::makeSnapshot(std::vector<float>(1025, 0.0f), fft.coherence, 2048);
+    // Only the fftSize field differs (the magnitude length and rate match), so
+    // this case cannot be satisfied by the length check below.
+    fft.pre = verifyfixture::makeSnapshot(std::vector<float>(verifyfixture::kBins, 0.0f), fft.coherence, 2048);
     requireRefused(fft, VerifyBlock::GridMismatch, "live fftSize 2048");
     CHECK(fft.runner.blocker().text.find("bound trace 4096") != std::string::npos);
 
@@ -135,6 +137,11 @@ TEST_CASE("VERIFY refuses when fftSize or sample rate differ from the bound trac
     fs.pre = verifyfixture::makeSnapshot(std::vector<float>(verifyfixture::kBins, 0.0f), fs.coherence,
                                          verifyfixture::kFft, 44100.0);
     requireRefused(fs, VerifyBlock::GridMismatch, "44100 Hz");
+
+    // fftSize and rate agree, the published spectrum is the wrong length.
+    Rig length;
+    length.pre = verifyfixture::makeSnapshot(std::vector<float>(1025, 0.0f), length.coherence);
+    requireRefused(length, VerifyBlock::GridMismatch, "live fftSize 4096");
 }
 
 TEST_CASE("VERIFY refuses under Exponential transfer averaging") {
