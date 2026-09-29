@@ -82,3 +82,148 @@ TEST_CASE("rail: the scrollbar's width is not reserved when the rail's content a
     CHECK(MainComponentTestAccess::channelRoleTable(tall).getWidth() ==
          MainComponentTestAccess::routingMatrix(tall).getWidth());
 }
+
+// ---- Lane H2 (D1, D8) ------------------------------------------------------
+
+namespace {
+
+std::vector<std::string> inputNames(int count) {
+    std::vector<std::string> names;
+    for (int i = 0; i < count; ++i) names.push_back("In " + std::to_string(i + 1));
+    return names;
+}
+
+}  // namespace
+
+TEST_CASE("rail: the outer viewport is parented, placed, and scrolls the content (D8)",
+         "[main_component_rail]") {
+    // Until now nothing pinned railScrollView_'s own setBounds/addAndMakeVisible
+    // (only the three content widgets' sizes), so deleting either left the
+    // whole suite green while the rail vanished.
+    MainComponent component;
+    component.setSize(1280, 800);
+    component.resized();
+
+    const juce::Viewport& viewport = MainComponentTestAccess::railViewportForTest(component);
+    CHECK(viewport.getParentComponent() == &component);
+    CHECK(viewport.isVisible());
+    CHECK(viewport.getViewedComponent() == &MainComponentTestAccess::railContentForTest(component));
+
+    // MainComponent::resized(): the rail column starts at the outer margin and
+    // its last row runs to the bottom margin (2 gaps each) -- closed form
+    // from that function, no private width constant needed.
+    CHECK(viewport.getX() == az::ui::gap * 2);
+    CHECK(viewport.getBottom() == component.getHeight() - az::ui::gap * 2);
+    CHECK(viewport.getWidth() > 0);
+
+    // At 800 px the stacked widgets do not fit, so the content is taller than
+    // what the viewport shows (that is what makes it scroll).
+    CHECK(MainComponentTestAccess::railContentForTest(component).getHeight() > viewport.getHeight());
+}
+
+TEST_CASE("rail: 16 input channels scroll inside the 220 px slot and overlap nothing (D1)",
+         "[main_component_rail]") {
+    MainComponent component;
+    component.setSize(1280, 800);
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    component.resized();
+
+    const juce::Component& panel = MainComponentTestAccess::devicePanelForTest(component);
+    const juce::Component& matrix = MainComponentTestAccess::routingMatrix(component);
+    const juce::Component& roles = MainComponentTestAccess::channelRoleTable(component);
+    const juce::Viewport& matrixViewport = MainComponentTestAccess::routingMatrixWidgetForTest(component).viewportForTest();
+
+    // The slot did not grow with the channel count...
+    CHECK(matrix.getHeight() == 220);
+    // ...so the rows after it stay where they were: no widget overlaps the next.
+    CHECK(panel.getBottom() <= matrix.getY());
+    CHECK(matrix.getBottom() <= roles.getY());
+    // ...and 16 rows (header + 16 * kMinRowHeight) really are taller than the
+    // slot, i.e. they scroll rather than being squeezed.
+    CHECK(matrixViewport.getViewedComponent()->getHeight() > matrixViewport.getHeight());
+    CHECK(MainComponentTestAccess::routingMatrixWidgetForTest(component).channelCountForTest() == 16);
+}
+
+TEST_CASE("rail: 4 input channels show no scrollbar in the routing matrix (D1)",
+         "[main_component_rail]") {
+    MainComponent component;
+    component.setSize(1280, 800);
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(4));
+    component.resized();
+
+    const juce::Viewport& matrixViewport = MainComponentTestAccess::routingMatrixWidgetForTest(component).viewportForTest();
+    CHECK(MainComponentTestAccess::routingMatrixWidgetForTest(component).channelCountForTest() == 4);
+    CHECK(matrixViewport.getViewedComponent()->getHeight() <= matrixViewport.getHeight());
+    CHECK_FALSE(MainComponentTestAccess::routingMatrixWidgetForTest(component).scrollBarVisibleForTest());
+}
+
+TEST_CASE("rail: the membership plan uses the bus's channel count, not the TF cap (D1)",
+         "[main_component_rail]") {
+    // refreshMembershipFromSnapshot used to plan with kMaxTransferFunctions (8)
+    // as the channel count, so on a 16-input device a measurement on channel 11
+    // dropped out of the plan the analysis thread still routed -- and
+    // updateMembership zips that plan against Snapshot::positions by index.
+    MainComponent component;
+    MainComponentTestAccess::prepareBusForTest(component, 48000.0, 16);
+    auto& config = MainComponentTestAccess::channelConfigForTest(component);
+    using rta::platform::ChannelRole;
+    REQUIRE(config.setRole(0, ChannelRole::Reference));
+    REQUIRE(config.setTransferFunction(0, 3));
+    REQUIRE(config.setRole(11, ChannelRole::Measurement));
+    REQUIRE(config.setTransferFunction(11, 3));
+
+    const auto plan = MainComponentTestAccess::currentRoutingPlanForTest(component);
+    REQUIRE(plan.routes.size() == 1);
+    CHECK(plan.routes[0].measurementChannel == 11);
+    CHECK(plan.routes[0].tfIndex == 3);
+}
+
+TEST_CASE("channel names: a smaller non-zero device clears the roles past its end",
+         "[main_component_rail]") {
+    // H2 verifier round 1. A role on a channel with no row can never be
+    // cleared again, and with no valid Measurement left the RTA drain freezes
+    // (setSyntheticMode's own documented failure). 16 inputs, Measurement on
+    // channel 11 only, then an 8-input device: channel 11 must be Unused,
+    // tf 0, and nothing holds the role.
+    MainComponent component;
+    auto& config = MainComponentTestAccess::channelConfigForTest(component);
+    using rta::platform::ChannelRole;
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    REQUIRE(config.setRole(11, ChannelRole::Measurement));
+    REQUIRE(config.setTransferFunction(11, 3));
+    REQUIRE(config.role(11) == ChannelRole::Measurement);  // a 16-input device keeps it
+
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(8));
+
+    CHECK(config.role(11) == ChannelRole::Unused);
+    CHECK(config.transferFunction(11) == 0);
+    CHECK(config.firstChannelWithRole(ChannelRole::Measurement) < 0);
+}
+
+TEST_CASE("channel names: roles inside the new count survive a shrink",
+         "[main_component_rail]") {
+    MainComponent component;
+    auto& config = MainComponentTestAccess::channelConfigForTest(component);
+    using rta::platform::ChannelRole;
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    REQUIRE(config.setRole(5, ChannelRole::Reference));
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(8));
+    CHECK(config.role(5) == ChannelRole::Reference);
+}
+
+TEST_CASE("channel names: a transient zero-channel report keeps the roles",
+         "[main_component_rail]") {
+    // A device close between two sample-rate changes reports 0 channels; the
+    // operator's assignment must survive it and be there when the device returns.
+    MainComponent component;
+    auto& config = MainComponentTestAccess::channelConfigForTest(component);
+    using rta::platform::ChannelRole;
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    REQUIRE(config.setRole(11, ChannelRole::Measurement));
+
+    MainComponentTestAccess::applyChannelNamesForTest(component, {});
+    CHECK(config.role(11) == ChannelRole::Measurement);
+
+    MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
+    CHECK(config.role(11) == ChannelRole::Measurement);
+}

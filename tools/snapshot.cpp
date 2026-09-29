@@ -25,6 +25,7 @@
 #include <az_ui/az_ui.h>
 
 #include "SnapshotRender.h"
+#include "snapshot_routing.h"
 #include "snapshot_xover.h"
 
 #include "AppTypefaces.h"
@@ -59,6 +60,7 @@
 using rta::tools::renderComponent;
 using rta::tools::renderXoverSpecimens;
 using rta::tools::renderStoreXoverSpecimen;
+using rta::tools::renderRoutingSpecimen;
 
 int main (int argc, char** argv)
 {
@@ -292,6 +294,10 @@ int main (int argc, char** argv)
     // end-to-end chain this whole lane exists to prove, real STORE presses
     // feeding a real XOVER pick. See snapshot_xover.h's own comment.
     renderStoreXoverSpecimen (outDir, failures);
+
+    // main-live-routing16.png: lane H2 (QA D1) -- a 16-input interface's
+    // routing matrix, scrolled to the rows past the old 8-row cap.
+    renderRoutingSpecimen (outDir, failures);
 
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
     // tuning-visuals.md): paint-only components fed canned synthetic data,

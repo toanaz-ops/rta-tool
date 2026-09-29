@@ -102,7 +102,10 @@ void GridPanel::paint(juce::Graphics& g) {
         const juce::Rectangle<int> cell(0, geometry.headerRowHeight + static_cast<int>(r) * geometry.cellHeight,
                                         geometry.headerColumnWidth, geometry.cellHeight);
         g.setColour(az::ui::dim);
-        g.drawText(juce::String(rowHeaders_[r]), cell, juce::Justification::centredLeft, false);
+        // Ellipsis on: a row header is a caller-supplied label (a device's own
+        // channel name, say), not a fixed short caption, and the gutter is a
+        // fixed width -- without it a long name is hard-clipped mid-glyph.
+        g.drawText(juce::String(rowHeaders_[r]), cell, juce::Justification::centredLeft, true);
     }
 
     g.setFont(az::ui::monoFont(az::ui::tableFontSize));

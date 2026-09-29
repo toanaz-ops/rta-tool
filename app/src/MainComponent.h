@@ -194,6 +194,14 @@ private:
     /// class's own control flow) and once, directly, when leaving SYNTHETIC
     /// mode.
     void refreshChannelNamesFromDevice();
+    /// The half of the above that does not touch the device: pushes `names`
+    /// into the rail when they differ from `lastChannelNames_`. Own function
+    /// so a test can drive the real push without a sound card.
+    void applyChannelNames(std::vector<std::string> names);
+    /// The plan `refreshMembershipFromSnapshot` zips against a Snapshot's
+    /// `positions` -- the same `planRouting(config, bus channel count)` the
+    /// analysis thread itself builds.
+    [[nodiscard]] rta::measure::RoutingPlan currentRoutingPlan() const;
 
     /// Station-4 fix F3 (record §6): pushes the AVG column from the latest
     /// published Snapshot's `positions`. Called from BOTH `timerCallback()`
@@ -288,7 +296,7 @@ private:
 
     // Fix round LOW F3: device panel + routing matrix + channel role table +
     // their scroll viewport (item 4), one member instead of five -- see
-    // MainComponentRail.h. RoutingMatrix rows are fixed at kMaxTransferFunctions.
+    // MainComponentRail.h. RoutingMatrix rows follow the device's channel count.
     MainComponentRail rail_;
 
     // Pane selector: a radio group. Not persisted (SPL-R11) -- starts at Rta.

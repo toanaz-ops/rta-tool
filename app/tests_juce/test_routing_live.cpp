@@ -169,3 +169,41 @@ TEST_CASE("Two transfer functions naming different references get independent co
     // not be capped down to tf 1's much smaller count.
     CHECK(tf0Hops > tf1Hops);
 }
+
+TEST_CASE("A stale Reference past the bus's channel count does not freeze the RTA drain",
+          "[routing_live]") {
+    // H2 verifier round 1: a role can be left on a channel the bus no longer
+    // has (a 16-input device swapped for a 4-input one). drain() plans against
+    // the bus's prepared count, exactly like the matrix, so the stale Reference
+    // names no route and the in-range Measurement still drains via drainRole.
+    // Planning against kMaxChannels instead would build a route whose
+    // reference ring is absent, and drainPaired would return early forever --
+    // nothing publishes. (drainRole itself needs no extra clamp: it takes the
+    // LOWEST holder of a role, so an out-of-range holder is only ever chosen
+    // when no in-range one exists, and `bus_.ring()` is null past the prepared
+    // count.)
+    CaptureBus bus(4096);
+    REQUIRE(bus.config().setRole(2, ChannelRole::Measurement));
+    REQUIRE(bus.config().setRole(11, ChannelRole::Reference));  // stale: bus has 4 channels
+    bus.prepare(48000.0, 4);
+    bus.setActive(true);
+
+    AnalysisThread thread(bus, fastConfig());
+
+    const std::array<int, 1> tone{2};
+    pushBlocks(bus, tone, 4, 16, 40);
+
+    // NOT `latest() != nullptr`: publishIfDue publishes every 50 ms whether or
+    // not anything was drained, so an empty snapshot would satisfy that (round 2
+    // verifier). `framesAnalysed` is the measurement engine's frame count --
+    // only a real drain of channel 2 advances it.
+    const auto deadline = juce::Time::getMillisecondCounter() + 2000u;
+    auto framesNow = [&]() -> std::uint64_t {
+        const auto snapshot = thread.latest();
+        return snapshot ? snapshot->framesAnalysed : 0u;
+    };
+    while (framesNow() == 0 && juce::Time::getMillisecondCounter() < deadline) {
+        juce::Thread::sleep(5);
+    }
+    CHECK(framesNow() > 0);
+}

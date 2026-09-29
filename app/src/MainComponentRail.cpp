@@ -13,12 +13,12 @@ namespace {
 // the bottom costs nothing.
 constexpr int kDevicePanelHeight = 300;
 
-// Task F2: az::ui::GridPanel divides whatever bounds it is given across its
-// header row plus rta::measure::kMaxTransferFunctions (8) data rows -- it
-// has no minimum-row-height floor of its own (GridPanel.h's own class
-// comment: "geometry only"), so this is a flat pixel budget rather than a
-// per-row metric multiplied out: comfortably readable for 9 rows (header +
-// 8 channels) without crowding channelRoleTable_ below it out of the rail.
+// Task F2: a flat pixel budget for routingMatrix_, comfortably readable for
+// a header plus 8 rows without crowding channelRoleTable_ below it out of the
+// rail. It is FIXED however many channels the device has (D1, lane H2):
+// RoutingMatrix scrolls its own rows inside this slot (its viewport), so 64
+// inputs cost scrolling, not rail height -- and no other widget's position
+// depends on the device.
 constexpr int kRoutingMatrixHeight = 220;
 
 // Fix round item 4: header + ~4 rows -- enough for channelRoleTable_ to be
@@ -77,9 +77,8 @@ void MainComponentRail::layout(juce::Rectangle<int> bounds) {
     auto content = railScrollContent_.getLocalBounds();
     devicePanel_.setBounds(content.removeFromTop(kDevicePanelHeight));
     content.removeFromTop(az::ui::gap * 2);
-    // Fixed height for kMaxTransferFunctions rows plus a header row --
-    // RoutingMatrix has no dynamic resize the way channelRoleTable_'s
-    // ListBox does, so it gets a fixed slice rather than "whatever is left".
+    // Fixed slice, not "whatever is left": the rows inside scroll (see
+    // kRoutingMatrixHeight), so this height does not depend on channel count.
     routingMatrix_.setBounds(content.removeFromTop(kRoutingMatrixHeight));
     content.removeFromTop(az::ui::gap * 2);
 

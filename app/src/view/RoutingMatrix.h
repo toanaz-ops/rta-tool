@@ -12,11 +12,17 @@
 #include "rta/platform/ChannelConfig.h"
 
 #include <span>
+#include <string>
+#include <vector>
 
 namespace rta::view {
 
-/// One row per input channel: a ROLE column (Unused/Measurement/Reference)
-/// and, beside it, an AVG column stating whether that channel's route is
+/// One row per input channel (the row COUNT follows the device: see
+/// `setChannelNames`, capped at `rta::platform::kMaxChannels`; the columns
+/// are fixed). Rows live inside a `juce::Viewport`, so a 64-input interface
+/// scrolls inside whatever height the host gives this widget instead of
+/// squeezing 64 rows into it (D1/D8, lane H2). Each row is a ROLE column
+/// (Unused/Measurement/Reference) and, beside it, an AVG column stating whether that channel's route is
 /// currently a member of the live spatial-average group -- station-4 fix F3
 /// (docs/dsp/2026-09-06-multichannel-l6b.md §6): a route naming a different
 /// reference than the group's is refused, and that refusal must be VISIBLE
@@ -28,7 +34,49 @@ namespace rta::view {
 /// facts a route (task B2's `planRouting`) is resolved from.
 class RoutingMatrix final : public juce::Component {
 public:
+    /// Smallest row the grid is drawn at. 22 px keeps `tableFontSize` text
+    /// readable, and 8 rows plus the header band (30 + 8 * 22 = 206) still fit
+    /// the rail's 220 px slot, so an 8-input interface looks as it always did.
+    static constexpr int kMinRowHeight = 22;
+
+    /// `channelCount` is the initial row count (clamped to [0, kMaxChannels]);
+    /// rows are labelled by index until `setChannelNames` supplies real names.
     RoutingMatrix(rta::platform::ChannelConfig& config, int channelCount);
+
+    /// Rebuilds the rows to one per name -- `names.size()` rows, capped at
+    /// `kMaxChannels` (the size of `ChannelConfig`'s own tables; a row past it
+    /// could never carry a role, exactly `ChannelRoleTable::setChannelNames`'s
+    /// clip). Row labels are the names (an empty name falls back to the
+    /// 1-based channel number, the same numbering `ChannelRoleTable` shows).
+    ///
+    /// This widget never touches `ChannelConfig` when it shrinks. The caller
+    /// owns that policy (`MainComponent::applyChannelNames`, lane H2): a
+    /// device reporting a NON-ZERO smaller count has its roles/tf past the
+    /// end CLEARED (a role on a channel with no row can never be cleared
+    /// again, and with no valid Measurement left it freezes the RTA drain --
+    /// the `setSyntheticMode` failure), while a count of ZERO (a transient
+    /// "device closed" between two sample-rate changes) KEEPS them. Either
+    /// way `planRouting` and `ChannelConfig::snapshot` clamp to the bus's
+    /// channel count, so no route ever names a channel past it.
+    void setChannelNames(std::vector<std::string> names);
+
+    /// Rows currently shown.
+    [[nodiscard]] int channelCountForTest() const noexcept { return channelCount_; }
+
+    /// The viewport that scrolls the rows. Test seam (orphan_check TEST HOOK
+    /// rule: a `*ForTest` name a test really references), D8.
+    [[nodiscard]] const juce::Viewport& viewportForTest() const noexcept { return viewport_; }
+    /// Whether the vertical scrollbar is actually on screen right now.
+    /// (`Viewport::isVerticalScrollBarShown()` reports the "may show" flag
+    /// set in the constructor, so it is true even with nothing to scroll.)
+    [[nodiscard]] bool scrollBarVisibleForTest() noexcept {
+        return viewport_.getVerticalScrollBar().isVisible();
+    }
+
+    /// Height the grid needs to show every row at `kMinRowHeight` (header
+    /// band included). Below this the grid scrolls; at or above it, the grid
+    /// fills the widget exactly as it did before the rows scrolled.
+    [[nodiscard]] int naturalHeight() const noexcept;
 
     /// Which transfer-function index a click that ASSIGNS a role (Unused ->
     /// Measurement/Reference) tags the channel with. Does not affect a
@@ -63,11 +111,17 @@ public:
 
 private:
     void onCellClicked(int row, int column);
+    void rebuildRows(std::vector<std::string> rowHeaders);
+    void layoutGrid();
 
     rta::platform::ChannelConfig& config_;
-    int channelCount_;
+    int channelCount_ = 0;
     int activeTfIndex_ = 0;
+    // grid_ before viewport_: the viewport holds a raw pointer to it, so the
+    // viewport must be destroyed first (reverse declaration order) -- the
+    // same rule MainComponentRail.h states for its own content/viewport pair.
     az::ui::GridPanel grid_;
+    juce::Viewport viewport_;
 };
 
 }  // namespace rta::view

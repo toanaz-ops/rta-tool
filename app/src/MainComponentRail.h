@@ -48,7 +48,12 @@ public:
     void layout(juce::Rectangle<int> bounds);
 
     void setDevicePanelEnabled(bool enabled) { devicePanel_.setEnabled(enabled); }
+    /// One list feeds BOTH channel-indexed widgets: channelRoleTable_ (roles)
+    /// and routingMatrix_ (rows), so the two can never disagree about how many
+    /// channels there are (D1: the matrix used to stop at 8 while the table
+    /// showed up to 64).
     void setChannelNames(std::vector<std::string> names) {
+        routingMatrix_.setChannelNames(names);
         channelRoleTable_.setChannelNames(std::move(names));
     }
     void refreshFromConfig() { routingMatrix_.refreshFromConfig(); }
@@ -61,6 +66,13 @@ private:
     friend struct MainComponentTestAccess;  // fix round MEDIUM F1: the rail-layout test
     [[nodiscard]] const juce::Component& channelRoleTableForTest() const noexcept { return channelRoleTable_; }
     [[nodiscard]] const juce::Component& routingMatrixForTest() const noexcept { return routingMatrix_; }
+    // D1: the typed, mutable widget -- a test clicks its cells and reads its rows.
+    [[nodiscard]] rta::view::RoutingMatrix& routingMatrixWidgetForTest() noexcept { return routingMatrix_; }
+    // D8: the OUTER rail viewport itself, not just its content -- so a test
+    // can pin that layout() placed it and attachTo() parented it.
+    [[nodiscard]] const juce::Viewport& railViewportForTest() const noexcept { return railScrollView_; }
+    [[nodiscard]] const juce::Component& railContentForTest() const noexcept { return railScrollContent_; }
+    [[nodiscard]] const juce::Component& devicePanelForTest() const noexcept { return devicePanel_; }
 
     rta::view::DevicePanel devicePanel_;
     rta::view::ChannelRoleTable channelRoleTable_;
