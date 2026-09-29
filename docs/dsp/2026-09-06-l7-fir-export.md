@@ -188,14 +188,20 @@ about and a test must (§7, item 2).
 export refuses it.** Building the EQ pane's FIR export (docs/plans/
 2026-09-29-eq-ui-lane-plan.md, D9) measured that `designLinearPhaseCore`
 (`core/src/dsp/FirDesign.cpp`) realises an even-length filter at the wrong
-gain. It builds `taps[0..half]` with `half = (N−1)/2` (floored) and mirrors, so
-for even `N` the zero-phase impulse's centre sample `h_zero[0]` lands on both
-central taps, `taps[N/2−1] == taps[N/2]`, and the target's delta component is
-counted twice. A direct DFT of the taps for a flat 0 dB target reads `|H| =
-2.04` at DC for `N = 4096` and `N = 1024` (+6.2 dB), against `1.00001` for
-`N = 4095` and `1.00011` for `N = 1023`; for a +6 dB peaking filter at 1500 Hz
-(`Q = 2`, 48 kHz) the even lengths read `3.02` where the target is `1.995`, the
-odd ones `1.9945`. Every magnitude test in `core/tests` uses odd `N` (1023,
+gain. It builds `taps[0..half]` with `half = (N−1)/2` (floored) and mirrors
+(`FirDesign.cpp:129-139` writes each windowed `h_zero` sample to both `taps[i]`
+and `taps[N−1−i]`), so for even `N` the zero-phase impulse's centre sample
+`h_zero[0]` lands on both central taps, `taps[N/2−1] == taps[N/2]`: `h[0]` is
+counted twice, which adds a second copy of a weight-`h_zero[0]` sample to the
+response. `h_zero[0]` is the mean of the target magnitude, 1.0 for a flat
+target, so a flat target is doubled exactly and a shaped one is offset by about
+that mean. Measured by a direct DFT of the taps (verifier, 2026-09-29): a flat
+0 dB target at `N = 4096` reads `|H(0)| = 2.00000` (both centre taps 1.0, +6.02
+dB), against `1.00001` for `N = 4095` and `1.00011` for `N = 1023`. For a +6 dB
+peaking filter at 1500 Hz (`Q = 2`, 48 kHz) the even lengths read `3.0195` and
+the odd ones `1.9945`, where the target is `1.99526`; `3.0195 − 1.9945` is the
+extra centre sample, about 1.0. (An earlier draft of this amendment gave 2.04
+for the flat target; that number belongs to the peaking fixture, not to flat.) Every magnitude test in `core/tests` uses odd `N` (1023,
 511, 255); the even-`N` cases check bitwise symmetry, metadata and phase
 linearity, which the defect leaves intact. Nothing here fixes it (a half-sample
 design is a core change with its own goldens). `app/src/measure/EqFirDesign.cpp`

@@ -7,7 +7,7 @@
 // peaking filter is 0 dB at DC and at Nyquist (EQ record Sec.3).
 //
 // DEVIATION FROM THE PLAN, and why: the plan's rows say N = 4096. FirDesign
-// realises an EVEN-length filter with twice the gain (measured while writing
+// counts h[0] twice for an EVEN-length filter (measured while writing
 // this file; see EqFirDesign.h), so the lane designs at the odd neighbour
 // N = 4095. 8 * 4095 rounds to the same M = 32768, so every grid number the
 // plan derives (16385 bins, fc on bin 1024) is unchanged.
@@ -133,7 +133,7 @@ TEST_CASE("EqFirDesign: designEqFir reports M and the group delay, and the taps 
 TEST_CASE("EqFirDesign: an EVEN tap count is refused, not designed at twice the gain",
           "[eq_fir_design]") {
     // FirDesign.cpp puts the impulse centre on both central taps of an
-    // even-length filter: a flat target reads 2.04 at DC for N = 4096. The
+    // even-length filter: a flat target reads 2.0 at DC for N = 4096. The
     // refusal is the guard; when FirDesign is fixed this test is deleted with it.
     const std::vector<CommittedFilter> none;
     CHECK_THROWS_AS(designEqFir(none, kFs, 4096, FirPhase::Linear), std::invalid_argument);

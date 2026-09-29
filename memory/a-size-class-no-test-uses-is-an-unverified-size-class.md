@@ -7,9 +7,12 @@ Nothing in `core/tests` was red.
 `designFir` (`core/src/dsp/FirDesign.cpp`, `designLinearPhaseCore`) builds
 `taps[0..half]`, `half = (N-1)/2`, and mirrors. For odd `N` that is exact. For
 even `N` the zero-phase impulse's centre sample lands on **both** central taps,
-so the delta component of the target is realised twice: a flat 0 dB target reads
-`|H| = 2.04` at DC for `N = 4096` and `N = 1024`, against `1.00001` for
-`N = 4095`. The FIR record (Sec.4) said "even `N` is accepted ... documented as a
+so `h[0]` is counted twice (`FirDesign.cpp:129-139` writes `hZero[0]` to both
+`taps[half]` and `taps[N-1-half]`). Measured by a direct DFT of the taps: a flat
+0 dB target at `N = 4096` reads `|H(0)| = 2.00000` (both centre taps 1.0),
+against `1.00001` for `N = 4095`; a +6 dB peaking filter reads `3.0195` (even)
+versus `1.9945` (odd) for a target of `1.99526`. (2.04, in an earlier draft of
+this note, was wrong for the flat target.) The FIR record (Sec.4) said "even `N` is accepted ... documented as a
 half-sample group delay"; the *magnitude* was never checked at any even `N`.
 
 The suite could not see it: every magnitude assertion in `test_fir_design.cpp`,
@@ -37,5 +40,6 @@ existing suite had certified for months.
 Not fixed in this lane (a half-sample design is a core change with goldens; a
 follow-up owns it). `EqFirDesign` refuses an even tap count and the EQ pane
 offers 1023 / 4095 / 6143 / 8191; FIR record Sec.4 carries the amendment. Delete
-the refusal, restore the even list, and delete this file's "what was done" once
+the refusal, restore the even list, and delete this file's "what was done" **and
+the "until fixed" clause of its `memory/MEMORY.md` index line** once
 `designLinearPhaseCore` has an even-`N` magnitude test that fails without the fix.

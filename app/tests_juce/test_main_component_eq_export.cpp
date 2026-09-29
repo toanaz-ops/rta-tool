@@ -7,8 +7,8 @@
 // WAV bitwise equal to the designed taps, and the filter list keeping its
 // `applied` token (EQ record Sec.7, amendment 2).
 //
-// N is 4095, not the plan's 4096: FirDesign designs an even-length filter at
-// twice the gain, so the lane offers the odd neighbour (EqFirDesign.h).
+// N is 4095, not the plan's 4096: FirDesign counts h[0] twice for an
+// even-length filter, so the lane offers the odd neighbour (EqFirDesign.h).
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 

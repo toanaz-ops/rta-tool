@@ -38,8 +38,8 @@ namespace rta::measure {
 /// regime of FIR record Sec.2. 65536 is excluded (its minimum-phase design is
 /// the 16.8M-point transform Sec.11 flags, on the message thread).
 ///
-/// ODD, one below the plan's 1024 / 4096 / 6144 / 8192: FirDesign realises an
-/// even-length filter with twice the gain (EqFirDesign.h), so the even
+/// ODD, one below the plan's 1024 / 4096 / 6144 / 8192: FirDesign counts h[0]
+/// twice for an even-length filter (EqFirDesign.h), so the even
 /// neighbours are not offered. Each pair shares its design grid M (8N rounds
 /// to the same power of two), so the resolution and latency read the same.
 inline constexpr std::array<std::size_t, 4> kEqFirTapChoices{ 1023, 4095, 6143, 8191 };

@@ -335,7 +335,7 @@ TEST_CASE("EqPaneModel: readouts and export gates", "[eq_pane_model_state]") {
 
 TEST_CASE("EqPaneModel: the FIR lengths offered are odd, designable, and labelled with fs/N and (N-1)/(2fs)",
           "[eq_pane_model_state]") {
-    // Odd because FirDesign realises an even length at twice the gain; each
+    // Odd because FirDesign counts h[0] twice for an even length; each
     // must fit its own design grid (taps <= M/2, FirDesign.h).
     for (const std::size_t taps : rta::measure::kEqFirTapChoices) {
         CAPTURE(taps);

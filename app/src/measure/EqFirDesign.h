@@ -39,10 +39,11 @@ namespace rta::measure {
 /// Why even is refused (found building this lane, 2026-09-29): FirDesign.cpp's
 /// linear-phase core puts the zero-phase impulse's centre sample at BOTH
 /// central taps of an even-length filter (taps[N/2-1] == taps[N/2] ==
-/// h0[0]*w), so the delta component of the target is realised twice. Measured
-/// on a flat target: |H| = 2.04 at DC for N = 4096 and 1024 (+6.2 dB), against
-/// 1.00001 for N = 4095 and 1.00011 for N = 1023. Every magnitude test in
-/// core/tests uses odd N (1023, 511, 255), so nothing there sees it. Until
+/// h0[0]*w), so h[0] is counted twice. Measured on a flat target: |H(0)| =
+/// 2.00000 at N = 4096 (+6.02 dB), against 1.00001 for N = 4095 and 1.00011
+/// for N = 1023; a +6 dB peaking filter reads 3.0195 (even) vs 1.9945 (odd).
+/// Every magnitude test in core/tests uses odd N (1023, 511, 255), so nothing
+/// there sees it. Until
 /// FirDesign designs even N on a half-sample grid, an even-N export would be a
 /// filter with the wrong gain and a correct-looking header; odd lengths are
 /// exact (Type I linear phase, an integer group delay of (N-1)/2).
