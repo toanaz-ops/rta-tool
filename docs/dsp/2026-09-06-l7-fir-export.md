@@ -181,8 +181,11 @@ point and is **not** in v1 (§11).
 taps[N−1−n]` is bitwise, not to rounding, and the phase identity below is
 then algebra, not a hope. Type I (odd `N`, integer group delay `(N−1)/2`) is
 the default; even `N` is accepted (a power-of-two tap budget is common) and
-documented as a half-sample group delay, which a convolver does not care
-about and a test must (§7, item 2).
+has a half-sample group delay, which a convolver does not care about and a
+test must (§7, item 2). Even `N` needs a different construction of the taps
+than odd `N` -- see **Amendment 2026-09-29** at the end of this section; the
+first shipped even-`N` design reused the odd-`N` construction and read 2x
+gain at DC.
 
 **Minimum phase, derived.** Homomorphic (real-cepstrum) method, as verified
 line-by-line from scipy's `minimum_phase` source this session and as
@@ -229,6 +232,62 @@ closed-form identity, float32-shaped (§7, item 3). Truncation to `N` taps
 then loses a stated energy fraction `Σ_{n≥N} h_min[n]² / Σ h_min[n]²`, which
 the result carries as a number (§6) rather than pretending the identity
 survives truncation exactly.
+
+**Amendment 2026-09-29 -- even `N`: the axis is a half-integer, so the taps
+sample the response at half-integer times.** Written against the shipped
+`designLinearPhaseCore` (`core/src/dsp/FirDesign.cpp`).
+
+*The defect this corrects.* The first even-`N` design read the plain IDFT
+circularly, exactly as odd `N` does. For even `N` the symmetry axis
+`(N−1)/2` falls between taps `N/2−1` and `N/2`, and the loop (`i = 0 … N/2−1`,
+mirrored) wrote `h_zero[0]` to **both**, so the target's delta component
+was realised twice. Measured before the fix, flat 0 dB target, 48 kHz:
+`Σ taps = |H(DC)| = 1.99998` at `N = 1024` and `1.99999` at `N = 4096`
+(Linear and Minimum, per-breakpoint and per-bin routes -- minimum phase feeds
+on the linear design); a plateau target of exactly 2.0 read 3.26 at 1500 Hz.
+Odd `N` was correct and was never affected. Every magnitude test then in the
+tree used odd `N`, which is why nothing saw it.
+
+*The construction (even `N`).* Let `H[k]` be the real, even, zero-phase target
+on the `M`-point grid (`M ≥ 8N`, a power of two). `RealFft::inverse` uses the
+kernel `e^{+j2πkn/M}`, so
+`g = IDFT_M{ H[k] · e^{+jπk/M} }` gives `g[j] = h_zero(j + 1/2)` -- the
+band-limited (M-periodic) zero-phase response sampled at half-integer times.
+The taps are `taps[N/2 + j] = g[j] · w[N/2−1−j]` for `j = 0 … N/2−1`, mirrored
+to `taps[N/2−1−j]` -- the same `coefficients_[i]`-only windowing and explicit
+mirror as odd `N`, so `taps[n] == taps[N−1−n]` stays bitwise. The phase angle
+is computed in `double` and cast to `float` per bin; the transform is still
+the float `RealFft`.
+
+*Why `g` is symmetric about −1/2.* `g[−1−n] = g[n]` because
+`DFT{g[−1−n]}[k] = e^{+j2πk/M} · G[−k] = e^{+j2πk/M} · H[k] · e^{−jπk/M} = G[k]`,
+using `H` real and even. That holds at every bin except **Nyquist**
+(`k = M/2`), where the shift factor is `e^{+jπ/2} = j` and a real sequence's
+spectrum cannot carry an imaginary Nyquist bin. The code sets that bin to
+exactly 0. That is a structural fact, not a repair: an even-length symmetric
+FIR (Type II) always has `H(π) = 0`. (`RealFft::inverse` ignores the imaginary
+part of the Nyquist bin, so this assignment is what fixes the value; it is
+also why the shipped tests cannot distinguish it from not zeroing it -- see
+below.)
+
+*Closed forms the tests assert* (`core/tests/test_fir_design_even.cpp`).
+With a flat target the grid is 1 on bins `0 … M/2−1` and 0 at Nyquist, and
+the sum telescopes to a half-sample Dirichlet kernel:
+`g[j] = (−1)^j · cot(π(j+½)/M) / M`, which tends to the ideal half-sample sinc
+`sin(π/2)/(π/2) = 2/π ≈ 0.6366` at `j = 0`. So for flat 0 dB, even `N`:
+(1) `Σ taps = 1` (asserted to 1e-3; measured within 1e-4);
+(2) linear-phase taps `N/2 + j` equal `g[j] · w[N/2−1−j]` with the periodic
+Hann in `double` (asserted to 5e-7, about eight float ulp of the 0.64 peak;
+measured 1.4e-8 at `N = 1024`, 5.1e-8 at `N = 4096`);
+(3) the two centre taps are equal and lie in (0.6, 0.7), never near 1.
+A plateau target of +6.0206 dB between 500 Hz and 5 kHz reads 2.0 at 1500 Hz to
+1e-3 (measured 9e-5 or better; the odd-`N` control reads 1.9e-5 off),
+odd and even `N`, Linear and Minimum.
+
+*`groupDelaySamples`.* The true even-`N` linear-phase delay is `(N−1)/2 = N/2 − ½`
+samples. `FirResult::groupDelaySamples` is integral and reports `N/2`
+(`taps / 2`), half a sample above the truth for even `N`; it is exact for odd
+`N`. The type was not changed.
 
 ## 5. Decision: the sample rate is written in three places on purpose, the text file is self-describing, the WAV is 32-bit float only, and the gain convention is stated, never implied
 
@@ -358,8 +417,11 @@ needs 1e-4 is hiding a bug.
    within Shape A **before truncation**; after truncation to `N`,
    `truncationLossDb` is reported and asserted only against the value the
    golden records for that fixture (a regression lock, labelled as such).
-4. **Trivial targets, closed-form.** Flat 0 dB: linear phase gives a delta at
-   the centre tap (`1.0 ± 1e-5`, all others `≤ 1e-5`), minimum phase gives a
+4. **Trivial targets, closed-form.** Flat 0 dB: for **odd `N`** linear phase
+   gives a delta at the centre tap (`1.0 ± 1e-5`, all others `≤ 1e-5`); for
+   **even `N`** there is no centre tap, and the answer is the half-sample sinc
+   of the §4 amendment (two equal centre taps ≈ 2/π before windowing, DC gain
+   1). Minimum phase gives a
    delta at tap 0. Flat +6.0206 dB: the same with amplitude 2. `peakGainDb`
    and `coefficientPeak` read those values.
 5. **Grid interpolation.** Breakpoints `(100 Hz, 0 dB), (1000 Hz, +6 dB)`
