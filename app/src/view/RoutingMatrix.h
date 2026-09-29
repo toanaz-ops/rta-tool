@@ -61,7 +61,7 @@ public:
     void setChannelNames(std::vector<std::string> names);
 
     /// Rows currently shown.
-    [[nodiscard]] int channelCount() const noexcept { return channelCount_; }
+    [[nodiscard]] int channelCountForTest() const noexcept { return channelCount_; }
 
     /// The viewport that scrolls the rows. Test seam (orphan_check TEST HOOK
     /// rule: a `*ForTest` name a test really references), D8.

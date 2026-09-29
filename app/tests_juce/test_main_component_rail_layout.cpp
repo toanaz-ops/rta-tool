@@ -104,10 +104,10 @@ TEST_CASE("rail: the outer viewport is parented, placed, and scrolls the content
     component.setSize(1280, 800);
     component.resized();
 
-    const juce::Viewport& viewport = MainComponentTestAccess::railViewport(component);
+    const juce::Viewport& viewport = MainComponentTestAccess::railViewportForTest(component);
     CHECK(viewport.getParentComponent() == &component);
     CHECK(viewport.isVisible());
-    CHECK(viewport.getViewedComponent() == &MainComponentTestAccess::railContent(component));
+    CHECK(viewport.getViewedComponent() == &MainComponentTestAccess::railContentForTest(component));
 
     // MainComponent::resized(): the rail column starts at the outer margin and
     // its last row runs to the bottom margin (2 gaps each) -- closed form
@@ -118,7 +118,7 @@ TEST_CASE("rail: the outer viewport is parented, placed, and scrolls the content
 
     // At 800 px the stacked widgets do not fit, so the content is taller than
     // what the viewport shows (that is what makes it scroll).
-    CHECK(MainComponentTestAccess::railContent(component).getHeight() > viewport.getHeight());
+    CHECK(MainComponentTestAccess::railContentForTest(component).getHeight() > viewport.getHeight());
 }
 
 TEST_CASE("rail: 16 input channels scroll inside the 220 px slot and overlap nothing (D1)",
@@ -128,10 +128,10 @@ TEST_CASE("rail: 16 input channels scroll inside the 220 px slot and overlap not
     MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
     component.resized();
 
-    const juce::Component& panel = MainComponentTestAccess::devicePanel(component);
+    const juce::Component& panel = MainComponentTestAccess::devicePanelForTest(component);
     const juce::Component& matrix = MainComponentTestAccess::routingMatrix(component);
     const juce::Component& roles = MainComponentTestAccess::channelRoleTable(component);
-    const juce::Viewport& matrixViewport = MainComponentTestAccess::routingMatrixWidget(component).viewportForTest();
+    const juce::Viewport& matrixViewport = MainComponentTestAccess::routingMatrixWidgetForTest(component).viewportForTest();
 
     // The slot did not grow with the channel count...
     CHECK(matrix.getHeight() == 220);
@@ -141,7 +141,7 @@ TEST_CASE("rail: 16 input channels scroll inside the 220 px slot and overlap not
     // ...and 16 rows (header + 16 * kMinRowHeight) really are taller than the
     // slot, i.e. they scroll rather than being squeezed.
     CHECK(matrixViewport.getViewedComponent()->getHeight() > matrixViewport.getHeight());
-    CHECK(MainComponentTestAccess::routingMatrixWidget(component).channelCount() == 16);
+    CHECK(MainComponentTestAccess::routingMatrixWidgetForTest(component).channelCountForTest() == 16);
 }
 
 TEST_CASE("rail: 4 input channels show no scrollbar in the routing matrix (D1)",
@@ -151,10 +151,10 @@ TEST_CASE("rail: 4 input channels show no scrollbar in the routing matrix (D1)",
     MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(4));
     component.resized();
 
-    const juce::Viewport& matrixViewport = MainComponentTestAccess::routingMatrixWidget(component).viewportForTest();
-    CHECK(MainComponentTestAccess::routingMatrixWidget(component).channelCount() == 4);
+    const juce::Viewport& matrixViewport = MainComponentTestAccess::routingMatrixWidgetForTest(component).viewportForTest();
+    CHECK(MainComponentTestAccess::routingMatrixWidgetForTest(component).channelCountForTest() == 4);
     CHECK(matrixViewport.getViewedComponent()->getHeight() <= matrixViewport.getHeight());
-    CHECK_FALSE(MainComponentTestAccess::routingMatrixWidget(component).scrollBarVisibleForTest());
+    CHECK_FALSE(MainComponentTestAccess::routingMatrixWidgetForTest(component).scrollBarVisibleForTest());
 }
 
 TEST_CASE("rail: the membership plan uses the bus's channel count, not the TF cap (D1)",

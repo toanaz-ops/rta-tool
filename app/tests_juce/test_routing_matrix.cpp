@@ -125,10 +125,10 @@ TEST_CASE("Rows follow the device's channel count, past the old 8-row cap",
           "[routing_matrix]") {
     ChannelConfig config;
     RoutingMatrix matrix(config, 0);
-    REQUIRE(matrix.channelCount() == 0);
+    REQUIRE(matrix.channelCountForTest() == 0);
 
     matrix.setChannelNames(namesOf(16));
-    CHECK(matrix.channelCount() == 16);
+    CHECK(matrix.channelCountForTest() == 16);
     // The last row exists as a real cell -- not merely counted.
     CHECK(matrix.grid().cellText(15, 0) == "UNUSED");
     CHECK(matrix.grid().cellText(15, 1) == "--");
@@ -139,7 +139,7 @@ TEST_CASE("Rows are capped at kMaxChannels, the size of ChannelConfig's tables",
     ChannelConfig config;
     RoutingMatrix matrix(config, 0);
     matrix.setChannelNames(namesOf(rta::platform::kMaxChannels + 6));
-    CHECK(matrix.channelCount() == rta::platform::kMaxChannels);
+    CHECK(matrix.channelCountForTest() == rta::platform::kMaxChannels);
 }
 
 TEST_CASE("Clicking a high row assigns THAT channel with the active transfer function",
@@ -202,7 +202,7 @@ TEST_CASE("Shrinking the channel list drops rows and leaves the config alone",
 
     matrix.setChannelNames(namesOf(4));
 
-    CHECK(matrix.channelCount() == 4);
+    CHECK(matrix.channelCountForTest() == 4);
     CHECK(config.role(11) == ChannelRole::Measurement);  // untouched
 
     // No row 11 any more: a click there is refused, a membership entry naming

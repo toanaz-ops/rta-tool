@@ -42,13 +42,13 @@ void renderRoutingSpecimen (const juce::File& outDir, int& failures)
 
     component.setSize (1280, kHeight);
     component.resized();
-    MainComponentTestAccess::routingMatrixWidget (component).refreshFromConfig();
+    MainComponentTestAccess::routingMatrixWidgetForTest (component).refreshFromConfig();
 
     // Scroll the matrix so its last rows are on screen (rows 9-16 -- the ones
     // no version before H2 could show). The accessor is const because tests
     // only read; scrolling is a view-state poke on a test-only render.
     auto& viewport = const_cast<juce::Viewport&> (
-        MainComponentTestAccess::routingMatrixWidget (component).viewportForTest());
+        MainComponentTestAccess::routingMatrixWidgetForTest (component).viewportForTest());
     viewport.setViewPositionProportionately (0.0, 1.0);
 
     if (! renderComponent (component, outDir, "main-live-routing16.png", 1280, kHeight))

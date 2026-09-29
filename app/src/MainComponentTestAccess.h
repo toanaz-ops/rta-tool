@@ -76,16 +76,16 @@ struct MainComponentTestAccess {
     }
     // D1/D8 (lane H2): the typed matrix (click cells, read rows), the outer
     // rail viewport and its content, and the names push the device poll makes.
-    [[nodiscard]] static rta::view::RoutingMatrix& routingMatrixWidget(MainComponent& c) {
+    [[nodiscard]] static rta::view::RoutingMatrix& routingMatrixWidgetForTest(MainComponent& c) {
         return c.rail_.routingMatrixWidgetForTest();
     }
-    [[nodiscard]] static const juce::Viewport& railViewport(const MainComponent& c) {
+    [[nodiscard]] static const juce::Viewport& railViewportForTest(const MainComponent& c) {
         return c.rail_.railViewportForTest();
     }
-    [[nodiscard]] static const juce::Component& railContent(const MainComponent& c) {
+    [[nodiscard]] static const juce::Component& railContentForTest(const MainComponent& c) {
         return c.rail_.railContentForTest();
     }
-    [[nodiscard]] static const juce::Component& devicePanel(const MainComponent& c) {
+    [[nodiscard]] static const juce::Component& devicePanelForTest(const MainComponent& c) {
         return c.rail_.devicePanelForTest();
     }
     static void applyChannelNamesForTest(MainComponent& c, std::vector<std::string> names) {
