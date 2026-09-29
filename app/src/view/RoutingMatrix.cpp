@@ -2,6 +2,8 @@
 // Part of RTA Tool -- app/src/view. Task B7.
 #include "view/RoutingMatrix.h"
 
+#include <az_ui/az_ui.h>
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -58,23 +60,51 @@ ChannelRole nextRole(ChannelRole role) {
 }  // namespace
 
 RoutingMatrix::RoutingMatrix(rta::platform::ChannelConfig& config, int channelCount)
-    : config_(config), channelCount_(channelCount) {
-    addAndMakeVisible(grid_);
+    : config_(config) {
+    grid_.setColumnHeaders({"ROLE", "AVG"});
+    grid_.onCellClicked = [this](int row, int column) { onCellClicked(row, column); };
+    viewport_.setViewedComponent(&grid_, false);
+    viewport_.setScrollBarsShown(true, false);
+    addAndMakeVisible(viewport_);
 
+    const int count = std::clamp(channelCount, 0, rta::platform::kMaxChannels);
     std::vector<std::string> rowHeaders;
-    rowHeaders.reserve(static_cast<std::size_t>(channelCount_));
-    for (int ch = 0; ch < channelCount_; ++ch) {
+    rowHeaders.reserve(static_cast<std::size_t>(count));
+    for (int ch = 0; ch < count; ++ch) {
         rowHeaders.push_back(std::to_string(ch));
     }
-    grid_.setRowHeaders(rowHeaders);
-    grid_.setColumnHeaders({"ROLE", "AVG"});
+    rebuildRows(std::move(rowHeaders));
+}
+
+void RoutingMatrix::setChannelNames(std::vector<std::string> names) {
+    const auto cap = static_cast<std::size_t>(rta::platform::kMaxChannels);
+    if (names.size() > cap) {
+        names.resize(cap);
+    }
+    for (std::size_t ch = 0; ch < names.size(); ++ch) {
+        if (names[ch].empty()) {
+            names[ch] = std::to_string(ch + 1);
+        }
+    }
+    rebuildRows(std::move(names));
+}
+
+void RoutingMatrix::rebuildRows(std::vector<std::string> rowHeaders) {
+    channelCount_ = static_cast<int>(rowHeaders.size());
+    grid_.setRowHeaders(std::move(rowHeaders));
+    // setGridSize drops every cell's text; the selection is stale once row
+    // indices mean different channels. Start clean, then refill from config.
     grid_.setGridSize(channelCount_, 2);
+    grid_.setSelectedCell(-1, -1);
     for (int ch = 0; ch < channelCount_; ++ch) {
         grid_.setCellText(ch, 1, kNotApplicable);
     }
-    grid_.onCellClicked = [this](int row, int column) { onCellClicked(row, column); };
-
     refreshFromConfig();
+    layoutGrid();
+}
+
+int RoutingMatrix::naturalHeight() const noexcept {
+    return az::ui::captionHeight + channelCount_ * kMinRowHeight;
 }
 
 void RoutingMatrix::onCellClicked(int row, int /*column*/) {
@@ -121,7 +151,20 @@ void RoutingMatrix::updateMembership(const rta::measure::RoutingPlan& plan,
 }
 
 void RoutingMatrix::resized() {
-    grid_.setBounds(getLocalBounds());
+    viewport_.setBounds(getLocalBounds());
+    layoutGrid();
+}
+
+void RoutingMatrix::layoutGrid() {
+    // Same rule as MainComponentRail::layout for the rail itself: reserve the
+    // scrollbar's width only when the rows really overflow, so a short list
+    // leaves no empty strip down the right edge. GridPanel divides whatever
+    // height it gets across its rows, so handing it the NATURAL height (never
+    // less) is what keeps every row at kMinRowHeight or more.
+    const int natural = naturalHeight();
+    const bool overflows = natural > getHeight();
+    const int width = getWidth() - (overflows ? viewport_.getScrollBarThickness() : 0);
+    grid_.setSize(std::max(0, width), std::max(getHeight(), natural));
 }
 
 }  // namespace rta::view

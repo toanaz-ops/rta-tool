@@ -108,3 +108,151 @@ TEST_CASE("updateMembership clears a stale row when the route naming it disappea
     matrix.updateMembership(RoutingPlan{}, {});
     CHECK(matrix.grid().cellText(0, 1) == "--");
 }
+
+// ---- Lane H2 (D1, D8): rows follow the device's channel count --------------
+
+namespace {
+
+std::vector<std::string> namesOf(int count) {
+    std::vector<std::string> names;
+    for (int i = 0; i < count; ++i) names.push_back("In " + std::to_string(i + 1));
+    return names;
+}
+
+}  // namespace
+
+TEST_CASE("Rows follow the device's channel count, past the old 8-row cap",
+          "[routing_matrix]") {
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 0);
+    REQUIRE(matrix.channelCount() == 0);
+
+    matrix.setChannelNames(namesOf(16));
+    CHECK(matrix.channelCount() == 16);
+    // The last row exists as a real cell -- not merely counted.
+    CHECK(matrix.grid().cellText(15, 0) == "UNUSED");
+    CHECK(matrix.grid().cellText(15, 1) == "--");
+}
+
+TEST_CASE("Rows are capped at kMaxChannels, the size of ChannelConfig's tables",
+          "[routing_matrix]") {
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 0);
+    matrix.setChannelNames(namesOf(rta::platform::kMaxChannels + 6));
+    CHECK(matrix.channelCount() == rta::platform::kMaxChannels);
+}
+
+TEST_CASE("Clicking a high row assigns THAT channel with the active transfer function",
+          "[routing_matrix]") {
+    // Not the identity mapping: transfer function 3, channel 11 (row 12, 1-based).
+    // A route position or tf index used as a channel number (memory
+    // an-index-from-one-table-used-in-another) would touch channel 3 instead.
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 0);
+    matrix.setChannelNames(namesOf(16));
+    matrix.setActiveTransferFunction(3);
+
+    REQUIRE(config.setRole(0, ChannelRole::Reference));
+    REQUIRE(config.setTransferFunction(0, 3));
+
+    matrix.grid().onCellClicked(11, 0);  // Unused -> Measurement
+
+    CHECK(config.role(11) == ChannelRole::Measurement);
+    CHECK(config.transferFunction(11) == 3);
+    CHECK(config.role(3) == ChannelRole::Unused);
+    CHECK(config.transferFunction(3) == 0);
+
+    // And the route the click produced: transfer function 3 measures channel
+    // 11 against reference 0, at the channel count the bus would report.
+    const RoutingPlan plan = rta::measure::planRouting(config, 16);
+    REQUIRE(plan.routes.size() == 1);
+    CHECK(plan.routes[0].tfIndex == 3);
+    CHECK(plan.routes[0].measurementChannel == 11);
+    CHECK(plan.routes[0].referenceChannel == 0);
+}
+
+TEST_CASE("The AVG column shows a route on a channel past row 8", "[routing_matrix]") {
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 0);
+    matrix.setChannelNames(namesOf(16));
+
+    RoutingPlan plan;
+    plan.routes.push_back(TransferRoute{3, 0, 12});
+    std::vector<PositionSummary> positions(1);
+    positions[0].membership = Membership::Member;
+    matrix.updateMembership(plan, positions);
+
+    CHECK(matrix.grid().cellText(12, 1) == "AVG");
+}
+
+TEST_CASE("Shrinking the channel list drops rows and leaves the config alone",
+          "[routing_matrix]") {
+    // Decision (RoutingMatrix::setChannelNames): a role on a dropped channel is
+    // NOT cleared. It cannot route (planRouting clamps to the bus's channel
+    // count), it is not silently rewritten behind ChannelRoleTable's back, and
+    // it survives a transient device close.
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 0);
+    matrix.setChannelNames(namesOf(16));
+    matrix.setActiveTransferFunction(3);
+    REQUIRE(config.setRole(0, ChannelRole::Reference));
+    REQUIRE(config.setTransferFunction(0, 3));
+    matrix.grid().onCellClicked(11, 0);
+    REQUIRE(rta::measure::planRouting(config, 16).routes.size() == 1);
+
+    matrix.setChannelNames(namesOf(4));
+
+    CHECK(matrix.channelCount() == 4);
+    CHECK(config.role(11) == ChannelRole::Measurement);  // untouched
+
+    // No row 11 any more: a click there is refused, a membership entry naming
+    // it is dropped, neither crashes or writes anything.
+    matrix.grid().onCellClicked(11, 0);
+    CHECK(config.role(11) == ChannelRole::Measurement);
+    RoutingPlan stale;
+    stale.routes.push_back(TransferRoute{3, 0, 11});
+    std::vector<PositionSummary> positions(1);
+    positions[0].membership = Membership::Member;
+    matrix.updateMembership(stale, positions);
+    CHECK(matrix.grid().cellText(11, 1).empty());
+
+    // And the route itself cannot exist at the shrunk channel count.
+    const RoutingPlan shrunk = rta::measure::planRouting(config, 4);
+    CHECK(shrunk.routes.empty());
+    CHECK(shrunk.unroutedMeasurements.empty());
+}
+
+TEST_CASE("A row rebuild re-reads the roles from the config", "[routing_matrix]") {
+    ChannelConfig config;
+    REQUIRE(config.setRole(2, ChannelRole::Reference));
+    RoutingMatrix matrix(config, 0);
+    matrix.setChannelNames(namesOf(4));
+    CHECK(matrix.grid().cellText(2, 0) == "REF");
+}
+
+TEST_CASE("Rows scroll inside the widget's own height once they overflow",
+          "[routing_matrix]") {
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 0);
+    matrix.setSize(240, 220);  // the rail's slot (MainComponentRail.cpp)
+
+    auto contentHeight = [&] { return matrix.viewportForTest().getViewedComponent()->getHeight(); };
+
+    matrix.setChannelNames(namesOf(16));
+    CHECK(matrix.viewportForTest().getHeight() == 220);
+    CHECK(contentHeight() > matrix.viewportForTest().getHeight());
+    CHECK(contentHeight() == RoutingMatrix::kMinRowHeight * 16 + az::ui::captionHeight);
+    CHECK(matrix.scrollBarVisibleForTest());
+
+    matrix.setChannelNames(namesOf(64));
+    CHECK(contentHeight() == RoutingMatrix::kMinRowHeight * 64 + az::ui::captionHeight);
+
+    // 8 rows always fit the slot (the pre-H2 shape): no scrolling, no bar.
+    matrix.setChannelNames(namesOf(8));
+    CHECK(contentHeight() == matrix.viewportForTest().getHeight());
+    CHECK_FALSE(matrix.scrollBarVisibleForTest());
+
+    matrix.setChannelNames(namesOf(4));
+    CHECK(contentHeight() == matrix.viewportForTest().getHeight());
+    CHECK_FALSE(matrix.scrollBarVisibleForTest());
+}

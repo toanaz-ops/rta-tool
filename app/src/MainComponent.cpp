@@ -71,7 +71,10 @@ const std::vector<std::string> kSyntheticChannelNames{"Synthetic L", "Synthetic 
 
 MainComponent::MainComponent()
     : analysisThread_(audioIo_.bus(), rta::measure::Analyser::Config{}),
-      rail_(audioIo_, rta::measure::kMaxTransferFunctions),
+      // No device open yet, so no input channels to show a row for: the
+      // routing matrix's rows follow the device's channel list from the first
+      // refreshChannelNamesFromDevice() on (D1, lane H2), not a fixed 8.
+      rail_(audioIo_, 0),
       // The default workspace when none has been loaded: exactly one `rta`
       // pane, so the app's opening screen stays byte-for-byte what it was
       // before this task (task brief, step 3). Nothing in this class loads
@@ -316,8 +319,8 @@ void MainComponent::timerCallback() {
     // comment) rather than reading rta::platform::ChannelConfig live at
     // paint time, so it needs an explicit poke to notice a role change made
     // anywhere OTHER than its own click -- channelRoleTable_'s clicks in
-    // LIVE mode, chiefly. Cheap: kMaxTransferFunctions (8) cells, twice a
-    // second.
+    // LIVE mode, chiefly. Cheap: one text cell per channel (at most
+    // kMaxChannels = 64), twice a second.
     rail_.refreshFromConfig();
     refreshMembershipFromSnapshot();
     pollLocatePipeline();
@@ -331,9 +334,13 @@ void MainComponent::timerCallback() {
 }
 
 void MainComponent::refreshChannelNamesFromDevice() {
-    auto names = audioIo_.currentState().inputChannelNames;
+    applyChannelNames(audioIo_.currentState().inputChannelNames);
+}
+
+void MainComponent::applyChannelNames(std::vector<std::string> names) {
     if (names != lastChannelNames_) {
-        lastChannelNames_ = names;
+        lastChannelNames_ = std::move(names);
+        // Feeds channelRoleTable_ AND routingMatrix_ (MainComponentRail.h).
         rail_.setChannelNames(lastChannelNames_);
     }
 }
@@ -348,10 +355,20 @@ void MainComponent::refreshMembershipFromSnapshot() {
     // `plan` for one tick -- updateMembership's own bounds handle that
     // without reading past either span (RoutingMatrix.h's own comment).
     if (const auto snapshot = analysisThread_.latest()) {
-        const auto plan =
-            rta::measure::planRouting(audioIo_.bus().config(), rta::measure::kMaxTransferFunctions);
-        rail_.updateMembership(plan, snapshot->positions);
+        rail_.updateMembership(currentRoutingPlan(), snapshot->positions);
     }
+}
+
+rta::measure::RoutingPlan MainComponent::currentRoutingPlan() const {
+    // The channel COUNT must be the bus's, exactly as AnalysisThread's own
+    // planRouting calls use (AnalysisThread.cpp): `snapshot->positions[i]`
+    // describes THAT plan's route i, and updateMembership zips the two by
+    // index. Passing kMaxTransferFunctions here (a transfer-function cap, not
+    // a channel count -- an index from one table used in another, memory
+    // an-index-from-one-table-used-in-another) dropped every measurement
+    // channel past 7 from THIS plan while the analysis still routed it,
+    // shifting every later row's AVG text onto the wrong channel.
+    return rta::measure::planRouting(audioIo_.bus().config(), audioIo_.bus().numChannels());
 }
 
 // paint() / resized(): MainComponentLayout.cpp (this file's own 400-line-cap

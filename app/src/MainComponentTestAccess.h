@@ -74,6 +74,31 @@ struct MainComponentTestAccess {
     [[nodiscard]] static const juce::Component& routingMatrix(const MainComponent& c) {
         return c.rail_.routingMatrixForTest();
     }
+    // D1/D8 (lane H2): the typed matrix (click cells, read rows), the outer
+    // rail viewport and its content, and the names push the device poll makes.
+    [[nodiscard]] static rta::view::RoutingMatrix& routingMatrixWidget(MainComponent& c) {
+        return c.rail_.routingMatrixWidgetForTest();
+    }
+    [[nodiscard]] static const juce::Viewport& railViewport(const MainComponent& c) {
+        return c.rail_.railViewportForTest();
+    }
+    [[nodiscard]] static const juce::Component& railContent(const MainComponent& c) {
+        return c.rail_.railContentForTest();
+    }
+    [[nodiscard]] static const juce::Component& devicePanel(const MainComponent& c) {
+        return c.rail_.devicePanelForTest();
+    }
+    static void applyChannelNamesForTest(MainComponent& c, std::vector<std::string> names) {
+        c.applyChannelNames(std::move(names));
+    }
+    [[nodiscard]] static rta::measure::RoutingPlan currentRoutingPlanForTest(const MainComponent& c) {
+        return c.currentRoutingPlan();
+    }
+    // Prepares the bus as a device with `numChannels` inputs would (what
+    // AudioIo::audioDeviceAboutToStart does), so numChannels() is real.
+    static void prepareBusForTest(MainComponent& c, double sampleRate, int numChannels) {
+        c.audioIo_.bus().prepare(sampleRate, numChannels);
+    }
 
     // Session persistence test seam: app/tests_juce/test_main_component_session.cpp
     // (and its fix-round split, test_main_component_session_fixround.cpp).

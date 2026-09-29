@@ -172,6 +172,9 @@ target_sources(rtatool_snapshot PRIVATE ${RTATOOL_SNAPSHOT_SOURCES})
 target_sources(rtatool_snapshot PRIVATE
     ${CMAKE_SOURCE_DIR}/tools/SnapshotRender.cpp
     ${CMAKE_SOURCE_DIR}/tools/snapshot_xover.cpp
+    # snapshot_routing.cpp: lane H2's main-live-routing16.png, split out of
+    # tools/snapshot.cpp for the same reason.
+    ${CMAKE_SOURCE_DIR}/tools/snapshot_routing.cpp
 )
 
 target_include_directories(rtatool_snapshot PRIVATE
