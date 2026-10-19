@@ -103,6 +103,10 @@ TEST_CASE("sweep: one press adds one SWEEP trace and reads out its delay", kTag)
     CHECK(readout.contains(" loop "));
     CHECK_FALSE(readout.contains("CLIPPED"));  // no clipping warning at -12 dBFS
     CHECK(readout.endsWith(" IRs 1/8"));       // the store count is in the visible text
+    // Both separators are U+00B7 (UTF-8 C2 B7) -- a mis-encoded literal shows a stray A-circumflex first.
+    const juce::String middleDot = juce::String(juce::CharPointer_UTF8("\xc2\xb7"));
+    CHECK(readout.contains(" ms) " + middleDot + " loop "));
+    CHECK(readout.contains(" dB " + middleDot + " IRs 1/8"));
     const long reported = readout.fromFirstOccurrenceOf("IR ", false, false).getIntValue();
     const long expected = expectedSyntheticDelaySamples();
     INFO("reported " << reported << " expected " << expected);

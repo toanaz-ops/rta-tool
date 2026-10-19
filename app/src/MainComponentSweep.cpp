@@ -190,7 +190,7 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
                         " dB";
     // Decision 6: IRs live in memory only, capped; say so where the operator
     // looks, and say when this one pushed the oldest out.
-    text += " " + juce::String(juce::CharPointer_UTF8("Â·")) + " IRs " + juce::String(irStore_.size()) + "/" +
+    text += " " + juce::String(juce::CharPointer_UTF8("\xc2\xb7")) + " IRs " + juce::String(irStore_.size()) + "/" +
             juce::String(rta::trace::IrStore::kCapacity) + (evicts ? " (oldest dropped)" : "");
     if (outcome.measurementClipped) text += " -- CLIPPED, harmonics at negative time";
     say(text);
