@@ -78,6 +78,11 @@ set(RTA_IMPL_TEST_SOURCES
     # the authoritative estimator and the table of witnesses.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizardSignals.cpp
+    # AlignRunner.cpp / AlignReadout.cpp: ALIGN-UI lane wave A tasks T2/T3 --
+    # test_align_runner*.cpp / test_align_readout.cpp call straight into them.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunnerText.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignReadout.cpp
     # CrossoverSurface.cpp: lane L7-ALIGN task I (record Sec.6) --
     # test_crossover_surface.cpp calls straight into it.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/CrossoverSurface.cpp

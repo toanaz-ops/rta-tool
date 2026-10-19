@@ -68,6 +68,11 @@ add_executable(rtatool_main_component_tests
     # test_synthetic_loopback.cpp: sweep-IR wave A (T1/T2) -- SyntheticInput
     # rendering the OutputEngine, and LOCATE reaching a suggestion in SYNTHETIC.
     test_synthetic_loopback.cpp
+    # ALIGN-UI wave A: the second loopback output (T0), and the ALIGN pane
+    # against a real MainComponent (T5 selector, T6 acceptance).
+    test_synthetic_loopback_multi.cpp
+    test_main_component_align.cpp
+    test_main_component_panes_align.cpp
     # test_main_component_export.cpp: D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4
     # item 14) -- exportReportClicked()'s catch branch had no test at all.
     test_main_component_export.cpp

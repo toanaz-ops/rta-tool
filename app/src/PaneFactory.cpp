@@ -9,8 +9,9 @@
 #include "view/TransferView.h"
 
 rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSource& source,
-                                                      rta::view::EqPaneBinding eq) {
-    return [&source, eq](rta::view::PaneView view) -> std::unique_ptr<juce::Component> {
+                                                      rta::view::EqPaneBinding eq,
+                                                      rta::view::AlignPaneBinding align) {
+    return [&source, eq, align](rta::view::PaneView view) -> std::unique_ptr<juce::Component> {
         if (view == rta::view::PaneView::Transfer) {
             return std::make_unique<rta::view::TransferView>(source);
         }
@@ -28,6 +29,11 @@ rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSour
             // Model and actions come from MainComponentEq, not from `source`:
             // the pane equalises an already-stored trace, like XOVER.
             return std::make_unique<rta::view::EqPaneView>(eq);
+        }
+        if (view == rta::view::PaneView::Align) {
+            // The runner is MainComponentAlign's, like the EQ model: a pane
+            // is widgets only, and the answers survive its rebuild.
+            return std::make_unique<rta::view::AlignPaneView>(align);
         }
         return std::make_unique<rta::view::RtaView>(source);
     };

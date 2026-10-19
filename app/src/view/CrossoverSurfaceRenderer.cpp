@@ -267,12 +267,19 @@ void paintCrossoverSummation(juce::Graphics& g, juce::Rectangle<int> area,
     strokeSeries(g, geometry, surface.lowSideDb(), binWidthHz, secondaryTrace, 1.4f);
     strokeSeries(g, geometry, surface.ghostSumDb(), binWidthHz, ghost, 1.8f, true);
     strokeSeries(g, geometry, surface.predictedSumDb(), binWidthHz, match, 2.2f);
+    // The capture from record Sec.2's last step (ALIGN's SUM), drawn brightest
+    // so it reads against the prediction. Empty until a SUM was measured.
+    if (!surface.measuredSumDb().empty()) {
+        strokeSeries(g, geometry, surface.measuredSumDb(), binWidthHz, az::ui::text, 1.6f);
+    }
 
     g.setColour(az::ui::faded);
     g.setFont(az::ui::legendFont(az::ui::columnFontSize, true, az::ui::trackingColumn));
-    g.drawText("PREDICTED SUM (SOLID)   PRE-ALIGNMENT GHOST (DASHED)",
+    g.drawText(surface.measuredSumDb().empty()
+                   ? "PREDICTED SUM (SOLID)   PRE-ALIGNMENT GHOST (DASHED)"
+                   : "PREDICTED SUM (SOLID)   PRE-ALIGNMENT GHOST (DASHED)   MEASURED SUM (BRIGHT)",
                juce::Rectangle<int>(static_cast<int>(geometry.left) + az::ui::gap,
-                                     static_cast<int>(geometry.top) + az::ui::spacing, 420,
+                                     static_cast<int>(geometry.top) + az::ui::spacing, 620,
                                      az::ui::captionHeight),
                juce::Justification::centredLeft, false);
 }

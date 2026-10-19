@@ -38,11 +38,16 @@ TEST_CASE("each defined button resolves to its own PaneView, with no fallback",
     CHECK(eq.view == PaneView::Eq);
     CHECK_FALSE(eq.fellBack);
     CHECK(eq.requested == "eq");
+
+    const auto align = decidePaneSelection(PaneSelectorButton::Align);
+    CHECK(align.view == PaneView::Align);
+    CHECK_FALSE(align.fellBack);
+    CHECK(align.requested == "align");
 }
 
 TEST_CASE("an unrecognised button falls back to Rta and reports it",
          "[pane_selector_decision]") {
-    // No enumerator outside {Rta, Transfer, Spl, Xover, Eq} exists today, so
+    // No enumerator outside {Rta, Transfer, Spl, Xover, Eq, Align} exists today, so
     // this pins the fallback branch itself against the same static_cast an
     // uninitialised or corrupted enum value could produce -- the same
     // "unknown -> Rta, reported" contract resolvePaneView("nonexistent")
@@ -72,7 +77,11 @@ TEST_CASE("paneViewName round-trips through resolvePaneView for every PaneView",
     // L7-EQ UI (plan T4): five enumerators now. Mutant: delete the
     // `if (view == PaneView::Eq) return "eq";` arm -- paneViewName(Eq) falls to
     // "rta" and the round trip below goes RED (Eq != Rta), same shape as above.
-    for (const auto view : { PaneView::Rta, PaneView::Transfer, PaneView::Spl, PaneView::Xover, PaneView::Eq }) {
+    // ALIGN-UI lane (plan T4): six enumerators now. Mutant: delete the
+    // `if (view == PaneView::Align) return "align";` arm -- paneViewName(Align)
+    // falls to "rta" and the round trip below goes RED (Align != Rta).
+    for (const auto view : { PaneView::Rta, PaneView::Transfer, PaneView::Spl, PaneView::Xover, PaneView::Eq,
+                             PaneView::Align }) {
         const auto name = rta::view::paneViewName(view);
         const auto resolution = rta::view::resolvePaneView(name);
         CHECK_FALSE(resolution.fellBack);

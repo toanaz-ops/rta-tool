@@ -128,6 +128,20 @@ set(RTATOOL_SOURCES
     src/MainComponentSweep.cpp
     src/measure/SweepIrPipeline.cpp
     src/measure/SweepIrWorker.cpp
+    # --- ALIGN-UI lane wave A (docs/plans/2026-10-20-align-ui-lane-plan.md) -----
+    # The ALIGN pane and everything it reaches. AlignmentWizard.cpp /
+    # AlignmentWizardSignals.cpp were built and unit-tested in lane L7-ALIGN
+    # with NO caller in this target (orphans until now); AlignRunner.cpp is
+    # the production caller, MainComponentAlign.cpp the composition root's
+    # half. AlignReadout.cpp is JUCE-free text, AlignPaneView.cpp the pane.
+    src/MainComponentAlign.cpp
+    src/measure/AlignmentWizard.cpp
+    src/measure/AlignmentWizardSignals.cpp
+    src/measure/AlignRunner.cpp
+    src/measure/AlignRunnerText.cpp
+    src/measure/AlignReadout.cpp
+    src/view/AlignPaneView.cpp
+    # --- end ALIGN-UI lane wave A -----------------------------------------------
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
     src/view/TraceStroke.cpp

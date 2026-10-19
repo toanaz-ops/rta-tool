@@ -227,4 +227,23 @@ struct MainComponentTestAccess {
     [[nodiscard]] static bool outputSourceQuiescentForTest(const MainComponent& c) {
         return c.audioIo_.output().sourceIsQuiescent();
     }
+
+    // ALIGN-UI wave A (T6): app/tests_juce/test_main_component_align*.cpp and
+    // tools/snapshot_align.cpp. The runner lives in `MainComponentAlign`, so
+    // most of it is reached through its own `*ForTest` members.
+    [[nodiscard]] static MainComponentAlign& alignForTest(MainComponent& c) { return c.align_; }
+    static void applyClickedForTest(MainComponent& c) { c.applyClicked(); }
+    // Replaces SYNTHETIC's two output paths (the fixture the plan derives its
+    // bounds from: noise off, an LR4 pair 96 samples apart). The roles the
+    // bus carries are untouched; only the writer thread is rebuilt.
+    static void restartSyntheticForTest(MainComponent& c, rta::measure::SyntheticInput::Config config) {
+        c.syntheticInput_.reset();  // joins the thread before the new one is built
+        config.loopback = &c.audioIo_.output();
+        c.syntheticInput_ = std::make_unique<rta::measure::SyntheticInput>(c.audioIo_.bus(), config);
+    }
+    // The engine the loopback renders, so a test can prove an aborted run left
+    // the output disarmed: render a few blocks by hand and ask it.
+    [[nodiscard]] static rta::platform::OutputEngine& outputEngineForTest(MainComponent& c) {
+        return c.audioIo_.output();
+    }
 };

@@ -12,6 +12,7 @@
 // this composition root can name it at all (lane L-API Task I, D2).
 #include "api/ApiServer.h"
 #include "api/ApiSettings.h"
+#include "MainComponentAlign.h"
 #include "MainComponentEq.h"
 #include "MainComponentRail.h"
 #include "MainComponentSession.h"
@@ -89,7 +90,8 @@ private:
     /// CAL or SWEEP holds the accumulator. `outputBusy`: that, or VERIFY's
     /// excitation is playing. Each caller keeps its own refusal wording.
     [[nodiscard]] bool captureBusy() const noexcept {
-        return locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_ || sweep_.busy();
+        return locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_ || sweep_.busy() ||
+               align_.busy();
     }
     [[nodiscard]] bool outputBusy() const noexcept { return captureBusy() || eq_.verifyBusy(); }
 
@@ -203,6 +205,9 @@ private:
     /// L7-EQ UI wave B: hands `eq_` the device, the live snapshot and the
     /// LOCATE/CAL flags VERIFY needs (MainComponentEqVerify.cpp).
     void wireEqVerify();
+    /// ALIGN-UI lane (MainComponentAlign.cpp): hands `align_` the device, the
+    /// live snapshot and the busy flags MEASURE and SUM need.
+    void wireAlign();
 
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
@@ -322,6 +327,7 @@ private:
     juce::TextButton paneSplButton_{"SPL"};
     juce::TextButton paneXoverButton_{"XOVER"};  // ALIGN-R8 reversal: G18 live pane
     juce::TextButton paneEqButton_{"EQ"};        // L7-EQ UI lane: the auto-EQ pane
+    juce::TextButton paneAlignButton_{"ALIGN"};  // ALIGN-UI lane: the alignment wizard pane
     rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
 
     // --- library_ before workspace_ is load-bearing too. See the class
@@ -331,6 +337,10 @@ private:
     // survive workspace_ rebuilding the pane. Before workspace_: every EqPaneView
     // holds a pointer into it, and members are destroyed in reverse order.
     MainComponentEq eq_;
+    // ALIGN-UI (MainComponentAlign.h): same ownership as eq_ -- the wizard's
+    // answers and the last verdict survive the pane being rebuilt, and every
+    // AlignPaneView holds a pointer into it, so it is declared before workspace_.
+    MainComponentAlign align_;
     // A pointer: selectPaneView rebuilds it wholesale (WorkspaceView's
     // factory is consumed once, in its own constructor).
     std::unique_ptr<rta::view::WorkspaceView> workspace_;

@@ -72,7 +72,7 @@ MainComponent::MainComponent()
       // a session yet. The pane selector (`selectPaneView`) can rebuild this
       // to a different single pane; the shape it starts in is unchanged.
       workspace_(std::make_unique<rta::view::WorkspaceView>(
-          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_, eq_.binding()))),
+          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_, eq_.binding(), align_.binding()))),
       // Session persistence: Save reads EVERY pane in `workspace_` (F4,
       // docs/HUMAN-QA-QUEUE.md D11) through `WorkspaceView::paneSpecs()`,
       // via a callback rather than a stored pointer, matching
@@ -157,6 +157,7 @@ MainComponent::MainComponent()
     session_.attachTo(*this);
     sweep_.attachTo(*this);
     wireEqVerify();
+    wireAlign();
 
     rail_.attachTo(*this);
 
@@ -241,6 +242,7 @@ void MainComponent::timerCallback() {
     pollCalibrationPipeline();
     sweep_.poll();
     eq_.pollVerify();  // L7-EQ VERIFY: before the SYNTHETIC early return below
+    align_.poll();     // ALIGN-UI: ALIGN runs in SYNTHETIC too, so before the early return
     pollSplLogging();
 
     if (isSyntheticMode()) {

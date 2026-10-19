@@ -37,6 +37,10 @@ namespace rta::measure {
 /// output".
 class SyntheticInput final : public juce::Thread {
 public:
+    /// Output channels the loopback renders (ALIGN-UI T0): output 0 is the
+    /// main, output 1 the sub. The composition root lists this many.
+    static constexpr int kOutputChannels = 2;
+
     struct Config {
         enum class Source { PinkNoise, Sine };
 
@@ -81,6 +85,19 @@ public:
         /// never filtered -- it is the stimulus, and a filter on it would
         /// cancel in H = S_xy / S_xx and show a flat line again.
         std::vector<rta::dsp::Biquad::Coeffs> measurementFilter;
+
+        /// ALIGN-UI lane decision 10 / task T0: the loopback renders TWO
+        /// output channels and each has its own path into the measurement
+        /// copy. `measurementDelaySamples` / `measurementFilter` above are
+        /// output 0's path (unchanged); these two are output 1's. The
+        /// measurement channel is the SUM of both paths' outputs, which is
+        /// what a microphone hears when two loudspeakers play -- so a wizard
+        /// that solos the sub (out 1) hears the sub's own path and nothing
+        /// of the main's. Inert defaults (identity path): a caller that
+        /// never opts in sees one bit changed nowhere, because an unrouted
+        /// output is exact zeros and `x + 0.0f` is exact.
+        int secondOutputDelaySamples = 0;
+        std::vector<rta::dsp::Biquad::Coeffs> secondOutputFilter;
 
         /// The generator's output engine, or nullptr. When set, the
         /// constructor `prepare()`s it for one channel and every block is
@@ -133,6 +150,12 @@ private:
     std::vector<float> measurementBlock_;
 
     MeasurementPath measurementPath_;
+    MeasurementPath secondPath_;
+
+    /// The loopback's two rendered output blocks, and output 1's path
+    /// result (summed into `measurementBlock_`).
+    std::vector<float> outputBlock_[2];
+    std::vector<float> secondPathBlock_;
     std::uint32_t noiseState_;
 };
 

@@ -4,6 +4,7 @@
 // The class design rationale lives at the top of MainComponent.cpp.
 #include "MainComponent.h"
 
+#include "measure/SyntheticCrossover.h"
 #include "rta/dsp/ButterworthDesign.h"
 
 namespace {
@@ -52,6 +53,13 @@ void MainComponent::setSyntheticMode(bool enabled) {
         syntheticConfig.measurementFilter =
             rta::dsp::ButterworthDesign::bandPass(40.0, 16000.0, syntheticConfig.sampleRate, 2)
                 .sections;
+        // ALIGN-UI decision 10: output 1 (the sub) has its own path -- LR4
+        // low-pass at 100 Hz, delay 100 -- so the default ALIGN run has an
+        // answer (the sub arrives 96 samples after output 0's 4). Output 0
+        // above is untouched.
+        syntheticConfig.secondOutputDelaySamples = 100;
+        syntheticConfig.secondOutputFilter =
+            rta::measure::lr4LowPass(100.0, syntheticConfig.sampleRate);
         // Loopback: LOCATE, SWEEP and VERIFY play through the output engine;
         // the device that would normally render it is stopped here, so the
         // synthetic thread renders it and carries the result onto the bus.

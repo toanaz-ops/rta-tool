@@ -4,6 +4,7 @@
 #pragma once
 
 #include "measure/SnapshotSource.h"
+#include "view/AlignPaneView.h"
 #include "view/EqPaneView.h"
 #include "view/WorkspaceView.h"
 
@@ -32,5 +33,11 @@
 /// pane being rebuilt on a selector click. Required, never defaulted: a
 /// factory with no model would have to build SOMETHING for `PaneView::Eq`, and
 /// building the wrong pane silently is exactly the defect described above.
+///
+/// `align` (ALIGN-UI lane, plan T4) is the ALIGN pane's wiring, with the same
+/// ownership and the same reason as `eq`: the runner and the answers live in
+/// MainComponentAlign, so a pane rebuilt by a selector click keeps the
+/// operator's answers and the last verdict.
 [[nodiscard]] rta::view::WorkspaceView::PaneFactory makePaneFactory(
-    rta::measure::SnapshotSource& source, rta::view::EqPaneBinding eq);
+    rta::measure::SnapshotSource& source, rta::view::EqPaneBinding eq,
+    rta::view::AlignPaneBinding align);
