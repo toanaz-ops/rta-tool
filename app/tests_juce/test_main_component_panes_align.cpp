@@ -34,6 +34,7 @@ TEST_CASE("align pane: the selector builds an AlignPaneView and returns to RTA",
 
 TEST_CASE("align pane: answers written through the combos reach the runner and outlive the pane", kTag) {
     MainComponent c;
+    c.setSyntheticMode(true);  // two outputs to pick from
     c.selectPaneView(rta::view::PaneSelectorButton::Align);
     auto* pane = alignPaneOf(c);
     REQUIRE(pane != nullptr);
@@ -42,6 +43,12 @@ TEST_CASE("align pane: answers written through the combos reach the runner and o
     const auto& answers = Access::alignForTest(c).runnerForTest().answers();
     CHECK(answers.topology.has_value());
     CHECK(answers.highPass.has_value());
+
+    // The two output pickers write the runner's output indices; the status
+    // label shows the runner's own status text.
+    CHECK(pane->mainOutputComboForTest().getSelectedId() == 1);
+    CHECK(pane->subOutputComboForTest().getSelectedId() == 2);
+    CHECK(pane->statusForTest().isNotEmpty());
 
     c.selectPaneView(rta::view::PaneSelectorButton::Eq);
     c.selectPaneView(rta::view::PaneSelectorButton::Align);

@@ -40,10 +40,4 @@ inline rta::dsp::Biquad::Coeffs rbjSection(double fcHz, double fs, bool highPass
     return {s, s};
 }
 
-/// Two identical sections: LR4 high-pass at `fcHz`.
-[[nodiscard]] inline std::vector<rta::dsp::Biquad::Coeffs> lr4HighPass(double fcHz, double fs) {
-    const auto s = detail::rbjSection(fcHz, fs, true);
-    return {s, s};
-}
-
 }  // namespace rta::measure

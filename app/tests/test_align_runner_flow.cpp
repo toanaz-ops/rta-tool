@@ -213,6 +213,8 @@ TEST_CASE("T2i: SUM refuses while another feature holds the output, and takes th
     CHECK_FALSE(rig.runner.pressSum());
     CHECK(rig.runner.status().find("SUM refused") != std::string::npos);
     CHECK(rig.runner.step() == WizardStep::Computed);
+    // The host refused, not the wizard: no wizard refusal is on record.
+    CHECK(rig.runner.wizardRefusalForTest() == rta::measure::WizardRefusal::None);
     CHECK(routed(rig, 0) == routed0);
     CHECK(routed(rig, 1) == routed1);
 }

@@ -15,7 +15,7 @@
 
 namespace rta::measure {
 using namespace detail;
-struct AlignRunner::Impl {
+struct AlignRunnerState {
     rta::platform::OutputEngine* engine = nullptr;
     rta::trace::TraceLibrary* library = nullptr;
     AlignHost host;
@@ -79,7 +79,7 @@ struct AlignRunner::Impl {
     void trySubmit(double now);
 };
 
-AlignRunner::AlignRunner() : impl_(std::make_unique<Impl>()) {}
+AlignRunner::AlignRunner() : impl_(std::make_unique<AlignRunnerState>()) {}
 AlignRunner::~AlignRunner() = default;
 
 void AlignRunner::attach(rta::platform::OutputEngine& engine, rta::trace::TraceLibrary& library,
@@ -121,7 +121,7 @@ AlignOutcome AlignRunner::outcomeForTest() const noexcept { return impl_->outcom
 WizardRefusal AlignRunner::wizardRefusalForTest() const noexcept { return impl_->wizardRefusal; }
 
 AlignBlocker AlignRunner::blocker() const {
-    const Impl& d = *impl_;
+    const AlignRunnerState& d = *impl_;
     const auto block = [](AlignBlock kind, const std::string& extra = {}) {
         std::string text = alignBlockText(kind);
         if (!extra.empty()) text += " (" + extra + ")";
@@ -167,7 +167,7 @@ AlignBlocker AlignRunner::blocker() const {
 }
 
 bool AlignRunner::press() {
-    Impl& d = *impl_;
+    AlignRunnerState& d = *impl_;
     const AlignBlocker why = blocker();
     if (why.kind != AlignBlock::None) {
         d.refusal = why.kind;
@@ -216,7 +216,7 @@ bool AlignRunner::press() {
 }
 
 bool AlignRunner::pressSum() {
-    Impl& d = *impl_;
+    AlignRunnerState& d = *impl_;
     if (!d.attached() || !d.wizard || !d.wizard->verdict().has_value()) {
         d.say("SUM: run MEASURE first");
         return false;
@@ -261,7 +261,7 @@ bool AlignRunner::pressSum() {
 }
 
 bool AlignRunner::answerCycleMs(double milliseconds) {
-    Impl& d = *impl_;
+    AlignRunnerState& d = *impl_;
     const bool askable = d.wizard && (d.wizard->step() == WizardStep::AskingCycle ||
                                       d.wizard->step() == WizardStep::Computed);
     if (!askable || !std::isfinite(milliseconds)) {
@@ -279,7 +279,7 @@ bool AlignRunner::answerCycleMs(double milliseconds) {
 }
 
 void AlignRunner::poll() {
-    Impl& d = *impl_;
+    AlignRunnerState& d = *impl_;
     if (!d.measuring()) return;
     const AlignEnvironment env = d.host.environment();
     if (env.synthetic != d.pressedSynthetic) {
@@ -297,7 +297,7 @@ void AlignRunner::poll() {
     d.trySubmit(d.host.nowMs());
 }
 
-void AlignRunner::Impl::trySubmit(double now) {
+void AlignRunnerState::trySubmit(double now) {
     wizard->poll();
     const CaptureConfig config = host.captureConfig();
     const double fs = engine->sampleRate();
@@ -362,7 +362,7 @@ void AlignRunner::Impl::trySubmit(double now) {
     afterSubmit(asked);
 }
 
-void AlignRunner::Impl::afterSubmit(const AlignAnswers& asked) {
+void AlignRunnerState::afterSubmit(const AlignAnswers& asked) {
     const WizardStep now = wizard->step();
     if (now == WizardStep::MeasuringLow) {
         markStepStart();

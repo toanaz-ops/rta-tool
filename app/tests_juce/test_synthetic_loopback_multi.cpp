@@ -20,6 +20,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "measure/OutputPolicy.h"
+#include "dev-support/SyntheticCrossoverHp.h"
 #include "measure/SyntheticCrossover.h"
 #include "measure/SyntheticImpairment.h"
 #include "measure/SyntheticInput.h"

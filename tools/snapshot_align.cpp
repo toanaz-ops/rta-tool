@@ -6,6 +6,7 @@
 
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
+#include "dev-support/SyntheticCrossoverHp.h"
 #include "measure/SyntheticCrossover.h"
 #include "view/AlignPaneView.h"
 

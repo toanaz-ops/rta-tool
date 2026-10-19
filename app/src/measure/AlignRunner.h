@@ -124,6 +124,12 @@ enum class AlignOutcome {
 
 [[nodiscard]] std::string alignBlockText(AlignBlock kind);
 
+/// The runner's state, defined in AlignRunner.cpp. A namespace-scope name rather
+/// than a nested `AlignRunner::Impl`: it keeps rta/ir/* out of this header just
+/// the same, and tools/orphan_check.py resolves its methods (a nested
+/// `struct AlignRunner::Impl {` reads to that tool as members of AlignRunner).
+struct AlignRunnerState;
+
 class AlignRunner {
 public:
     AlignRunner();
@@ -187,8 +193,7 @@ public:
     [[nodiscard]] WizardRefusal wizardRefusalForTest() const noexcept;
 
 private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
+    std::unique_ptr<AlignRunnerState> impl_;
 };
 
 }  // namespace rta::measure
