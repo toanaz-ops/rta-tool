@@ -57,3 +57,18 @@ TEST_CASE("align pane: answers written through the combos reach the runner and o
     CHECK(pane->topologyComboForTest().getSelectedId() == 2);
     CHECK(pane->highPassComboForTest().getSelectedId() == 1);
 }
+
+TEST_CASE("align pane: every question starts unanswered and MEASURE says why it is disabled", kTag) {
+    MainComponent c;
+    c.setSyntheticMode(true);
+    c.selectPaneView(rta::view::PaneSelectorButton::Align);
+    auto* pane = alignPaneOf(c);
+    REQUIRE(pane != nullptr);
+    CHECK(pane->highPassComboForTest().getSelectedId() == 0);
+    CHECK(pane->topologyComboForTest().getSelectedId() == 0);
+    CHECK(pane->inversionComboForTest().getSelectedId() == 0);
+    CHECK(pane->seedComboForTest().getSelectedId() == 0);  // "NO SEED" is an answer the operator must give
+    pane->tickForTest();
+    CHECK_FALSE(pane->measureButtonForTest().isEnabled());
+    CHECK(pane->blockerTextForTest().containsIgnoreCase("four questions"));
+}
