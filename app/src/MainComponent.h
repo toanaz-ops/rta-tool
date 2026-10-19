@@ -85,10 +85,9 @@ private:
     void timerCallback() override;
     void modeSwitchClicked();
 
-    /// ONE answer to "may a new LOCATE / CAL / SWEEP / VERIFY take the output
-    /// and the shared capture accumulator now?" (Z25). `captureBusy`: LOCATE,
-    /// CAL or SWEEP holds the accumulator. `outputBusy`: that, or VERIFY's
-    /// excitation is playing. Each caller keeps its own refusal wording.
+    /// ONE answer to "may a new LOCATE / CAL / SWEEP / VERIFY / ALIGN take the
+    /// output and the shared accumulator now?" (Z25). `captureBusy`: one of
+    /// them holds the accumulator. `outputBusy`: that, or VERIFY is playing.
     [[nodiscard]] bool captureBusy() const noexcept {
         return locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_ || sweep_.busy() ||
                align_.busy();
@@ -113,15 +112,12 @@ private:
     void locateClicked();
     void applyClicked();
 
-    /// Called every `timerCallback()` tick: advances the Locate state
-    /// machine (settle wait -> arm the accumulator -> read the finished
-    /// capture -> suggestDelay -> disarm) without blocking the message
-    /// thread on any step of it.
+    /// Every `timerCallback()` tick: advances the Locate state machine (settle
+    /// -> arm -> read the capture -> suggestDelay -> disarm), never blocking.
     void pollLocatePipeline();
 
-    /// Drops a LOCATE that is waiting for settle or for its capture and
-    /// disarms its source. Called where the input mode changes: the source
-    /// LOCATE armed belongs to the mode it was armed in. No-op when idle.
+    /// Drops a LOCATE waiting for settle or capture and disarms its source
+    /// (called where the input mode changes). No-op when idle.
     void cancelLocate();
     void updateDelayReadout();
 
@@ -210,9 +206,7 @@ private:
     /// L7-EQ UI wave B: hands `eq_` the device, the live snapshot and the
     /// LOCATE/CAL flags VERIFY needs (MainComponentEqVerify.cpp).
     void wireEqVerify();
-    /// ALIGN-UI lane (MainComponentAlign.cpp): hands `align_` the device, the
-    /// live snapshot and the busy flags MEASURE and SUM need.
-    void wireAlign();
+    void wireAlign();  // MainComponentAlign.cpp: device, snapshot and busy flags for MEASURE/SUM
 
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
@@ -342,9 +336,7 @@ private:
     // survive workspace_ rebuilding the pane. Before workspace_: every EqPaneView
     // holds a pointer into it, and members are destroyed in reverse order.
     MainComponentEq eq_;
-    // ALIGN-UI (MainComponentAlign.h): same ownership as eq_ -- the wizard's
-    // answers and the last verdict survive the pane being rebuilt, and every
-    // AlignPaneView holds a pointer into it, so it is declared before workspace_.
+    // Same ownership as eq_ (MainComponentAlign.h): declared before workspace_.
     MainComponentAlign align_;
     // A pointer: selectPaneView rebuilds it wholesale (WorkspaceView's
     // factory is consumed once, in its own constructor).
