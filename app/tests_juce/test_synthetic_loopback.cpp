@@ -13,7 +13,6 @@
 #include "measure/SyntheticImpairment.h"
 #include "measure/SyntheticInput.h"
 #include "rta/dsp/ButterworthDesign.h"
-#include "rta/dsp/BiquadResponse.h"
 #include "rta/gen/Oscillator.h"
 #include "rta/gen/Synthetic.h"
 #include "rta/platform/CaptureBus.h"
@@ -36,7 +35,6 @@ using rta::platform::OutputEngine;
 namespace {
 
 constexpr double kFs = 48000.0;
-constexpr double kPi = 3.14159265358979323846;
 constexpr int kBlock = 512;  // SyntheticInput::Config::bufferSize default
 
 bool waitUntil(const std::function<bool()>& predicate, int timeoutMs) {
@@ -234,38 +232,49 @@ TEST_CASE("SYNTHETIC + LOCATE reaches the closed-form synthetic delay", "[synthe
                     << suggestion.best.delaySamples << " sub " << suggestion.best.subSample
                     << " trust " << suggestion.trust);
     REQUIRE(suggestion.verdict == rta::dsp::DelayVerdict::Accepted);
-    // DERIVATION (plan row T2 said "4 samples"; that was wrong once decision 8
-    // put a band-pass on the measurement copy): the delay PHAT sees is the
-    // pure 4-sample delay plus the filter's own group delay, which for a
-    // phase-weighted correlator is the mean of tau_g(f) over the bins that
-    // carry signal. Mean group delay over a band equals minus the phase
-    // slope across it, so it is computed here from the SAME cascade the app
-    // builds, not read back from the estimate. The band is 200 Hz - 12 kHz:
-    // the interior where the -30 dB noise floor does not dominate the bin.
-    // Tolerance 0.5 sample: PHAT's peak is an integer-lag maximum refined by
-    // a parabola (subSample, |sub| <= 0.5), so half a sample is the
-    // resolution of the estimator itself, not slack.
-    const auto sections =
-        rta::dsp::ButterworthDesign::bandPass(40.0, 16000.0, kFs, 2).sections;
-    constexpr double kLoHz = 200.0;
-    constexpr double kHiHz = 12000.0;
-    constexpr int kSteps = 4000;
-    double phaseChange = 0.0;
-    double previous = std::arg(rta::dsp::cascadeResponse(sections, 2.0 * kPi * kLoHz / kFs));
-    for (int i = 1; i <= kSteps; ++i) {
-        const double hz = kLoHz + (kHiHz - kLoHz) * i / kSteps;
-        const double phase = std::arg(rta::dsp::cascadeResponse(sections, 2.0 * kPi * hz / kFs));
-        double step = phase - previous;
-        step -= 2.0 * kPi * std::round(step / (2.0 * kPi));  // unwrap, step << pi
-        phaseChange += step;
-        previous = phase;
-    }
-    const double meanGroupDelaySamples =
-        -phaseChange / (2.0 * kPi * (kHiHz - kLoHz) / kFs);
-    const double expectedDelay = 4.0 + meanGroupDelaySamples;
+    // EXPECTED VALUE: 4.76 samples = the pure 4-sample delay plus the
+    // measurement band-pass's own delay as GCC-PHAT sees it over DC..Nyquist
+    // (MainComponentDelay.cpp leaves PhatOptions minHz = maxHz = 0). The plan
+    // row T2 said "4 samples"; that ignored the filter added by decision 8.
+    //
+    // PROVENANCE -- an EXTERNAL numeric oracle, NOT a closed form. An earlier
+    // version of this comment derived 4.75 as a mean group delay over a
+    // hand-picked 200 Hz - 12 kHz band; PHAT does not average over that band
+    // (the same formula over DC..Nyquist gives 6.26), so that derivation was
+    // wrong and the agreement was luck. The value below comes from an
+    // independent script (the verifier's review of PRs #67-#69): pink noise, a 4-sample delay,
+    // butter(2, [40, 16000]) band-pass at fs = 48 kHz, -30 dB white noise,
+    // GCC-PHAT with regularisation 1e-10 and parabolic refinement, which read
+    // 4.756 - 4.766 across seeds. It is therefore a regression lock against
+    // that oracle (CLAUDE.md verification standard, "label it as such"), not a
+    // textbook identity.
+    //
+    // Tolerance 0.5 sample: PHAT's peak is an integer-lag maximum refined by a
+    // parabola (subSample, |sub| <= 0.5), so half a sample is the resolution
+    // of the estimator itself, not slack. A missing filter (estimate 4.0) is
+    // 0.76 away, outside it, so that mutant goes RED.
+    constexpr double kExternalOracleSamples = 4.76;
     const double estimate =
         static_cast<double>(suggestion.best.delaySamples) + suggestion.best.subSample;
-    INFO("expected " << expectedDelay << " estimate " << estimate);
-    REQUIRE(meanGroupDelaySamples > 0.0);
-    REQUIRE(std::abs(estimate - expectedDelay) <= 0.5);
+    INFO("external oracle " << kExternalOracleSamples << " estimate " << estimate);
+    REQUIRE(std::abs(estimate - kExternalOracleSamples) <= 0.5);
+}
+
+TEST_CASE("leaving SYNTHETIC mid-LOCATE cancels it instead of refusing LOCATE for good",
+          "[synthetic_loopback]") {
+    // Before cancelLocate(), the waiting/armed flags survived the mode change
+    // and locateClicked() returned early on every later click (captureBusy()).
+    MainComponent component;
+    component.setSyntheticMode(true);
+    MainComponentTestAccess::locateClickedForTest(component);
+    REQUIRE(MainComponentTestAccess::locateActiveForTest(component));
+
+    component.setSyntheticMode(false);
+    CHECK_FALSE(MainComponentTestAccess::locateActiveForTest(component));
+    CHECK_FALSE(MainComponentTestAccess::captureBusyForTest(component));
+
+    // A fresh LOCATE is accepted again after re-entering the mode.
+    component.setSyntheticMode(true);
+    MainComponentTestAccess::locateClickedForTest(component);
+    CHECK(MainComponentTestAccess::locateActiveForTest(component));
 }

@@ -1020,8 +1020,8 @@ the fixing PR is named). Nothing in this table is a HIGH or MEDIUM.
 |---|---|---|---|
 | Z1 | PR #53: `orphan_targets.py` docstrings still say "compiled anywhere" | `grep -n "compiled anywhere" tools/orphan_targets.py` → no match | **STALE** — reworded by #59 |
 | Z2 | XOVER ignores `CaptureMeta.appliedDelaySamples`: a trace STOREd after APPLY, summed with one stored before, gets a wrong relative delay | the field is stored (`app/src/trace/Trace.h:46`) but `CrossoverPaneView.cpp`, `view/CrossoverSurface.cpp`, `trace/VirtualTrace.cpp` and `measure/CrossoverTopology.cpp` never read it (0 matches each); ALIGN reconciles it at `AlignmentWizard.cpp:249-250`. SWEEP traces carry 0, so H4 does not make it reachable | **NEW-LANE** — XOVER delay reconciliation; unscheduled |
-| Z3 | LOCATE hangs in SYNTHETIC: `pollLocatePipeline` waits for `output().renderedSamples()` and SYNTHETIC stops the only caller of `OutputEngine::render` (`platform/src/AudioIo.cpp:147`); `locateWaitingForSettle_` then refuses every later LOCATE and CAL | `MainComponentDelay.cpp:59` (the wait), `:26` (the refusal); no `isSyntheticMode()` guard in the file | **DEFER** — scheduled: H4 SWEEP task T2 (`docs/plans/2026-09-29-sweep-ir-lane-plan.md`) |
-| Z4 | XOVER sums two traces by bin index with no axis check (a 44.1 kHz Open beside a 48 kHz STORE mis-sums silently) | `core/src/dsp/VirtualProcessor.cpp:58-65` (`min(a.size(), b.size())`); `app/src/view/CrossoverPaneView.cpp:141` (`refreshFromLibrary`) admits any visible trace with phase | **DEFER** — scheduled: H4 SWEEP task T7 |
+| Z3 | LOCATE hangs in SYNTHETIC: `pollLocatePipeline` waits for `output().renderedSamples()` and SYNTHETIC stops the only caller of `OutputEngine::render` (`platform/src/AudioIo.cpp:147`); `locateWaitingForSettle_` then refuses every later LOCATE and CAL | `MainComponentDelay.cpp:59` (the wait), `:26` (the refusal); no `isSyntheticMode()` guard in the file | ~~**DEFER** — scheduled: H4 SWEEP task T2 (`docs/plans/2026-09-29-sweep-ir-lane-plan.md`)~~ **FIXED, PR #67 (`079d1b8`):** `SyntheticInput` renders the `OutputEngine` loopback, so `renderedSamples()` advances in SYNTHETIC. The residual (SYNTHETIC turned off mid-LOCATE kept `locateWaitingForSettle_` set and refused LOCATE until a device restart) is **FIXED in the closeout PR** (`MainComponent::cancelLocate`, called from `setSyntheticMode`) |
+| Z4 | XOVER sums two traces by bin index with no axis check (a 44.1 kHz Open beside a 48 kHz STORE mis-sums silently) | `core/src/dsp/VirtualProcessor.cpp:58-65` (`min(a.size(), b.size())`); `app/src/view/CrossoverPaneView.cpp:141` (`refreshFromLibrary`) admits any visible trace with phase | ~~**DEFER** — scheduled: H4 SWEEP task T7~~ **FIXED, PR #69 (`65ee5f6`):** `CrossoverPaneView::refreshFromLibrary` refuses a pair whose `fftSize` differs, naming both sizes (`CrossoverPaneView.cpp:186`), and one whose sample rate differs (`:190`) |
 | Z5 | PR #57 LOW 1: `WorkspaceView.h` comment claimed `paneSpecs`/`normalisePanes` idempotent; `{1,3,5}` drifts 1 float ULP | `app/src/view/WorkspaceView.h:66-78` now says "NOT bitwise in general" and why | **STALE** — comment corrected by #59 |
 | Z6 | PR #57 LOW 2: the STORE MTW clause is gated on the FIRST pane being TRANSFER, so `[rta, transfer, transfer]` names no TRANSFER pane | gate `pane == PaneView::Transfer` at `MainComponentStore.cpp:186` (was `:182`); `pane` is `currentPaneView()` (`:146`), which tracks the first pane only (`:55` comment). A multi-pane workspace exists only after OPEN (Z14) | **KNOWN-LIMIT** — revisit with the multi-pane NEW-LANE |
 | Z7 | PR #57 LOW 3: "TRANSFER N" in the STORE readout numbers among TRANSFER panes, not workspace positions | `MainComponentStore.cpp:113` | **KNOWN-LIMIT** — same trigger as Z6 |
@@ -1042,7 +1042,7 @@ the fixing PR is named). Nothing in this table is a HIGH or MEDIUM.
 | Z22 | PR #65 LOW 2: the test comment points at "this test's own header comment", but the prose lives in the TEST_CASE's leading comment | `app/tests_juce/test_spl_log_wiring_disable.cpp:198-199` | **FIX-next-batch** |
 | Z23 | PR #65 LOW 3: wording of the probe placement | PR #65 body only | **STALE** — fixed in the PR body |
 | Z24 | PR #64 (a): destroying `MainComponent` mid-VERIFY does not disarm the excitation — `EqVerifyRunner` has no destructor, `audioIo_` outlives `eq_`, the device closes at exit | no `~EqVerifyRunner` in `app/src/measure/EqVerifyRunner.h` or `.cpp` | **FIX-next-batch** — a speaker on a live rig; fold into Z25 |
-| Z25 | PR #64 (b): the output-owner expression is copy-pasted in 4 places and `verifyBusy()` read in 3; H4 must edit every one | `locateWaitingForSettle_ \|\| locateCaptureArmed_ \|\| calibrationCaptureArmed_` at `MainComponentCalibration.cpp:94,110`, `MainComponentDelay.cpp:26`, `MainComponentEqVerify.cpp:26`; `eq_.verifyBusy()` at `MainComponentCalibration.cpp:90,106`, `MainComponentDelay.cpp:19` | **FIX-next-batch** — first task of H4: one "output owner" accessor, then SWEEP adds itself to it |
+| Z25 | PR #64 (b): the output-owner expression is copy-pasted in 4 places and `verifyBusy()` read in 3; H4 must edit every one | `locateWaitingForSettle_ \|\| locateCaptureArmed_ \|\| calibrationCaptureArmed_` at `MainComponentCalibration.cpp:94,110`, `MainComponentDelay.cpp:26`, `MainComponentEqVerify.cpp:26`; `eq_.verifyBusy()` at `MainComponentCalibration.cpp:90,106`, `MainComponentDelay.cpp:19` | ~~**FIX-next-batch** — first task of H4: one "output owner" accessor, then SWEEP adds itself to it~~ **DONE, PR #69 (`65ee5f6`):** `MainComponent::captureBusy()` / `outputBusy()` (`MainComponent.h:89-94`); SWEEP is part of it through `sweep_.busy()` |
 | Z26 | PR #64 (c): ADOPT stays enabled after an `inputsUnchanged()` refusal | `EqVerifyRunner.cpp:280-283` sets `outcome_`, but `canAdopt()` (`:77-80`) ignores it | **DEFER** — harmless (a second press refuses again for the same reason); fix with the next EQ-pane edit |
 | Z27 | PR #64 (d): `trySubmit` reports a pick change to a different-grid trace as "live fftSize or sample rate changed mid-run" | `EqVerifyRunner.cpp:234-237` (size test; message at `:236`) | **DEFER** — wording; with Z26 |
 | Z28 | PR #64 (e): the Settling state has no timeout | `EqVerifyRunner.cpp:186-192` (no `stalled()` check, unlike Waiting and Measuring) | **DEFER** — bounded in practice by the device-stopped abort (`:165`); needs the real-hardware try (human-try row B) first |
@@ -1052,6 +1052,57 @@ the fixing PR is named). Nothing in this table is a HIGH or MEDIUM.
 
 **Count by disposition (31 rows):** FIX-next-batch 9, DEFER 6,
 NEW-LANE 5, KNOWN-LIMIT 2, STALE 9.
+
+### H4 SWEEP — try it and lane LOWs (2026-10-20, closeout of H4)
+
+Source: the review loop across PRs #67 (`079d1b8`), #68 (`50defce`), #69
+(`65ee5f6`) and the closeout PR. Dispositions are the closeout session's.
+Nothing here is a HIGH or MEDIUM.
+
+**Human-try row — SWEEP, no hardware (a person at `rtatool.exe`, about 20 s):**
+
+1. Turn **SYNTHETIC** on.
+2. Press **SWEEP** (rail row under LOCATE). The readout says `sweep: arming...`,
+   then the output plays for about 10 s of sweep plus a pre-roll and a 3 s tail.
+3. Within about 16 s the readout reads `IR +5 samples (+0.1 ms) · loop a..b dB ·
+   IRs 1/8`. The 5 is the 4-sample synthetic delay plus the measurement
+   band-pass's own delay (PHAT estimate 4.76; see "H4 as built" A2).
+4. The trace library gains `SWEEP @ hh:mm:ss` in group `SWEEP`.
+5. Press **SWEEP** again and open the **XOVER** pane: both `SWEEP @` traces are
+   offered and, picked as HP and LP, the sum draws.
+6. In the **TRANSFER** pane press **STORE**; in XOVER pick that STORE trace
+   against a SWEEP trace. The pane refuses and names both sizes
+   (`TRACES DO NOT SHARE A FREQUENCY AXIS: <n>-POINT VS <m>-POINT`).
+
+**Human-try row — SWEEP, real hardware (row C; needs an interface):**
+
+1. Wire out 1 -> a Y-split -> the speaker amp and in 2. Route in 2 as REF and
+   the microphone on in 1 as MEAS, both on route 1.
+2. Press **SWEEP**. You should hear 10 s of sweep with no click at either end.
+3. The readout shows `IR +D samples`, with D about distance / 343 * fs.
+4. Move the microphone 1 m back and sweep again. D grows by about 140 samples
+   at 48 kHz.
+5. Sweep the sub, re-patch, sweep the main, open XOVER and pick both. The sum
+   draws.
+6. Pick a STORE trace against a SWEEP trace. The pane refuses and names both
+   sizes.
+
+SYNTHETIC cannot show latency, drift or real noise; that is why this row
+exists. Row B (VERIFY on hardware, from the EQ-UI entry) is still open.
+
+| # | Finding | Disposition |
+|---|---|---|
+| L1 | `test_synthetic_loopback.cpp`: the 4.75-sample LOCATE value was justified by a mean group delay over a hand-picked 200 Hz - 12 kHz band; PHAT uses DC - Nyquist, where that formula gives 6.26 | **FIXED (closeout PR)** — false derivation removed; the value is an external numeric GCC-PHAT oracle (4.756 - 4.766), labelled a regression lock |
+| L2 | `SyntheticInput.cpp`: render sees `armed == false`, `armSource` lands before `sourceIsQuiescent()` is read, one silent block goes onto the bus uncounted | **FIXED (closeout PR)** — documented in the comment with the reason it is harmless (LOCATE's settle clock is `renderedSamples()`) |
+| L3 | Verifier finding of PR #67-#69 (text in the verifier report, not re-derived here) | **DEFER to H5** — noted for ALIGN-UI's plan |
+| L4 | SYNTHETIC turned off (or the device stopped) mid-LOCATE leaves `locateWaitingForSettle_` / `locateCaptureArmed_` set; LOCATE refused until restart (pre-existing) | **FIXED (closeout PR)** for the mode change: `cancelLocate()` in `setSyntheticMode`, test "leaving SYNTHETIC mid-LOCATE ...". A plain device STOP mid-LOCATE with SYNTHETIC unchanged is NOT covered (no hook there; not changed) — **DEFER**, with L9 |
+| L5 | Verifier finding of PR #67-#69 | **Recorded as an amendment** in `docs/plans/2026-09-29-sweep-ir-lane-plan.md`, "H4 as built" |
+| L6 | `SweepIrWorker.cpp`: only `std::exception` was caught, so a non-std exception from an injected `analyse` was `std::terminate` | **FIXED (closeout PR)** — `catch (...)` -> `Failed("unknown exception")`; test throws an `int` |
+| L7, L8 | Verifier findings of PR #67-#69 | **Recorded as amendments** ("H4 as built") |
+| L9 | Verifier finding of PR #67-#69 (text in the verifier report, not re-derived here) | **DEFER** — shared with LOCATE's own pending-state handling, together with the device-stop half of L4 |
+| L10 | Cosmetic | no action |
+
+**Z25 is done** (accessor shipped in #69); Z3 and Z4 above are marked FIXED.
 
 <!-- Lane-end LOW triage — 2026-09-29, closeout of EQ-UI (H3) -->
 

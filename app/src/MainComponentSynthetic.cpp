@@ -21,6 +21,12 @@ void MainComponent::setSyntheticMode(bool enabled) {
         return;
     }
 
+    // A LOCATE armed in the old mode would otherwise keep its settle/armed
+    // flags for good: its settle clock (renderedSamples) and capture come from
+    // a source that no longer runs, and locateClicked() refuses while either
+    // flag is set -- LOCATE stayed dead until a device restart.
+    cancelLocate();
+
     if (enabled) {
         // CaptureBus::prepare() -- called from SyntheticInput's own
         // constructor -- has "no concurrent writer" as its precondition.
