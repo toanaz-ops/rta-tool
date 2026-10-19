@@ -33,6 +33,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -104,6 +105,8 @@ struct Rig {
     bool nullSnapshot = false;
     std::optional<SnapshotPtr> forcedSnapshot;  ///< overrides the physics (refusal rows)
     int freezes = 0;
+    /// Replaces the real conversion (refusal rows: a trace the wizard cannot use).
+    std::function<std::optional<rta::trace::Trace>(const Snapshot&)> freezeOverride;
 
     std::uint64_t totalRendered = 0;
     int signature = 0;
@@ -125,6 +128,7 @@ struct Rig {
         // runner stores is what STORE would have stored.
         host.freeze = [this](const Snapshot& s) {
             ++freezes;
+            if (freezeOverride) return freezeOverride(s);
             return rta::trace::traceFromSnapshot(s, rta::view::PaneView::Transfer, config, "TEST",
                                                  "ch0=Measurement,ch1=Reference");
         };

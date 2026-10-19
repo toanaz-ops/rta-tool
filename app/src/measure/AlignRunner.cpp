@@ -371,7 +371,6 @@ void AlignRunnerState::afterSubmit(const AlignAnswers& asked) {
             std::to_string((next == Source::Main ? asked.mainOutput : asked.subOutput) + 1) + ") only");
         return;
     }
-    if (now == WizardStep::MeasuringHigh) return;  // not reachable from a submit; kept explicit
     if (!wizard->verdict().has_value() || now == WizardStep::Answering) {
         wizardRefusal = wizard->lastRefusal();
         abort(AlignOutcome::SettingsChanged,

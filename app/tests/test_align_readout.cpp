@@ -188,5 +188,6 @@ TEST_CASE("T3f: more than one crossing, a low R, and an inverted answer all say 
     CHECK(contains(lines, "R is below the bar"));
     CHECK(contains(lines, "delta vs BW-2 INVERTED +100" + kDeg));
     CHECK(contains(lines, "OPPOSITE polarity"));
+    CHECK(contains(lines, "check whether one output is inverted"));
     CHECK(rta::measure::verdictLines(AlignReadoutInput{}).empty());  // no verdict, no text
 }

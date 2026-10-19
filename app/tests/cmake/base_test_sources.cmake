@@ -126,6 +126,7 @@ set(RTA_BASE_TEST_SOURCES
     test_alignment_wizard_candidates.cpp
     test_align_runner.cpp
     test_align_runner_flow.cpp
+    test_align_runner_status.cpp
     test_align_readout.cpp
     # test_crossover_surface.cpp: lane L7-ALIGN task I (record Sec.6) -- the
     # G18 surface model, JUCE-free so it is proven OFF on all three CI
