@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "trace/CaptureConverter.h"
 
+#include <algorithm>
 #include <atomic>
+#include <complex>
 #include <chrono>
+#include <cmath>
 #include <numbers>
 
 namespace rta::trace {
@@ -141,6 +144,58 @@ std::optional<Trace> traceFromSnapshot(const rta::measure::Snapshot& snapshot,
     // The caller disables the STORE button for these panes; this is the
     // defensive second line, never the only guard.
     return std::nullopt;
+}
+
+std::string channelRolesSummary(const rta::platform::ChannelConfig& config) {
+    std::string out;
+    for (int ch = 0; ch < rta::platform::kMaxChannels; ++ch) {
+        const auto role = config.role(ch);
+        if (role == rta::platform::ChannelRole::Unused) continue;
+        if (!out.empty()) out += ",";
+        out += "ch" + std::to_string(ch) + "=" + std::string(rta::platform::toString(role));
+    }
+    return out;
+}
+
+std::optional<Trace> traceFromSweepIr(const rta::measure::SweepIrOutcome& outcome,
+                                      std::string deviceName,
+                                      std::string channelRoles) {
+    if (outcome.status != rta::measure::SweepIrStatus::Ok) return std::nullopt;
+
+    CaptureMeta meta;
+    meta.id = nextCaptureId();
+    meta.capturedAtUnixMs = nowUnixMs();
+    meta.deviceName = std::move(deviceName);
+    meta.channelRoles = std::move(channelRoles);
+    meta.sampleRate = outcome.sampleRate;
+    meta.fftSize = static_cast<int>(outcome.fftSize);
+    // A rectangular N-point gate from two cycles of f_lo before t = 0 (record
+    // sec. 7); the lead-in is the minimum window that does not corrupt the
+    // skirts, not an adjustable gate.
+    meta.window = "Rectangular";
+    meta.averagingType = "None";
+    meta.averagingDepth = 0;
+    // One sweep is one estimate: nothing was averaged, so the effective count
+    // is exactly 1, not an unknown.
+    meta.effectiveAverages = 1.0;
+    // The loop delay is already inside the phase (t = 0 is the loop peak);
+    // nothing was removed, so there is nothing for a consumer to reconcile.
+    meta.appliedDelaySamples = 0;
+
+    // A magnitude floor, so that an exactly-zero bin is -200 dB, not -inf.
+    // 1e-10 is far below any bin of a sweep at -12 dBFS.
+    std::vector<float> magnitudeDb(outcome.bins.size());
+    std::vector<float> phase(outcome.bins.size());
+    for (std::size_t k = 0; k < outcome.bins.size(); ++k) {
+        magnitudeDb[k] = 20.0f * std::log10(std::max(std::abs(outcome.bins[k]), 1.0e-10f));
+        phase[k] = std::arg(outcome.bins[k]);
+    }
+
+    auto trace = Trace::make(meta, std::move(magnitudeDb));
+    if (!trace.has_value()) return std::nullopt;
+    if (!trace->setPhase(std::move(phase))) return std::nullopt;
+    // No setCoherence: absent, never zero-filled (Trace.h:17-19).
+    return trace;
 }
 
 }  // namespace rta::trace

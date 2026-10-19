@@ -12,6 +12,8 @@
 
 #include "measure/Analyser.h"
 #include "measure/Snapshot.h"
+#include "measure/SweepIrOutcome.h"
+#include "rta/platform/ChannelConfig.h"
 #include "trace/Trace.h"
 #include "view/PaneRegistry.h"
 
@@ -74,5 +76,25 @@ namespace rta::trace {
                                                       const rta::measure::CaptureConfig& config,
                                                       std::string deviceName,
                                                       std::string channelRoles);
+
+/// A compact "ch<N>=<Role>" summary of every non-Unused channel, ascending.
+/// `CaptureMeta::channelRoles` is free text -- nothing parses it back -- but
+/// ALIGN compares it for equality between two traces and refuses with
+/// `ReferenceMismatch` when it differs (`AlignmentWizard.cpp:218-220`). STORE
+/// and SWEEP therefore have to spell it identically, which is why there is
+/// ONE definition, here, and not one per button (SWEEP plan T0).
+[[nodiscard]] std::string channelRolesSummary(const rta::platform::ChannelConfig& config);
+
+/// Freezes a finished SWEEP analysis into a `Trace` (SWEEP plan T5, owner
+/// decision 4): magnitude and PHASE, never coherence. A sweep has one
+/// transfer estimate and no averaging, so there is no coherence to report;
+/// `Trace.h:17-19`'s rule is that an absent field stays absent rather than
+/// being zero-filled. Phase is relative to the reference arrival and
+/// `appliedDelaySamples` is 0 for the same reason (the delay is already
+/// inside the phase, not removed from it). Refuses (`nullopt`) unless
+/// `outcome.status == Ok` and its bins agree with `outcome.fftSize`.
+[[nodiscard]] std::optional<Trace> traceFromSweepIr(const rta::measure::SweepIrOutcome& outcome,
+                                                     std::string deviceName,
+                                                     std::string channelRoles);
 
 }  // namespace rta::trace

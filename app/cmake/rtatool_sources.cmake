@@ -122,6 +122,11 @@ set(RTATOOL_SOURCES
     # --- end L7-EQ UI wave B ----------------------------------------------------
     src/MainComponentStore.cpp
     src/trace/CaptureConverter.cpp
+    # SweepIrPipeline.cpp / SweepIrWorker.cpp: SWEEP lane wave B (T3/T4). No
+    # production caller until wave C's MainComponentSweep.cpp (T6); listed now
+    # so that wave only adds its own file.
+    src/measure/SweepIrPipeline.cpp
+    src/measure/SweepIrWorker.cpp
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
     src/view/TraceStroke.cpp

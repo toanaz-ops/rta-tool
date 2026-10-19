@@ -199,3 +199,25 @@ TEST_CASE("traceFromSnapshot on a non-producer pane always refuses", "[capture_c
     CHECK_FALSE(traceFromSnapshot(snapshot, PaneView::Spl, CaptureConfig{}, "dev", "roles").has_value());
     CHECK_FALSE(traceFromSnapshot(snapshot, PaneView::Xover, CaptureConfig{}, "dev", "roles").has_value());
 }
+
+// --- SWEEP T0: channelRolesSummary, moved out of MainComponentStore.cpp ------
+
+TEST_CASE("channelRolesSummary spells a two-role config exactly as ALIGN compares it",
+          "[capture_converter]") {
+    // The exact string is the contract: AlignmentWizard refuses two traces whose
+    // channelRoles differ (ReferenceMismatch, AlignmentWizard.cpp:218-220), so
+    // STORE and SWEEP must produce byte-identical text for the same routing.
+    rta::platform::ChannelConfig config;
+    REQUIRE(config.setRole(0, rta::platform::ChannelRole::Measurement));
+    REQUIRE(config.setRole(1, rta::platform::ChannelRole::Reference));
+    CHECK(rta::trace::channelRolesSummary(config) == "ch0=Measurement,ch1=Reference");
+}
+
+TEST_CASE("channelRolesSummary skips Unused channels and keeps ascending order",
+          "[capture_converter]") {
+    rta::platform::ChannelConfig config;
+    CHECK(rta::trace::channelRolesSummary(config).empty());
+    REQUIRE(config.setRole(5, rta::platform::ChannelRole::Reference));
+    REQUIRE(config.setRole(2, rta::platform::ChannelRole::Measurement));
+    CHECK(rta::trace::channelRolesSummary(config) == "ch2=Measurement,ch5=Reference");
+}

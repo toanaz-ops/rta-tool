@@ -34,21 +34,6 @@
 
 namespace {
 
-// A compact "ch<N>=<Role>" summary of every non-Unused channel, ascending --
-// CaptureMeta::channelRoles is free-text (research A3.3: nothing in the tree
-// parses it back), so this exists only to make a saved/exported capture's
-// routing readable, not to round-trip through any decoder.
-std::string channelRolesSummary(const rta::platform::ChannelConfig& config) {
-    std::string out;
-    for (int ch = 0; ch < rta::platform::kMaxChannels; ++ch) {
-        const auto role = config.role(ch);
-        if (role == rta::platform::ChannelRole::Unused) continue;
-        if (!out.empty()) out += ",";
-        out += "ch" + std::to_string(ch) + "=" + std::string(rta::platform::toString(role));
-    }
-    return out;
-}
-
 // Fix round 1, HIGH F1: the workspace can show TRANSFER at any child index
 // (a multi-pane session is not required to put it first -- see
 // MainComponentPanes.cpp's own restoreWorkspaceFromSession comment on why
@@ -127,7 +112,7 @@ std::optional<rta::trace::Trace> MainComponent::freezeSnapshot(const rta::measur
                                                                rta::view::PaneView pane) {
     const std::string deviceName =
         isSyntheticMode() ? std::string("SYNTHETIC") : audioIo_.currentState().deviceName;
-    const std::string channelRoles = channelRolesSummary(audioIo_.bus().config());
+    const std::string channelRoles = rta::trace::channelRolesSummary(audioIo_.bus().config());
 
     // Fix round 1, MEDIUM F2: `captureConfig()`, never `config()` -- see
     // AnalysisThread.h's own comment on why a reference into `baseConfig_`
