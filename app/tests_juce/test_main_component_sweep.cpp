@@ -121,6 +121,21 @@ TEST_CASE("sweep: a SWEEP click during LOCATE is refused and adds nothing", kTag
     CHECK(MainComponentTestAccess::libraryForTest(c).entries().empty());
 }
 
+TEST_CASE("sweep: a SWEEP click during CAL is refused (the output is quiescent there, so only the busy guard can)",
+          kTag) {
+    // CAL arms the shared capture but plays nothing, so the "output still
+    // playing" check cannot refuse this click; the outputBusy guard must.
+    MainComponent c;
+    startSynthetic(c);
+    MainComponentTestAccess::calibrationStartClickedForTest(c);
+    REQUIRE(MainComponentTestAccess::calibrationArmedForTest(c));
+
+    sweepOf(c).clicked();
+
+    CHECK(sweepOf(c).stateForTest() == State::Idle);
+    CHECK(sweepOf(c).readoutForTest().contains("LOCATE, CAL or VERIFY"));
+}
+
 TEST_CASE("sweep: LOCATE and CAL during a SWEEP are refused, and the sweep still finishes", kTag) {
     MainComponent c;
     startSynthetic(c);
