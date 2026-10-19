@@ -68,6 +68,10 @@ set(RTA_IMPL_TEST_SOURCES
     # (measure_has_no_framework_deps globs it explicitly, app/tests/
     # CMakeLists.txt), so test_capture_converter.cpp calls straight into it.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/trace/CaptureConverter.cpp
+    # SweepIrPipeline.cpp / SweepIrWorker.cpp: SWEEP lane wave B (T3/T4),
+    # linked by test_sweep_ir_pipeline.cpp / test_sweep_ir_worker.cpp.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SweepIrPipeline.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SweepIrWorker.cpp
     # AlignmentWizard.cpp + AlignmentWizardSignals.cpp: lane L7-ALIGN task H
     # (record Sec.2, Sec.7). The second is the first's polarity-signal half,
     # split at the 300-line aim -- the seam the record already draws between

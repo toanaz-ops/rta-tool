@@ -161,6 +161,11 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # --- end L7-EQ UI wave B ----------------------------------------------------
     src/MainComponentStore.cpp
     src/trace/CaptureConverter.cpp
+    # SweepIrPipeline.cpp / SweepIrWorker.cpp: SWEEP lane wave B (T3/T4). No
+    # production caller until wave C's MainComponentSweep.cpp (T6); listed now
+    # so that wave only adds its own file.
+    src/measure/SweepIrPipeline.cpp
+    src/measure/SweepIrWorker.cpp
     # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /
     # SplReportSections.cpp: see the matching entry in rtatool's own source
     # list above -- task W2-E2b part B, needed here for the same reason.
