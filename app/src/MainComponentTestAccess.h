@@ -200,4 +200,31 @@ struct MainComponentTestAccess {
     delaySuggestionForTest(const MainComponent& c) {
         return c.delaySuggestion_;
     }
+
+    // SWEEP wave C (T6): app/tests_juce/test_main_component_sweep*.cpp. The
+    // sweep state lives in `MainComponentSweep`, so most of it is reached
+    // through its own `*ForTest` members; this struct only hands out the
+    // member and the other features' handlers a mutual-exclusion case needs.
+    [[nodiscard]] static MainComponentSweep& sweepForTest(MainComponent& c) { return c.sweep_; }
+    static void calibrationStartClickedForTest(MainComponent& c) { c.calibrationStartClicked(); }
+    [[nodiscard]] static bool locateActiveForTest(const MainComponent& c) {
+        return c.locateWaitingForSettle_ || c.locateCaptureArmed_;
+    }
+    [[nodiscard]] static bool calibrationArmedForTest(const MainComponent& c) {
+        return c.calibrationCaptureArmed_;
+    }
+    [[nodiscard]] static juce::String delayReadoutForTest(const MainComponent& c) {
+        return c.delayReadout_.getText();
+    }
+    // The rail rows above and below SWEEP's, for the no-overlap layout case.
+    [[nodiscard]] static const juce::Component& delayReadoutComponentForTest(const MainComponent& c) {
+        return c.delayReadout_;
+    }
+    [[nodiscard]] static const juce::Component& calibrationStartButtonForTest(const MainComponent& c) {
+        return c.calibrationStartButton_;
+    }
+    [[nodiscard]] static bool captureBusyForTest(const MainComponent& c) { return c.captureBusy(); }
+    [[nodiscard]] static bool outputSourceQuiescentForTest(const MainComponent& c) {
+        return c.audioIo_.output().sourceIsQuiescent();
+    }
 };

@@ -16,17 +16,16 @@ void MainComponent::locateClicked() {
     // L7-EQ VERIFY plays its own pink noise through the same output engine.
     // This handler ignores setSource's return value and disarms at the end of
     // its capture, so an overlap would silently kill VERIFY's excitation.
-    if (eq_.verifyBusy()) {
-        delayReadout_.setText("delay: refused -- VERIFY is running on the output", juce::dontSendNotification);
+    // L6a Wave 3: calibrationCaptureArmed_ and SWEEP share the SAME
+    // accumulator (MainComponentCalibration.cpp's own comment) -- refuse
+    // rather than stomp on an in-flight capture. Only VERIFY gets a message;
+    // the rest is the one-Locate-at-a-time silence the deleted DelayLocator
+    // class had (see pollLocatePipeline's own comment below).
+    if (outputBusy()) {
+        if (eq_.verifyBusy()) {
+            delayReadout_.setText("delay: refused -- VERIFY is running on the output", juce::dontSendNotification);
+        }
         return;
-    }
-    // L6a Wave 3: calibrationCaptureArmed_ shares the SAME accumulator
-    // (MainComponentCalibration.cpp's own comment) -- refuse rather than
-    // stomp on an in-flight calibration capture.
-    if (locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_) {
-        return;  // one Locate at a time, same one-shot shape the deleted
-                 // DelayLocator class had (see pollLocatePipeline's own
-                 // comment below for why it was removed)
     }
     // A fresh seed every click rather than a fixed one: two Locates back to
     // back should not correlate against each other's excitation by

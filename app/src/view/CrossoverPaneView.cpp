@@ -171,7 +171,29 @@ void CrossoverPaneView::refreshFromLibrary() {
     // non-empty, DISTINCT ids already prove at least two eligible entries
     // exist -- a second clause credited with that property was dead code.
     const bool distinctPick = !hpId_.empty() && !lpId_.empty() && hpId_ != lpId_;
-    if (library_ != nullptr && distinctPick && topology_.has_value() && inversion_.has_value()) {
+    // SWEEP lane T7: a SWEEP trace (32768 points at 48 kHz) and a STORE trace
+    // (4096) share no frequency axis; `sumOf` indexes both by position, so a
+    // mix would sum bin k of one against bin k of a different frequency. The
+    // pair is refused here, with both sizes named, before any surface exists.
+    axisRefusal_.clear();
+    if (library_ != nullptr && distinctPick) {
+        const auto* high = library_->trace(hpId_);
+        const auto* low = library_->trace(lpId_);
+        if (high != nullptr && low != nullptr) {
+            const auto& hm = high->meta();
+            const auto& lm = low->meta();
+            if (hm.fftSize != lm.fftSize) {
+                axisRefusal_ = "TRACES DO NOT SHARE A FREQUENCY AXIS: " + juce::String(hm.fftSize) +
+                               "-POINT VS " + juce::String(lm.fftSize) +
+                               "-POINT -- PICK TWO TRACES OF THE SAME KIND";
+            } else if (hm.sampleRate != lm.sampleRate) {
+                axisRefusal_ = "TRACES DO NOT SHARE A FREQUENCY AXIS: " + juce::String(hm.sampleRate, 0) +
+                               " HZ VS " + juce::String(lm.sampleRate, 0) + " HZ SAMPLE RATE";
+            }
+        }
+    }
+    if (library_ != nullptr && distinctPick && axisRefusal_.isEmpty() && topology_.has_value() &&
+        inversion_.has_value()) {
         const auto* highTrace = library_->trace(hpId_);
         const auto* lowTrace = library_->trace(lpId_);
         if (highTrace != nullptr && lowTrace != nullptr) {
@@ -251,6 +273,7 @@ juce::String CrossoverPaneView::refusalMessage() const {
     // operator to "choose" one again would read as a stuck UI, not as the
     // real problem (one trace cannot align against itself).
     if (hpId_ == lpId_) return "HIGH-PASS AND LOW-PASS ARE THE SAME TRACE";
+    if (axisRefusal_.isNotEmpty()) return axisRefusal_;
     if (!topology_.has_value()) return "CHOOSE THE TOPOLOGY (NOT INFERRED)";
     if (!inversion_.has_value()) return "WAS THE OUTPUT INVERTED? (NOT INFERRED)";
     return {};

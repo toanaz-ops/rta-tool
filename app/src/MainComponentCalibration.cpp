@@ -87,12 +87,11 @@ constexpr std::int64_t kCalibrationCaptureTimeoutMs = 5000;
 }  // namespace
 
 void MainComponent::calibrationStartClicked() {
-    if (eq_.verifyBusy()) {  // VERIFY's pink noise would sit under the calibrator's tone
-        calibrationReadout_.setText("calibration: refused -- VERIFY is running", juce::dontSendNotification);
-        return;
-    }
-    if (locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_) {
-        return;  // the one shared capture accumulator is busy
+    if (outputBusy()) {  // VERIFY's pink noise would sit under the calibrator's tone
+        if (eq_.verifyBusy()) {
+            calibrationReadout_.setText("calibration: refused -- VERIFY is running", juce::dontSendNotification);
+        }
+        return;  // otherwise the one shared capture accumulator is busy
     }
     analysisThread_.armLocateCapture(kCalibrationRouteIndex, kCalibrationCaptureLength);
     calibrationCaptureArmed_ = true;
@@ -103,11 +102,10 @@ void MainComponent::calibrationStartClicked() {
 }
 
 void MainComponent::calibrationEndClicked() {
-    if (eq_.verifyBusy()) {
-        calibrationReadout_.setText("calibration: refused -- VERIFY is running", juce::dontSendNotification);
-        return;
-    }
-    if (locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_) {
+    if (outputBusy()) {
+        if (eq_.verifyBusy()) {
+            calibrationReadout_.setText("calibration: refused -- VERIFY is running", juce::dontSendNotification);
+        }
         return;
     }
     if (!calibrationSession_.hasStartCheck()) {

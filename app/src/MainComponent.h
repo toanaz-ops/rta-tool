@@ -15,6 +15,7 @@
 #include "MainComponentEq.h"
 #include "MainComponentRail.h"
 #include "MainComponentSession.h"
+#include "MainComponentSweep.h"
 #include "measure/AnalysisThread.h"
 #include "measure/Analyser.h"
 #include "measure/CalibrationSession.h"
@@ -82,6 +83,15 @@ private:
 
     void timerCallback() override;
     void modeSwitchClicked();
+
+    /// ONE answer to "may a new LOCATE / CAL / SWEEP / VERIFY take the output
+    /// and the shared capture accumulator now?" (Z25). `captureBusy`: LOCATE,
+    /// CAL or SWEEP holds the accumulator. `outputBusy`: that, or VERIFY's
+    /// excitation is playing. Each caller keeps its own refusal wording.
+    [[nodiscard]] bool captureBusy() const noexcept {
+        return locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_ || sweep_.busy();
+    }
+    [[nodiscard]] bool outputBusy() const noexcept { return captureBusy() || eq_.verifyBusy(); }
 
     void wirePaneSelectorButtons();  // MainComponentPanes.cpp: 400-line cap
     void layoutPaneSelectorRow(juce::Rectangle<int> row);
@@ -328,6 +338,9 @@ private:
 
     // Owns SAVE/OPEN SESSION + readout; needs library_ constructed first.
     MainComponentSession session_;
+    // SWEEP (MainComponentSweep.h): holds references to audioIo_/analysisThread_/
+    // library_, so it is declared after all three -- its worker joins first.
+    MainComponentSweep sweep_;
 
     juce::Rectangle<int> mastheadArea_;
 

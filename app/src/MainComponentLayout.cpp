@@ -71,6 +71,11 @@ void MainComponent::resized() {
     delayReadout_.setBounds(locateRow);
     rail.removeFromTop(az::ui::gap * 2);
 
+    // SWEEP (H4 T6, decision 1): its own row directly under LOCATE's, same
+    // shape as the STORE row below.
+    sweep_.layout(rail.removeFromTop(az::ui::buttonCellHeight));
+    rail.removeFromTop(az::ui::gap * 2);
+
     // L6a Wave 3: one more fixed row, same shape as the Locate row above --
     // CAL START, CAL END, and the readout sharing what's left.
     auto calibrationRow = rail.removeFromTop(az::ui::buttonCellHeight);
