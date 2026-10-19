@@ -252,3 +252,23 @@ TEST_CASE("S9: the wizard's refusal of a capture and the fit's refusal are said,
         CHECK(said(rig, "-- no suggestion"));
     }
 }
+
+TEST_CASE("S10: SUM starts its own run: it re-reads the epoch and the input mode, and clears the outcome",
+          "[align_runner_status]") {
+    Rig rig;
+    rig.answerAll();
+    REQUIRE(rig.runToVerdict());
+    REQUIRE(rig.runner.answerCycleMs(2.0));
+    CHECK(rig.runner.outcomeForTest() == AlignOutcome::Measured);
+
+    // Between MEASURE and SUM the device is reopened and SYNTHETIC is turned on:
+    // neither is a change DURING the SUM run, so neither may abort it.
+    rig.engine.prepare(alignfixture::kFs, alignfixture::kChannels);
+    rig.env.synthetic = true;
+    REQUIRE(rig.runner.pressSum());
+    CHECK(rig.runner.outcomeForTest() == AlignOutcome::None);  // the old run's outcome is gone
+    rig.pump(2);
+    CHECK(rig.runner.busy());
+    REQUIRE(rig.pumpUntil([&] { return !rig.runner.busy(); }));
+    CHECK(rig.runner.outcomeForTest() == AlignOutcome::SumMeasured);
+}
