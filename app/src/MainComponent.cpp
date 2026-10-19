@@ -52,6 +52,7 @@
 // the honest spelling of "the operator did not ask for this".
 #include "MainComponent.h"
 
+#include "trace/CaptureConverter.h"
 #include "trace/Workspace.h"
 
 // makePaneFactory itself now lives in PaneFactory.h/.cpp (included via
@@ -81,7 +82,17 @@ MainComponent::MainComponent()
       // AlertWindow) -- production has no reason to override it.
       session_(
           library_, [this] { return workspace_->paneSpecs(); },
-          [this](std::vector<rta::trace::PaneSpec> panes) { return restoreWorkspaceFromSession(std::move(panes)); }) {
+          [this](std::vector<rta::trace::PaneSpec> panes) { return restoreWorkspaceFromSession(std::move(panes)); }),
+      // SWEEP: the host callbacks are what only this class knows (guards, mode,
+      // sample rate, the names a stored trace carries).
+      sweep_(analysisThread_, audioIo_.output(), library_,
+             MainComponentSweep::Host{
+                 [this] { return outputBusy(); }, [this] { return isSyntheticMode(); },
+                 [this] { return audioIo_.bus().sampleRate(); },
+                 [this] {
+                     return isSyntheticMode() ? std::string("SYNTHETIC") : audioIo_.currentState().deviceName;
+                 },
+                 [this] { return rta::trace::channelRolesSummary(audioIo_.bus().config()); }}) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };
@@ -144,6 +155,7 @@ MainComponent::MainComponent()
     // SessionCodec were built and tested in lane L5a with no caller anywhere
     // in app/src until now.
     session_.attachTo(*this);
+    sweep_.attachTo(*this);
     wireEqVerify();
 
     rail_.attachTo(*this);
@@ -227,6 +239,7 @@ void MainComponent::timerCallback() {
     refreshMembershipFromSnapshot();
     pollLocatePipeline();
     pollCalibrationPipeline();
+    sweep_.poll();
     eq_.pollVerify();  // L7-EQ VERIFY: before the SYNTHETIC early return below
     pollSplLogging();
 

@@ -23,7 +23,7 @@ void MainComponent::wireEqVerify() {
         rta::measure::EqVerifyEnvironment env;
         env.synthetic = isSyntheticMode();
         env.deviceRunning = audioIo_.isRunning();
-        env.captureBusy = locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_;
+        env.captureBusy = captureBusy();
         return env;
     };
     host.latest = [this] { return analysisThread_.latest(); };

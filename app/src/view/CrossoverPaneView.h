@@ -70,6 +70,7 @@ public:
     [[nodiscard]] const std::string& chosenHighTraceIdForTest() const noexcept { return hpId_; }
     [[nodiscard]] const std::string& chosenLowTraceIdForTest() const noexcept { return lpId_; }
     [[nodiscard]] const CrossoverSurface& surfaceForTest() const noexcept { return surface_; }
+    [[nodiscard]] juce::String refusalMessageForTest() const { return refusalMessage(); }
     [[nodiscard]] const std::vector<std::string>& eligibleTraceIdsForTest() const noexcept {
         return eligibleIds_;
     }
@@ -134,6 +135,9 @@ private:
     /// missing, so the same trace id chosen on both sides -- or the only
     /// eligible trace chosen on both sides -- read as complete.)
     bool ready_ = false;
+
+    /// Non-empty when both picks are distinct but their axes differ (T7).
+    juce::String axisRefusal_;
 
     /// Test-only, see `lastPaintDrewChartForTest()`.
     bool lastPaintDrewChart_ = false;
