@@ -190,4 +190,14 @@ struct MainComponentTestAccess {
     [[nodiscard]] static juce::String exportReportReadoutForTest(const MainComponent& c) {
         return c.exportReportReadout_.getText();
     }
+
+    // Sweep-IR wave A (T2): drives the exact production LOCATE handler and
+    // reads back the suggestion the 2 Hz poll (`timerTickForTest`) produces,
+    // with no button click and no message loop -- same "call the production
+    // handler" reasoning as `storeClickedForTest`.
+    static void locateClickedForTest(MainComponent& c) { c.locateClicked(); }
+    [[nodiscard]] static const std::optional<rta::dsp::DelaySuggestion>&
+    delaySuggestionForTest(const MainComponent& c) {
+        return c.delaySuggestion_;
+    }
 };

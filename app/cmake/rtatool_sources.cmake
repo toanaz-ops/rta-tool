@@ -17,6 +17,8 @@ set(RTATOOL_SOURCES
     # room under the 400-line cap.
     src/MainComponentRail.cpp
     src/MainComponentDelay.cpp
+    # MainComponentSynthetic.cpp: setSyntheticMode, split out of MainComponent.cpp.
+    src/MainComponentSynthetic.cpp
     # MainComponentPanes.cpp: owner decision 2026-09-26's pane selector --
     # MainComponent.cpp's own 400-line-cap split, same shape as
     # MainComponentDelay.cpp/MainComponentCalibration.cpp.

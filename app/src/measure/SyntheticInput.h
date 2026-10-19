@@ -4,8 +4,10 @@
 #pragma once
 
 #include "measure/SyntheticImpairment.h"
+#include "rta/dsp/Biquad.h"
 #include "rta/gen/Synthetic.h"
 #include "rta/platform/CaptureBus.h"
+#include "rta/platform/OutputEngine.h"
 
 #include <juce_core/juce_core.h>
 
@@ -73,6 +75,20 @@ public:
         /// that did not opt in, and "inaudibly small" is not the same promise
         /// as "unchanged".
         double measurementNoiseDb = kNoiseOffDb;
+
+        /// Band-limit on the MEASUREMENT copy only (sweep-IR lane decision
+        /// 8): a cascade of biquads, empty = none. The Reference channel is
+        /// never filtered -- it is the stimulus, and a filter on it would
+        /// cancel in H = S_xy / S_xx and show a flat line again.
+        std::vector<rta::dsp::Biquad::Coeffs> measurementFilter;
+
+        /// The generator's output engine, or nullptr. When set, the
+        /// constructor `prepare()`s it for one channel and every block is
+        /// rendered from it: whenever its source is armed, THAT is the
+        /// stimulus (so LOCATE / SWEEP / VERIFY, which play through
+        /// `OutputEngine`, reach the synthetic measurement path instead of a
+        /// device that is stopped); otherwise pink / sine as before.
+        rta::platform::OutputEngine* loopback = nullptr;
     };
 
     /// Calls `bus.prepare()` and `bus.setActive(true)` here, on the message
@@ -116,7 +132,7 @@ private:
     /// index -- see runBody().
     std::vector<float> measurementBlock_;
 
-    DelayLine measurementDelay_;
+    MeasurementPath measurementPath_;
     std::uint32_t noiseState_;
 };
 

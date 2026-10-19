@@ -39,7 +39,7 @@ SyntheticInput::SyntheticInput(rta::platform::CaptureBus& bus, const Config& con
     , waitMs_(millisecondsPerBlock(config.sampleRate, config.bufferSize))
     , block_(static_cast<std::size_t>(std::max(config.bufferSize, 0)))
     , measurementBlock_(static_cast<std::size_t>(std::max(config.bufferSize, 0)))
-    , measurementDelay_(config.measurementDelaySamples)
+    , measurementPath_(config.measurementDelaySamples, config.measurementFilter)
     // config.seed already seeds SyntheticPink below; offset by a constant
     // rather than reuse it verbatim, so the delay's noise floor is not
     // correlated with the pink-noise generator's exact state.
@@ -62,6 +62,16 @@ SyntheticInput::SyntheticInput(rta::platform::CaptureBus& bus, const Config& con
     // construction (rta::platform::kFixedRingCapacitySamples).
     bus_.prepare(config.sampleRate, kChannels);
     bus_.setActive(true);
+
+    // OutputEngine::prepare's precondition (OutputEngine.h): the device
+    // thread is not inside render() and the message thread is not inside
+    // setSource(). Both hold -- setSyntheticMode stopped the device first,
+    // and our own thread starts on the line below. One output channel: the
+    // loopback carries ONE mono stimulus; the engine's channel-0 gate is the
+    // route the callers' `soloOutput(engine, 0)` already opens.
+    if (config.loopback != nullptr) {
+        config.loopback->prepare(config.sampleRate, 1);
+    }
 
     startThread();
 }
@@ -95,10 +105,25 @@ void SyntheticInput::runBody() {
         config_.amplitude * std::pow(10.0, config_.measurementNoiseDb / 20.0);
 
     while (!threadShouldExit()) {
-        if (pink_) {
-            pink_->render(block_);
-        } else {
-            sine_->render(block_);
+        // Always render the loopback, even when it is quiescent: render() is
+        // what advances `renderedSamples()` (LOCATE's settle clock) and
+        // publishes the engine's Idle state (`sourceIsQuiescent()`), and the
+        // device callback that normally drives both is stopped in this mode.
+        // Quiescence is sampled AFTER the render so the verdict and the
+        // block it is about come from the same engine state: a block rendered
+        // while armed is used even if a disarm lands a moment later.
+        bool useLoopback = false;
+        if (config_.loopback != nullptr) {
+            float* out = block_.data();
+            config_.loopback->render(&out, 1, static_cast<int>(block_.size()));
+            useLoopback = !config_.loopback->sourceIsQuiescent();
+        }
+        if (!useLoopback) {
+            if (pink_) {
+                pink_->render(block_);
+            } else {
+                sine_->render(block_);
+            }
         }
 
         // Impairments land on the MEASUREMENT copy only -- block_ (the
@@ -106,7 +131,7 @@ void SyntheticInput::runBody() {
         // and noiseState_ are members, not locals, precisely so the delay's
         // history and the noise generator's state carry across this call;
         // see SyntheticImpairment.h.
-        measurementDelay_.process(block_, measurementBlock_);
+        measurementPath_.process(block_, measurementBlock_);
 
         // kNoiseOffDb is a genuine OFF, not just a very small level: below it
         // (or at it -- the default) the generator is not called at all, so a
