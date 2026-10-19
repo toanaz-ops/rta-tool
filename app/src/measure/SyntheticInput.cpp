@@ -109,6 +109,14 @@ void SyntheticInput::runBody() {
         // what advances `renderedSamples()` (LOCATE's settle clock) and
         // publishes the engine's Idle state (`sourceIsQuiescent()`), and the
         // device callback that normally drives both is stopped in this mode.
+        // RACE, harmless by design: render() can see armed == false (the
+        // engine is Idle and wrote nothing) and armSource() can land on the
+        // message thread before sourceIsQuiescent() is read below. The
+        // verdict then says "armed" for a block the loopback did not fill:
+        // one silent block goes onto the bus, uncounted. It does not matter
+        // because LOCATE's settle clock is renderedSamples(), which render()
+        // advanced regardless, and the capture it arms later starts past the
+        // 480-sample settle window, so that one block cannot be in it.
         // Quiescence is sampled AFTER the render so the verdict and the
         // block it is about come from the same engine state: a block rendered
         // while armed is used even if a disarm lands a moment later.

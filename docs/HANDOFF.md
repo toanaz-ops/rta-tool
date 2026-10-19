@@ -5,9 +5,83 @@
 
 ---
 
+# 2026-10-20 — **Phase SWEEP (H4) BUILT, operator-reachable. Ba PR code merge (#67, #68, #69), main = `65ee5f6`; PR closeout đang mở.**
+
+*H4 `app/sweep-ir` xong: nút SWEEP phát sweep qua output 1, capture, deconvolve trên worker thread, thêm trace `SWEEP @ hh:mm:ss` vào library và IR vào `IrStore`. Kế tiếp là H5 ALIGN-UI.*
+
+## Phần trăm sau #69
+
+Cùng công thức và cùng cách đếm (unit trọng số bằng nhau, không phải phần trăm
+công sức) như mục "Status snapshot — 2026-09-29" của
+`docs/plans/MASTER-EXECUTION-PLAN.md`; block "Updated after #69" ở đó có phép
+tính từng dòng. **Không có số nào đổi**: hàng 4 là MỘT unit chứa L4a (IR, nay với
+tới được qua SWEEP) và L4b (RT60, vẫn không có caller trong `app/src`), nên nó
+chỉ lật sang BUILT khi H6 xong. Đây là ghi chú "H4 SWEEP alone flips nothing"
+được đo thay vì dự phóng.
+
+| | sau #64 | sau #69 |
+|---|---|---|
+| (a) engine built | 15 / 19 = 78.9 % | 15 / 19 = 78.9 % |
+| (b) operator-reachable (BUILT, gồm partial) | 12 / 19 = 63.2 % | 12 / 19 = 63.2 % |
+| (b-strict) BUILT không partial | 8 / 19 = 42.1 % | 8 / 19 = 42.1 % |
+| (c) dự phóng sau H5–H6 | 14 / 19 = 73.7 % | 14 / 19 = 73.7 % |
+
+Độ nhạy, không phải headline: nếu tách hàng 4 thành hai nửa trọng số 0.5,
+(b) = 12.5 / 19 = 65.8 %.
+
+## PR đã merge trong đợt này (đối chiếu bằng `gh pr view N --json title,mergeCommit`)
+
+| PR | merge | what |
+|---|---|---|
+| #67 | `079d1b8` | SWEEP wave A: loopback `OutputEngine` -> `SyntheticInput`, band-pass N=2 trên measurement copy (sửa LOCATE treo trong SYNTHETIC) |
+| #68 | `50defce` | SWEEP wave B: `analyseSweepCapture`, `SweepIrWorker`, `IrStore`, `traceFromSweepIr`, tolerance test |
+| #69 | `65ee5f6` | SWEEP wave C: nút SWEEP (`MainComponentSweep`), accessor `captureBusy()/outputBusy()` (Z25), XOVER axis guard |
+| closeout | (PR mở, chưa merge) | `app+docs: close out H4 SWEEP` — LOW L1/L2/L4/L6, amendment "H4 as built", status, QA queue, handoff này |
+
+## Baseline (measured trong worktree của closeout, không copy)
+
+- **Tally cục bộ tại head của PR closeout (xem sha trong PR):** OFF (`RTA_BUILD_APP=OFF`) **1134 / 1134**; ON (`RTA_BUILD_APP=ON`, `-DRTA_JUCE_PATH=D:/DEV CAVE EP3/PROJECT005-AZ-handsfree/external/JUCE`) **1362 / 1362**; warnings theo pattern CI `warning( [A-Z]+[0-9]+)?:` = **0** (OFF và ON). Build sạch từ đầu, một lần cho cả lane.
+- **`tools/orphan_check.py --base 0a8f236` (build-dir `build-orphan`):** exit **0 (`orphan_check: OK`)**.
+- **Mutant của closeout (RED phải kèm file:line):** M1 bỏ `catch (...)` -> case non-std crash `0xc0000409` (std::terminate) dưới ctest; M2 bỏ `cancelLocate()` -> `test_synthetic_loopback.cpp:273` và `:274`; M3 `measurementDelaySamples` 4 -> 5 -> `:260`; M4 bỏ band-pass -> `:260`. Sau mutant: build lại từ nguồn đã khôi phục, `git status` sạch, 4 case xanh.
+- **CI trên main (`gh run list --branch main --limit 4`, lúc viết):** `65ee5f6` — CI và CI (app ON) đang chạy khi tôi kiểm; `50defce` — cả hai **success**. Phiên sau chạy lại lệnh trước khi tin số này.
+- Ảnh: `shots/main-live.png` (render bằng `rtatool_snapshot`, `cmd //c`, 1280x800 cố định), không commit `shots/`.
+
+## Human try — hai việc
+
+**Không cần phần cứng (SYNTHETIC):** bật SYNTHETIC -> bấm **SWEEP**. Trong khoảng 16 s thấy readout `IR +5 samples (+0.1 ms) · loop a..b dB · IRs 1/8` (5 = 4 sample delay + trễ của band-pass; PHAT đọc 4.76), library có `SWEEP @ hh:mm:ss` nhóm `SWEEP`. Bấm lần hai, mở **XOVER**, chọn hai trace SWEEP -> tổng được vẽ. Chọn một trace STORE với một trace SWEEP -> pane từ chối và nêu hai kích thước (`TRACES DO NOT SHARE A FREQUENCY AXIS: n-POINT VS m-POINT`).
+
+**Hàng C (cần phần cứng) — SWEEP:** out 1 -> Y-split -> amp loa và in 2; in 2 là REF, mic ở in 1 là MEAS, cả hai route 1. Bấm SWEEP, nghe 10 s sweep không click ở hai đầu; readout `IR +D samples`, D ≈ khoảng cách / 343 · fs; dời mic 1 m ra xa thì D tăng ≈ 140 sample ở 48 kHz. Chi tiết trong `docs/HUMAN-QA-QUEUE.md` mục "H4 SWEEP — try it and lane LOWs". **Hàng B (VERIFY trên phần cứng)** từ entry EQ-UI vẫn mở.
+
+## Đang làm
+
+Không có gì đang làm dở.
+
+## Nợ
+
+**Máy làm được:**
+- L3 (ghi chú cho kế hoạch H5), L9 (xử lý trạng thái pending của LOCATE, cùng nửa còn lại của L4: device STOP giữa LOCATE khi SYNTHETIC không đổi) — xem bảng LOW trong QA queue.
+- FIX-next-batch còn lại của entry EQ-UI: Z8, Z11, Z13, Z17, Z22, Z24, Z29, Z30.
+
+**Cần người:** hàng B (VERIFY) và hàng C (SWEEP) trên phần cứng thật; duyệt disposition bảng LOW H4; thời điểm các lane **NEW-LANE** (TF slot picker, L-API enable switch, generator/output control, multi-pane selector, XOVER `appliedDelaySamples`) — DEV MASTER và chủ nhân đã thống nhất **sau H4**, nên bây giờ có thể lên lịch, khuyến nghị xen sau H5 để không chen vào `MainComponent*` giữa hai lane hot.
+
+## Pitfall học được trong đợt này
+
+- **Hook worktree chặn heredoc và redirect** trong lệnh Bash của agent chạy ở worktree cô lập ("too complex to verify"): ghi file bằng Write/Edit (vào scratchpad hoặc worktree), rồi chạy script; tách `git` thành lệnh riêng, đơn giản.
+- **`tools/diffmut.py` đưa `SyntheticInput` sang sai test target** trong target map của nó: chạy test target đúng bằng tay (`rtatool_main_component_tests` cho loopback, `rtatool_analysis_tests` cho worker) thay vì tin kết quả diffmut cho file đó.
+- **SYNTHETIC render MỘT output channel**: ALIGN/VERIFY solo của channel khác 0 sẽ im lặng trong SYNTHETIC. Quan trọng với H5 — một test ALIGN-UI dùng SYNTHETIC không chứng minh được solo của channel 1+.
+- **Bật SYNTHETIC tăng `outputEpoch()`, tắt thì không** (destructor của `SyntheticInput` không gọi `prepare`): SWEEP vì thế còn so cờ `host_.synthetic()` lúc arm; mọi tính năng giữ source armed qua một lần đổi mode phải làm tương tự (LOCATE dùng `cancelLocate()` từ closeout này).
+- **Một derivation đúng số vẫn có thể sai lý do:** kỳ vọng LOCATE 4.75 mẫu từng được "suy" từ group delay trung bình trên band 200 Hz–12 kHz; PHAT dùng DC–Nyquist (cùng công thức cho 6.26). Giờ kỳ vọng là oracle số bên ngoài, ghi nhãn regression lock.
+- `memory/a-mutant-counted-red-must-name-the-failing-line.md` vẫn áp dụng: bảng mutant ở trên in file:line.
+
+## Kế tiếp
+
+**H5 `app/align-ui`** (nhánh `app/align-ui`): dựng UI cho `AlignmentWizard`, thêm lookup vào `IrStore` (plan SWEEP "not built here") -> **H6 `app/rt60-ui`**. `CaptureSequencer` vẫn hoãn; MTW storage vẫn chưa xếp lịch.
+
+---
+
 # 2026-09-29 (tối) — **Phase EQ-UI (H3) BUILT, operator-reachable. Mười ba PR merge, main = `9e5bf55`.**
 
-*H3 `app/eq-ui` xong: EQ pane với AUTO EQ, SUGGEST, EXPORT FIR TXT/WAV, VERIFY, ADOPT. Kế tiếp là H4 SWEEP.*
+*H3 `app/eq-ui` xong: EQ pane với AUTO EQ, SUGGEST, EXPORT FIR TXT/WAV, VERIFY, ADOPT. ~~Kế tiếp là H4 SWEEP.~~ **Sửa 2026-10-20:** H4 SWEEP đã xong (#67-#69), kế tiếp là H5 — xem entry trên cùng.*
 
 ## Phần trăm sau #64
 
@@ -63,7 +137,7 @@ Nếu trục y của biểu đồ trông rộng bất thường (tới ~120 dB) 
 
 ## Quyết định chờ chủ nhân (không cái nào chặn build)
 
-1. Thử VERIFY trên phần cứng thật (hàng B ở trên), và sau này thử SWEEP — cả hai cần người và một interface.
+1. Thử VERIFY trên phần cứng thật (hàng B ở trên), và sau này thử SWEEP — cả hai cần người và một interface. **Sửa 2026-10-20:** SWEEP đã build, hàng C nằm trong entry 2026-10-20 trên cùng.
 2. Xếp các lane NEW-LANE (TF slot picker, L-API enable switch, generator/output control, multi-pane selector, XOVER `appliedDelaySamples`) **trước hay sau H4**. Khuyến nghị: sau H4. H4 sửa cùng các file hot (`MainComponent*`) và task đầu của nó đã là dọn output-owner (xem pitfall bên dưới); chen một lane khác vào giữa làm tăng nguy cơ xung đột `MainComponent.h` (đang sát trần 400 dòng) mà không mở khoá gì H4 cần. Cái giá của việc chờ: TF slot 1..7 và L-API còn "CORE ONLY / partial" thêm một lane nữa. Không cái nào không đảo ngược được.
 3. Bảng LOW `docs/HUMAN-QA-QUEUE.md` mục "Lane-end LOW triage — 2026-09-29": 31 dòng (9 FIX-next-batch, 6 DEFER, 5 NEW-LANE, 2 KNOWN-LIMIT, 9 STALE). Duyệt disposition đề xuất.
 
@@ -72,8 +146,8 @@ Nếu trục y của biểu đồ trông rộng bất thường (tới ~120 dB) 
 - **Báo cáo của planner agent đến dưới dạng agent-message, không nằm trong file `.output`.** Đọc `.output` sẽ thấy trống và tưởng agent chưa xong.
 - **Script mutant phải in `file:line` của test đỏ.** Ở PR #58, script builder tính mọi exit code khác 0 là RED; một flake wall-clock không liên quan dưới tải bị ghi cho mutant, còn test đáng lẽ chứng minh (`latest() != nullptr`) thì rỗng — verifier chạy lại thì GREEN. Xem `memory/a-mutant-counted-red-must-name-the-failing-line.md`.
 - **Hook Write của agent chạy trong worktree cô lập chặn ghi vào worktree khác** (kể cả thư mục scratchpad của phiên khác). Ghi file trung gian vào chính worktree của mình rồi xoá.
-- **Cờ "output owner" bị copy-paste ở 4 + 3 chỗ:** biểu thức `locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_` ở `MainComponentCalibration.cpp:94,110`, `MainComponentDelay.cpp:26`, `MainComponentEqVerify.cpp:26`; `eq_.verifyBusy()` ở `MainComponentCalibration.cpp:90,106`, `MainComponentDelay.cpp:19`. **H4 phải gom chúng vào MỘT accessor trước tiên**, rồi mới thêm SWEEP vào (Z25 trong bảng LOW).
-- LOCATE treo trong SYNTHETIC (không có ai gọi `OutputEngine::render`): H4 task T2 sửa; đừng thử LOCATE dưới SYNTHETIC trước đó.
+- **Cờ "output owner" bị copy-paste ở 4 + 3 chỗ:** biểu thức `locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_` ở `MainComponentCalibration.cpp:94,110`, `MainComponentDelay.cpp:26`, `MainComponentEqVerify.cpp:26`; `eq_.verifyBusy()` ở `MainComponentCalibration.cpp:90,106`, `MainComponentDelay.cpp:19`. **H4 phải gom chúng vào MỘT accessor trước tiên**, rồi mới thêm SWEEP vào (Z25 trong bảng LOW). **Sửa 2026-10-20:** ~~H4 phải gom~~ đã gom ở #69: `captureBusy()` / `outputBusy()` (`MainComponent.h:89-94`).
+- ~~LOCATE treo trong SYNTHETIC (không có ai gọi `OutputEngine::render`): H4 task T2 sửa; đừng thử LOCATE dưới SYNTHETIC trước đó.~~ **Sửa 2026-10-20:** đã sửa ở #67 (loopback render); phần còn lại — tắt SYNTHETIC giữa chừng LOCATE — sửa ở PR closeout (`cancelLocate`).
 
 ## Kế tiếp
 
@@ -111,7 +185,7 @@ phần trăm công sức.
 ## Đang làm và kế tiếp
 
 - ~~**Đang làm:** H3a `app/eq-ui` (EQ-UI wave A, xuất FIR) — phiên song song, không đụng các doc trên.~~ **Sửa 2026-09-29 sau #64:** H3 xong (#60, #62, #63, #64), xem mục đầu file.
-- **Kế tiếp, tuần tự (hot files):** H4 `app/sweep-ir` (SWEEP) → H5 `app/align-ui` → H6 `app/rt60-ui`.
+- **Kế tiếp, tuần tự (hot files):** ~~H4 `app/sweep-ir` (SWEEP) →~~ **H4 xong (2026-10-20)** → H5 `app/align-ui` → H6 `app/rt60-ui`.
 - **Lỗ hổng mới phát hiện khi verify operator path** (chưa lane nào lo): `RoutingMatrix::setActiveTransferFunction` không có caller nên TF slot 1..7 không với tới được; L-API bật/tắt chỉ bằng sửa `MainComponent.cpp:189` rồi build lại; ~~chưa có control generator nào ngoài LOCATE~~ **sửa 2026-09-29 sau #64:** vẫn chưa có control generator nào cho operator chọn (tín hiệu, mức, kênh output) — LOCATE và, từ #64, VERIFY chỉ phát pink noise cố định trên output 1; `MainComponent.cpp:189` nay là `:190`. P1 vẫn còn T12 hardware M2/M7 chờ người.
 
 ---
@@ -166,7 +240,7 @@ ctest --test-dir build-on -C Release   (RTA_BUILD_APP=ON)  -> 1182/1182
 *Cả 7 mục dưới đây đã có quyết định — plan review #2, 2026-09-29. Chi tiết:
 `docs/plans/MASTER-EXECUTION-PLAN.md` mục "Plan review #2 — 2026-09-29".*
 
-1. Lane sản xuất Sweep→IR: chưa có plan nào; ALIGN-UI và RT60 UI chờ nó.
+1. Lane sản xuất Sweep→IR: chưa có plan nào; ALIGN-UI và RT60 UI chờ nó. **Sửa 2026-10-20:** lane đó đã build xong (H4 SWEEP, #67-#69); ALIGN-UI và RT60 UI không còn chờ producer.
    **Quyết định 2026-09-29:** plan hoá ở **P5** (station 1-3), build ở **H4**
    `app/sweep-ir`, dependency table mục 1.
 2. Thứ tự lane giữa EQ-UI, Sweep→IR, ALIGN-UI, CaptureSequencer.

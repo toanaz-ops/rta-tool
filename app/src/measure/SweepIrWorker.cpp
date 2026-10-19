@@ -30,6 +30,10 @@ void SweepIrWorker::start(SweepCapture capture, SweepIrRequest request) {
             // default analyse never throws, but an injected one may. A
             // default-constructed SweepIrOutcome already has status Failed.
             outcome.message = e.what();
+        } catch (...) {
+            // A non-std exception (an int, a platform type) is just as fatal
+            // on a std::thread and carries no message to forward.
+            outcome.message = "unknown exception";
         }
         result_.store(std::make_shared<const SweepIrOutcome>(std::move(outcome)));
     });

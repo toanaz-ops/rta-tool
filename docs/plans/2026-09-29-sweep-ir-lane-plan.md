@@ -248,3 +248,95 @@ exists.
 - THD from the harmonic packets (G3).
 - The RT60 UI (H6) and ALIGN's IR lookup (H5).
 - The XOVER `appliedDelaySamples` defect (research correction 4).
+
+## H4 as built — amendments
+
+*Written 2026-10-20 against the merged code (PR #67 `079d1b8`, #68 `50defce`,
+#69 `65ee5f6`), after it existed (CLAUDE.md, "A record amendment is written
+against the shipped code"). Where this section and the plan above disagree,
+this section is what shipped. Line numbers are at `65ee5f6`.*
+
+| # | plan said | shipped | evidence |
+|---|---|---|---|
+| A1 | decision 8: `bandPass(40, 16000, fs, 1)` | **N = 2** (two SOS sections) | `MainComponentSynthetic.cpp:59`, comment above it |
+| A2 | T2: "SYNTHETIC + LOCATE reaches a 4-sample suggestion" | LOCATE suggests **5 samples** (4 + the band-pass's own delay; the PHAT estimate reads 4.76) | `test_synthetic_loopback.cpp`, "SYNTHETIC + LOCATE ..." |
+| A3 | T3 (b) bound: tail term once, four float transforms | tail term **twice**, plus **one extra float stage** | `test_sweep_ir_tolerance.cpp:25-47` |
+| A4 | statuses `TailTooShort`, `ReferenceNotFound`, `ArrivalOutOfWindow` | also `CaptureTooShort`, `MeasurementNotFound`, `Failed`; and a 20x peak/rms gate on the loop | `SweepIrOutcome.h:33-41`, `SweepIrPipeline.cpp:29,97,118` |
+| A5 | T4: `start(shared_ptr<const LocateCapture>, ...)` | `start(SweepCapture, ...)` **by value** | `SweepIrWorker.h:46`, `MainComponentSweep.cpp:157` |
+| A6 | abort on `outputEpoch()` change | also aborts when the SYNTHETIC flag differs from the one at arm time | `MainComponentSweep.cpp:124` |
+| A7 | trace metadata unspecified | device name and channel roles captured **at click** | `MainComponentSweep.cpp:100-101,171` |
+| A8 | T7: refuse unequal axes (sizes named) | also refuses equal `fftSize` at different sample rates | `CrossoverPaneView.cpp:186-191` |
+| A9 | readout `IR +D samples (x.x ms) · loop a..b dB` | `... · IRs N/8`, with ` (oldest dropped)` when this one evicted | `MainComponentSweep.cpp:186-194` |
+
+**A1 — N = 1 throws (CONFIRMED by reading the code, 2026-10-20).** A
+band-pass built from one Butterworth pole is two poles; `pairIntoSections`
+requires every pole to be part of a complex pair and throws
+`std::logic_error` otherwise (`ButterworthDesign.cpp:181-194`,
+`if (!poleSplit.reals.empty() || ...)`). Whether the two poles are real depends
+on the band: lowpass-to-bandpass of the prototype pole -1 gives real poles when
+the prewarped bandwidth exceeds twice the centre, `bw > 2*w0`. For 40 Hz -
+16 kHz at 48 kHz, `wLo = 2fs*tan(pi*40/fs) = 251.3`, `wHi = 2fs*tan(pi*16000/fs)
+= 166277`, `bw/w0 = 166026/6464 = 25.7`, so both poles are real and the call
+throws. This is read-and-computed, not re-run as an N = 1 call. In the shipped
+app it killed `setSyntheticMode` itself, which is what the comment at
+`MainComponentSynthetic.cpp:54-58` records.
+
+**A2.** The plan's "4 samples" ignored the filter decision 8 put on the
+measurement copy. The expected value in the test is an **external numeric
+oracle** (pink noise, 4-sample delay, `butter(2,[40,16000])`, -30 dB noise,
+GCC-PHAT with regularisation 1e-10 and parabolic refinement: 4.756 - 4.766),
+labelled a regression lock. The first version of that test derived 4.75 as a
+mean group delay over 200 Hz - 12 kHz; PHAT in `MainComponentDelay.cpp`
+(`PhatOptions` min/max Hz both 0) weighs DC to Nyquist, where the same formula
+gives 6.26, so that derivation was wrong and was removed (closeout PR, L1).
+
+**A3.** In `test_sweep_ir_tolerance.cpp`, `h`'s tail beyond M samples enters
+both `S_m` and `G.S_r`, so it counts twice, `2*||r||_1*||g_tail||_1`; the plan
+wrote it once. The float sum gains one stage for rounding the filtered
+measurement to float before it enters the pipeline. **Measured** (PR #68 body):
+worst residual/bound **0.7403 at 324 Hz** (the 300 Hz skirt), 0 violations over
+81 - 19726 Hz; worst bound **1.67 dB at 19726 Hz**, where the test filter is
+about -80 dB so the absolute bound is large against the target; **0.007 dB
+inside 300 - 3000 Hz**. Looser than 0.1 dB out of band; reported, not
+tightened.
+
+**A4.** The 20x gate: the loop's deconvolution must have a positive peak at
+least `kMinPeakToRms = 20` times its own rms. Derivation
+(`SweepIrPipeline.cpp:24-29`): Gaussian noise over 10^6 samples peaks near
+`sqrt(2 ln n)` = 5.3 rms, so 20 leaves a factor 3.8. The matched filter's gain
+is about `sqrt(Ns)` = 693 for a 2 s loop; a clean 2 s loop measured **439**
+(PR #68 body), 22 times the gate. `CaptureTooShort` is a capture shorter than
+the sweep or channels of unequal length; `MeasurementNotFound` is a measurement
+that deconvolves to exact silence; `Failed` carries an exception's text
+(`SweepIrWorker.cpp`; since the closeout PR a non-`std::exception` also becomes
+`Failed("unknown exception")` instead of `std::terminate`).
+
+**A5.** The worker owns its input: `SweepCapture` (two `std::vector<float>`,
+JUCE-free) is passed by value and moved into the thread, so the caller can drop
+`lastHandled_` immediately (`MainComponentSweep.cpp:159`) and nothing it does
+afterwards can reach the job. `LocateCapture` lives in `AnalysisThread.h`, which
+includes JUCE, and the worker header must not.
+
+**A6.** Entering SYNTHETIC bumps `outputEpoch()` (the `SyntheticInput`
+constructor calls `prepare()`), but leaving it does not: destroying the
+synthetic writer prepares nothing. A sweep armed in SYNTHETIC and interrupted by
+toggling it off would therefore pass the epoch check, so the abort also
+compares `host_.synthetic()` with the value captured at arm time.
+
+**A7.** The capture belongs to the device and role assignment at click time,
+even if SYNTHETIC or the device changes while the worker runs; ALIGN compares
+the role string.
+
+**A8.** Two traces with the same `fftSize` but different sample rates do not
+share a frequency axis either; the pane names both rates.
+
+**A9.** Format: `IR +D samples (+x.x ms) · loop a..b dB · IRs N/8`, with
+` (oldest dropped)` appended at 8/8 when the add evicted. `IrStore::size` and
+`kCapacity` are therefore live in production through this readout, which is what
+removed the last orphan in the lane.
+
+### Lane LOWs recorded at close
+
+L1, L2, L4, L6 were fixed in the closeout PR; L3 goes to H5; L5, L7, L8 are
+the amendments above; L9 is deferred with LOCATE; L10 is cosmetic. The table
+with dispositions is in `docs/HUMAN-QA-QUEUE.md`, "H4 SWEEP lane LOWs".

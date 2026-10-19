@@ -137,6 +137,20 @@ TEST_CASE("an analyse that throws becomes a Failed outcome, not terminate", "[sw
     CHECK(result->message == "boom");
 }
 
+TEST_CASE("an analyse that throws a non-std type becomes Failed, not terminate",
+          "[sweep_ir_worker]") {
+    // catch (const std::exception&) alone lets an int escape the thread: that
+    // is std::terminate, which ends the whole ctest process (a crash counts).
+    SweepIrWorker worker([](const SweepCapture&, const SweepIrRequest&) -> SweepIrOutcome {
+        throw 42;
+    });
+    worker.start(SweepCapture{}, SweepIrRequest{});
+    const auto result = awaitResult(worker);
+    REQUIRE(result != nullptr);
+    CHECK(result->status == SweepIrStatus::Failed);
+    CHECK(result->message == "unknown exception");
+}
+
 TEST_CASE("a second start() clears the previous result until its own job finishes",
           "[sweep_ir_worker]") {
     Latch gate;
