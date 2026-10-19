@@ -246,3 +246,68 @@ TEST_CASE("a measurement that reaches full scale is flagged but not refused", "[
     CHECK(outcome.measurementClipped);
     CHECK(outcome.delaySamples == 37);
 }
+
+// --- what the outcome carries besides the bins ---------------------------------
+
+TEST_CASE("the outcome carries the sweep's own band and spacing constants and the bin width",
+          "[sweep_ir_pipeline]") {
+    const auto request = shortRequest();
+    const rta::gen::Sweep sweep(request.sweep);
+    const auto outcome = analyseSweepCapture(
+        fx::delayCapture(request.sweep, kPreRoll, rta::measure::requiredTailSamples(request), 37),
+        request);
+    REQUIRE(outcome.status == SweepIrStatus::Ok);
+
+    // Each of these is read back later by someone who no longer has the Sweep:
+    // the harmonic packets are placed by L (record decision 3) and a band-edge
+    // estimator clamps to the excitation and trusted bands (decision 6b).
+    CHECK(outcome.ir.sampleRate == 48000.0);
+    CHECK(outcome.sampleRate == 48000.0);
+    CHECK(outcome.ir.harmonicSpacingL == sweep.lengthConstantL());
+    CHECK(outcome.ir.excitationLowHz == request.sweep.startHz);
+    CHECK(outcome.ir.excitationHighHz == request.sweep.endHz);
+    CHECK(outcome.ir.trustedLowHz == sweep.validBandLowHz());
+    CHECK(outcome.ir.trustedHighHz == sweep.validBandHighHz());
+    CHECK(outcome.binHz == 48000.0 / static_cast<double>(outcome.fftSize));
+}
+
+TEST_CASE("the shipped sweep config is Sweep::Config{} at -12 dBFS and nothing else changed",
+          "[sweep_ir_pipeline]") {
+    const rta::gen::Sweep::Config defaults;
+    const auto shipped = rta::measure::shippedSweepConfig(44100.0);
+    CHECK(shipped.levelDbFsPeak == -12.0);
+    CHECK(shipped.sampleRate == 44100.0);
+    CHECK(shipped.startHz == defaults.startHz);
+    CHECK(shipped.endHz == defaults.endHz);
+    CHECK(shipped.durationSec == defaults.durationSec);
+    CHECK(shipped.fadeInOctaves == defaults.fadeInOctaves);
+    CHECK(shipped.fadeInSec == defaults.fadeInSec);
+    CHECK(shipped.fadeOutSec == defaults.fadeOutSec);
+}
+
+TEST_CASE("every refusal says why, and a DSP exception is Failed with its text",
+          "[sweep_ir_pipeline]") {
+    const auto request = shortRequest();
+    const auto required = rta::measure::requiredTailSamples(request);
+
+    const auto tail = analyseSweepCapture(
+        fx::delayCapture(request.sweep, kPreRoll, required - 1, 37), request);
+    CHECK(tail.status == SweepIrStatus::TailTooShort);
+    CHECK_FALSE(tail.message.empty());
+
+    auto inverted = fx::delayCapture(request.sweep, kPreRoll, required, 37);
+    for (auto& x : inverted.reference) x = -x;
+    const auto notFound = analyseSweepCapture(inverted, request);
+    CHECK(notFound.status == SweepIrStatus::ReferenceNotFound);
+    CHECK_FALSE(notFound.message.empty());
+
+    // endHz below startHz makes Sweep's constructor throw invalid_argument; the
+    // pipeline must turn that into an outcome, because its caller is a
+    // std::thread and an escaping exception there is std::terminate.
+    auto broken = request;
+    broken.sweep.endHz = 10.0;
+    const auto failed = analyseSweepCapture(
+        fx::delayCapture(request.sweep, kPreRoll, required, 37), broken);
+    CHECK(failed.status == SweepIrStatus::Failed);
+    CHECK_FALSE(failed.message.empty());
+}

@@ -27,8 +27,8 @@ void SweepIrWorker::start(SweepCapture capture, SweepIrRequest request) {
             outcome = analyse_(capture, request);
         } catch (const std::exception& e) {
             // An exception escaping a std::thread is std::terminate; the
-            // default analyse never throws, but an injected one may.
-            outcome.status = SweepIrStatus::Failed;
+            // default analyse never throws, but an injected one may. A
+            // default-constructed SweepIrOutcome already has status Failed.
             outcome.message = e.what();
         }
         result_.store(std::make_shared<const SweepIrOutcome>(std::move(outcome)));

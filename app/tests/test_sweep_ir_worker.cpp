@@ -14,6 +14,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <type_traits>
 
 using namespace std::chrono_literals;
 using rta::measure::SweepCapture;
@@ -56,6 +57,16 @@ std::shared_ptr<const SweepIrOutcome> awaitResult(const SweepIrWorker& worker) {
     }
     return worker.latest();
 }
+
+// The thread captures `this`; a copy or move would leave it pointing at the old
+// object. The deleted special members are what stops that.
+static_assert(!std::is_copy_constructible_v<SweepIrWorker>);
+static_assert(!std::is_copy_assignable_v<SweepIrWorker>);
+static_assert(!std::is_move_constructible_v<SweepIrWorker>);
+static_assert(!std::is_move_assignable_v<SweepIrWorker>);
+// A fresh outcome is Failed until a producer says otherwise, so a worker that
+// forgot to fill one in cannot read as success.
+static_assert(SweepIrOutcome{}.status == SweepIrStatus::Failed);
 
 }  // namespace
 

@@ -126,10 +126,51 @@ TEST_CASE("a pure delay of 37 multiplies the trace spectrum by exp(-i*w*37)", "[
     }
 }
 
-TEST_CASE("a refused outcome yields no trace", "[sweep_ir_trace]") {
+TEST_CASE("a refused outcome yields no trace, even when its bins are fully populated",
+          "[sweep_ir_trace]") {
     SweepIrOutcome refused;
     refused.status = SweepIrStatus::TailTooShort;
     CHECK_FALSE(traceFromSweepIr(refused, "d", "r").has_value());
+
+    // The status check is the guard, not the empty bins: an otherwise complete
+    // outcome that was refused must not become a trace.
+    auto populated = runPureDelay(48000.0, 37);
+    REQUIRE(populated.status == SweepIrStatus::Ok);
+    populated.status = SweepIrStatus::ArrivalOutOfWindow;
+    CHECK_FALSE(traceFromSweepIr(populated, "d", "r").has_value());
+}
+
+TEST_CASE("an outcome whose bins disagree with its fftSize yields no trace, not a crash",
+          "[sweep_ir_trace]") {
+    auto outcome = runPureDelay(48000.0, 37);
+    REQUIRE(outcome.status == SweepIrStatus::Ok);
+    outcome.fftSize = 1000;  // Trace::make demands fftSize/2 + 1 bins
+    CHECK_FALSE(traceFromSweepIr(outcome, "d", "r").has_value());
+}
+
+TEST_CASE("the trace metadata states what a sweep is: rectangular, unaveraged, one estimate",
+          "[sweep_ir_trace]") {
+    const auto outcome = runPureDelay(48000.0, 37);
+    REQUIRE(outcome.status == SweepIrStatus::Ok);
+    const auto first = traceFromSweepIr(outcome, "d", "r");
+    const auto second = traceFromSweepIr(outcome, "d", "r");
+    REQUIRE(first.has_value());
+    REQUIRE(second.has_value());
+    CHECK(first->meta().window == "Rectangular");
+    CHECK(first->meta().averagingType == "None");
+    CHECK(first->meta().averagingDepth == 0);
+    CHECK(first->meta().effectiveAverages == 1.0);
+    // TraceLibrary::add refuses a duplicate id outright, so two presses must
+    // never share one; and a stamp of 0 would sort every SWEEP before 1970.
+    CHECK_FALSE(first->meta().id.empty());
+    CHECK(first->meta().id != second->meta().id);
+    CHECK(first->meta().capturedAtUnixMs > 0);
+
+    // Magnitude is 20 log10 |bin| of the outcome's own bins, in dB.
+    for (const std::size_t k : {std::size_t{100}, std::size_t{1000}, std::size_t{5000}}) {
+        const double expected = 20.0 * std::log10(static_cast<double>(std::abs(outcome.bins[k])));
+        CHECK(std::fabs(static_cast<double>(first->field(Field::Magnitude)[k]) - expected) < 1e-3);
+    }
 }
 
 TEST_CASE("the ninth IrStore::add evicts the first, FIFO", "[sweep_ir_trace]") {
@@ -156,4 +197,19 @@ TEST_CASE("re-adding an id replaces it in place and evicts nothing", "[sweep_ir_
     store.add("t3", ir);
     CHECK(store.size() == 8);
     CHECK(store.containsForTest("t0"));
+}
+
+TEST_CASE("re-adding an id swaps the stored IR, releasing the old one", "[sweep_ir_trace]") {
+    // No lookup exists to read the entry back (ALIGN's arrives with H5), so the
+    // swap is observed through ownership: the store held `first`, and after the
+    // replace it holds `second` and no longer `first`.
+    IrStore store;
+    auto first = std::make_shared<const SweepIr>();
+    auto second = std::make_shared<const SweepIr>();
+    store.add("t0", first);
+    CHECK(first.use_count() == 2);
+    store.add("t0", second);
+    CHECK(first.use_count() == 1);
+    CHECK(second.use_count() == 2);
+    CHECK(store.size() == 1);
 }
