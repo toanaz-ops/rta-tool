@@ -175,6 +175,10 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
     }
     // Aliases the outcome: the IR stays alive with it, with no 4.6 MB copy.
     irStore_.add(id, std::shared_ptr<const rta::measure::SweepIr>(owner, &owner->ir));
+    // The store is capped (decision 6): say how many IRs are being kept, so
+    // an operator is not surprised when the ninth evicts the first.
+    readout_.setTooltip("IRs kept in memory: " + juce::String(irStore_.size()) + " of " +
+                        juce::String(rta::trace::IrStore::kCapacity) + " (not saved with the session)");
 
     const double ms = 1000.0 * static_cast<double>(outcome.delaySamples) / outcome.ir.sampleRate;
     juce::String text = "IR " + signedWhole(outcome.delaySamples) + " samples (" + juce::String(ms, 1) +
