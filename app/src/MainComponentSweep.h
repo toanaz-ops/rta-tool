@@ -76,6 +76,12 @@ public:
         request_.sweep.durationSec = sweepSeconds;
         request_.tailSeconds = tailSeconds;
     }
+    /// Pre-fills the IR store so the eviction wording is reachable in one press.
+    void fillIrStoreForTest(int count) {
+        for (int i = 0; i < count; ++i) {
+            irStore_.add("filler-" + std::to_string(i), std::make_shared<const rta::measure::SweepIr>());
+        }
+    }
     void setClockForTest(std::function<double()> nowMs) { nowMs_ = std::move(nowMs); }
 
 private:
@@ -97,6 +103,8 @@ private:
     rta::measure::SweepIrRequest armedRequest_;  ///< what the running sweep was armed with
     std::uint64_t armedEpoch_ = 0;
     bool armedSynthetic_ = false;
+    std::string armedDeviceName_;
+    std::string armedChannelRoles_;
     double armedAtMs_ = 0.0;
     double timeoutMs_ = 0.0;
     std::shared_ptr<const rta::measure::LocateCapture> lastHandled_;

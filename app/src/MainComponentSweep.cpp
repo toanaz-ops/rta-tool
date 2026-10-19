@@ -94,6 +94,11 @@ void MainComponentSweep::clicked() {
     armedEpoch_ = output_.outputEpoch();
     armedSynthetic_ = host_.synthetic();
     armedAtMs_ = nowMs_();
+    // Click-time metadata, as STORE reads it at click time: the capture belongs
+    // to THIS device and role assignment even if SYNTHETIC or the device
+    // changes while the worker runs (ALIGN compares the role string).
+    armedDeviceName_ = host_.deviceName();
+    armedChannelRoles_ = host_.channelRoles();
     timeoutMs_ = 1000.0 * static_cast<double>(captureSamples) / fs + kTimeoutSlackMs;
     state_ = State::PreRoll;
     say("sweep: arming...");
@@ -151,6 +156,7 @@ void MainComponentSweep::startAnalysis() {
     output_.disarmSource();
     worker_.start(rta::measure::SweepCapture{lastHandled_->reference, lastHandled_->measurement},
                   armedRequest_);
+    lastHandled_.reset();  // the worker owns its copy; do not hold the capture's ~5 MB
     state_ = State::Analysing;
     say("sweep: analysing...");
 }
@@ -162,7 +168,7 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
         say("sweep: refused -- " + juce::String(outcome.message));
         return;
     }
-    auto trace = rta::trace::traceFromSweepIr(outcome, host_.deviceName(), host_.channelRoles());
+    auto trace = rta::trace::traceFromSweepIr(outcome, armedDeviceName_, armedChannelRoles_);
     if (!trace.has_value()) {
         say("sweep: no trace could be built from this capture");
         return;
@@ -174,17 +180,18 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
         return;
     }
     // Aliases the outcome: the IR stays alive with it, with no 4.6 MB copy.
+    const bool evicts = irStore_.size() == rta::trace::IrStore::kCapacity;
     irStore_.add(id, std::shared_ptr<const rta::measure::SweepIr>(owner, &owner->ir));
-    // The store is capped (decision 6): say how many IRs are being kept, so
-    // an operator is not surprised when the ninth evicts the first.
-    readout_.setTooltip("IRs kept in memory: " + juce::String(irStore_.size()) + " of " +
-                        juce::String(rta::trace::IrStore::kCapacity) + " (not saved with the session)");
 
     const double ms = 1000.0 * static_cast<double>(outcome.delaySamples) / outcome.ir.sampleRate;
-    juce::String text = "IR " + signedWhole(outcome.delaySamples) + " samples (" + juce::String(ms, 1) +
+    juce::String text = "IR " + signedWhole(outcome.delaySamples) + " samples (" + signedOneDecimal(ms) +
                         " ms) " + juce::String(juce::CharPointer_UTF8("\xc2\xb7")) + " loop " +
                         signedOneDecimal(outcome.loopMinDb) + ".." + signedOneDecimal(outcome.loopMaxDb) +
                         " dB";
+    // Decision 6: IRs live in memory only, capped; say so where the operator
+    // looks, and say when this one pushed the oldest out.
+    text += " " + juce::String(juce::CharPointer_UTF8("Â·")) + " IRs " + juce::String(irStore_.size()) + "/" +
+            juce::String(rta::trace::IrStore::kCapacity) + (evicts ? " (oldest dropped)" : "");
     if (outcome.measurementClipped) text += " -- CLIPPED, harmonics at negative time";
     say(text);
 }

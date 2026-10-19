@@ -14,6 +14,7 @@
 #include "MainComponentTestAccess.h"
 #include "rta/dsp/Biquad.h"
 #include "rta/dsp/ButterworthDesign.h"
+#include "trace/CaptureConverter.h"
 
 #include <juce_core/juce_core.h>
 
@@ -100,7 +101,8 @@ TEST_CASE("sweep: one press adds one SWEEP trace and reads out its delay", kTag)
     CHECK(readout.contains(" samples ("));
     CHECK(readout.contains(" ms) "));
     CHECK(readout.contains(" loop "));
-    CHECK(readout.endsWith(" dB"));  // no clipping warning at -12 dBFS
+    CHECK_FALSE(readout.contains("CLIPPED"));  // no clipping warning at -12 dBFS
+    CHECK(readout.endsWith(" IRs 1/8"));       // the store count is in the visible text
     const long reported = readout.fromFirstOccurrenceOf("IR ", false, false).getIntValue();
     const long expected = expectedSyntheticDelaySamples();
     INFO("reported " << reported << " expected " << expected);
@@ -264,4 +266,55 @@ TEST_CASE("sweep: the SWEEP row sits under LOCATE's and overlaps nothing at 1280
     CHECK(readout.getBottom() <= rail.getY());       // and above the device rail
     CHECK(rail.getHeight() > 0);
     CHECK(rail.getBottom() <= c.getHeight());
+}
+
+TEST_CASE("sweep: the stored trace keeps the click-time device and roles when SYNTHETIC goes off during analysis",
+          kTag) {
+    // Choice: complete, with click-time metadata (not abort). The capture was
+    // taken under those roles; ALIGN compares the role string against STORE's,
+    // so reading the roles at finish would store "" and mismatch.
+    MainComponent c;
+    startSynthetic(c);
+    const std::string rolesAtClick =
+        rta::trace::channelRolesSummary(MainComponentTestAccess::channelConfigForTest(c));
+    REQUIRE_FALSE(rolesAtClick.empty());
+    sweepOf(c).clicked();
+    REQUIRE(tickUntil(c, [&] { return sweepOf(c).stateForTest() == State::Analysing; }, 60000));
+
+    c.setSyntheticMode(false);  // roles reset to Unused, device name no longer "SYNTHETIC"
+    REQUIRE(rta::trace::channelRolesSummary(MainComponentTestAccess::channelConfigForTest(c)) != rolesAtClick);
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+
+    auto& library = MainComponentTestAccess::libraryForTest(c);
+    REQUIRE(library.entries().size() == 1);
+    const auto* trace = library.trace(library.entries()[0].traceId);
+    REQUIRE(trace != nullptr);
+    CHECK(trace->meta().channelRoles == rolesAtClick);
+    CHECK(trace->meta().deviceName == "SYNTHETIC");
+}
+
+TEST_CASE("sweep: the 100 ms settle wait holds the source back, then releases it", kTag) {
+    MainComponent c;
+    startSynthetic(c);
+    double now = 1000.0;
+    sweepOf(c).setClockForTest([&] { return now; });
+    sweepOf(c).clicked();
+    now += 50.0;
+    MainComponentTestAccess::timerTickForTest(c);
+    CHECK(sweepOf(c).stateForTest() == State::PreRoll);  // < 100 ms: the capture may not be running yet
+    now += 100.0;
+    MainComponentTestAccess::timerTickForTest(c);
+    CHECK(sweepOf(c).stateForTest() == State::Playing);
+}
+
+TEST_CASE("sweep: the 9th IR says the oldest was dropped", kTag) {
+    MainComponent c;
+    startSynthetic(c);
+    sweepOf(c).fillIrStoreForTest(8);
+    sweepOf(c).clicked();
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    const juce::String readout = sweepOf(c).readoutForTest();
+    INFO(readout);
+    CHECK(readout.contains(" IRs 8/8 (oldest dropped)"));
+    CHECK(sweepOf(c).irStoreForTest().size() == 8);
 }
