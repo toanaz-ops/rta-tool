@@ -98,6 +98,8 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # is (main-live.png constructs the real MainComponent).
     src/MainComponentRail.cpp
     src/MainComponentDelay.cpp
+    # MainComponentSynthetic.cpp: setSyntheticMode, split out of MainComponent.cpp.
+    src/MainComponentSynthetic.cpp
     # MainComponentPanes.cpp: owner decision 2026-09-26's pane selector,
     # needed here for the same reason MainComponentDelay.cpp is -- main-live
     # (and main-live-spl) construct the real MainComponent, which now owns
