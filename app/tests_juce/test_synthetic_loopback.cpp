@@ -8,12 +8,14 @@
 
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
+#include "measure/Levels.h"
 #include "measure/OutputPolicy.h"
 #include "measure/SyntheticImpairment.h"
 #include "measure/SyntheticInput.h"
 #include "rta/dsp/ButterworthDesign.h"
 #include "rta/dsp/BiquadResponse.h"
 #include "rta/gen/Oscillator.h"
+#include "rta/gen/Synthetic.h"
 #include "rta/platform/CaptureBus.h"
 #include "rta/platform/OutputEngine.h"
 
@@ -23,6 +25,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <span>
 #include <vector>
 
 using rta::measure::SyntheticInput;
@@ -139,37 +142,75 @@ TEST_CASE("an armed OutputEngine reaches the bus Reference bit-exact; the measur
     }
 }
 
-TEST_CASE("a quiescent loopback engine leaves the pink noise exactly as it was",
+TEST_CASE("a quiescent loopback engine leaves the generator exactly as it was",
           "[synthetic_loopback]") {
-    CaptureBus busPlain(rta::platform::kFixedRingCapacitySamples);
-    CaptureBus busLoop(rta::platform::kFixedRingCapacitySamples);
-    assignRoles(busPlain);
-    assignRoles(busLoop);
-    OutputEngine engine;  // never armed
-
-    SyntheticInput::Config plain;
-    SyntheticInput::Config looped;
-    looped.loopback = &engine;
-
+    // Expectation: the SAME deterministic generator SyntheticInput builds
+    // (rta/gen/Synthetic.h), rendered here in 512-sample blocks -- an
+    // independent oracle, so a deleted render call (stale zeros) cannot hide
+    // by being identical in both of two SyntheticInputs.
+    const SyntheticInput::Config defaults;
+    const double targetDbFs =
+        rta::measure::levelDbFs(defaults.amplitude * defaults.amplitude * 0.5);
     constexpr std::size_t kCompare = 4u * kBlock;
-    auto a = std::make_unique<SyntheticInput>(busPlain, plain);
-    auto b = std::make_unique<SyntheticInput>(busLoop, looped);
-    REQUIRE(waitUntil([&] {
-        return busPlain.ring(kReferenceCh)->availableToRead() >= kCompare &&
-               busLoop.ring(kReferenceCh)->availableToRead() >= kCompare;
-    }, 10000));
-    a.reset();
-    b.reset();
 
-    const auto pinkPlain = drainAll(busPlain, kReferenceCh);
-    const auto pinkLoop = drainAll(busLoop, kReferenceCh);
-    for (std::size_t i = 0; i < kCompare; ++i) {
-        INFO("sample " << i);
-        REQUIRE(pinkPlain[i] == pinkLoop[i]);
+    for (const auto source : {SyntheticInput::Config::Source::PinkNoise,
+                              SyntheticInput::Config::Source::Sine}) {
+        CaptureBus bus(rta::platform::kFixedRingCapacitySamples);
+        assignRoles(bus);
+        OutputEngine engine;  // never armed
+
+        SyntheticInput::Config config;
+        config.source = source;
+        config.loopback = &engine;
+        auto input = std::make_unique<SyntheticInput>(bus, config);
+        REQUIRE(waitUntil([&] { return bus.ring(kReferenceCh)->availableToRead() >= kCompare; },
+                          10000));
+        input.reset();
+
+        std::vector<float> expected(kCompare);
+        if (source == SyntheticInput::Config::Source::Sine) {
+            rta::gen::SyntheticSine sine(config.sampleRate, config.sineHz, targetDbFs);
+            for (std::size_t at = 0; at < kCompare; at += kBlock) {
+                sine.render(std::span<float>(expected).subspan(at, kBlock));
+            }
+        } else {
+            rta::gen::SyntheticPink pink(kBlock, targetDbFs, config.seed);
+            for (std::size_t at = 0; at < kCompare; at += kBlock) {
+                pink.render(std::span<float>(expected).subspan(at, kBlock));
+            }
+        }
+        const auto reference = drainAll(bus, kReferenceCh);
+        bool anyNonZero = false;
+        for (std::size_t i = 0; i < kCompare; ++i) {
+            INFO("source " << static_cast<int>(source) << " sample " << i);
+            REQUIRE(reference[i] == expected[i]);
+            anyNonZero = anyNonZero || expected[i] != 0.0f;
+        }
+        REQUIRE(anyNonZero);  // not vacuous: the oracle itself is a signal
+        // The engine's clock ran (render was called) but nothing was played.
+        REQUIRE(engine.renderedSamples() == 0);
+        REQUIRE(engine.sourceIsQuiescent());
     }
-    // The engine was rendered (its clock runs) but never played anything.
-    REQUIRE(engine.renderedSamples() == 0);
-    REQUIRE(engine.sourceIsQuiescent());
+}
+
+TEST_CASE("constructing with a loopback prepares the engine at the synthetic rate",
+          "[synthetic_loopback]") {
+    // 44.1 kHz, not the engine's 48 kHz placeholder, so a deleted prepare()
+    // is visible. prepare() also bumps the epoch, which is what disarms any
+    // source armed against the previous device.
+    CaptureBus bus(rta::platform::kFixedRingCapacitySamples);
+    assignRoles(bus);
+    OutputEngine engine;
+    const std::uint64_t epochBefore = engine.outputEpoch();
+
+    SyntheticInput::Config config;
+    config.sampleRate = 44100.0;
+    config.loopback = &engine;
+    auto input = std::make_unique<SyntheticInput>(bus, config);
+    input.reset();
+
+    REQUIRE(engine.sampleRate() == 44100.0);
+    REQUIRE(engine.outputEpoch() == epochBefore + 1);
 }
 
 TEST_CASE("SYNTHETIC + LOCATE reaches the closed-form synthetic delay", "[synthetic_loopback]") {
