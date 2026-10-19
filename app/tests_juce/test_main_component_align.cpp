@@ -144,8 +144,13 @@ TEST_CASE("align: MEASURE, the coarse offset and SUM through the real pane (the 
     CHECK(pane.surfaceForTest().pointCount() > 0);  // the suggested delay is a pending op on the surface
 
     // SUM: both outputs together, the dwell, one stored capture.
+    // The excitation of the last step ramps out first: SUM is refused (with a
+    // reason on screen) until the engine is quiescent, so wait for it as an
+    // operator reading the readout would.
+    REQUIRE(tickUntil(c, [&] { return Access::outputSourceQuiescentForTest(c); }, 20000));
     REQUIRE(pane.sumButtonForTest().isEnabled());
     pane.sumButtonForTest().onClick();
+    INFO("status after SUM: " << runnerOf(c).status());
     REQUIRE(runnerOf(c).step() == WizardStep::MeasuringSum);
     REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
     REQUIRE(runnerOf(c).outcomeForTest() == AlignOutcome::SumMeasured);

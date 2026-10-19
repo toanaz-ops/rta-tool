@@ -91,6 +91,8 @@ void renderAlignSpecimen (const juce::File& outDir, int& failures)
     }
     pane->offsetEditorForTest().setText ("2.0", juce::dontSendNotification);
     pane->offsetButtonForTest().onClick();
+    // The last step's excitation ramps out before SUM may take the output.
+    pumpUntil (component, *pane, [&] { return Access::outputSourceQuiescentForTest (component); }, 20000);
     if (! pane->sumButtonForTest().isEnabled())
     {
         fail ("SUM stayed disabled after the coarse offset", failures);
