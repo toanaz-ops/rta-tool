@@ -41,6 +41,17 @@ void MainComponent::locateClicked() {
     delayReadout_.setText("delay: locating...", juce::dontSendNotification);
 }
 
+void MainComponent::cancelLocate() {
+    if (!locateWaitingForSettle_ && !locateCaptureArmed_) {
+        return;
+    }
+    audioIo_.output().disarmSource();
+    locateWaitingForSettle_ = false;
+    locateCaptureArmed_ = false;
+    delaySuggestion_.reset();
+    updateDelayReadout();
+}
+
 void MainComponent::pollLocatePipeline() {
     if (locateWaitingForSettle_) {
         // record sec.11: the first 10 ms are not stationary -- 480 samples

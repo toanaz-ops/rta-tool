@@ -118,6 +118,11 @@ private:
     /// capture -> suggestDelay -> disarm) without blocking the message
     /// thread on any step of it.
     void pollLocatePipeline();
+
+    /// Drops a LOCATE that is waiting for settle or for its capture and
+    /// disarms its source. Called where the input mode changes: the source
+    /// LOCATE armed belongs to the mode it was armed in. No-op when idle.
+    void cancelLocate();
     void updateDelayReadout();
 
     /// L6a Wave 3 (record §8): the calibration flow's UI half, defined in
