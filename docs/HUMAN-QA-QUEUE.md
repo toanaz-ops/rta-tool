@@ -1094,13 +1094,14 @@ exists. Row B (VERIFY on hardware, from the EQ-UI entry) is still open.
 |---|---|---|
 | L1 | `test_synthetic_loopback.cpp`: the 4.75-sample LOCATE value was justified by a mean group delay over a hand-picked 200 Hz - 12 kHz band; PHAT uses DC - Nyquist, where that formula gives 6.26 | **FIXED (closeout PR)** — false derivation removed; the value is an external numeric GCC-PHAT oracle (4.756 - 4.766), labelled a regression lock |
 | L2 | `SyntheticInput.cpp`: render sees `armed == false`, `armSource` lands before `sourceIsQuiescent()` is read, one silent block goes onto the bus uncounted | **FIXED (closeout PR)** — documented in the comment with the reason it is harmless (LOCATE's settle clock is `renderedSamples()`) |
-| L3 | Verifier finding of PR #67-#69 (text in the verifier report, not re-derived here) | **DEFER to H5** — noted for ALIGN-UI's plan |
+| L3 | SYNTHETIC renders one output channel; ALIGN (`AlignmentWizard.cpp:88/172` solos main/sub = 0/1) and EqVerify (`EqVerify.cpp:148`) solo a channel other than 0, which is silence in SYNTHETIC | **DEFER to H5 T0** |
 | L4 | SYNTHETIC turned off (or the device stopped) mid-LOCATE leaves `locateWaitingForSettle_` / `locateCaptureArmed_` set; LOCATE refused until restart (pre-existing) | **FIXED (closeout PR)** for the mode change: `cancelLocate()` in `setSyntheticMode`, test "leaving SYNTHETIC mid-LOCATE ...". A plain device STOP mid-LOCATE with SYNTHETIC unchanged is NOT covered (no hook there; not changed) — **DEFER**, with L9 |
-| L5 | Verifier finding of PR #67-#69 | **Recorded as an amendment** in `docs/plans/2026-09-29-sweep-ir-lane-plan.md`, "H4 as built" |
+| L5 | Decision 8 `bandPass(40, 16000, fs, 1)` throws in `pairIntoSections`; shipped N = 2 | **Recorded as an amendment** ("H4 as built" A1; confirmed by reading the code) |
 | L6 | `SweepIrWorker.cpp`: only `std::exception` was caught, so a non-std exception from an injected `analyse` was `std::terminate` | **FIXED (closeout PR)** — `catch (...)` -> `Failed("unknown exception")`; test throws an `int` |
-| L7, L8 | Verifier findings of PR #67-#69 | **Recorded as amendments** ("H4 as built") |
-| L9 | Verifier finding of PR #67-#69 (text in the verifier report, not re-derived here) | **DEFER** — shared with LOCATE's own pending-state handling, together with the device-stop half of L4 |
-| L10 | Cosmetic | no action |
+| L7 | The plan said `start(shared_ptr<const LocateCapture>)`; shipped by-value `SweepCapture` (about 5 MB copy per press) because `LocateCapture` lives in the JUCE header `AnalysisThread.h` | **Recorded as an amendment** (A5) |
+| L8 | T3 tolerance: tail term counts twice (enters `S_m` and `G.S_r`), one extra float stage; extra statuses `MeasurementNotFound` / `CaptureTooShort` / `Failed`; 20x peak/rms gate (matched-filter gain sqrt(Ns) about 693, clean loop 439) | **Recorded as an amendment** (A3, A4) |
+| L9 | A role-table edit during SWEEP PreRoll/Playing changes the capture routing but not the armed role string; no abort (shared with LOCATE) | **DEFER** — with the device-stop half of L4 |
+| L10 | The first 4 commits of PR #69 lack the Co-Authored-By trailer | cosmetic, no action |
 
 **Z25 is done** (accessor shipped in #69); Z3 and Z4 above are marked FIXED.
 
