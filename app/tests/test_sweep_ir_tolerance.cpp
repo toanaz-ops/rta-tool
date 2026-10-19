@@ -222,3 +222,94 @@ TEST_CASE("the shipped sweep's bins match G.S_r within the derived B_win + B_flo
     CHECK(violations == 0);
     CHECK(worstRatio <= 1.0);
 }
+
+// ---------------------------------------------------------------------------
+// ABSOLUTE phase against the loop arrival.
+//
+// The test above compares the pipeline with itself, so a window that starts a
+// few samples off cancels (both channels share the error). This one anchors the
+// phase to a closed form: t = 0 is the loop peak, so a measurement delayed by D
+// has phase -w_k D, w_k = 2 pi k / N, at every bin where the sweep spoke.
+//
+// Derived bound. Let x be the deconvolved pulse, windowed, and c the sample the
+// pulse is centred on (the peak). S(k) = sum_n x[n] e^{-i w (n - c)}, so
+//     Im S = -sum_{m>=1} (x[c+m] - x[c-m]) sin(w m),
+//     |Im S| <= A := sum_{m>=1} |x[c+m] - x[c-m]|,
+// where x is zero outside the window (the window cuts one side first, and that
+// unmatched part is inside A). With Re S ~ |S| the phase error is at most
+//     asin(min(1, (A + B_float(k)) / |S(k)|)),
+// B_float as in the test above (transform-rounding shape, no measurement
+// rounding here: the delayed measurement is an exact copy). A is computed from
+// an independent deconvolution and the INTENDED window, never from the pipeline.
+TEST_CASE("the phase is -w*D against the loop arrival, absolutely, for D = 0 and 37",
+          "[sweep_ir_tolerance]") {
+    rta::measure::SweepIrRequest request;
+    request.sweep = rta::measure::shippedSweepConfig(kFs);
+    request.sweep.durationSec = 2.0;
+    request.tailSeconds = 0.6;
+    const rta::gen::Sweep sweep(request.sweep);
+    const double fLo = sweep.validBandLowHz();
+    const double fHi = sweep.validBandHighHz();
+    const std::size_t total = kPreRoll + sweep.lengthSamples() + rta::measure::requiredTailSamples(request);
+    const auto reference = fx::placed(fx::sweepSignal(request.sweep), kPreRoll, total);
+
+    const auto inverse = sweep.buildInverseFilter();
+    rta::ir::DeconvolverConfig deconvConfig;
+    deconvConfig.sampleRate = kFs;
+    const auto raw = rta::ir::deconvolve(reference, inverse, deconvConfig);
+    deconvConfig.normalisationGain = rta::ir::inBandNormalisation(raw, fLo, fHi);
+    const auto rTilde = rta::ir::deconvolve(reference, inverse, deconvConfig).samples;
+    std::size_t refPeak = 0;
+    for (std::size_t i = 1; i < rTilde.size(); ++i) {
+        if (std::fabs(rTilde[i]) > std::fabs(rTilde[refPeak])) refPeak = i;
+    }
+    const auto leadIn = static_cast<std::size_t>(std::llround(2.0 * kFs / fLo));
+    const std::size_t fftN = nextPow2(static_cast<std::size_t>(std::ceil(0.5 * kFs)) + leadIn);
+    const std::size_t start = refPeak - leadIn;  // intended window [start, start + N)
+
+    const std::size_t deconvN = nextPow2(total + sweep.lengthSamples() - 1);
+    const double epsStages = static_cast<double>(std::numeric_limits<float>::epsilon()) *
+                             (3 * (log2Of(deconvN) + 1) + (log2Of(fftN) + 1));
+    const double binHz = kFs / static_cast<double>(fftN);
+    double worstRad = 0.0;
+    double worstBound = 0.0;
+    for (const std::size_t delay : {std::size_t{0}, kDelay}) {
+        rta::measure::SweepCapture capture{reference, fx::delayed(reference, delay)};
+        const auto outcome = rta::measure::analyseSweepCapture(capture, request);
+        INFO(outcome.message);
+        REQUIRE(outcome.status == SweepIrStatus::Ok);
+        REQUIRE(outcome.fftSize == fftN);
+
+        // x = r~ shifted by `delay`, cut to the intended window; centre = refPeak.
+        auto at = [&](long n) {
+            const long src = n - static_cast<long>(delay);
+            const bool inWindow = n >= static_cast<long>(start) && n < static_cast<long>(start + fftN);
+            return (inWindow && src >= 0) ? static_cast<double>(rTilde[static_cast<std::size_t>(src)]) : 0.0;
+        };
+        const long centre = static_cast<long>(refPeak + delay);
+        double asymmetry = 0.0;
+        for (long m = 1; m < static_cast<long>(fftN); ++m) asymmetry += std::fabs(at(centre + m) - at(centre - m));
+        double maxBin = 0.0;
+        for (const auto& bin : outcome.bins) maxBin = std::max(maxBin, static_cast<double>(std::abs(bin)));
+
+        const auto kLo = static_cast<std::size_t>(std::ceil(300.0 / binHz));
+        const auto kHi = static_cast<std::size_t>(std::floor(10000.0 / binHz));
+        for (std::size_t k = kLo; k <= kHi; ++k) {
+            const double omega = 2.0 * kPi * static_cast<double>(k) / static_cast<double>(fftN);
+            double diff = std::fmod(static_cast<double>(std::arg(outcome.bins[k])) +
+                                        omega * static_cast<double>(delay),
+                                    2.0 * kPi);
+            if (diff > kPi) diff -= 2.0 * kPi;
+            if (diff < -kPi) diff += 2.0 * kPi;
+            const double mag = static_cast<double>(std::abs(outcome.bins[k]));
+            const double bound = std::asin(std::min(1.0, (asymmetry + epsStages * (mag + maxBin)) / mag));
+            worstRad = std::max(worstRad, std::fabs(diff));
+            worstBound = std::max(worstBound, bound);
+            INFO("D=" << delay << " k=" << k << " hz=" << static_cast<double>(k) * binHz
+                      << " residual rad=" << diff << " bound=" << bound);
+            REQUIRE(std::fabs(diff) <= bound);
+        }
+    }
+    std::printf("[sweep_ir_tolerance] absolute phase 300-10k Hz: worst |err| = %.3e rad, worst "
+                "bound = %.3e rad\n", worstRad, worstBound);
+}

@@ -113,6 +113,31 @@ TEST_CASE("silence and white noise are not a reference", "[sweep_ir_pipeline]") 
         state = state * 1664525u + 1013904223u;
         x = (static_cast<float>(state >> 8) / 8388608.0f - 1.0f) * 0.25f;
     }
+    // Make the sign check unable to be the reason for the refusal: deconvolution
+    // is linear, so negating the noise negates its deconvolution, and the
+    // fixture is flipped (if need be) until the largest |x| is POSITIVE and
+    // lies past the origin, which are the other two ways the loop is refused.
+    // What is left to refuse it is the peak-to-rms gate alone.
+    {
+        const rta::gen::Sweep noiseSweep(request.sweep);
+        rta::ir::DeconvolverConfig noiseConfig;
+        noiseConfig.sampleRate = 48000.0;
+        auto noise = rta::ir::deconvolve(capture.reference, noiseSweep.buildInverseFilter(), noiseConfig);
+        std::size_t peak = argMaxAbs(noise.samples);
+        if (noise.samples[peak] < 0.0f) {
+            for (auto& x : capture.reference) x = -x;
+            noise = rta::ir::deconvolve(capture.reference, noiseSweep.buildInverseFilter(), noiseConfig);
+            peak = argMaxAbs(noise.samples);
+        }
+        REQUIRE(noise.samples[peak] > 0.0f);
+        REQUIRE(peak >= noise.originIndex);
+        double sumSquares = 0.0;
+        for (const float x : noise.samples) sumSquares += static_cast<double>(x) * x;
+        const double noiseRatio = std::fabs(static_cast<double>(noise.samples[peak])) /
+                                  std::sqrt(sumSquares / static_cast<double>(noise.samples.size()));
+        std::printf("[sweep_ir_pipeline] white-noise peak/rms = %.2f (gate 20)\n", noiseRatio);
+        REQUIRE(noiseRatio < 20.0);
+    }
     CHECK(analyseSweepCapture(capture, request).status == SweepIrStatus::ReferenceNotFound);
 
     // The margin the gate leaves: the real loop's pulse over the deconvolution's
