@@ -11,11 +11,14 @@
 // noise floor give the display something with a checkable answer.
 #pragma once
 
+#include "rta/dsp/Biquad.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace rta::measure {
@@ -56,6 +59,38 @@ public:
 private:
     std::vector<float> history_;
     std::size_t cursor_ = 0;
+};
+
+/// The MEASUREMENT channel's deterministic part: integer delay, then an
+/// optional `BiquadCascade` band-limit (sweep-IR lane, decision 8). Noise is
+/// added AFTER this, by the caller, so the noise floor stays flat -- a real
+/// microphone's self-noise is not shaped by the room it listens to.
+///
+/// Delay first, filter second, so an impulse in comes out as the cascade's own
+/// impulse response shifted by D, with every float operation the cascade's
+/// (zeros through the biquads leave their state at exactly 0.0 until the
+/// impulse arrives). The two are LTI and commute mathematically; the order is
+/// fixed so a test can assert the shifted IR bit-exact, not "close".
+///
+/// An empty filter is an identity, not a pass-through of a zero-section
+/// cascade -- the default must not change one bit for a caller that never
+/// opted in.
+class MeasurementPath {
+public:
+    MeasurementPath(int delaySamples, std::vector<rta::dsp::Biquad::Coeffs> filter)
+        : delay_(delaySamples), filter_(std::move(filter)) {}
+
+    /// `out` may not alias `in` (DelayLine's rule); sizes bounded as there.
+    void process(std::span<const float> in, std::span<float> out) noexcept {
+        delay_.process(in, out);
+        if (filter_.size() > 0) {
+            filter_.process(out, out);
+        }
+    }
+
+private:
+    DelayLine delay_;
+    rta::dsp::BiquadCascade filter_;
 };
 
 /// Add independent noise of the given RMS, in place.

@@ -65,6 +65,9 @@ add_executable(rtatool_main_component_tests
     # against a real MainComponent, same shape as test_main_component_panes.cpp.
     # Also carries K8's multi-TRANSFER-pane readout case.
     test_main_component_store.cpp
+    # test_synthetic_loopback.cpp: sweep-IR wave A (T1/T2) -- SyntheticInput
+    # rendering the OutputEngine, and LOCATE reaching a suggestion in SYNTHETIC.
+    test_synthetic_loopback.cpp
     # test_main_component_export.cpp: D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4
     # item 14) -- exportReportClicked()'s catch branch had no test at all.
     test_main_component_export.cpp

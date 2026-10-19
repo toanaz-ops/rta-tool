@@ -2,11 +2,13 @@
 // Part of RTA Tool -- app/tests. The impairments that make the hardware-free
 // path produce a transfer function worth looking at.
 #include "measure/SyntheticImpairment.h"
+#include "rta/dsp/ButterworthDesign.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <span>
 #include <vector>
 
 TEST_CASE("the delay line shifts by exactly the requested samples",
@@ -88,4 +90,51 @@ TEST_CASE("the same seed gives the same noise", "[synthetic-impairment]") {
     rta::measure::addNoise(a, 0.1f, sa);
     rta::measure::addNoise(b, 0.1f, sb);
     for (std::size_t i = 0; i < a.size(); ++i) CHECK(a[i] == Catch::Approx(b[i]));
+}
+
+TEST_CASE("the measurement path turns an impulse into the cascade's own impulse response "
+          "shifted by D, bit-exact",
+          "[synthetic-impairment]") {
+    // Sweep-IR lane T1. Expectation: closed form by construction -- the SAME
+    // BiquadCascade run on an undelayed impulse, then shifted. Delay-then-
+    // filter feeds the biquads exact zeros before the impulse arrives, so
+    // their state stays 0.0 and every later float operation is the cascade's
+    // own; `==` (not Approx) is therefore the correct comparison.
+    constexpr int kDelay = 5;
+    constexpr std::size_t kLen = 1024;
+    const auto sections = rta::dsp::ButterworthDesign::bandPass(40.0, 16000.0, 48000.0, 2).sections;
+
+    std::vector<float> impulse(kLen, 0.0f);
+    impulse[0] = 1.0f;
+
+    std::vector<float> ir(kLen);
+    rta::dsp::BiquadCascade cascade(sections);
+    cascade.process(impulse, ir);
+
+    // Two blocks, to prove delay and filter state both carry across the seam.
+    rta::measure::MeasurementPath path(kDelay, sections);
+    std::vector<float> out(kLen);
+    const std::size_t half = kLen / 2;
+    path.process(std::span<const float>(impulse).first(half), std::span<float>(out).first(half));
+    path.process(std::span<const float>(impulse).subspan(half), std::span<float>(out).subspan(half));
+
+    for (std::size_t n = 0; n < kLen; ++n) {
+        const float expected = n < static_cast<std::size_t>(kDelay)
+                                   ? 0.0f
+                                   : ir[n - static_cast<std::size_t>(kDelay)];
+        INFO("sample " << n);
+        REQUIRE(out[n] == expected);
+    }
+    // Not vacuous: the IR is non-trivial (the filter does something).
+    REQUIRE(ir[0] != 0.0f);
+    REQUIRE(ir[1] != ir[0]);
+}
+
+TEST_CASE("an empty filter leaves the measurement path a pure delay", "[synthetic-impairment]") {
+    rta::measure::MeasurementPath path(3, {});
+    const std::vector<float> in{1, 2, 3, 4, 5, 6};
+    std::vector<float> out(in.size());
+    path.process(in, out);
+    const std::vector<float> expected{0, 0, 0, 1, 2, 3};
+    REQUIRE(out == expected);
 }
