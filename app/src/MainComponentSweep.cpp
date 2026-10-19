@@ -2,6 +2,8 @@
 // Part of RTA Tool -- app/src. See MainComponentSweep.h for the state machine.
 #include "MainComponentSweep.h"
 
+#include <az_ui/az_ui.h>
+
 #include "measure/CaptureTimeout.h"
 #include "measure/OutputPolicy.h"
 #include "rta/gen/Sweep.h"
