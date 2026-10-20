@@ -62,6 +62,11 @@ struct AlignReadoutInput {
     ProcessorInversion inversion = ProcessorInversion::No;
     double sampleRate = 48000.0;
     std::optional<std::ptrdiff_t> cycleSamples;
+    /// `cycleSamples` came from the bound IRs, not from a typed offset: the
+    /// sentence that says which candidate was chosen names its source.
+    bool cycleFromIr = false;
+    /// What the bound IRs imply, shown as a hint while the cycle is still asked.
+    std::optional<std::ptrdiff_t> irHintSamples;
     /// The bar the wizard was configured with, so the readout prints the one in force.
     double matchedPairBar = 0.5;
 };

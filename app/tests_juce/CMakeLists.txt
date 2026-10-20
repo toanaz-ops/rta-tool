@@ -153,6 +153,7 @@ add_executable(rtatool_view_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunnerText.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunnerIr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/CycleArrival.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/AlignIrPanel.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignReadout.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.cpp

@@ -45,8 +45,11 @@ void MainComponentAlign::sweepOnSide(rta::measure::Source side) {
     const int channel = side == rta::measure::Source::Main ? answers.mainOutput : answers.subOutput;
     // Recorded before the press and dropped if it is refused: `onSwept` binds
     // only a sweep this button started, never the plain SWEEP button's.
+    // A refused press (a sweep is already running, say) leaves the running
+    // sweep's pending side alone: its IR still has to bind when it finishes.
+    const auto previous = pending_;
     pending_ = PendingSweep{ side, channel };
-    if (!sweep_.start(channel)) pending_.reset();
+    if (!sweep_.start(channel)) pending_ = previous;
 }
 
 void MainComponentAlign::onSwept(const std::string& traceId, int outputChannel) {

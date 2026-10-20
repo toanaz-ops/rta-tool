@@ -118,6 +118,30 @@ TEST_CASE("T3c: before the integer is known the candidates are listed and the of
     CHECK_FALSE(contains(lines, "delay MAIN"));  // no delay is suggested on a guess
 }
 
+TEST_CASE("T3c2: the sentence names who chose the candidate; an unclear IR integer is shown as a hint",
+          "[align_readout]") {
+    Verdict v = baseVerdict();
+    v.tauSeconds = 0.74e-3;
+    v.candidateTausSeconds = { 0.74e-3, 9.00e-3, -7.52e-3 };
+    AlignReadoutInput input;
+    input.verdict = &v;
+    input.topology = { CrossoverFamily::LinkwitzRiley, 4 };
+    input.sampleRate = kFs;
+    input.cycleSamples = 432;  // 9 ms, which overrides tau*
+
+    input.cycleFromIr = true;
+    CHECK(contains(rta::measure::verdictLines(input), "the bound IRs chose another candidate"));
+    CHECK_FALSE(contains(rta::measure::verdictLines(input), "your offset"));
+    input.cycleFromIr = false;
+    CHECK(contains(rta::measure::verdictLines(input), "your offset chose another candidate"));
+
+    input.cycleSamples.reset();
+    input.irHintSamples = 336;  // 7 ms, between candidates
+    const auto asked = rta::measure::verdictLines(input);
+    CHECK(contains(asked, "IRs suggest about +7.00 ms but fit no candidate clearly; type the offset"));
+    CHECK_FALSE(contains(asked, "delay MAIN"));
+}
+
 TEST_CASE("T3d: the inversion sentence needs the intercept NEARER the opposite line, not a 45 degree look",
           "[align_readout]") {
     Verdict v = baseVerdict();

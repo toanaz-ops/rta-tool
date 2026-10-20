@@ -174,6 +174,11 @@ public:
     [[nodiscard]] std::optional<std::ptrdiff_t> cycleOffsetSamples() const noexcept {
         return cycleOffset_;
     }
+    /// The integer the bound IRs imply (arrival difference minus the named
+    /// topology's peak lag), whether or not it was clear enough to use.
+    [[nodiscard]] std::optional<std::ptrdiff_t> irCycleHintSamples() const noexcept { return irHint_; }
+    /// `cycleOffsetSamples()` came from the IRs, not from the operator.
+    [[nodiscard]] bool cycleOffsetFromIr() const noexcept { return cycleFromIr_; }
     /// The options the fit was actually handed, so a test can assert the
     /// appliedDelaySamples reconciliation was passed once and correctly
     /// (ALIGN-R2, H5) instead of trusting that it was.
@@ -233,6 +238,8 @@ private:
     std::optional<Verdict> verdict_;
     std::vector<PolaritySignal> signals_;
     std::optional<std::ptrdiff_t> cycleOffset_;
+    std::optional<std::ptrdiff_t> irHint_;
+    bool cycleFromIr_ = false;
     rta::dsp::BandFitOptions lastFit_{};
 };
 

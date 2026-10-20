@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "measure/AlignmentWizard.h"
 
+#include "measure/CycleArrival.h"
+
 #include <cmath>
 #include <numbers>
 #include <utility>
@@ -59,9 +61,14 @@ void AlignmentWizard::answerCrossoverSeed(std::optional<double> hz) {
 
 void AlignmentWizard::answerCycleOffsetSamples(std::optional<std::ptrdiff_t> samples) {
     cycleAnswer_ = samples;
-    if (samples.has_value() && step_ == WizardStep::AskingCycle) {
+    if (!samples.has_value()) return;
+    if (step_ == WizardStep::AskingCycle) {
         cycleOffset_ = samples;
         step_ = WizardStep::Computed;
+    } else if (step_ == WizardStep::Computed || step_ == WizardStep::AskingPolarity) {
+        // The operator's number overrides the IR integer after the fact.
+        cycleOffset_ = samples;
+        cycleFromIr_ = false;
     }
 }
 
@@ -293,12 +300,25 @@ void AlignmentWizard::compute() {
     //
     // From the ARRIVALS, not from `originIndex`: the origin is t = 0, and two
     // t = 0 markers differ by whatever the two captures' timing happened to be
-    // (F2). Low-pass side minus high-pass side, the same orientation as tau.
-    if (highSideIr() != nullptr && lowSideIr() != nullptr) {
-        cycleOffset_ = static_cast<std::ptrdiff_t>(lowSideIr()->arrivalSamples)
-                       - static_cast<std::ptrdiff_t>(highSideIr()->arrivalSamples);
-    } else {
-        cycleOffset_ = cycleAnswer_;
+    // (F2). Low-pass side minus high-pass side, the same orientation as tau,
+    // MINUS the named topology's peak lag (CycleArrival.h: an arrival is the
+    // peak of |h|, which a band-limited path reaches late). A typed offset
+    // always wins over the IRs. The IR integer is used only when it is clearly
+    // nearest one candidate; otherwise it stays a hint and the operator is asked.
+    cycleOffset_ = cycleAnswer_;
+    cycleFromIr_ = false;
+    irHint_.reset();
+    if (!cycleOffset_.has_value() && highSideIr() != nullptr && lowSideIr() != nullptr) {
+        const double lag = topologyPeakLagSamples(*topology_, false, crossing.frequencyHz, a.meta().sampleRate)
+                           - topologyPeakLagSamples(*topology_, true, crossing.frequencyHz, a.meta().sampleRate);
+        irHint_ = static_cast<std::ptrdiff_t>(lowSideIr()->arrivalSamples)
+                  - static_cast<std::ptrdiff_t>(highSideIr()->arrivalSamples)
+                  - static_cast<std::ptrdiff_t>(std::llround(lag));
+        if (candidateWithinGuard(result.candidateTausSeconds,
+                                 static_cast<double>(*irHint_) / a.meta().sampleRate).has_value()) {
+            cycleOffset_ = irHint_;
+            cycleFromIr_ = true;
+        }
     }
 
     if (!cycleOffset_.has_value()) {

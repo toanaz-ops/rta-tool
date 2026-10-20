@@ -45,6 +45,9 @@ std::optional<std::ptrdiff_t> AlignRunner::cycleSamples() const noexcept {
     return impl_->wizard ? impl_->wizard->cycleOffsetSamples() : std::nullopt;  // from the IR arrivals
 }
 bool AlignRunner::cycleFromIr() const noexcept { return impl_->cycleFromIr; }
+std::optional<std::ptrdiff_t> AlignRunner::irHintSamples() const noexcept {
+    return impl_->wizard ? impl_->wizard->irCycleHintSamples() : std::nullopt;
+}
 double AlignRunner::lastComputeMs() const noexcept { return impl_->lastComputeMs; }
 double AlignRunner::sampleRate() const noexcept { return impl_->pressedSampleRate; }
 const rta::trace::Trace* AlignRunner::mainCapture() const noexcept {
@@ -213,18 +216,15 @@ bool AlignRunner::answerCycleMs(double milliseconds) {
         d.say("OFFSET: run MEASURE first, then type a finite offset in ms");
         return false;
     }
-    if (d.cycleFromIr) {
-        // The integer came from the bound IRs' arrivals. Typing another one
-        // now would show a number the fit never used.
-        d.say("OFFSET: this run took its integer from the bound IRs; unbind one and MEASURE again to type it");
-        return false;
-    }
+    const bool overridesIr = d.cycleFromIr;  // a typed offset always wins over the IR integer
     const auto samples =
         static_cast<std::ptrdiff_t>(std::llround(milliseconds * d.pressedSampleRate / 1000.0));
     d.wizard->answerCycleOffsetSamples(samples);
+    d.cycleFromIr = false;
     d.cycleSamples = samples;
-    char text[96];
-    std::snprintf(text, sizeof text, "ALIGN: coarse offset %+.2f ms = %+td samples accepted", milliseconds, samples);
+    char text[160];
+    std::snprintf(text, sizeof text, "ALIGN: coarse offset %+.2f ms = %+td samples accepted%s", milliseconds, samples,
+                  overridesIr ? " (your typed offset, not the bound IRs')" : "");
     d.say(text);
     return true;
 }
@@ -342,11 +342,14 @@ void AlignRunnerState::afterSubmit(const AlignAnswers& asked) {
     }
     outcome = AlignOutcome::Measured;
     if (now == WizardStep::AskingCycle) {
-        say("ALIGN: fit done -- type the coarse offset in ms to choose among the candidates");
+        say(wizard->irCycleHintSamples().has_value()
+                ? "ALIGN: fit done -- the bound IRs fit no candidate clearly (see the hint); type the coarse offset in ms"
+                : "ALIGN: fit done -- type the coarse offset in ms to choose among the candidates");
         return;
     }
-    cycleFromIr = true;  // Computed / AskingPolarity with no typed offset: the IR arrivals gave it
-    say("ALIGN: fit done -- the cycle integer came from the bound IR arrivals");
+    cycleFromIr = wizard->cycleOffsetFromIr();
+    say(cycleFromIr ? "ALIGN: fit done -- the bound IRs chose the cycle (type an offset to override)"
+                    : "ALIGN: fit done");
 }
 
 }  // namespace rta::measure

@@ -181,6 +181,7 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/measure/AlignRunner.cpp
     src/measure/AlignRunnerText.cpp
     src/measure/AlignRunnerIr.cpp
+    src/measure/CycleArrival.cpp
     src/measure/AlignReadout.cpp
     src/view/AlignPaneView.cpp
     src/view/AlignIrPanel.cpp

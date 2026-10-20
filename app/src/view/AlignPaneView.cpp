@@ -230,7 +230,7 @@ void AlignPaneView::refresh() {
     measureButton_.setEnabled(blocker.kind == rta::measure::AlignBlock::None);
     sumButton_.setEnabled(!busy && (step == rta::measure::WizardStep::Computed ||
                                     step == rta::measure::WizardStep::AskingPolarity));
-    const bool askable = !busy && runner.verdict().has_value() && !runner.cycleFromIr() &&
+    const bool askable = !busy && runner.verdict().has_value() &&
                          (step == rta::measure::WizardStep::AskingCycle || step == rta::measure::WizardStep::Computed);
     // A run in flight keeps the answers it started with; the questions stay
     // read-only until it ends so the screen cannot disagree with what plays.
@@ -257,6 +257,8 @@ void AlignPaneView::refresh() {
         input.inversion = *run.inversion;
         input.sampleRate = runner.sampleRate();
         input.cycleSamples = runner.cycleSamples();
+        input.cycleFromIr = runner.cycleFromIr();
+        input.irHintSamples = runner.irHintSamples();
         input.matchedPairBar = rta::measure::kAlignMatchedPairAgreement;
         std::string joined;
         for (const auto& line : rta::measure::verdictLines(input)) joined += line + "\n";

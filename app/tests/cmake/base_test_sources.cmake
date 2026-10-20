@@ -125,6 +125,7 @@ set(RTA_BASE_TEST_SOURCES
     #   test_align_readout.cpp    T3: what the verdict says (UTF-8 bytes spelled out)
     # ALIGN-UI wave B (T8): the cycle integer from IR arrivals, keyed by source
     test_alignment_wizard_ir.cpp
+    test_cycle_arrival.cpp
     test_alignment_wizard_candidates.cpp
     test_align_runner.cpp
     test_align_runner_flow.cpp

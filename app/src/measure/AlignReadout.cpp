@@ -98,12 +98,17 @@ std::vector<std::string> verdictLines(const AlignReadoutInput& input) {
         lines.push_back(format("fit tau* %+.2f ms", toMilliseconds(v.tauSeconds)) +
                         (candidates.empty() ? "" : "; candidates (ms): " + candidates) +
                         " -- type the coarse offset to choose");
+        if (input.irHintSamples.has_value() && input.sampleRate > 0.0) {
+            lines.push_back(format("IRs suggest about %+.2f ms but fit no candidate clearly",
+                                   1000.0 * static_cast<double>(*input.irHintSamples) / input.sampleRate) +
+                            "; type the offset");
+        }
     } else {
         const CycleResolution resolved = resolveCycle(v, input.cycleSamples, input.sampleRate);
         std::string line = delayInstruction(resolved.tauSeconds, input.highPass, input.sampleRate);
         if (resolved.resolvedByInteger && std::abs(resolved.tauSeconds - v.tauSeconds) > 1.0e-9) {
             line += " " + std::string(kMiddleDot) + format(" fit tau* alone was %+.2f ms; ", toMilliseconds(v.tauSeconds)) +
-                    "your offset chose another candidate";
+                    (input.cycleFromIr ? "the bound IRs chose another candidate" : "your offset chose another candidate");
         }
         lines.push_back(std::move(line));
     }

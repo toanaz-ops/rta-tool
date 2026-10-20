@@ -181,8 +181,11 @@ public:
     /// The integer the run used, once there is one: the operator's typed offset,
     /// or the difference of the bound IRs' arrivals.
     [[nodiscard]] std::optional<std::ptrdiff_t> cycleSamples() const noexcept;
-    /// That integer came from the bound IRs, so the offset box has nothing to say.
+    /// That integer came from the bound IRs (a typed offset still overrides it).
     [[nodiscard]] bool cycleFromIr() const noexcept;
+    /// What the bound IRs imply (arrival difference minus the named topology's
+    /// peak lag), shown as a hint when it fits no candidate clearly enough to use.
+    [[nodiscard]] std::optional<std::ptrdiff_t> irHintSamples() const noexcept;
     /// Milliseconds the fit and polarity table took on the message thread in
     /// the last run's low-pass step (0 before the first run).
     [[nodiscard]] double lastComputeMs() const noexcept;
