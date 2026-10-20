@@ -226,3 +226,51 @@ TEST_CASE("the advice line names the next TAIL choice, and only when it would he
     withheld.refusal = Rt60Refusal::NoIr;
     CHECK(rt60Advice(withheld).empty());
 }
+
+TEST_CASE("each figure that refused is the one the note explains", kTag) {
+    // Mutation-closing cases: the T20 and EDT branches, the band-level trusted
+    // refusal winning over per-figure ones, and the exact whole-analysis words.
+    const auto result = analysedResult(3.0);
+
+    auto t20 = goodBand(1000, 0.8, 0.0, 0.8);
+    t20.t20 = {0.0, Rt60Refusal::RangeTooSmall};
+    t20.rangeDb = 31.0;
+    CHECK(rt60BandNote(t20, result) == "decay reaches 31.0 dB; T20 needs 25 dB");
+
+    auto edt = goodBand(1000, 0.8, 0.8, 0.0);
+    edt.edt = {0.0, Rt60Refusal::RangeTooSmall};
+    edt.rangeDb = 8.0;
+    CHECK(rt60BandNote(edt, result) == "decay reaches 8.0 dB; EDT needs 10 dB");
+
+    // No curve survived (core clears it on a B*T refusal), so no range to quote.
+    auto noRange = refusedBand(Rt60Refusal::RangeTooSmall);
+    CHECK(rt60BandNote(noRange, result) == "decay too short for T30 (needs 35 dB)");
+
+    // The band-level refusal explains the band even when no figure carries it.
+    auto outside = goodBand(63, 0.0, 0.0, 0.0);
+    outside.lowHz = 44.7;
+    outside.refusal = Rt60Refusal::OutsideTrustedBand;
+    outside.t30 = outside.t20 = outside.edt = {0.0, Rt60Refusal::NoDecayFound};
+    CHECK(rt60BandNote(outside, result) == "below this sweep's trusted band (80 Hz)");
+
+    CHECK(rt60BandNote(refusedBand(Rt60Refusal::NoIr), result) == "no IR to analyse");
+    Rt60Result lead;
+    lead.refusal = Rt60Refusal::NoLeadIn;
+    CHECK(rt60WholeRefusalText(lead, 8) ==
+          "the arrival is too close to the start of the IR for the band filters; sweep again");
+}
+
+TEST_CASE("the advice names a tail that covers the need, not merely a longer one", kTag) {
+    // Tail 1.0 s held, longest decay 2.40 s: 3 s is longer than the tail but
+    // 1.5 x 2.40 = 3.60 s needs the 6 s choice.
+    auto result = analysedResult(1.0);
+    result.bands = {goodBand(1000, 2.40, 2.40, 2.5)};
+    CHECK(rt60Advice(result) ==
+          "longest decay 2.40 s needs a tail of at least 3.60 s: choose TAIL 6 s and sweep again");
+
+    // A withheld analysis gives no advice even if it somehow carries bands.
+    Rt60Result withheld;
+    withheld.refusal = Rt60Refusal::NoIr;
+    withheld.bands = {goodBand(1000, 2.40, 2.40, 2.5)};
+    CHECK(rt60Advice(withheld).empty());
+}

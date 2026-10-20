@@ -254,3 +254,57 @@ TEST_CASE("a refusal from core arrives under the mirrored name", kTag) {
     }
     CHECK(anyRefused);
 }
+
+TEST_CASE("a band carries the provenance the pane and the record quote", kTag) {
+    // Mutation-closing: every field analyseBand and analyseRt60 copy or derive.
+    auto spec = flatSpec(0.80);
+    spec.arrivalSamples = 96;
+    const auto ir = fx::buildIr(spec);
+    const Rt60Result r = analyseRt60(&ir);
+    REQUIRE(r.analysed());
+    CHECK(r.sampleRate == 48000.0);
+    CHECK(r.trustedLowHz == ir.trustedLowHz);
+    CHECK(r.trustedHighHz == ir.trustedHighHz);
+    CHECK(r.trustedHighHz > 0.0);
+    CHECK(r.arrivalSamples == 96);
+    CHECK(r.tailSeconds == static_cast<double>(ir.tailSamples) / 48000.0);
+
+    const auto grid = rta::measure::rt60OctaveBands();
+    REQUIRE(r.bands.size() == grid.size());
+    for (std::size_t i = 0; i < r.bands.size(); ++i) {
+        CHECK(r.bands[i].nominalHz == grid[i].nominalHz);
+        CHECK(r.bands[i].lowHz == grid[i].lowHz);
+        CHECK(r.bands[i].highHz == grid[i].highHz);
+    }
+    const auto& b = r.bands[4];  // 1000 Hz, accepted
+    REQUIRE(b.t30.has());
+    CHECK(b.refusal == Rt60Refusal::None);  // the curve's own verdict, mirrored
+    CHECK(b.edt.has());
+    // B*T is the width times the late decay the gate read, so the 1 kHz octave
+    // (707 Hz wide) of a 0.8 s decay is far above the bar of 6.
+    CHECK(b.bandwidthTime > 6.0);
+    CHECK(b.crossingSec > 0.0);  // Lundeby found the noise floor, after the arrival
+    CHECK(b.crossingSec < r.tailSeconds);
+}
+
+TEST_CASE("an empty window refuses with no bands, and a DSP failure is a named refusal", kTag) {
+    auto spec = flatSpec(0.80);
+    auto ir = fx::buildIr(spec);
+    ir.arrivalSamples = static_cast<long>(ir.tailSamples) + 10;
+    const Rt60Result none = analyseRt60(&ir);
+    CHECK(none.refusal == Rt60Refusal::NoTail);
+    CHECK(none.bands.empty());
+
+    // At 16 kHz the 8 kHz octave's edges pass Nyquist and core's band filter
+    // throws; the analysis must come back with the text, never an exception.
+    ir = fx::buildIr(spec);
+    ir.sampleRate = 16000.0;
+    ir.trustedLowHz = 0.0;
+    ir.trustedHighHz = 0.0;
+    Rt60Result thrown;
+    REQUIRE_NOTHROW(thrown = analyseRt60(&ir));
+    CHECK(thrown.refusal == Rt60Refusal::NoDecayFound);
+    CHECK_FALSE(thrown.message.empty());
+    CHECK(thrown.bands.empty());
+    CHECK(thrown.wallMs > 0.0);
+}

@@ -35,10 +35,6 @@ std::string padLeft(const std::string& text, std::size_t width) {
     return text.size() >= width ? text : std::string(width - text.size(), ' ') + text;
 }
 
-std::string padRight(const std::string& text, std::size_t width) {
-    return text.size() >= width ? text : text + std::string(width - text.size(), ' ');
-}
-
 std::string bandwidthTimeText(double bandwidthTime) {
     // The bar is core's own default, read rather than copied.
     const double bar = rta::ir::DecayConfig{}.minBandwidthTime;
@@ -185,6 +181,8 @@ std::string rt60Advice(const Rt60Result& result) {
     const bool tooShort = needed > result.tailSeconds;
     if (!tooShort && !missingNoise) return {};
 
+    // Without a length to reach (no noise floor), "longer than the tail just
+    // measured" is the whole requirement, so the target is zero.
     std::string why;
     double target = 0.0;
     if (tooShort) {
@@ -192,7 +190,6 @@ std::string rt60Advice(const Rt60Result& result) {
         target = needed;
     } else {
         why = "a band found no noise floor in the " + format("%.1f", result.tailSeconds) + " s tail";
-        target = result.tailSeconds;
     }
     // The shortest offered tail that both covers the need and is longer than
     // the one that was just measured -- offering the same tail again is not advice.
