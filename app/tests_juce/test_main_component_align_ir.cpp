@@ -214,7 +214,13 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(joined.find("rho: ") != std::string::npos);
     CHECK(joined.find("findPolarity, low-pass side: refused (BandTooHigh)") != std::string::npos);
     CHECK(pane.irInfoForTest().contains("findPolarity, low-pass side: refused (BandTooHigh)"));
-    CHECK(pane.readoutForTest().contains("delay "));  // the verdict resolves the integer, offset box untouched
+    // The verdict resolves the integer, offset box untouched. NOTE the integer is
+    // an ARRIVAL difference, so it includes each path's filter group delay (an
+    // LR4 low-pass at 100 Hz peaks ~220 samples late): 316 here against the 96
+    // samples of pure delay. It only has to land nearer the right candidate than
+    // the wrong ones (8.26 ms apart), and it does: the readout names 2.0x ms.
+    WARN("T11 verdict line: " << pane.readoutForTest().upToFirstOccurrenceOf("\n", false, false));
+    CHECK(pane.readoutForTest().contains("delay MAIN by 2."));
 
     // The cost of the fit on the message thread (EQ risk-2 precedent: > 100 ms moves to a worker).
     WARN("T11 compute() = " << runnerOf(c).lastComputeMs() << " ms on the message thread");
