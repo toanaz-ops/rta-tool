@@ -69,13 +69,27 @@ void MainComponent::pollLocatePipeline() {
         if (static_cast<double>(audioIo_.output().renderedSamples()) < settleSamples) {
             return;
         }
+        // Not while the input is mid-resync: that gate discards what the
+        // capture would record, and its drain would then abort the capture.
+        if (analysisThread_.resyncPending()) {
+            return;
+        }
         constexpr std::size_t kCaptureLength = 8192;
         analysisThread_.armLocateCapture(/*routeIndex=*/0, kCaptureLength);
+        locateResync_ = analysisThread_.resyncSequence();
         locateWaitingForSettle_ = false;
         locateCaptureArmed_ = true;
     }
 
     if (!locateCaptureArmed_) {
+        return;
+    }
+    // A resync (device or channel-role change) during the capture discards
+    // samples the delay is measured from: the answer would be shifted, silently.
+    if (analysisThread_.resyncSequence() != locateResync_) {
+        cancelLocate();
+        delayReadout_.setText("delay: aborted -- the input resynced during the capture",
+                              juce::dontSendNotification);
         return;
     }
     const auto capture = analysisThread_.locateCapture();

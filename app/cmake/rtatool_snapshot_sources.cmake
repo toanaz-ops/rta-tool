@@ -212,6 +212,8 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/view/ChannelRoleTable.cpp
     src/view/RoutingMatrix.cpp
     src/measure/AnalysisThread.cpp
+    # AnalysisThreadLoop.cpp: the thread loop, split off AnalysisThread.cpp (400-line cap).
+    src/measure/AnalysisThreadLoop.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------
     # AnalysisThreadSpl.cpp: AnalysisThread.cpp's SPL half, split off at the
     # 400-line hard cap -- same class, second translation unit, the shape

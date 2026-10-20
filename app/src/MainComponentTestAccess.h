@@ -88,6 +88,9 @@ struct MainComponentTestAccess {
     [[nodiscard]] static const juce::Component& devicePanelForTest(const MainComponent& c) {
         return c.rail_.devicePanelForTest();
     }
+    [[nodiscard]] static const rta::view::DevicePanel& devicePanelTypedForTest(const MainComponent& c) {
+        return c.rail_.devicePanelTypedForTest();
+    }
     static void applyChannelNamesForTest(MainComponent& c, std::vector<std::string> names) {
         c.applyChannelNames(std::move(names));
     }
@@ -221,6 +224,9 @@ struct MainComponentTestAccess {
     [[nodiscard]] static bool locateActiveForTest(const MainComponent& c) {
         return c.locateWaitingForSettle_ || c.locateCaptureArmed_;
     }
+    [[nodiscard]] static bool locateCaptureArmedForTest(const MainComponent& c) {
+        return c.locateCaptureArmed_;
+    }
     [[nodiscard]] static bool calibrationArmedForTest(const MainComponent& c) {
         return c.calibrationCaptureArmed_;
     }
@@ -251,6 +257,18 @@ struct MainComponentTestAccess {
         c.syntheticInput_.reset();  // joins the thread before the new one is built
         config.loopback = &c.audioIo_.output();
         c.syntheticInput_ = std::make_unique<rta::measure::SyntheticInput>(c.audioIo_.bus(), config);
+        waitForResyncForTest(c);
+    }
+    // prepare() gates the producer until AnalysisThread has emptied the rings
+    // (CaptureBus.h, "Resync"): audio written meanwhile is counted, not kept.
+    // A test that starts a sweep right after prepare() would lose the head of
+    // it to that window, which a person at the controls never does, so wait
+    // (bounded) for the gate to lower first.
+    static void waitForResyncForTest(MainComponent& c) {
+        const auto deadline = juce::Time::getMillisecondCounter() + 3000u;
+        while (c.audioIo_.bus().resyncPending() && juce::Time::getMillisecondCounter() < deadline) {
+            juce::Thread::sleep(2);
+        }
     }
     // The engine the loopback renders, so a test can prove an aborted run left
     // the output disarmed: render a few blocks by hand and ask it.

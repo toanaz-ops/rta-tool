@@ -140,6 +140,7 @@ private:
     int armedOutput_ = 0;
     Requester armedRequester_ = Requester::Rail;  ///< not Rail: started by clickedOnOutput
     std::uint64_t armedEpoch_ = 0;
+    std::uint64_t armedResync_ = 0;  // AnalysisThread::resyncSequence() at arm time
     bool armedSynthetic_ = false;
     std::string armedDeviceName_;
     std::string armedChannelRoles_;

@@ -28,8 +28,9 @@ constexpr int kChannelRoleTableMinHeight = 150;
 
 }  // namespace
 
-MainComponentRail::MainComponentRail(rta::platform::AudioIo& audioIo, int channelCount)
-    : devicePanel_(audioIo),
+MainComponentRail::MainComponentRail(rta::platform::AudioIo& audioIo, int channelCount,
+                                     std::function<rta::platform::Fault()> analysisFault)
+    : devicePanel_(audioIo, std::move(analysisFault)),
       channelRoleTable_(audioIo.bus().config()),
       routingMatrix_(audioIo.bus().config(), channelCount) {}
 

@@ -107,13 +107,12 @@ bool waitForSplBlocks(const AnalysisThread& thread, int channel, std::uint64_t t
 // that point -- and the count climbs by exactly the amount this test's own
 // polling arrived early by.
 //
-// CaptureBus::prepare() also RESETS every ring to empty (CaptureBus.h's own
-// comment), so a leftover pre-epoch hop can never survive to be miscounted
-// as post-epoch: either it is drained (and counted) before prepare() runs,
-// or prepare() erases it. That is what makes this a test-only race rather
-// than a product one -- confirmed by reading AnalysisThread.cpp's drain
-// path and CaptureBus::prepare() (platform/types/src/CaptureBus.cpp) rather
-// than assumed.
+// The analysis thread drains every ring itself behind the producer gate
+// (CaptureBus::serviceResyncAsConsumer, called from runBody()), BEFORE that
+// tick's drain(). So a leftover
+// pre-epoch hop can never survive to be miscounted as post-epoch: either it is
+// drained (and counted) before prepare() runs, or the consumer discards it.
+// That is what makes this a test-only race rather than a product one.
 //
 // Wait for the backlog to go quiet before trusting a snapshot: the ring has
 // nothing left for drainRole()/drainPaired() to consume (`availableToRead()

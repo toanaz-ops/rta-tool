@@ -3,9 +3,12 @@
 // docs/plans/2026-08-27-audioio-rta-impl-plan.md §3.5 (Wave D / T9).
 #include "view/DevicePanel.h"
 
+#include "view/FaultLine.h"
 #include "view/Readouts.h"
 
 #include <az_ui/az_ui.h>
+
+#include <utility>
 
 namespace rta::view {
 
@@ -34,7 +37,9 @@ void populateStringCombo(juce::ComboBox& combo, const std::vector<std::string>& 
 
 }  // namespace
 
-DevicePanel::DevicePanel(rta::platform::AudioIo& audioIo) : audioIo_(audioIo) {
+DevicePanel::DevicePanel(rta::platform::AudioIo& audioIo,
+                         std::function<rta::platform::Fault()> analysisFault)
+    : audioIo_(audioIo), analysisFault_(std::move(analysisFault)) {
     addAndMakeVisible(deviceTypeCombo_);
     addAndMakeVisible(deviceCombo_);
     addAndMakeVisible(sampleRateCombo_);
@@ -58,8 +63,13 @@ DevicePanel::DevicePanel(rta::platform::AudioIo& audioIo) : audioIo_(audioIo) {
 
 DevicePanel::~DevicePanel() { stopTimer(); }
 
+rta::platform::Fault DevicePanel::currentFault() const {
+    return selectFault(audioIo_.lastFault(),
+                       analysisFault_ ? analysisFault_() : rta::platform::Fault{});
+}
+
 void DevicePanel::timerCallback() {
-    const auto fault = audioIo_.lastFault();
+    const auto fault = currentFault();
     if (fault.sequence != lastPaintedFaultSequence_) {
         // A new fault (or the device recovering) usually means the device's
         // own state moved too -- M5's unplug closes it out from under
@@ -128,7 +138,7 @@ void DevicePanel::refreshFromState() {
 
     populating_ = false;
 
-    lastPaintedFaultSequence_ = audioIo_.lastFault().sequence;
+    lastPaintedFaultSequence_ = currentFault().sequence;
     lastPaintedDropCount_ = audioIo_.bus().totalDrops();
     repaint();
 }
@@ -227,7 +237,7 @@ void DevicePanel::paint(juce::Graphics& g) {
     g.drawText(juce::String(static_cast<juce::int64>(drops)), dropsArea,
                juce::Justification::centredLeft, false);
 
-    const auto fault = audioIo_.lastFault();
+    const auto fault = currentFault();
     if (fault.kind != rta::platform::Fault::Kind::None) {
         g.setColour(kFaultColour);
         g.setFont(az::ui::monoFont(az::ui::hintFontSize));

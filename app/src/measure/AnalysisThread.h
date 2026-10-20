@@ -67,8 +67,8 @@ public:
     /// `CaptureBus::prepare`), the internal `Analyser` is rebuilt at
     /// `bus.sampleRate()` instead, and the fresh `Analyser` (no buffered
     /// samples, no running average) is itself the drain on this side of the
-    /// bus -- the `RingBuffer`s CaptureBus::prepare() just reset (never
-    /// rebuilt; see `CaptureBus.h`) are already empty.
+    /// bus; the rings are drained on this thread (`serviceResyncAsConsumer`),
+    /// never by `prepare()`, since only the consumer may write a read index.
     ///
     /// Starts the thread immediately; there is no separate `start()`.
     AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::Config& config);
@@ -242,27 +242,26 @@ public:
     /// before the join that follows (SplLogPipeline.cpp's own comment on
     /// `disable()`), so this flipping to `false` is a direct observation of
     /// "the disable path actually called `SplLogPipeline::disable()`" with
-    /// no dependency on how fast the writer thread's own drain happens to
-    /// run relative to whatever else is going on. `test_spl_log_wiring_
-    /// disable.cpp` uses this to catch a disable path that skips the call
-    /// entirely, a race a burst-then-read-the-files timing test cannot
-    /// reliably win: this project's own analysis thread meters incoming
-    /// audio no faster than roughly one hop per `kPollMs` poll (measured:
-    /// an 800-hop, 8-channel burst took ~1.2 s to finish metering), so the
-    /// writer thread -- whose own per-row cost is two to three orders of
-    /// magnitude smaller -- never meaningfully falls behind regardless of
-    /// burst size, and a mutant that skips the call entirely still reads as
-    /// "files already complete" under any burst this test could practically
-    /// push. Safe from any thread, same reason `splLogWriteFailed` is.
+    /// no dependency on how fast the writer thread's own drain runs.
+    /// `test_spl_log_wiring_disable.cpp` uses this to catch a disable path
+    /// that skips the call, which a burst-then-read-the-files timing test
+    /// cannot reliably do. Safe from any thread, same reason
+    /// `splLogWriteFailed` is.
     ///
-    /// `ForTest` suffix (lane-end LOW batch round 1, LOW V4): no production
-    /// caller reads this -- production code decides its own SPL-logging
-    /// state from `SplLoggingDecision.h`'s own inputs, never by re-reading
-    /// this flag back. Every real caller is a test (test_main_component_
-    /// panes.cpp, test_spl_log_wiring_disable.cpp), which is what the
-    /// `*ForTest` convention exists to name (tools/orphan_check.py's own
-    /// TEST HOOK rule) rather than leave reading as an unwired orphan.
+    /// `ForTest` suffix (LOW V4): no production caller reads this -- production
+    /// decides its SPL-logging state from `SplLoggingDecision.h`'s own inputs.
+    /// Every real caller is a test, which is what tools/orphan_check.py's
+    /// TEST HOOK rule exists to name.
     [[nodiscard]] bool isSplLoggingEnabledForTest() const noexcept;
+
+    /// Makes the next `runBody()` tick throw, so a test can drive `run()`'s
+    /// catch, `lastFault()` and its readers without a real bad_alloc.
+    void throwOnNextTickForTest() noexcept { throwNextTick_.store(true, std::memory_order_release); }
+
+    /// The bus's resync state (CaptureBus.h): a capture armed before a change
+    /// of `resyncSequence()` is shifted by the resync and must be abandoned.
+    [[nodiscard]] std::uint64_t resyncSequence() const noexcept { return bus_.resyncSequence(); }
+    [[nodiscard]] bool resyncPending() const noexcept { return bus_.resyncPending(); }
 
     /// Message-thread call: END check's drift > cl. 5.2's 0.5 dB, cleared by
     /// a fresh `enableSplLogging` -- read by `fillSplPublishInput` (§15 A2).
@@ -367,6 +366,7 @@ private:
     std::atomic<int> requestedRouteIndex_{-1};
     std::atomic<std::size_t> requestedCaptureLength_{0};
     std::atomic<bool> locateArmRequested_{false};
+    std::atomic<bool> throwNextTick_{false};  // throwOnNextTickForTest
     /// Same substitution, same reason (measure/AtomicSharedPtr.h): this one
     /// is written by the analysis thread when a Locate capture fills and read
     /// by the message thread that polls `locateCapture()`.

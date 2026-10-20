@@ -9,9 +9,10 @@
 // invoked here with no device ever opened.
 //
 // Read CaptureBus::prepare's contract first (see
-// platform/types/include/rta/platform/CaptureBus.h): it drains every ring,
-// updates sampleRate(), and unconditionally bumps epoch() -- but it does NOT
-// touch ChannelConfig (roles survive a prepare()). The assertions below are
+// platform/types/include/rta/platform/CaptureBus.h): it updates sampleRate()
+// and unconditionally bumps epoch() -- but it touches NEITHER ChannelConfig
+// (roles survive a prepare()) NOR any ring: the consumer drains the rings
+// (CaptureBus::drainAsConsumer), so these tests play the consumer. The assertions below are
 // written against exactly that contract, not against anything stronger.
 #include <catch2/catch_test_macros.hpp>
 
@@ -61,8 +62,8 @@ void pushRecognisableBlock(AudioIo& io, int numChannels, int numSamples, float b
 // back out.
 
 TEST_CASE(
-    "a sample-rate change drains every ring and advances the epoch, so no "
-    "pre-change sample survives",
+    "a sample-rate change leaves the rings to the consumer's drain and advances "
+    "the epoch, so no pre-change sample survives it",
     "[audio_io][m3]") {
     AudioIo io;
     FakeAudioIODevice fake48k(48000.0, 512, 2, 2);
@@ -80,10 +81,14 @@ TEST_CASE(
     FakeAudioIODevice fake96k(96000.0, 512, 2, 2);
     io.audioDeviceAboutToStart(&fake96k);
 
-    // Identity, not just emptiness: prepare() resets in place (CaptureBus.h's
-    // class comment) rather than reallocating, so a consumer holding this
-    // pointer across the change stays valid.
+    // Identity: prepare() never reallocates (CaptureBus.h's class comment), so
+    // a consumer holding this pointer across the change stays valid. It also
+    // does not empty the ring -- that is the consumer's drain, which this test
+    // plays by calling drainAsConsumer() as AnalysisThread does on an epoch
+    // change.
     CHECK(io.bus().ring(0) == ringBefore);
+    CHECK(io.bus().ring(0)->availableToRead() == 512);
+    io.bus().drainAsConsumer();
     CHECK(io.bus().ring(0)->availableToRead() == 0);
     CHECK(io.bus().sampleRate() == 96000.0);
     CHECK(io.bus().epoch() > epochBefore);
@@ -107,8 +112,8 @@ TEST_CASE(
 // inside audioDeviceAboutToStart.
 
 TEST_CASE(
-    "a buffer-size change completes, drains every ring, and leaves state "
-    "consistent",
+    "a buffer-size change completes, leaves the drain to the consumer, and "
+    "leaves state consistent",
     "[audio_io][m4]") {
     AudioIo io;
     FakeAudioIODevice fakeSmallBuffer(48000.0, 256, 2, 2);
@@ -124,6 +129,10 @@ TEST_CASE(
     FakeAudioIODevice fakeLargeBuffer(48000.0, 1024, 2, 2);
     io.audioDeviceAboutToStart(&fakeLargeBuffer);  // completing at all is the M4 evidence
 
+    // prepare() leaves the ring alone; the consumer drains it (AnalysisThread
+    // does, on the epoch change -- played here by drainAsConsumer()).
+    CHECK(io.bus().ring(0)->availableToRead() == 256);
+    io.bus().drainAsConsumer();
     CHECK(io.bus().ring(0)->availableToRead() == 0);
     CHECK(io.bus().sampleRate() == 48000.0);
     CHECK(io.bus().epoch() > epochBefore);

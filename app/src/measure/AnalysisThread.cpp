@@ -4,17 +4,13 @@
 // docs/plans/2026-09-06-L6b-impl-plan.md task B2 (record §6).
 #include "measure/AnalysisThread.h"
 
-#include <exception>
+#include "measure/PairedDrain.h"
+
 #include <utility>
 
 namespace rta::measure {
 
 namespace {
-
-// Poll granularity: how often run() wakes to check for new samples even
-// with nothing to do. Short enough that a hop's worth of audio at any
-// reasonable buffer size is never left waiting more than one tick.
-constexpr int kPollMs = 10;
 
 // Plan §1.4: analysis publish rate is at most 20 Hz. A view repainting
 // faster than the eye resolves costs CPU during a show and buys nothing.
@@ -41,6 +37,9 @@ AnalysisThread::AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::C
     for (auto& scratch : channelScratch_) {
         scratch.assign(config.hopSize, 0.0f);
     }
+    // Attached before the thread starts: from here a prepare() raises the
+    // producer gate and this thread lowers it (CaptureBus.h, "Resync").
+    bus_.attachConsumer();
     startThread();
 }
 
@@ -48,6 +47,7 @@ AnalysisThread::~AnalysisThread() {
     // Trap T-1: belt and braces even though the owner's member-declaration
     // order also guarantees this thread stops before bus_ is torn down.
     stopThread(2000);
+    bus_.detachConsumer();
 }
 
 SnapshotPtr AnalysisThread::latest() const {
@@ -94,63 +94,6 @@ void AnalysisThread::recordFault(rta::platform::Fault::Kind kind, const std::str
     fault_.kind = kind;
     fault_.message = message;
     ++fault_.sequence;
-}
-
-void AnalysisThread::run() {
-    // Trap T-3, verbatim: wrap the whole body, record the message as a
-    // fault, stop cleanly. Nothing below this point may let an exception
-    // reach juce::Thread's caller.
-    try {
-        runBody();
-    } catch (const std::exception& e) {
-        recordFault(rta::platform::Fault::Kind::DeviceError, e.what());
-    } catch (...) {
-        recordFault(rta::platform::Fault::Kind::DeviceError,
-                     "AnalysisThread::run: unknown exception");
-    }
-}
-
-void AnalysisThread::runBody() {
-    while (!threadShouldExit()) {
-        wait(kPollMs);
-        if (threadShouldExit()) {
-            return;
-        }
-
-        rebuildAnalysersIfEpochChanged();
-        applyPendingReferenceDelay();
-
-        drain();
-
-        publishIfDue();
-    }
-}
-
-void AnalysisThread::rebuildAnalysersIfEpochChanged() {
-    const std::uint64_t epoch = bus_.epoch();
-    if (epoch == lastEpoch_) {
-        return;
-    }
-    lastEpoch_ = epoch;
-
-    Analyser::Config cfg = baseConfig_;
-    const double rate = bus_.sampleRate();
-    if (rate > 0.0) {
-        cfg.sampleRate = rate;
-    }
-    // A fresh Analyser has no buffered samples and no running average --
-    // that IS the drain on this side of the bus, matching the freshly
-    // RESET (not rebuilt -- CaptureBus::prepare() no longer reallocates,
-    // see CaptureBus.h) RingBuffer objects CaptureBus::prepare() just
-    // emptied for the new device session (decision record: "drains every
-    // ring"). Without this, stale frames analysed at the old sample rate
-    // would splice onto the new one and mislabel every bin-to-Hz
-    // conversion. Every position is rebuilt together: a device
-    // reconfiguration invalidates every engine's running state, not only
-    // the one a particular route happens to name.
-    for (auto& analyser : analysers_) {
-        analyser = std::make_unique<Analyser>(cfg);
-    }
 }
 
 void AnalysisThread::applyPendingReferenceDelay() {
@@ -225,16 +168,19 @@ void AnalysisThread::drainPaired(int refChannel, const RoutingPlan& plan) {
     // see `routeHopCount`'s own header comment for why: `tfIndex` is the
     // GROUPING tag two routes here deliberately share, and using it as the
     // array slot would collide two same-reference routes onto one Analyser.
-    std::size_t hops = refRing->availableToRead() / hop;
+    // Each ring's availability is sampled ONCE, then handed to pairedHopCount
+    // (PairedDrain.h): a ring that has vanished contributes 0, which holds the
+    // whole group back, the same as the explicit break this used to be.
+    std::array<std::size_t, static_cast<std::size_t>(rta::platform::kMaxChannels) + 1> available{};
+    std::size_t availableCount = 0;
+    available[availableCount++] = refRing->availableToRead();
     for (const auto& route : plan.routes) {
         if (route.referenceChannel != refChannel) continue;
         auto* measurementRing = bus_.ring(route.measurementChannel);
-        if (measurementRing == nullptr) {
-            hops = 0;
-            break;
-        }
-        hops = std::min(hops, measurementRing->availableToRead() / hop);
+        available[availableCount++] = measurementRing == nullptr ? 0 : measurementRing->availableToRead();
     }
+    const std::size_t hops = pairedHopCount(
+        std::span<const std::size_t>(available.data(), availableCount), hop);
 
     for (std::size_t i = 0; i < hops; ++i) {
         // Peek every ring in this group BEFORE discarding any of them: a

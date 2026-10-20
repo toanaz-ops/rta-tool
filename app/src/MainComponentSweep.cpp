@@ -97,6 +97,12 @@ bool MainComponentSweep::startOn(int outputChannel, Requester requester, std::op
     rta::gen::Sweep sweep(armedRequest_.sweep);
     const auto captureSamples = static_cast<std::size_t>(
         std::ceil((kPreRollSeconds + sweep.durationSec() + armedRequest_.tailSeconds) * fs));
+    if (analysis_.resyncPending()) {
+        // The input is mid-resync (device or channel change): the capture
+        // would start on a gate that discards what it records.
+        say("sweep: refused -- the input is resyncing, try again");
+        return false;
+    }
     if (!output_.setSource(std::move(sweep))) {
         say("sweep: refused -- the output is still playing a source");
         return false;
@@ -107,6 +113,7 @@ bool MainComponentSweep::startOn(int outputChannel, Requester requester, std::op
     armedOutput_ = outputChannel;
     armedRequester_ = requester;
     armedEpoch_ = output_.outputEpoch();
+    armedResync_ = analysis_.resyncSequence();
     armedSynthetic_ = host_.synthetic();
     armedAtMs_ = nowMs_();
     // Click-time metadata, as STORE reads it at click time: the capture belongs
@@ -139,6 +146,14 @@ void MainComponentSweep::poll() {
     // the next arm.
     if (output_.outputEpoch() != armedEpoch_ || host_.synthetic() != armedSynthetic_) {
         abort("the device or input mode changed");
+        return;
+    }
+
+    // A resync (a device or channel-role change) during the capture discards
+    // samples the IR origin is measured from: the result would be shifted with
+    // no sign of it. It does not move the output epoch, so it needs this check.
+    if (analysis_.resyncSequence() != armedResync_) {
+        abort("the input resynced (channel or device change) during the capture");
         return;
     }
 
