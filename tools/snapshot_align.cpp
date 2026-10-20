@@ -51,7 +51,8 @@ bool fail (const char* what, const char* fileName, int& failures)
 // (output 0 a 40 Hz - 16 kHz band-pass, output 1 an LR4 low-pass at 100 Hz).
 // true: the plan's LR4 high-pass / low-pass pair, reachable only through the
 // test hook, which is the pair the T6 bounds are derived from.
-void renderOne (const juce::File& outDir, const char* fileName, bool useFixture, bool bindIrs, int& failures)
+void renderOne (const juce::File& outDir, const char* fileName, bool useFixture, bool bindIrs, int& failures,
+               int seedId = 1)
 {
     constexpr double kFs = 48000.0;
     MainComponent component;
@@ -81,14 +82,14 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
     pane->highPassComboForTest().setSelectedId (1, juce::sendNotificationSync);   // MAIN is high-pass
     pane->topologyComboForTest().setSelectedId (2, juce::sendNotificationSync);   // LR-4
     pane->inversionComboForTest().setSelectedId (1, juce::sendNotificationSync);  // NOT INVERTED
-    pane->seedComboForTest().setSelectedId (1, juce::sendNotificationSync);       // NO SEED
+    pane->seedComboForTest().setSelectedId (seedId, juce::sendNotificationSync);  // 1 = NO SEED; 4 = SEED 100 HZ
 
     if (bindIrs)
     {
         // Wave B: SWEEP MAIN then SWEEP SUB through the pane's own buttons. Each
         // sweep binds its IR to the side that asked, so MEASURE needs no typed offset.
         auto& sweep = Access::sweepForTest (component);
-        sweep.setDurationsForTest (2.0, 0.5);
+        sweep.setDurationsForTest (useFixture ? 2.0 : 10.0, useFixture ? 0.5 : 3.0);  // the shipped band-pass needs the long sweep
         for (auto* button : { &pane->irPanelForTest().sweepMainButtonForTest(),
                               &pane->irPanelForTest().sweepSubButtonForTest() })
         {
@@ -120,6 +121,20 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
     if (! pumpUntil (component, *pane, [&] { return ! runner.busy(); }, 40000) || ! runner.verdict().has_value())
     {
         fail ("MEASURE did not reach a verdict", fileName, failures);
+        return;
+    }
+    if (bindIrs && seedId != 1)
+    {
+        // The seed disagrees with the crossing: the run must ASK, with the
+        // note and both hints. Render that screen as it stands.
+        if (runner.step() != rta::measure::WizardStep::AskingCycle || ! runner.seedDisagreement().has_value())
+        {
+            fail ("the seed did not disagree with the crossing", fileName, failures);
+            return;
+        }
+        pane->tickForTest();
+        if (! renderComponent (component, outDir, fileName, 1280, 800))
+            ++failures;
         return;
     }
     if (bindIrs && runner.step() == rta::measure::WizardStep::AskingCycle)
@@ -158,6 +173,9 @@ void renderAlignSpecimen (const juce::File& outDir, int& failures)
     renderOne (outDir, "main-live-align.png", false, false, failures);
     renderOne (outDir, "main-live-align-lr4.png", true, false, failures);
     renderOne (outDir, "main-live-align-ir.png", true, true, failures);
+    // H5 closeout D9/D3: shipped defaults, IRs bound, SEED 100 HZ against a ~58 Hz
+    // crossing -- the longest readout (the disagreement note and both hints).
+    renderOne (outDir, "main-live-align-seed.png", false, true, failures, 4);
 }
 
 } // namespace rta::tools

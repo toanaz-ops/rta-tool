@@ -35,7 +35,7 @@ line.
 | 14 | L7-FIR FIR design/export | done | ~~none today; EXPORT FIR TXT/WAV arrive with EQ-UI~~ **updated after #64:** EQ pane button `MainComponentPanes.cpp:47` → EXPORT FIR TXT / EXPORT FIR WAV `view/EqPaneView.cpp:65,66` → `exportFirTextClicked` `MainComponentEq.cpp:71` / `exportFirWavClicked` `:80` (FIR PHASE and FIR LENGTH must be answered first, `canExportFir`; tap counts even again after #62/#63) | BUILT (was IN PROGRESS at `34fd38e`) | H3 `app/eq-ui`, PR #60 (wave A) + #62 + #63; plan `docs/plans/2026-09-29-eq-ui-lane-plan.md` |
 | 15 | L7-DELAY | done | LOCATE `MainComponent.cpp:101` → APPLY `:105` (`MainComponentDelay.cpp:15,112`) | BUILT | report 007 |
 | 16 | L7-EQ | done | ~~none today: `EqSession` has no caller outside `measure/`~~ **updated after #64:** EQ pane button `MainComponentPanes.cpp:47` (declared `MainComponent.h:314`); pane built by `PaneFactory.cpp:27-30`; AUTO EQ `view/EqPaneView.cpp:59` → `EqPaneModel::runAutoEq` `measure/EqPaneModel.cpp:135`; SUGGEST `EqPaneView.cpp:60` → `EqPaneModel::suggest` `:148`; VERIFY `EqPaneView.cpp:68` → `EqVerifyRunner::press` `measure/EqVerifyRunner.cpp:120`; ADOPT `EqPaneView.cpp:72` → `EqVerifyRunner::adopt` `:275`; `wireEqVerify()` called at `MainComponent.cpp:157`. **Not verified on hardware:** VERIFY needs a live device (speaker on output 1, mic, loopback REF); SYNTHETIC refuses it by design | BUILT (was IN PROGRESS at `34fd38e`) | H3 `app/eq-ui`, PR #60 (wave A), #64 (wave B); ctest proves the runner, a human try of VERIFY is pending (`docs/HUMAN-QA-QUEUE.md`) |
-| 17 | L7-ALIGN | done (core + headless `AlignmentWizard`) | none: `AlignmentWizard` is constructed nowhere in `app/src` | PLANNED | H5 `app/align-ui`; ~~its full result also needs H4's IR~~ **updated after #69:** H4's IR now exists (`IrStore`, SWEEP button); the ALIGN lookup into `IrStore` is H5's to add (`docs/plans/2026-09-29-sweep-ir-lane-plan.md`, "not built here") |
+| 17 | L7-ALIGN | done (core + headless `AlignmentWizard`) | ~~none: `AlignmentWizard` is constructed nowhere in `app/src`~~ **updated after #72:** ALIGN pane button (`MainComponentPanes.cpp`, sixth selector cell) -> `AlignPaneView` MEASURE / SUM / SWEEP MAIN / SWEEP SUB (`view/AlignPaneView.cpp`, `view/AlignIrPanel.cpp`) -> `AlignRunner::press` / `pressSum` (`measure/AlignRunner.cpp`), which constructs `AlignmentWizard` per run (`AlignRunner.cpp:136`); polled by `MainComponentAlign` from `timerCallback`. **Not verified on hardware:** the ALIGN try with a real main + sub, a loopback REF and a microphone (`docs/HUMAN-QA-QUEUE.md`); SYNTHETIC cannot show reflections, drift or real driver band edges | ~~PLANNED~~ **BUILT** (H5 DONE: #71 `148b784`, #72 `7fd8e4c`, closeout PR) | H5 `app/align-ui`; plan `docs/plans/2026-10-20-align-ui-lane-plan.md`; ~~its full result also needs H4's IR~~ H4's IR exists (`IrStore`, SWEEP button) and the ALIGN pane binds it by source (`AlignRunnerIr.cpp`) |
 | 18 | L7-XOVER crossover pane | done | XOVER pane button `MainComponentPanes.cpp:44`, built by `PaneFactory.cpp:19-24` | BUILT | PR #45 |
 | 19 | P9 productization | no | none | NOT STARTED | i18n, installers, manual |
 
@@ -102,6 +102,27 @@ headline does not move. H6 is what flips row 4; H5 flips row 17. **Next lane:
 H5 ALIGN-UI (`app/align-ui`).** The SWEEP real-hardware try is unmeasured and
 sits in the QA queue.
 
+**Updated after #72 and the H5 closeout (origin/main `7fd8e4c`, 2026-10-20).** Same
+formulas, same equal-weight caveat, same 19-unit table. H5 ALIGN-UI (PRs #71
+`148b784`, #72 `7fd8e4c`, plus the closeout PR) flips **row 17** to BUILT: an
+operator reaches `AlignmentWizard` through the ALIGN pane (MEASURE, SUM, SWEEP
+MAIN / SWEEP SUB, IR pickers). It is counted in (b-strict) because it carries no
+partial flag in the table; the owner-flagged defaults (unmeasured fit window / R
+bar, inversion at |delta| > 90 degrees, SYNTHETIC ch 1 LR4 low-pass) and the
+unmeasured real-hardware try are recorded in the QA queue, not as a partial.
+
+| | formula | list counted | value after #69 | value after #72 |
+|---|---|---|---|---|
+| (a) engine built | engine done / 19 | unchanged: rows 1, 2, 3, 4, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 = 15 | 15 / 19 = 78.9 % | **15 / 19 = 78.9 %** |
+| (b) operator-reachable (BUILT + partial) | / 19 | rows 1, 2, 3, 7, 9, 10, 11, 13, 14, 15, 16, **17**, 18 = 13 | 12 / 19 = 63.2 % | **13 / 19 = 68.4 %** |
+| (b-strict) BUILT, no partial flag | / 19 | rows 2, 3, 7, 10, 14, 15, 16, **17**, 18 = 9 | 8 / 19 = 42.1 % | **9 / 19 = 47.4 %** |
+| (c) projection, H6 landed | (b) + the unit H6 flips | 13 + H6 (row 4) = 14 | 14 / 19 = 73.7 % | **14 / 19 = 73.7 %** (H5 measured, no longer projected) |
+
+Arithmetic: 13 / 19 = 0.6842, 9 / 19 = 0.4737, 14 / 19 = 0.7368; (a) does not
+move because H5 is an `app/` lane. **Next lane: H6 RT60-UI** (`app/rt60-ui`; its
+plan `docs/plans/2026-10-20-rt60-ui-lane-plan.md` lands with H6's first PR). H6
+flips row 4 and is the last unit in (c).
+
 **Gaps found while verifying (none appears in an earlier status table):**
 1. `RoutingMatrix::setActiveTransferFunction` has zero callers — TF slots 1..7
    are unreachable, so multichannel can average positions into one TF but
@@ -127,7 +148,7 @@ consumes" — `orphan_check.py` only covers `app/src` reachability, so a
 | Save/Open (PR #43) | a saved trace in `TraceLibrary` | ~~nobody — `TraceLibrary::add` has zero production callers~~ **CORRECTED 2026-09-27 (after STORE landed): the STORE button**, PR #51 merged `beb40a7` — `storeClicked()` (`app/src/MainComponentStore.cpp`) is `TraceLibrary::add`'s first live-capture caller | `app/src/trace/TraceLibrary.cpp:60`; producer: `app/src/MainComponentStore.cpp` |
 | XOVER (PR #45) | two stored traces (HP and LP) in `TraceLibrary` | ~~nobody — no STORE/freeze button exists~~ **CORRECTED 2026-09-27: the STORE button**, PR #51 merged `beb40a7`, operator path "STORE button (RTA/TRANSFER)" | full button list is now stale where it omits STORE: `app/src/MainComponent.h:244-370` (SYNTHETIC, LOCATE, APPLY, CAL START/END, EXPORT REPORT, STORE, RTA/TRANSFER/SPL) |
 | L7-EQ-UI | a stored measured trace | ~~nobody — no STORE; `EqSession` is not bound to `MainComponent`~~ **CORRECTED 2026-09-27: STORE now produces one** (PR #51, `beb40a7`) — the remaining gap is `EqSession` itself, still not bound to `MainComponent` | `app/src/measure/EqSession.h:9-10` still says it is a dev-preview specimen, not a `MainComponent` binding |
-| L7-ALIGN-UI | a captured IR pair | ~~nobody — no sweep/capture/`deconvolve` path in `app/src` outside `AlignmentWizard`, itself unreachable~~ **CORRECTED 2026-10-20 (after H4): the SWEEP button**, PRs #67/#68/#69 (merged `65ee5f6`) — `analyseSweepCapture` is the first `deconvolve` caller in `app/src`; the IR is held in `IrStore`; `AlignmentWizard` is still constructed nowhere (H5) | `AlignmentWizard(` is constructed nowhere in `app/src` outside its own file |
+| L7-ALIGN-UI | a captured IR pair | ~~nobody — no sweep/capture/`deconvolve` path in `app/src` outside `AlignmentWizard`, itself unreachable~~ **CORRECTED 2026-10-20 (after H4): the SWEEP button**, PRs #67/#68/#69 (merged `65ee5f6`) — `analyseSweepCapture` is the first `deconvolve` caller in `app/src`; the IR is held in `IrStore`; ~~`AlignmentWizard` is still constructed nowhere (H5)~~ **CORRECTED 2026-10-20 (after H5, #71/#72): the ALIGN pane's SWEEP MAIN / SWEEP SUB buttons produce the IR pair and `AlignRunner` constructs `AlignmentWizard` per run** | ~~`AlignmentWizard(` is constructed nowhere in `app/src` outside its own file~~ after H5: constructed in `app/src/measure/AlignRunner.cpp:136` |
 | any RT60 UI | an IR from a captured sweep | ~~nobody — sweep/IR/RT60 (P4, L4a+L4b) lives only in `core/`, no `app/` surface~~ **CORRECTED 2026-10-20 (after H4): the SWEEP button produces the IR** (`IrStore`, up to 8 in memory); the RT60 consumer (L4b) still has no `app/` surface (H6) | `git grep -liE "rt60\|schroeder\|lundeby" origin/main -- app/src` → empty |
 
 **Two producer lanes were missing from the plan** and were not substitutable
@@ -241,8 +262,13 @@ above. **Next lane: H4 SWEEP** (`app/sweep-ir`, plan
 BUILT~~ **H4 DONE (2026-10-20, after #69; #69 merged 2026-10-19): `app/sweep-ir`, SWEEP: #67
 `079d1b8` synthetic loopback, #68 `50defce` pipeline/worker/IrStore, #69
 `65ee5f6` SWEEP button, capture-busy accessor, XOVER axis guard; closed out by
-the `app/sweep-ir-closeout` PR.** **Next lane: H5 ALIGN-UI** (`app/align-ui`).
-H5 and H6 are PLANNED, not BUILT; each earns "BUILT" only once ctest proves it
+the `app/sweep-ir-closeout` PR.** ~~**Next lane: H5 ALIGN-UI** (`app/align-ui`).
+H5 and H6 are PLANNED, not BUILT~~ **H5 DONE (2026-10-20): `app/align-ui`, ALIGN
+pane: #71 `148b784` wave A (pane, `AlignRunner`, 2-output SYNTHETIC), #72
+`7fd8e4c` wave B (IR-arrival cycle integer with topology peak-lag correction and
+the spacing/4 guard, SWEEP MAIN / SUB, IR binding); closed out by the
+`app/align-ui-closeout` PR.** **Next lane: H6 RT60-UI** (`app/rt60-ui`). H6 is
+PLANNED, not BUILT; it earns "BUILT" only once ctest proves it
 AND an operator can reach it in `rtatool.exe` (2026-09-27 decision 2, this
 document's own rule above). **H6 wave A (RT60 pane, `app/rt60-ui-a`, T0-T8) is
 BUILT and flips row 4** (written after the code, 2026-10-20): the RT60 pane
@@ -282,7 +308,7 @@ below is EQ-UI (H3) → Sweep→IR (H4) → ALIGN-UI (H5) → RT60 UI (H6),
 | `DelayLocator` | delete, superseded by `MainComponentDelay.cpp` | branch `app/unwired-cleanup` |
 | `SyntheticSnapshot` | not a gap (test and tool fixture); move out of `app/src` | branch `app/unwired-cleanup` |
 | EQ + FIR export (`EqSession`, `EqVerify`, `FirTextWriter`, `FirWavWriter`) | ~~**suspended 2026-09-27** — was next lane L7-EQ-UI. The stated reason has changed: STORE now produces a stored trace (PR #51), so the input this lane needs exists; `EqSession` itself is still not bound to `MainComponent`. Still suspended pending the second plan review, not by input availability~~ **CORRECTED 2026-09-29: PLANNED as H3** `app/eq-ui`, first of the four sequential hot lanes — see "Plan review #2 — 2026-09-29" above | — |
-| `AlignmentWizard` (+ `Signals`) | ~~**suspended 2026-09-27** — was L7-ALIGN-UI; consumes a captured sweep/IR, which the missing Sweep→IR producer lane has not built. Unaffected by STORE landing~~ **CORRECTED 2026-09-29: PLANNED as H5** `app/align-ui`, after H4 `app/sweep-ir` builds the missing producer (**H4 DONE after #69**) — see "Plan review #2 — 2026-09-29" above | — |
+| `AlignmentWizard` (+ `Signals`) | ~~**suspended 2026-09-27** — was L7-ALIGN-UI; consumes a captured sweep/IR, which the missing Sweep→IR producer lane has not built. Unaffected by STORE landing~~ **CORRECTED 2026-09-29: PLANNED as H5** `app/align-ui`, after H4 `app/sweep-ir` builds the missing producer (**H4 DONE after #69**) — see "Plan review #2 — 2026-09-29" above. **H5 DONE (#71, #72, closeout): constructed by `AlignRunner`, reachable from the ALIGN pane** | — |
 | `CaptureSequencer` | deferred: operators solo by hand (L6b plan line 231). Scheduled for the next multichannel lane; until then orphan_check blocks any PR that edits it without wiring it | — |
 
 From now on, "BUILT" in this document means **reachable from `rtatool.exe`**.
@@ -534,7 +560,7 @@ operator can reach it in `rtatool.exe` is the table in "Status snapshot —
 L-API are green here but CORE ONLY there. P7 moved from green to amber: its
 core is built, and its UI (EQ-UI H3a, ALIGN-UI H5) is what is being opened.
 **Updated after #64 (2026-09-29):** the EQ-UI half of P7 is now BUILT (H3, rows 14
-and 16 of the status snapshot); ALIGN-UI (H5) is still open.
+and 16 of the status snapshot); ~~ALIGN-UI (H5) is still open~~ **updated after #72: ALIGN-UI (H5) is BUILT too (row 17)**.
 
 `cepstrum / wavelet (G23)` moved OUT of P5 into the DSP lanes, because it is
 DSP. Sitting it beside "draw a trace" confused two layers.

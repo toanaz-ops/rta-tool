@@ -56,6 +56,18 @@ rta::view::AlignPaneView& alignPane(MainComponent& c) {
 
 rta::measure::AlignRunner& runnerOf(MainComponent& c) { return Access::alignForTest(c).runnerForTest(); }
 
+/// 20 log10 |sum| of an LR4 high-pass and low-pass at `cornerHz`, the low-pass
+/// side `delaySamples` later. LR4 magnitudes are 1/(1+x^4) and x^4/(1+x^4)
+/// (Butterworth-2 squared) and the two sides share one phase, so only the delay
+/// separates them: |sum|^2 = h^2 + l^2 + 2 h l cos(2 pi f delay / fs).
+double unalignedLr4SumDb(double hz, double cornerHz, double delaySamples, double fs) {
+    const double x4 = std::pow(hz / cornerHz, 4.0);
+    const double h = x4 / (1.0 + x4);
+    const double l = 1.0 / (1.0 + x4);
+    const double theta = 2.0 * kPi * hz * delaySamples / fs;
+    return 10.0 * std::log10(h * h + l * l + 2.0 * h * l * std::cos(theta));
+}
+
 template <typename Predicate>
 bool tickUntil(MainComponent& c, Predicate&& done, int timeoutMs) {
     const auto deadline = juce::Time::getMillisecondCounter() + static_cast<std::uint32_t>(timeoutMs);
@@ -173,11 +185,15 @@ TEST_CASE("align: MEASURE, the coarse offset and SUM through the real pane (the 
 
     // SUM routed BOTH outputs (a main-only SUM reads 6.02 dB lower). The
     // fixture never dials the 96-sample delay in, so the measured sum is the
-    // UNALIGNED one: at fc each LR4 side is -6.02 dB (amplitude 1/2) and the
-    // two are 2*pi*fc*96/fs = 72 degrees apart, so the sum is
-    // 2*(1/2)*cos(36 deg) = 0.809 = -1.84 dB (closed form). The bound 0.9 dB is
-    // half the distance to the ALIGNED sum (0 dB) -- discrimination, not
-    // accuracy -- and 4.2 dB from the main-only mutant.
+    // UNALIGNED one. Closed form, at the frequency of the bin that is asserted
+    // (lround(fc / binHz) * binHz -- 93.75 or 105.47 Hz, NOT the 100 Hz corner;
+    // H5 closeout D1): an LR4 pair sums to an all-pass, so both sides carry the
+    // same phase and differ only by the 96-sample delay, and
+    //   |sum| = sqrt(h^2 + l^2 + 2 h l cos(2 pi f 96 / fs)),
+    // h = x^4 / (1 + x^4), l = 1 / (1 + x^4), x = f / 100 Hz. At x = 1 that is
+    // cos(36 deg) = -1.84 dB; at 93.75 Hz -1.57 dB; at 105.47 Hz -2.04 dB. The
+    // bound 0.9 dB is half the distance to the ALIGNED sum (0 dB) --
+    // discrimination, not accuracy -- and about 4 dB from the main-only mutant.
     alignPane(c).tickForTest();
     const auto& surface = alignPane(c).surfaceForTest();
     REQUIRE(surface.gap().has_value());
@@ -185,11 +201,16 @@ TEST_CASE("align: MEASURE, the coarse offset and SUM through the real pane (the 
     REQUIRE(bin < surface.gap()->perBinDb.size());
     const double gapDb = surface.gap()->perBinDb[bin];
     const double measuredDb = surface.measuredSumDb()[bin];
-    constexpr double kUnalignedSumDb = -1.8394;  // 20*log10(cos(36 deg))
-    WARN("T6 SUM at fc: measured " << measuredDb << " dB (closed form " << kUnalignedSumDb
-                                   << ", bound 0.9), predicted " << surface.predictedSumDb()[bin]
-                                   << " dB, gap " << gapDb << " dB (bound |gap| < 3)");
-    CHECK(std::abs(measuredDb - kUnalignedSumDb) < 0.9);
+    const double binHz = static_cast<double>(bin) * surface.binWidthHz();
+    const double unalignedSumDb = unalignedLr4SumDb(binHz, 100.0, 96.0, kFs);
+    WARN("T6 SUM at bin " << bin << " (" << binHz << " Hz): measured " << measuredDb << " dB (closed form "
+                          << unalignedSumDb << ", bound 0.9), predicted " << surface.predictedSumDb()[bin]
+                          << " dB, gap " << gapDb << " dB (bound |gap| < 3)");
+    CHECK(std::abs(measuredDb - unalignedSumDb) < 0.9);
+    // The closed form itself, at the three frequencies the comment above quotes.
+    CHECK(std::abs(unalignedLr4SumDb(100.0, 100.0, 96.0, kFs) - 20.0 * std::log10(std::cos(36.0 * kPi / 180.0))) < 1e-9);
+    CHECK(std::abs(unalignedLr4SumDb(93.75, 100.0, 96.0, kFs) - (-1.57)) < 0.01);
+    CHECK(std::abs(unalignedLr4SumDb(105.47, 100.0, 96.0, kFs) - (-2.04)) < 0.01);
     CHECK(std::abs(gapDb) < 3.0);
 }
 
@@ -284,4 +305,33 @@ TEST_CASE("align: switching away and back keeps the answers, the verdict and the
     CHECK(pane.topologyComboForTest().getSelectedId() == 2);
     CHECK(pane.inversionComboForTest().getSelectedId() == 1);
     CHECK(pane.seedComboForTest().getSelectedId() == 1);  // "NO SEED" is an answer, and it survived
+}
+
+TEST_CASE("align: SUM stays disabled until the output source is quiescent", kTag) {
+    // H5 closeout D4. SUM refuses while the last excitation is still ramping out;
+    // the pane reads the same predicate, so the button is not offered before then.
+    MainComponent c;
+    prepare(c);
+    measureToVerdict(c);
+    auto& pane = alignPane(c);
+    pane.offsetEditorForTest().setText("2.0", juce::dontSendNotification);
+    pane.offsetButtonForTest().onClick();
+    REQUIRE(runnerOf(c).step() == WizardStep::Computed);
+    REQUIRE(tickUntil(c, [&] { return Access::outputSourceQuiescentForTest(c); }, 20000));
+    pane.tickForTest();
+    CHECK(pane.sumButtonForTest().isEnabled());
+
+    // Hold the engine non-quiescent by arming it (what a still-playing excitation looks like).
+    auto& engine = Access::outputEngineForTest(c);
+    engine.armSource();
+    pane.tickForTest();
+    CHECK_FALSE(Access::outputSourceQuiescentForTest(c));
+    CHECK_FALSE(pane.sumButtonForTest().isEnabled());
+    CHECK_FALSE(runnerOf(c).pressSum());  // and the refusal the button now never reaches is real
+    CHECK(runnerOf(c).status().find("SUM refused") != std::string::npos);
+
+    engine.disarmSource();
+    REQUIRE(tickUntil(c, [&] { return Access::outputSourceQuiescentForTest(c); }, 20000));
+    pane.tickForTest();
+    CHECK(pane.sumButtonForTest().isEnabled());
 }

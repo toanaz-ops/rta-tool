@@ -262,7 +262,7 @@ this section is what shipped. Line numbers are at `65ee5f6`.*
 | A2 | T2: "SYNTHETIC + LOCATE reaches a 4-sample suggestion" | LOCATE suggests **5 samples** (4 + the band-pass's own delay; the PHAT estimate reads 4.76) | `test_synthetic_loopback.cpp`, "SYNTHETIC + LOCATE ..." |
 | A3 | T3 (b) bound: tail term once, four float transforms | tail term **twice**, plus **one extra float stage** | `test_sweep_ir_tolerance.cpp:25-47` |
 | A4 | statuses `TailTooShort`, `ReferenceNotFound`, `ArrivalOutOfWindow` | also `CaptureTooShort`, `MeasurementNotFound`, `Failed`; and a 20x peak/rms gate on the loop | `SweepIrOutcome.h:33-41`, `SweepIrPipeline.cpp:29,97,118` |
-| A5 | T4: `start(shared_ptr<const LocateCapture>, ...)` | `start(SweepCapture, ...)` **by value** | `SweepIrWorker.h:46`, `MainComponentSweep.cpp:157` |
+| A5 | T4: `start(shared_ptr<const LocateCapture>, ...)` | `start(SweepCapture, ...)` **by value** | `SweepIrWorker.h:49` (declaration; its doc comment starts at `:43`; the cited `:46` fell inside that comment), `MainComponentSweep.cpp:170` (the `worker_.start(` call; the cited `:157` is stale) |
 | A6 | abort on `outputEpoch()` change | also aborts when the SYNTHETIC flag differs from the one at arm time | `MainComponentSweep.cpp:124` |
 | A7 | trace metadata unspecified | device name and channel roles captured **at click** | `MainComponentSweep.cpp:100-101,171` |
 | A8 | T7: refuse unequal axes (sizes named) | also refuses equal `fftSize` at different sample rates | `CrossoverPaneView.cpp:186-191` |
@@ -287,8 +287,16 @@ oracle** (pink noise, 4-sample delay, `butter(2,[40,16000])`, -30 dB noise,
 GCC-PHAT with regularisation 1e-10 and parabolic refinement: 4.756 - 4.766),
 labelled a regression lock. The first version of that test derived 4.75 as a
 mean group delay over 200 Hz - 12 kHz; PHAT in `MainComponentDelay.cpp`
-(`PhatOptions` min/max Hz both 0) weighs DC to Nyquist, where the same formula
-gives 6.26, so that derivation was wrong and was removed (closeout PR, L1).
+(`PhatOptions` min/max Hz both 0) weighs DC to Nyquist, so that derivation was
+wrong and was removed (closeout PR, L1). **Corrected 2026-10-20 (H5 closeout,
+C1):** the earlier text here said the same formula over DC..Nyquist "gives
+6.26"; that figure is not reproducible. Re-measured: the phase-slope mean group
+delay of `butter(2,[40,16000])` at 48 kHz over DC..Nyquist is **0.50 samples**
+(scipy `freqz` at 4096 / 16384 / 262144 points: 0.533 / 0.508 / 0.5005; two-point
+endpoint slope 0.49999), i.e. 4.50 with the 4-sample delay, which is not the
+oracle's 4.76 either. PHAT is a whitened correlation peak, not a mean group
+delay, so no closed form is claimed for 4.76; it stays an external numeric
+oracle, a regression lock.
 
 **A3.** In `test_sweep_ir_tolerance.cpp`, `h`'s tail beyond M samples enters
 both `S_m` and `G.S_r`, so it counts twice, `2*||r||_1*||g_tail||_1`; the plan

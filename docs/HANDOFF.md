@@ -5,9 +5,66 @@
 
 ---
 
+# 2026-10-20 (muộn) — **Phase ALIGN-UI (H5) BUILT, operator-reachable. Hai PR code merge (#71, #72), main = `7fd8e4c`; PR closeout đang mở.**
+
+*H5 `app/align-ui` xong: pane ALIGN với MEASURE (pink noise lần lượt trên main rồi sub), SET OFFSET, SUM, SWEEP MAIN / SWEEP SUB và bộ chọn IR. Kế tiếp là H6 RT60-UI.*
+
+## Phần trăm sau #72
+
+Cùng công thức, cùng cách đếm (unit trọng số bằng nhau) như mục "Status snapshot — 2026-09-29" của `docs/plans/MASTER-EXECUTION-PLAN.md`; block "Updated after #72" ở đó có phép tính. Hàng 17 (L7-ALIGN) lật sang BUILT, không partial.
+
+| | sau #69 | sau #72 |
+|---|---|---|
+| (a) engine built | 15 / 19 = 78.9 % | 15 / 19 = 78.9 % |
+| (b) operator-reachable (BUILT, gồm partial) | 12 / 19 = 63.2 % | **13 / 19 = 68.4 %** |
+| (b-strict) BUILT không partial | 8 / 19 = 42.1 % | **9 / 19 = 47.4 %** |
+| (c) dự phóng sau H6 | 14 / 19 = 73.7 % | 14 / 19 = 73.7 % (H5 đã đo, còn lại H6 = hàng 4) |
+
+## PR đã merge trong đợt này (đối chiếu bằng `gh pr view N --json title,mergeCommit`)
+
+| PR | merge | what |
+|---|---|---|
+| #71 | `148b784` | wave A: pane ALIGN, `AlignRunner`, SYNTHETIC 2 output, SUM, readout |
+| #72 | `7fd8e4c` | wave B: cycle integer từ IR arrival trừ peak lag của topology (spacing/4 guard), SWEEP MAIN/SUB, bind IR theo source; sửa record §4 (F2) |
+| closeout | (PR mở, chưa merge) | `app+docs: close out H5 ALIGN-UI` — D9/D6/D4 + test D1/C2, H4 LOW C1/C3/C4/C5, status, QA queue, handoff này |
+
+## Baseline (measured trong worktree của closeout, không copy)
+
+- **Tally cục bộ tại head của PR closeout (xem sha trong PR):** OFF **1178 / 1178**; ON (`-DRTA_JUCE_PATH=D:/DEV CAVE EP3/PROJECT005-AZ-handsfree/external/JUCE`) **1430 / 1430** (chạy `-j2`); warnings theo pattern CI `warning( [A-Z]+[0-9]+)?:` = **0** (OFF và ON). Một lần chạy ON `-j4` có 1 fail đã biết là flaky: `align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the arrivals' difference` (`test_main_component_align_ir.cpp:118`, integer 101 so với dung sai 3 quanh 96; pink noise có seed cố định 0x5EEDu; cái đổi là thời điểm: SyntheticInput chạy theo wall-clock và snapshot của MEASURE lấy từ timer message-thread, nên khối nào được average khác nhau, crossing lệch ~±1.5 Hz và lag LR4 (~2.2 mẫu/Hz) lệch ±3-4). **Đã sửa trong PR closeout:** `±3` thay bằng cận suy ra (crossing trong 100±5 Hz, integer trong [raw − lagAt(95), raw − lagAt(105)] = [84, 106]); 12 lần chạy song song cho integer 93..99, crossing 98.76..101.72 Hz, tất cả xanh.
+- **`tools/orphan_check.py --base 87157df` (build-dir `build-orphan`, toàn bộ lane H5):** exit **0 (`orphan_check: OK`)**.
+- **Mutant của closeout (RED phải kèm file:line):** D9 bỏ check seed/crossing -> `test_alignment_wizard_ir.cpp:172-175`; D6 one-candidate nhận mọi integer -> `test_cycle_arrival.cpp:84,85,87`; C2 bỏ `disarmSource()` trong `cancelLocate()` -> `test_synthetic_loopback.cpp:303,304`; D4 SUM không chờ quiescent -> `test_main_component_align.cpp:329`. Sau mutant: xoá build dir, build lại sạch từ nguồn đã khôi phục (OFF và ON), tally ở trên là của lần build đó.
+- Ảnh: `shots/main-live-align*.png` (render bằng `rtatool_snapshot`, 1280x800 cố định), thêm `main-live-align-seed.png`; không commit `shots/`.
+
+## Human try — hai việc
+
+**Không cần phần cứng:** SYNTHETIC -> ALIGN -> MAIN IS HIGH-PASS, LR-4, NOT INVERTED, NO SEED -> MEASURE. Sẽ thấy crossover ~58 Hz, "delay MAIN by ... ms", delta > 90° và câu OPPOSITE polarity (cặp mặc định KHÔNG phải cặp LR-4: skirt band-pass bậc 2 đối với low-pass bậc 4 — đây là đọc đúng cặp đó, không phải lỗi). Gõ `2.0`, SET OFFSET; SUM xám cho tới khi excitation cuối ramp xong, rồi bấm: `ALIGN SUM @` được vẽ so với predicted sum. SWEEP MAIN -> SWEEP SUB -> MEASURE: với NO SEED hoặc SEED 100 HZ pane hỏi offset (SEED 100 cách crossing 0.79 octave nên ghi "seed 100 Hz and crossing 58 Hz disagree" cùng hai hint).
+
+**Cần phần cứng:** main + sub, loopback REF, mic; hàng "ALIGN, real hardware" trong `docs/HUMAN-QA-QUEUE.md` mục "H5 ALIGN-UI". Hàng B (VERIFY) và C (SWEEP) vẫn mở.
+
+## Nợ
+
+**Máy làm được:** D5 (peak nhảy lobe — envelope/ETC), D7 (topology trả lời sai quá xa — DEFER), D2 (khoá có nhãn), flake T11 ở trên (làm dung sai theo lag đo, không theo số 3 mẫu cố định); L3/L9 của H4 và FIX-next-batch của EQ-UI (Z8, Z11, Z13, Z17, Z22, Z24, Z29, Z30). `CaptureSequencer`, MTW storage vẫn chưa xếp lịch.
+
+**Cần người:** thử ALIGN trên phần cứng thật; chốt các default owner-flagged của H5 — pane ALIGN riêng, tự capture sau dwell, fit window ±1 oct và R bar 0.5 ghi nhãn "unmeasured", câu inversion ở |Δ| > 90°, SYNTHETIC ch 1 = LR4 LP 100 Hz +100 mẫu, sửa F2 + amendment record §4, và lag tại seed corner (nay kèm ngưỡng 1/3 octave giữa seed và crossing).
+
+## Pitfall học được trong đợt này
+
+- **Arrival của IR là đỉnh |h|, và đường băng hẹp đỉnh trễ** (LR4 LP 100 Hz ~4.6 ms, LR8 ~9.4 ms): dùng topology peak lag + guard spacing/4, không dùng hiệu arrival thô. Lag tính tại corner của seed, nên seed lệch quá 1/3 octave so với crossing đo thì IR không được chọn cycle (D9).
+- **SYNTHETIC mặc định không phải cặp LR-4**, nên verdict mặc định hỏi / hiện inversion; cặp LR4 của các bound T6 chỉ vào được qua `restartSyntheticForTest`.
+- **`orphan_check` đọc nhầm `Impl` lồng nhau** (class `Impl` trong pimpl của runner); đã biết ở `docs/tools/orphan-check-known-limits.md`.
+- **Snapshot mới là thứ chứng minh layout:** readout 112 px đủ cho cặp mặc định nhưng cắt mất câu inversion ở case seed-disagreement (mười dòng); chỉ thấy khi render `main-live-align-seed.png`.
+- **Con số trong brief cũng phải đo lại:** "2.00 mẫu / 5.5" cho group delay band-pass không tái lập (đo ra 0.50); xem C1 trong QA queue.
+- `memory/a-mutant-counted-red-must-name-the-failing-line.md` vẫn áp dụng: bảng mutant ở trên in file:line.
+
+## Kế tiếp
+
+**H6 `app/rt60-ui`** (nhánh `app/rt60-ui`, plan `docs/plans/2026-10-20-rt60-ui-lane-plan.md` sẽ vào cùng PR đầu của H6). H6 lật hàng 4 và là unit cuối còn lại trong (c).
+
+---
+
 # 2026-10-20 — **Phase SWEEP (H4) BUILT, operator-reachable. Ba PR code merge (#67, #68, #69), main = `65ee5f6`; PR closeout đang mở.**
 
-*H4 `app/sweep-ir` xong: nút SWEEP phát sweep qua output 1, capture, deconvolve trên worker thread, thêm trace `SWEEP @ hh:mm:ss` vào library và IR vào `IrStore`. Kế tiếp là H5 ALIGN-UI.*
+*H4 `app/sweep-ir` xong: nút SWEEP phát sweep qua output 1, capture, deconvolve trên worker thread, thêm trace `SWEEP @ hh:mm:ss` vào library và IR vào `IrStore`. ~~Kế tiếp là H5 ALIGN-UI.~~ **Sửa 2026-10-20 (muộn):** H5 đã xong (#71, #72), kế tiếp là H6 — xem entry trên cùng.*
 
 ## Phần trăm sau #69
 
@@ -70,7 +127,7 @@ Không có gì đang làm dở.
 - **`tools/diffmut.py` đưa `SyntheticInput` sang sai test target** trong target map của nó: chạy test target đúng bằng tay (`rtatool_main_component_tests` cho loopback, `rtatool_analysis_tests` cho worker) thay vì tin kết quả diffmut cho file đó.
 - **SYNTHETIC render MỘT output channel**: ALIGN/VERIFY solo của channel khác 0 sẽ im lặng trong SYNTHETIC. Quan trọng với H5 — một test ALIGN-UI dùng SYNTHETIC không chứng minh được solo của channel 1+.
 - **Bật SYNTHETIC tăng `outputEpoch()`, tắt thì không** (destructor của `SyntheticInput` không gọi `prepare`): SWEEP vì thế còn so cờ `host_.synthetic()` lúc arm; mọi tính năng giữ source armed qua một lần đổi mode phải làm tương tự (LOCATE dùng `cancelLocate()` từ closeout này).
-- **Một derivation đúng số vẫn có thể sai lý do:** kỳ vọng LOCATE 4.75 mẫu từng được "suy" từ group delay trung bình trên band 200 Hz–12 kHz; PHAT dùng DC–Nyquist (cùng công thức cho 6.26). Giờ kỳ vọng là oracle số bên ngoài, ghi nhãn regression lock.
+- **Một derivation đúng số vẫn có thể sai lý do:** kỳ vọng LOCATE 4.75 mẫu từng được "suy" từ group delay trung bình trên band 200 Hz–12 kHz; PHAT dùng DC–Nyquist ~~(cùng công thức cho 6.26)~~. Giờ kỳ vọng là oracle số bên ngoài, ghi nhãn regression lock. **Sửa 2026-10-20 (H5 closeout, C1):** con số 6.26 không tái lập được; đo lại bằng phase-slope mean group delay của `butter(2,[40,16000])` ở 48 kHz trên DC..Nyquist ra **0.50 mẫu** (4.50 cùng delay 4), cũng không phải 4.76 của oracle — PHAT là đỉnh tương quan đã whiten, không phải group delay trung bình, nên không có closed form nào cho 4.76.
 - `memory/a-mutant-counted-red-must-name-the-failing-line.md` vẫn áp dụng: bảng mutant ở trên in file:line.
 
 ## Kế tiếp

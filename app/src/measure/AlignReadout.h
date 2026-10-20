@@ -67,6 +67,9 @@ struct AlignReadoutInput {
     bool cycleFromIr = false;
     /// What the bound IRs imply, shown as a hint while the cycle is still asked.
     std::optional<std::ptrdiff_t> irHintSamples;
+    /// Seed and measured crossing differ by more than a third of an octave: the
+    /// readout shows BOTH IR integers (lag taken at each) and says why it asks.
+    std::optional<SeedDisagreement> seedDisagreement;
     /// The bar the wizard was configured with, so the readout prints the one in force.
     double matchedPairBar = 0.5;
 };
