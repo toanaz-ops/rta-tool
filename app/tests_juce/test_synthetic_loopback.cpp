@@ -303,3 +303,31 @@ TEST_CASE("leaving SYNTHETIC mid-LOCATE disarms the excitation: the engine falls
     CHECK(engine.sourceIsQuiescent());
     CHECK(MainComponentTestAccess::outputSourceQuiescentForTest(component));
 }
+
+TEST_CASE("a channel-role change mid-LOCATE resyncs the input and cancels the capture", "[synthetic_loopback]") {
+    // A resync discards samples the delay is measured from; without
+    // MainComponentDelay's sequence check LOCATE would suggest a shifted delay.
+    MainComponent component;
+    component.setSyntheticMode(true);
+    MainComponentTestAccess::waitForResyncForTest(component);
+    MainComponentTestAccess::locateClickedForTest(component);
+
+    const bool armed = waitUntil(
+        [&] {
+            MainComponentTestAccess::timerTickForTest(component);
+            return MainComponentTestAccess::locateCaptureArmedForTest(component);
+        },
+        10000);
+    REQUIRE(armed);
+
+    REQUIRE(MainComponentTestAccess::channelConfigForTest(component).setRole(2, ChannelRole::Measurement));
+    const bool cancelled = waitUntil(
+        [&] {
+            MainComponentTestAccess::timerTickForTest(component);
+            return !MainComponentTestAccess::locateActiveForTest(component);
+        },
+        10000);
+    REQUIRE(cancelled);
+    CHECK(MainComponentTestAccess::delayReadoutForTest(component).contains("resynced"));
+    CHECK_FALSE(MainComponentTestAccess::delaySuggestionForTest(component).has_value());
+}

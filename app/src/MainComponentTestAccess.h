@@ -224,6 +224,9 @@ struct MainComponentTestAccess {
     [[nodiscard]] static bool locateActiveForTest(const MainComponent& c) {
         return c.locateWaitingForSettle_ || c.locateCaptureArmed_;
     }
+    [[nodiscard]] static bool locateCaptureArmedForTest(const MainComponent& c) {
+        return c.locateCaptureArmed_;
+    }
     [[nodiscard]] static bool calibrationArmedForTest(const MainComponent& c) {
         return c.calibrationCaptureArmed_;
     }

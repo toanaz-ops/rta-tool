@@ -177,7 +177,8 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
     REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
-    CHECK(runnerOf(c).step() == WizardStep::Computed);
+    REQUIRE(runnerOf(c).step() == WizardStep::Computed);
+    REQUIRE(runnerOf(c).cycleSamples().has_value());
     // The crossover is estimated afresh from pink noise each run, so its lag may differ by a sample or two.
     CHECK(*runnerOf(c).cycleSamples() == subArrival - mainArrival - lagAt(runnerOf(c).verdict()->crossoverHz));
 }
