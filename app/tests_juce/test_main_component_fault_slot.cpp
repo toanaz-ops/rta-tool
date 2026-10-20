@@ -17,7 +17,7 @@
 
 TEST_CASE("the device panel shows an analysis-thread fault", "[main_component_fault_slot]") {
     MainComponent component;
-    CHECK(MainComponentTestAccess::devicePanelFaultTextForTest(component).empty());
+    CHECK(MainComponentTestAccess::devicePanelTypedForTest(component).faultLineTextForTest().empty());
 
     MainComponentTestAccess::analysisThread(component).throwOnNextTickForTest();
 
@@ -30,6 +30,6 @@ TEST_CASE("the device panel shows an analysis-thread fault", "[main_component_fa
 
     // The operator reads this string in the fault slot: it must name the
     // analysis thread (not read as a device problem) and carry the reason.
-    const std::string shown = MainComponentTestAccess::devicePanelFaultTextForTest(component);
+    const std::string shown = MainComponentTestAccess::devicePanelTypedForTest(component).faultLineTextForTest();
     CHECK(shown == "ANALYSIS STOPPED: injected analysis fault");
 }

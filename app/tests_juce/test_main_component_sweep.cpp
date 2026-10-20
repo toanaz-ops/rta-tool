@@ -43,6 +43,7 @@ MainComponentSweep& sweepOf(MainComponent& c) { return MainComponentTestAccess::
 
 void startSynthetic(MainComponent& c) {
     c.setSyntheticMode(true);
+    MainComponentTestAccess::waitForResyncForTest(c);  // the gate window is not under test
     sweepOf(c).setDurationsForTest(2.0, 0.5);
 }
 

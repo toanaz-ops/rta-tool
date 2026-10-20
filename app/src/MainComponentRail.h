@@ -77,7 +77,7 @@ private:
     [[nodiscard]] const juce::Component& railContentForTest() const noexcept { return railScrollContent_; }
     [[nodiscard]] const juce::Component& devicePanelForTest() const noexcept { return devicePanel_; }
     // The text the device panel's fault slot shows now (device fault, else analysis fault).
-    [[nodiscard]] std::string devicePanelFaultTextForTest() const { return devicePanel_.faultLineTextForTest(); }
+    [[nodiscard]] const rta::view::DevicePanel& devicePanelTypedForTest() const noexcept { return devicePanel_; }
 
     rta::view::DevicePanel devicePanel_;
     rta::view::ChannelRoleTable channelRoleTable_;
