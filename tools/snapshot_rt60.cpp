@@ -64,6 +64,9 @@ void renderRt60Specimen (const juce::File& outDir, int& failures)
     // A 1 s sweep keeps the specimen to seconds; the TAIL stays the pane's default 3 s.
     auto& sweep = Access::sweepForTest (component);
     sweep.setDurationsForTest (1.0, 3.0);
+    // The capture timeout runs on the wall clock while the loopback is paced by it
+    // too, so a busy machine aborts a healthy sweep; stretch the slack as H5 does.
+    sweep.setTimeoutSlackForTest (30000.0);
 
     component.selectPaneView (rta::view::PaneSelectorButton::Rt60);
     auto* pane = dynamic_cast<rta::view::Rt60PaneView*> (const_cast<juce::Component*> (&Access::pane (component)));
@@ -97,6 +100,24 @@ void renderRt60Specimen (const juce::File& outDir, int& failures)
         return;
     }
     if (! renderComponent (component, outDir, fileName, 1280, 800))
+        ++failures;
+
+    // The same IR in third-octave bands: the toggle, the worker thread, the table
+    // of 24 rows and the chart under it. A click on the 1 kHz third feeds the chart.
+    constexpr const char* thirdName = "main-live-rt60-third.png";
+    pane->bandSetButtonForTest().onClick();
+    if (! pumpUntil (component, *pane, [&] { return ! Access::rt60ForTest (component).analysingForTest(); }, 60000))
+    {
+        fail ("the third-octave analysis did not finish", thirdName, failures);
+        return;
+    }
+    pane->clickRowForTest (13);
+    if (pane->tableLinesForTest().size() != 25)
+    {
+        fail ("the third-octave table is not 24 rows", thirdName, failures);
+        return;
+    }
+    if (! renderComponent (component, outDir, thirdName, 1280, 800))
         ++failures;
 }
 

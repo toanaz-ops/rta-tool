@@ -16,18 +16,7 @@ namespace {
 
 constexpr int kTimerHz = 10;
 constexpr int kMaxListedOutputs = 16;
-constexpr int kButtonWidth = 120;
-constexpr int kComboWidth = 110;
-constexpr int kHeaderHeight = 38;
-constexpr int kStatusHeight = 20;
-constexpr int kRowHeight = 26;
-constexpr int kAdviceHeight = 40;
-constexpr int kFootnoteHeight = 20;
 
-// Column widths of the painted table; the note takes whatever is left.
-constexpr int kHzWidth = 64;
-constexpr int kFigureWidth = 96;
-constexpr int kRangeWidth = 100;
 
 juce::String fromUtf8(const std::string& text) { return juce::String(juce::CharPointer_UTF8(text.c_str())); }
 
@@ -80,6 +69,26 @@ Rt60PaneView::Rt60PaneView(Rt60PaneBinding binding) : binding_(std::move(binding
         refresh();
     };
 
+    bandSetButton_.getProperties().set(az::ui::hintProperty,
+                                       "switch the table between octave bands and third-octave bands (50 Hz to 10 kHz)");
+    bandSetButton_.onClick = [this] {
+        if (binding_.settings == nullptr || !binding_.setBandSet) return;
+        const bool toThird = binding_.settings->bandSet == rta::measure::Rt60BandSet::Octave;
+        binding_.setBandSet(toThird ? rta::measure::Rt60BandSet::Third : rta::measure::Rt60BandSet::Octave);
+        refresh();
+    };
+    ensembleButton_.getProperties().set(
+        az::ui::hintProperty, "tick up to 8 swept captures: the table shows their median and, from 3, the spread");
+    ensembleButton_.onClick = [this] {
+        std::vector<std::string> ids;
+        auto menu = buildEnsembleMenu(&ids);
+        if (menu.getNumItems() == 0) return;
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&ensembleButton_),
+                           [this, safe = juce::Component::SafePointer<Rt60PaneView>(this)](int itemId) {
+                               if (safe != nullptr && itemId > 0) chooseEnsembleEntry(itemId - 1);
+                           });
+    };
+
     headerLabel_.setJustificationType(juce::Justification::topLeft);
     headerLabel_.setFont(az::ui::monoFont(az::ui::readoutFontSize));
     statusLabel_.setJustificationType(juce::Justification::centredLeft);
@@ -93,7 +102,8 @@ Rt60PaneView::Rt60PaneView(Rt60PaneBinding binding) : binding_(std::move(binding
     footnoteLabel_.setColour(juce::Label::textColourId, az::ui::faded);
 
     for (juce::Component* c : std::initializer_list<juce::Component*>{&irCombo_, &outputCombo_, &tailCombo_,
-                                                                       &sweepButton_, &headerLabel_, &statusLabel_,
+                                                                       &sweepButton_, &ensembleButton_, &bandSetButton_,
+                                                                       &chart_, &headerLabel_, &statusLabel_,
                                                                        &adviceLabel_, &footnoteLabel_}) {
         addAndMakeVisible(*c);
     }
@@ -167,12 +177,35 @@ void Rt60PaneView::refresh() {
     refreshOutputCombo();
 
     shown_ = binding_.result ? binding_.result() : nullptr;
+    ensembleShown_ = binding_.ensembleResult ? binding_.ensembleResult() : nullptr;
+    analysingShown_ = binding_.analysing && binding_.analysing();
     rows_.clear();
     tableLines_.clear();
     wholeRefusal_.clear();
+    columnsAreEnsemble_ = false;
     juce::String header, advice, footnote;
-    if (shown_ != nullptr) {
-        const std::string name = binding_.selectedName ? binding_.selectedName() : std::string();
+    const std::string name = binding_.selectedName ? binding_.selectedName() : std::string();
+    if (analysingShown_) {
+        // The worker holds the job: say so rather than show a table for the other band set.
+        header = "analysing in the background...\n";
+    } else if (ensembleShown_ != nullptr) {
+        // Two or more captures ticked: the table is THEIR median (and, from three,
+        // spread). The plotted curve below is still the picked trace's.
+        const auto names = binding_.ensembleNames ? binding_.ensembleNames() : std::vector<std::string>{};
+        for (const auto& line : rta::measure::rt60EnsembleHeaderLines(*ensembleShown_, names)) {
+            header += fromUtf8(line) + "\n";
+        }
+        if (ensembleShown_->analysed()) {
+            columnsAreEnsemble_ = true;
+            for (const auto& band : ensembleShown_->bands) {
+                rows_.push_back(rta::measure::rt60EnsembleRow(band, *ensembleShown_));
+            }
+            tableLines_ = rta::measure::rt60EnsembleTableLines(*ensembleShown_);
+            footnote = fromUtf8(rta::measure::rt60Footnote());
+        } else {
+            wholeRefusal_ = rta::measure::rt60EnsembleRefusalText(*ensembleShown_);
+        }
+    } else if (shown_ != nullptr) {
         const bool inMemory = binding_.selectedIrInMemory ? binding_.selectedIrInMemory() : true;
         for (const auto& line : rta::measure::rt60HeaderLines(*shown_, name, inMemory)) header += fromUtf8(line) + "\n";
         if (shown_->analysed()) {
@@ -187,101 +220,17 @@ void Rt60PaneView::refresh() {
     headerLabel_.setText(header, juce::dontSendNotification);
     adviceLabel_.setText(advice, juce::dontSendNotification);
     footnoteLabel_.setText(footnote, juce::dontSendNotification);
+    refreshButtons();
+    layoutBody();
+    refreshChart();
     repaint();
 }
 
-void Rt60PaneView::paint(juce::Graphics& g) {
-    g.fillAll(az::ui::background);
-    lastPaintDrewTable_ = false;
-    if (shown_ == nullptr || (!shown_->analysed() && wholeRefusal_.empty())) {
-        g.setColour(emptyStateText);
-        g.setFont(az::ui::legendFont(az::ui::captionFontSize, true, az::ui::trackingCaption));
-        g.drawFittedText("PICK A SWEEP IR, OR PRESS SWEEP", tableArea_.reduced(az::ui::gap * 2),
-                         juce::Justification::centred, 2);
-        return;
-    }
-    if (!shown_->analysed()) {
-        // The one refusal the pane has to show, whole -- not a table of dashes.
-        g.setColour(az::ui::warn);
-        g.setFont(az::ui::monoFont(az::ui::tableFontSize));
-        g.drawFittedText(fromUtf8(wholeRefusal_), tableArea_.reduced(az::ui::gap * 2), juce::Justification::centredLeft,
-                         4);
-        return;
-    }
-
-    // Column heading, then one row per band. Numbers right-aligned in mono so the
-    // decimal points line up; the note takes the remaining width.
-    auto area = tableArea_;
-    const auto columns = [](juce::Rectangle<int> row) {
-        struct Cells {
-            juce::Rectangle<int> hz, t30, t20, edt, range, note;
-        } c;
-        c.hz = row.removeFromLeft(kHzWidth);
-        c.t30 = row.removeFromLeft(kFigureWidth);
-        c.t20 = row.removeFromLeft(kFigureWidth);
-        c.edt = row.removeFromLeft(kFigureWidth);
-        c.range = row.removeFromLeft(kRangeWidth);
-        row.removeFromLeft(az::ui::gap * 2);
-        c.note = row;
-        return c;
-    };
-    const auto numberCell = [&g](juce::Rectangle<int> cell, const juce::String& text, juce::Colour colour) {
-        g.setColour(colour);
-        g.drawText(text, cell.withTrimmedRight(az::ui::gap), juce::Justification::centredRight, true);
-    };
-
-    {
-        const auto head = columns(area.removeFromTop(kRowHeight));
-        g.setColour(az::ui::dim);
-        g.setFont(az::ui::legendFont(az::ui::columnFontSize, true, az::ui::trackingColumn));
-        for (const auto& [cell, text] : {std::pair{head.hz, "Hz"}, std::pair{head.t30, "T30"}, std::pair{head.t20, "T20"},
-                                         std::pair{head.edt, "EDT*"}, std::pair{head.range, "RANGE"}}) {
-            g.drawText(text, cell.withTrimmedRight(az::ui::gap), juce::Justification::centredRight, true);
-        }
-        g.drawText("NOTE", head.note, juce::Justification::centredLeft, true);
-        g.setColour(az::ui::border);
-        g.drawHorizontalLine(area.getY() - 1, static_cast<float>(tableArea_.getX()),
-                             static_cast<float>(tableArea_.getRight()));
-    }
-
-    g.setFont(az::ui::monoFont(az::ui::tableFontSize));
-    for (const auto& row : rows_) {
-        const auto cells = columns(area.removeFromTop(kRowHeight));
-        const auto figureColour = [](const std::string& cell, juce::Colour normal) {
-            return cell == "--" ? az::ui::faded : normal;
-        };
-        numberCell(cells.hz, fromUtf8(row.hz), az::ui::text);
-        numberCell(cells.t30, fromUtf8(row.t30), figureColour(row.t30, az::ui::accent));
-        numberCell(cells.t20, fromUtf8(row.t20), figureColour(row.t20, az::ui::text));
-        numberCell(cells.edt, fromUtf8(row.edt), figureColour(row.edt, az::ui::dim));
-        numberCell(cells.range, fromUtf8(row.range), figureColour(row.range, az::ui::dim));
-        g.setColour(az::ui::warn);
-        g.drawFittedText(fromUtf8(row.note), cells.note, juce::Justification::centredLeft, 2);
-        g.setColour(az::ui::border.withAlpha(0.5f));
-        g.drawHorizontalLine(cells.hz.getBottom(), static_cast<float>(tableArea_.getX()),
-                             static_cast<float>(tableArea_.getRight()));
-    }
-    lastPaintDrewTable_ = true;
-}
-
-void Rt60PaneView::resized() {
-    auto area = getLocalBounds().reduced(az::ui::gap);
-    auto top = area.removeFromTop(az::ui::fieldHeight);
-    sweepButton_.setBounds(top.removeFromRight(kButtonWidth));
-    top.removeFromRight(az::ui::gap);
-    tailCombo_.setBounds(top.removeFromRight(kComboWidth));
-    top.removeFromRight(az::ui::gap);
-    outputCombo_.setBounds(top.removeFromRight(kComboWidth));
-    top.removeFromRight(az::ui::gap);
-    irCombo_.setBounds(top);
-    area.removeFromTop(az::ui::gap);
-
-    headerLabel_.setBounds(area.removeFromTop(kHeaderHeight));
-    statusLabel_.setBounds(area.removeFromTop(kStatusHeight));
-    area.removeFromTop(az::ui::gap);
-    footnoteLabel_.setBounds(area.removeFromBottom(kFootnoteHeight));
-    adviceLabel_.setBounds(area.removeFromBottom(kAdviceHeight));
-    tableArea_ = area;
+void Rt60PaneView::refreshButtons() {
+    const bool third = binding_.settings != nullptr && binding_.settings->bandSet == rta::measure::Rt60BandSet::Third;
+    bandSetButton_.setButtonText(third ? "THIRD" : "OCTAVE");
+    const auto ids = binding_.ensembleIds ? binding_.ensembleIds() : std::vector<std::string>{};
+    ensembleButton_.setButtonText(ids.empty() ? juce::String("ENSEMBLE") : "ENSEMBLE (" + juce::String(static_cast<int>(ids.size())) + ")");
 }
 
 }  // namespace rta::view

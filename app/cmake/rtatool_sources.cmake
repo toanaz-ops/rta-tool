@@ -153,7 +153,11 @@ set(RTATOOL_SOURCES
     src/MainComponentRt60.cpp
     src/measure/Rt60Analysis.cpp
     src/measure/Rt60Readout.cpp
+    src/measure/Rt60EnsembleReadout.cpp
+    src/measure/Rt60Worker.cpp
     src/view/Rt60PaneView.cpp
+    src/view/Rt60PaneTable.cpp
+    src/view/Rt60Chart.cpp
     # --- end RT60-UI lane wave A ------------------------------------------------
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).

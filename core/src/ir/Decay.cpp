@@ -4,6 +4,8 @@
 
 #include "DecayLundeby.h"
 
+#include "rta/ir/IrSpectrum.h"
+
 #include "rta/dsp/Biquad.h"
 #include "rta/dsp/ButterworthDesign.h"
 
@@ -154,7 +156,18 @@ EnergyDecayCurve energyDecayCurve(std::span<const float> bandResponse,
     // the result so a caller can see how much of the answer rests on it.
     const double tauSamples =
         10.0 / (crossing.slopeDbPerSample * std::log(10.0));
-    out.truncationCorrection = squared[cut - 1] * tauSamples;
+    //
+    // p_i is read off Lundeby's late-decay regression line at the crossing, NOT
+    // taken from one squared sample there. A single sample of a band-passed,
+    // oscillating tail swings from ~0 (a zero crossing) to ~2x the local mean
+    // power -- about 100 % relative variance on a term that is added to every
+    // point of the curve. The line is a fit through every block of the late
+    // decay, so it is the mean power the exponential model is actually about.
+    // The line is in dB against sample index, hence the 10^(dB/10).
+    const double crossingPower = std::pow(
+        10.0, (crossing.interceptDb -
+               crossing.slopeDbPerSample * static_cast<double>(cut)) / 10.0);
+    out.truncationCorrection = crossingPower * tauSamples;
     for (auto& v : integral) v += out.truncationCorrection;
 
     out.db.resize(cut);
@@ -204,7 +217,8 @@ DecayTimes decayTimes(const EnergyDecayCurve& curve) {
 }
 
 Clarity clarity(std::span<const float> bandResponse, std::size_t originIndex,
-                double sampleRate, const EnergyDecayCurve& curve) {
+                double sampleRate, double lowBandEdgeHz,
+                const EnergyDecayCurve& curve) {
     Clarity out;
     const auto refuseAll = [&out](DecayRefusal why) {
         out.c50Db.refusal = why;
@@ -212,7 +226,7 @@ Clarity clarity(std::span<const float> bandResponse, std::size_t originIndex,
         out.d50.refusal = why;
     };
 
-    if (!(sampleRate > 0.0) || bandResponse.empty() ||
+    if (!(sampleRate > 0.0) || !(lowBandEdgeHz > 0.0) || bandResponse.empty() ||
         originIndex >= bandResponse.size()) {
         return out;
     }
@@ -265,7 +279,19 @@ Clarity clarity(std::span<const float> bandResponse, std::size_t originIndex,
     // two share at 125 Hz is band-limiting itself changing C50 -- a property of
     // the measurement, not of this choice.
     double early50 = 0.0, early80 = 0.0, total = 0.0;
-    for (std::size_t i = 0; i < originIndex; ++i) {
+    //
+    // Only the filter's OWN pre-ring is summed: the last `leadInSamplesFor`
+    // samples before the origin, two cycles of the band's low edge. The region
+    // before that is not filter displacement. On a real `Deconvolution` the
+    // origin sits a whole sweep length into the buffer, and what lies in front
+    // of it is seconds of pre-arrival floor plus the harmonic-distortion
+    // packets at -L*ln(N). Booking all of that as EARLY, and into `total`, made
+    // C50/C80/D50 a function of sweep length and of the loudspeaker's
+    // distortion. The bound is the same one `analyseSpectrum` already uses for
+    // the same filter, so the two never disagree about where the pre-ring ends.
+    const std::size_t preRing = std::min(leadInSamplesFor(sampleRate, lowBandEdgeHz),
+                                         originIndex);
+    for (std::size_t i = originIndex - preRing; i < originIndex; ++i) {
         const double v = static_cast<double>(bandResponse[i]);
         const double e = v * v;
         total += e;

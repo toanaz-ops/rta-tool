@@ -27,7 +27,7 @@ literature and tools that restate the standards, attributed to their source.
   h(t) = n(t)·e^{−t/τ} it is a straight line in dB, slope −60/T,
   T = 3·ln10·τ — the closed form behind every device-free bound below.
 - Lundeby, Vigran, Bietz, Vorländer, Acustica 81 (1995) 344–355: iterative
-  crossing search + correction `p²(t_c)·τ`. Derived in core (`DecayLundeby.cpp`;
+  crossing search + a correction that reads the regression line at t_c (record §11a; it was one sample, `p²(t_c)·τ`, until the audit). Derived in core (`DecayLundeby.cpp`;
   record §3 lists every constant).
 - Chu, JASA 63 (1978) 1444–1450: subtract mean noise power. Not adopted (decision 6).
 - Jacobsen 1987 / Jacobsen & Rindel 1987: band-passed decay valid for
@@ -268,6 +268,32 @@ New: `Rt60Analysis` ~80/190; `Rt60Bands.h` ~45; `Rt60Readout` ~50/130;
    this short (B·T … < 6)" or "no noise floor found" — the right reading, not a
    fault. The comb room (T = 0.80 s) is reachable only via
    `restartSyntheticForTest`; `main-live-rt60.png` shows it.
+
+**Added by wave B (what a human sees now; record section 12):**
+
+8. Click a table row: the chart under the table draws that band's decay curve
+   (dB down, seconds across) with the EDT, T20 and T30 fit spans over it and
+   their figures in the legend. A straight fall means the T30 is one slope; a
+   bend means it averages two. A refused band's chart says why it has no curve.
+   With no click it shows the band nearest 1 kHz.
+9. Sweep the same spot three times (SWEEP, SWEEP, SWEEP, each a new trace),
+   then ENSEMBLE and tick all three. The table now shows the median across the
+   captures and, from three, "IQR n%" beside each figure; with two ticked it
+   shows the median alone and the header says "IQR needs 3 captures". More
+   sweeps tighten it (1/sqrt(N), record `DecayEnsemble.h`); up to eight.
+10. OCTAVE / THIRD button: the table becomes 24 third-octave rows, 50 Hz to
+    10 kHz. Under the shipped sweep 50, 63 and 80 Hz are refused (80 Hz trusted
+    band) and low thirds in a dry room may refuse on "band too narrow for a
+    decay this short". The pane says "analysing in the background" for a
+    moment (the worker thread); it never freezes.
+11. In SYNTHETIC (no room) every band still refuses, as in step 7; the comb
+    room's chart and thirds are in `main-live-rt60.png` and
+    `main-live-rt60-third.png` (`rtatool_snapshot`).
+
+Wave B deviation from the T11 row: the table starts at the 50 Hz third, so the
+"40 Hz third at T = 0.4 s refuses on B*T" case is tested through
+`analyseRt60Bands` with edges computed from `OctaveBands` (B*T 3.7), and the
+50 Hz third (5.4) is checked in the table itself.
 
 SYNTHETIC cannot show two-slope rooms, coupled spaces, noise spectra or drift.
 

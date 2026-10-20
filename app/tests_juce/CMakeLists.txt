@@ -161,7 +161,11 @@ add_executable(rtatool_view_tests
     # RT60-UI wave A: PaneFactory.cpp's Rt60 branch builds Rt60PaneView, whose
     # words come from Rt60Readout (and its types from Rt60Analysis).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/Rt60PaneView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/Rt60PaneTable.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/Rt60Chart.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Readout.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60EnsembleReadout.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Worker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Analysis.cpp
 )
 

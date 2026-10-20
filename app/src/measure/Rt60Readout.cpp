@@ -149,7 +149,9 @@ std::vector<std::string> rt60HeaderLines(const Rt60Result& result, const std::st
     // pre-roll after the loop's arrival, so the IR holds the TAIL choice plus
     // that slack, and the knob and this number differ by about 0.9 s.
     lines.push_back("tail held " + format("%.1f", result.tailSeconds) + " s" + dot + "trusted band " + trusted + dot +
-                    "Lundeby truncation, zero-phase octave filters" + dot + "analysed in " +
+                    "Lundeby truncation, zero-phase " +
+                    (result.bandSet == Rt60BandSet::Third ? "third-octave" : "octave") + " filters" + dot +
+                    "analysed in " +
                     format("%.0f", result.wallMs) + " ms");
     return lines;
 }

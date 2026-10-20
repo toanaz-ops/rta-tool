@@ -25,6 +25,7 @@
 #pragma once
 
 #include "measure/Rt60Analysis.h"
+#include "measure/Rt60Worker.h"
 #include "trace/TraceLibrary.h"
 #include "view/Rt60PaneView.h"
 
@@ -32,6 +33,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 class MainComponentRt60 {
 public:
@@ -62,6 +64,22 @@ public:
     /// pane's sweep reaches here, so nothing but RT60's own press auto-selects.
     void onSwept(const std::string& traceId) { select(traceId); }
 
+    // --- wave B ----------------------------------------------------------------
+    /// OCTAVE / THIRD. Resets the clicked row (an index into the old set) and
+    /// re-analyses the selection and the ensemble in the new set.
+    void setBandSet(rta::measure::Rt60BandSet set);
+    /// Ticks or unticks a trace for the ensemble. False (and nothing changes) when
+    /// ticking would pass eight members or the trace has no IR in memory.
+    bool toggleEnsemble(const std::string& traceId);
+    void clearEnsemble();
+    /// Takes a finished worker job, if any. Message thread only; the pane's timer
+    /// reaches it through `revision`.
+    void poll();
+
+    /// Octave analysis of one trace is cheap enough for the message thread
+    /// (decision 11); a third-octave set or an ensemble goes to the worker.
+    /// Measured by test_rt60_analysis, which prints the times.
+
     // --- test hooks, each referenced by spelling from app/tests_juce ---------
     [[nodiscard]] rta::view::Rt60Settings& settingsForTest() noexcept { return settings_; }
     [[nodiscard]] const std::string& selectedIdForTest() const noexcept { return selectedId_; }
@@ -69,8 +87,19 @@ public:
     /// How many times `select` ran an analysis, so a test can prove "once per
     /// selection change" and not "once per tick".
     [[nodiscard]] int analysisCountForTest() const noexcept { return analysisCount_; }
+    [[nodiscard]] std::shared_ptr<const rta::measure::Rt60EnsembleResult> ensembleForTest() const noexcept {
+        return ensemble_;
+    }
+    [[nodiscard]] const std::vector<std::string>& ensembleIdsForTest() const noexcept { return ensembleIds_; }
+    /// True while the worker holds a job.
+    [[nodiscard]] bool analysingForTest() const noexcept { return analysing_; }
 
 private:
+    void reanalyse();
+    /// Drops ensemble ids whose IR the store no longer holds (it keeps 8, oldest
+    /// out). True when any went.
+    bool pruneEvicted();
+    [[nodiscard]] std::string nameOf(const std::string& traceId) const;
     [[nodiscard]] std::vector<rta::view::Rt60Choice> choices() const;
     [[nodiscard]] bool selectedIrInMemory() const;
 
@@ -84,4 +113,12 @@ private:
     std::shared_ptr<const rta::measure::Rt60Result> result_;
     std::uint64_t revision_ = 0;
     int analysisCount_ = 0;
+
+    std::vector<std::string> ensembleIds_;
+    std::shared_ptr<const rta::measure::Rt60EnsembleResult> ensemble_;
+    bool analysing_ = false;
+    std::uint64_t ticket_ = 0;
+    /// LAST: its destructor cancels and joins the worker thread before any member
+    /// the thread's job could touch (it touches none: it owns copies) is destroyed.
+    rta::measure::Rt60Worker worker_;
 };
