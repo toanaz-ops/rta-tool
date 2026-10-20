@@ -84,13 +84,18 @@ void renderStoreXoverSpecimen (const juce::File& outDir, int& failures)
 
     // Same condition test_main_component_store.cpp's own
     // enableSyntheticWithReference polls for: a real paired hop has to
-    // complete before TRANSFER has anything to freeze.
-    constexpr int kReferenceTimeoutMs = 3000;
+    // complete before TRANSFER has anything to freeze, and the first
+    // reference-fed frame carries no transfer block yet (the race PR #59
+    // fixed in the test helper; lane-end LOW Z30). Waiting for `hasReference`
+    // alone let STORE refuse about 1 run in 4. The timeout is 15 s, the
+    // helper's own bound for a loaded machine.
+    constexpr int kReferenceTimeoutMs = 15000;
     int waitedMs = 0;
     for (; waitedMs < kReferenceTimeoutMs; waitedMs += 10)
     {
         const auto snapshot = MainComponentTestAccess::analysisThread (component).latest();
-        if (snapshot && snapshot->hasReference) break;
+        if (snapshot && snapshot->hasReference && snapshot->transfer.has_value() && snapshot->mtw.has_value())
+            break;
         juce::Thread::sleep (10);
     }
     if (waitedMs >= kReferenceTimeoutMs)

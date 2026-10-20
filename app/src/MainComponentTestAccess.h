@@ -182,6 +182,17 @@ struct MainComponentTestAccess {
         return c.audioIo_.bus().config();
     }
 
+    // Behavioural test flags (lane-end LOW Z8): `forceExportThrowForTest_` is
+    // the first flag in a production class that CHANGES what the shipped code
+    // does rather than just exposing state. The pattern, for the next author:
+    // (1) the flag is a plain private bool, default false, set only through a
+    // setter in THIS header, never by production code; (2) it is consumed by
+    // one `if` at the top of the branch under test, so the branch itself is
+    // the real production code; (3) a test must assert the default (flag off,
+    // branch not taken) as well as the forced path, or a flag stuck on would
+    // pass every test; (4) its comment in MainComponent.h states what it
+    // forces and that it is inert in every shipped build.
+    //
     // D7 test seam: app/tests_juce/test_main_component_export.cpp. Drives
     // the real `exportReportButton_.onClick` handler (not a
     // re-implementation), the same "call the exact production handler"

@@ -336,3 +336,39 @@ TEST_CASE("rt60 pane B: a ticked capture the store evicts leaves the ensemble, a
     pane.chooseEnsembleEntryForTest(0);
     CHECK(model.ensembleIdsForTest().size() == 8);
 }
+
+TEST_CASE("rt60 pane B: a sweep landing after an eviction re-analyses WITHOUT the evicted member, with no pane tick between", kTag) {
+    // Lane-end LOW F1. The eviction test above reaches the prune through the pane's
+    // revision callback, which prunes by itself, so deleting the prune inside
+    // `reanalyse` left it green. Here nothing ticks the pane: `onSwept` is the exact
+    // call MainComponentSweep makes when the RT60 pane's own SWEEP finishes
+    // (MainComponentRt60.h), and it must hand the worker an ensemble whose every
+    // member still has an IR -- one nullptr member would refuse the whole ensemble.
+    MainComponent c;
+    std::vector<std::string> ids;
+    for (std::uint32_t i = 0; i < 8; ++i) ids.push_back(addRoom(c, "SWEEP " + std::to_string(i), 1000 + 1000 * i));
+    c.selectPaneView(rta::view::PaneSelectorButton::Rt60);
+    auto& pane = paneOf(c);
+    auto& model = Access::rt60ForTest(c);
+    pane.tickForTest();
+    pane.chooseEnsembleEntryForTest(7);  // SWEEP 0, the oldest
+    pane.chooseEnsembleEntryForTest(6);  // SWEEP 1
+    pane.chooseEnsembleEntryForTest(0);  // SWEEP 7
+    settle(c, pane);
+    REQUIRE(model.ensembleIdsForTest().size() == 3);
+
+    const auto ninth = addRoom(c, "SWEEP 8", 9000);  // pops SWEEP 0 out of the store
+    model.onSwept(ninth);
+    CHECK(model.ensembleIdsForTest() == std::vector<std::string>{ids[1], ids[7]});
+
+    const auto deadline = juce::Time::getMillisecondCounter() + 600000u;
+    while (model.analysingForTest() && juce::Time::getMillisecondCounter() < deadline) {
+        juce::Thread::sleep(2);
+        model.poll();  // the worker's answer, taken without the pane
+    }
+    REQUIRE_FALSE(model.analysingForTest());
+    const auto ensemble = model.ensembleForTest();
+    REQUIRE(ensemble != nullptr);
+    CHECK(ensemble->analysed());  // not the "no IR in memory" refusal
+    CHECK(ensemble->captureCount == 2);
+}

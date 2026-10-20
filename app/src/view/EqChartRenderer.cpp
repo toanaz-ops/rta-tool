@@ -132,6 +132,15 @@ void paintLegend(juce::Graphics& g, const PlotGeometry& geometry) {
     }
 }
 
+/// A trusted bin counts toward the axis only if curvePath actually draws it:
+/// a run of one bin is a single `startNewSubPath` with no `lineTo`, i.e. no
+/// stroke at all, so an isolated trusted bin would set the range to an
+/// invisible point (a 120 dB axis in the synthetic STORE specimen).
+bool drawnTrusted(const EqChartData& data, std::size_t k) {
+    const auto trusted = [&](std::size_t i) { return i < data.trusted.size() && data.trusted[i] != 0; };
+    return trusted(k) && ((k > 0 && trusted(k - 1)) || trusted(k + 1));
+}
+
 }  // namespace
 
 EqDbRange eqChartDbRange(const EqChartData& data) {
@@ -149,7 +158,7 @@ EqDbRange eqChartDbRange(const EqChartData& data) {
         };
         for (std::size_t k = 0; k < data.hz.size(); ++k) {
             if (data.hz[k] < kFrequencyLowHz) continue;
-            if (trustedOnly && (k >= data.trusted.size() || data.trusted[k] == 0)) continue;
+            if (trustedOnly && !drawnTrusted(data, k)) continue;
             if (k < data.measuredDb.size()) take(static_cast<double>(data.measuredDb[k]));
             if (k < data.ghostDb.size()) take(data.ghostDb[k]);
             if (k < data.targetLineDb.size()) take(data.targetLineDb[k]);

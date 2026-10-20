@@ -5,9 +5,82 @@
 
 ---
 
+# 2026-10-21 — **Lane order của plan review #2 xong: H4, H5, H6 đều BUILT và operator-reachable. Main = `7b3375f` (+ #78 đang mở); PR closeout H6 + LOW batch đang mở.**
+
+*H6 `app/rt60-ui` xong: pane RT60 (SWEEP riêng với TAIL, bảng T30 / T20 / EDT theo octave hoặc third-octave, ensemble qua nhiều sweep, EDC chart). Không còn lane nào đang mở trong thứ tự EQ-UI → SWEEP → ALIGN-UI → RT60 UI. Việc còn lại là nợ LOW, #78, và các lane NEW-LANE chưa xếp lịch.*
+
+## Phần trăm sau H6
+
+Cùng công thức, cùng cách đếm (unit trọng số bằng nhau) như "Status snapshot — 2026-09-29" của `docs/plans/MASTER-EXECUTION-PLAN.md`; block "After H6 wave A" ở đó có phép tính. Tính lại từ bảng 19 hàng: hàng 4 giờ là BUILT, không partial (bảng ghi "BUILT (both waves ...)"). So với entry H5 bên dưới (sau #72: 13 / 9), hàng 4 lật nên (b) tăng một và (b-strict) tăng một; (c) từ dự phóng thành số đo.
+
+| | sau #72 (entry H5) | sau H6 (#74, #77) |
+|---|---|---|
+| (a) engine built | 15 / 19 = 78.9 % | 15 / 19 = 78.9 % |
+| (b) operator-reachable (BUILT, gồm partial) | 13 / 19 = 68.4 % | **14 / 19 = 73.7 %** |
+| (b-strict) BUILT không partial | 9 / 19 = 47.4 % | **10 / 19 = 52.6 %** |
+| (c) dự phóng sau H6 | 14 / 19 = 73.7 % | 14 / 19 = 73.7 % — **đã đo, không còn là dự phóng** |
+
+Arithmetic: 14 / 19 = 0.7368, 10 / 19 = 0.5263. (a) không đổi vì H6 là lane `app/`. Năm hàng còn lại ngoài BUILT: hàng 5 (L4c), 6 (THD/STI, chờ IEC 60268-16), 8 (targets, chờ ISO 2969 / ST 202), 12 (L-API, CORE ONLY), 19 (productization). Hàng "BUILT (partial)" vẫn được headline đếm là BUILT và nằm ngoài (b-strict); danh sách ở bảng của master plan.
+
+## PR đã merge từ entry trước (đối chiếu `gh pr view N --json title,mergeCommit`)
+
+| PR | merge | what |
+|---|---|---|
+| #70 | `87157df` | closeout H4 SWEEP (LOW L1/L2/L4/L6, amendment "H4 as built") |
+| #71, #72 | `148b784`, `7fd8e4c` | H5 wave A / B (pane ALIGN, IR arrival fix, SWEEP MAIN/SUB) |
+| #73 | `bc9b78d` | closeout H5 ALIGN-UI (D9/D6/D4, C1-C5) |
+| #74 | `17f3010` | H6 wave A: pane RT60, `Rt60Analysis`, SWEEP tail override |
+| #75 | `971daba` | sửa `-Wformat-truncation` của gcc trong `EqPaneModel` (main đỏ trên ubuntu) |
+| #76 | `df3d444` | audit fix (core): truncation của Lundeby đọc đường hồi quy, không đọc một sample; bound cho clarity pre-ring; crossing search |
+| #77 | `7b3375f` | H6 wave B: ensemble, EDC plot, third-octave |
+| closeout H6 | (PR mở, chưa merge) | `app+docs: close out H6 RT60-UI + LOW batch` — plan/record/QA queue/handoff này; fix Z8 Z11 Z13 Z17 Z22 Z24 Z29 Z30, E2, E3, F1 |
+| #78 | (PR mở, của phiên khác) | `app/capture-bus-drain-race`: `CaptureBus::prepare` không reset ring đang sống, fault slot, `pairedHopCount` |
+
+## Audit Fable 2026-10-21 (`D:\DEV CAVE EP3\shared\audits\prj010-fable-audit-20261021.md`)
+
+- **Đã sửa, đã merge:** #76 (Lundeby truncation seed một sample; `lastUsable` lấy block cuối; clarity pre-ring).
+- **Đang bay: #78** — drain race của capture bus, fault slot, `pairedHopCount`. Các file #78 đang sửa (`CaptureBus.cpp/.h`, `AudioIo.*`, `AnalysisThread*`, `PairedDrain.h`, `DevicePanel*`, `FaultLine.h`, `MainComponent.cpp/.h`, `SyntheticInput*`, hai tài liệu audioio) KHÔNG được đụng trước khi #78 merge; mọi LOW chạm các file đó ghi `DEFER(PR #78 area)` trong bảng QA.
+- **Còn mở (chưa có PR): analyser 424 MB rebuild** — theo lời phiên điều phối giao việc; phiên viết entry này không đọc nội dung finding đó trong file audit, nên không mô tả thêm. Chưa có nhánh, chưa có plan; cần một lượt research trước khi code (CLAUDE.md "research, then argue, then build").
+
+## Human try — RT60 (đã chạy được, không cần phần cứng cho bước 1-5)
+
+Build bằng `rtatool_snapshot` hoặc chạy `rtatool.exe`. Mỗi bước nói rõ sẽ THẤY gì:
+
+1. **SYNTHETIC -> nút RT60 (nút pane thứ bảy) -> SWEEP** (chọn output và TAIL 3 s, mặc định). Sau khoảng 15 s bảng octave đầy, nhưng **mọi band bị từ chối kèm lý do** ("band too narrow for a decay this short (B·T ... < 6)" hoặc "no noise floor found"). Đây là cách đọc đúng: đường SYNTHETIC mặc định là band-pass + trễ 4 mẫu, không có phòng; không phải lỗi. Trace `SWEEP @ hh:mm:ss` xuất hiện trong picker.
+2. **Phòng comb (T = 0.80 s mọi band)** chỉ vào được qua test hook (`restartSyntheticForTest`); xem `shots/main-live-rt60.png` và `main-live-rt60-third.png` (`rtatool_snapshot`, 1280x800). Ở đó SWEEP cho **T30 / T20 / EDT ≈ 0.80 s** ở 125-8000 Hz (63 Hz bị từ chối: ngoài trusted band từ 80 Hz).
+3. **Bấm một hàng của bảng:** chart dưới bảng vẽ đường decay (dB xuống, giây ngang) của band đó, kèm hai đoạn fit EDT / T20 / T30 và con số ở legend; thẳng nghĩa là một slope, cong nghĩa là trung bình hai slope. Band bị từ chối thì chart nói vì sao không có đường. Chưa bấm: chart hiện band gần 1 kHz.
+4. **Nút OCTAVE / THIRD:** bảng thành 24 hàng third-octave, 50 Hz đến 10 kHz; 50, 63, 80 Hz bị từ chối; pane ghi "analysing in the background" một lúc (worker thread), không đứng.
+5. **ENSEMBLE trên 3 sweep:** SWEEP ba lần liên tiếp (mỗi lần một trace mới), bấm ENSEMBLE, tick cả ba. Bảng hiện **median** qua các capture và, từ ba capture trở lên, "IQR n%" cạnh mỗi số; tick hai thì chỉ median và header ghi "IQR needs 3 captures". Tối đa tám.
+6. **Cần phần cứng (hàng "later" trong QA queue):** out 1 -> loa trong phòng, REF loop vào in 2, mic ở in 1 tại hoặc xa hơn critical distance; so với REW cùng vị trí (T30 trong dải spread của core, vài % ở mid). Chưa đo; giữ nguyên "later".
+
+Chi tiết và mười một bước đầy đủ: `docs/plans/2026-10-20-rt60-ui-lane-plan.md` mục "Human-try row", và `docs/HUMAN-QA-QUEUE.md` mục "H6 RT60-UI".
+
+## Baseline
+
+Theo CLAUDE.md global rule 16, máy local chỉ chạy test hẹp; full suite là việc của CI (OFF ba OS + ON Windows) trên PR. Tally cục bộ của PR closeout nằm trong body PR, không chép lại ở đây.
+
+## Nợ
+
+**Máy làm được:** analyser rebuild 424 MB (chưa có PR); E4 (`p_c` đọc từ đường fit 20 dB trên cùng rồi ngoại suy ~40 dB — cần research); F2/F3 và G1 (`DEFER(PR #78 area)`, chờ #78 merge); Z21, Z26, Z27, Z28, L9, D7 (xem bảng LOW trong QA queue). NEW-LANE chưa xếp lịch: TF slot picker, multi-pane selector, L-API enable switch, generator/output control, XOVER `appliedDelaySamples`. `CaptureSequencer`, MTW storage vẫn hoãn.
+
+**Cần người:** hàng B (VERIFY), C (SWEEP), ALIGN và RT60 trên phần cứng thật; ISO 3382-1 vẫn là hoãn có chủ ý của chủ nhân (2026-08-30).
+
+## Pitfall học được trong đợt này
+
+- **Một mutant có thể tương đương với code đúng:** `noisePower * tau` thay `line * tau` sống sót vì sau vòng lặp hội tụ hai số bằng nhau theo cấu trúc (crossing là nơi đường thẳng gặp noise). Chỉ tách được khi vòng lặp dừng trước hội tụ (`maxIterations = 1`) trên fixture có burst trong đoạn noise estimate (E3).
+- **Cận từ công thức iid áp cho ripple xác định thì thấp hơn thực:** 0.25 dB là RMS; worst-case là tổng trị tuyệt đối trọng số LS = 0.42 dB (E2).
+- **Một test evict qua đường pane tick không chứng minh prune trong `reanalyse`:** F1 gọi `onSwept` không tick pane.
+- **Hook worktree chặn heredoc/redirect phức tạp:** ghi script bằng Write rồi chạy `python <file>`; `printf >>` đơn giản qua được.
+
+## Kế tiếp
+
+Chờ #78 merge, rồi: (1) F2/F3/G1, (2) analyser rebuild 424 MB (research trước), (3) chọn trong các NEW-LANE. Không lane tuần tự nào còn mở.
+
+---
+
 # 2026-10-20 (muộn) — **Phase ALIGN-UI (H5) BUILT, operator-reachable. Hai PR code merge (#71, #72), main = `7fd8e4c`; PR closeout đang mở.**
 
-*H5 `app/align-ui` xong: pane ALIGN với MEASURE (pink noise lần lượt trên main rồi sub), SET OFFSET, SUM, SWEEP MAIN / SWEEP SUB và bộ chọn IR. Kế tiếp là H6 RT60-UI.*
+*H5 `app/align-ui` xong: pane ALIGN với MEASURE (pink noise lần lượt trên main rồi sub), SET OFFSET, SUM, SWEEP MAIN / SWEEP SUB và bộ chọn IR. ~~Kế tiếp là H6 RT60-UI.~~ **Sửa 2026-10-21:** H6 đã xong (#74, #77) — xem entry trên cùng.*
 
 ## Phần trăm sau #72
 
@@ -58,7 +131,7 @@ Cùng công thức, cùng cách đếm (unit trọng số bằng nhau) như mụ
 
 ## Kế tiếp
 
-**H6 `app/rt60-ui`** (nhánh `app/rt60-ui`, plan `docs/plans/2026-10-20-rt60-ui-lane-plan.md` sẽ vào cùng PR đầu của H6). H6 lật hàng 4 và là unit cuối còn lại trong (c).
+**H6 `app/rt60-ui`** (nhánh `app/rt60-ui`, plan `docs/plans/2026-10-20-rt60-ui-lane-plan.md` sẽ vào cùng PR đầu của H6). H6 lật hàng 4 và là unit cuối còn lại trong (c). **Sửa 2026-10-21:** H6 xong (#74 `17f3010`, #77 `7b3375f`); hàng 4 đã lật, (c) đã đo — xem entry trên cùng.
 
 ---
 
@@ -242,7 +315,7 @@ phần trăm công sức.
 ## Đang làm và kế tiếp
 
 - ~~**Đang làm:** H3a `app/eq-ui` (EQ-UI wave A, xuất FIR) — phiên song song, không đụng các doc trên.~~ **Sửa 2026-09-29 sau #64:** H3 xong (#60, #62, #63, #64), xem mục đầu file.
-- **Kế tiếp, tuần tự (hot files):** ~~H4 `app/sweep-ir` (SWEEP) →~~ **H4 xong (2026-10-20)** → H5 `app/align-ui` → H6 `app/rt60-ui`.
+- **Kế tiếp, tuần tự (hot files):** ~~H4 `app/sweep-ir` (SWEEP) →~~ **H4 xong (2026-10-20)** → ~~H5 `app/align-ui` → H6 `app/rt60-ui`~~ **H5 và H6 cũng xong (H5 2026-10-20 #71-#73; H6 2026-10-21 #74, #77) — xem entry trên cùng.**
 - **Lỗ hổng mới phát hiện khi verify operator path** (chưa lane nào lo): `RoutingMatrix::setActiveTransferFunction` không có caller nên TF slot 1..7 không với tới được; L-API bật/tắt chỉ bằng sửa `MainComponent.cpp:189` rồi build lại; ~~chưa có control generator nào ngoài LOCATE~~ **sửa 2026-09-29 sau #64:** vẫn chưa có control generator nào cho operator chọn (tín hiệu, mức, kênh output) — LOCATE và, từ #64, VERIFY chỉ phát pink noise cố định trên output 1; `MainComponent.cpp:189` nay là `:190`. P1 vẫn còn T12 hardware M2/M7 chờ người.
 
 ---

@@ -336,6 +336,24 @@ TEST_CASE("the chart's dB range follows the trusted bins, not the noise beneath 
     CHECK(range.top == 130.0);
     CHECK(range.bottom == -10.0);
 
+    // Lane-end LOW Z17: curvePath draws a 1-bin trusted run as nothing (one
+    // startNewSubPath, no lineTo), so a lone trusted bin must not set the axis
+    // either -- the range follows what is drawn. Bin 100 Hz (+120 dB) is
+    // trusted but has no trusted neighbour; the drawn run is 1000..10000 Hz
+    // (-1..2 dB), so the range is the same [-10, 20] as without the spike.
+    const std::vector<float> spikeHz{ 50.0f, 100.0f, 500.0f, 1000.0f, 10000.0f };
+    const std::vector<float> spikeMeasured{ 50.0f, 120.0f, 0.0f, 2.0f, -1.0f };
+    const std::vector<double> spikeSame{ 50.0, 120.0, 0.0, 2.0, -1.0 };
+    const std::vector<std::uint8_t> isolated{ 0, 1, 0, 1, 1 };
+    rta::view::EqChartData lone;
+    lone.hz = spikeHz;
+    lone.measuredDb = spikeMeasured;
+    lone.ghostDb = spikeSame;
+    lone.trusted = isolated;
+    range = rta::view::eqChartDbRange(lone);
+    CHECK(range.top == 20.0);
+    CHECK(range.bottom == -10.0);
+
     // The correction strip: the smallest multiple of 10 dB (>= 10) holding max|R|.
     CHECK(rta::view::eqStripHalfRangeDb(std::vector<double>{ 0.0, -13.0, 4.0 }) == 20.0);
     CHECK(rta::view::eqStripHalfRangeDb(std::vector<double>{ 0.0, 9.9 }) == 10.0);
