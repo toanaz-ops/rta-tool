@@ -22,7 +22,7 @@ constexpr int kTimerHz = 10;
 constexpr int kButtonHeight = 30;
 constexpr int kStatusHeight = 20;
 constexpr int kBlockerHeight = 20;
-constexpr int kReadoutHeight = 112;
+constexpr int kReadoutHeight = 132;  // the seed-disagreement readout is ten lines (main-live-align-seed.png)
 constexpr int kSummationHeight = 180;
 constexpr int kMaxListedOutputs = 16;
 
@@ -113,6 +113,7 @@ void AlignPaneView::timerCallback() {
     if (irInfo != irInfoLabel_.getText()) irInfoLabel_.setText(irInfo, juce::dontSendNotification);
     const juce::String blocker = fromUtf8(binding_.runner->blocker().text);
     if (binding_.runner->revision() != lastRevision_ || blocker != lastBlockerText_ ||
+        binding_.runner->engineQuiescent() != lastQuiescent_ ||
         binding_.runner->outputChannels() != lastOutputCount_) {
         refresh();
     }
@@ -228,8 +229,11 @@ void AlignPaneView::refresh() {
     const bool busy = runner.busy();
     const auto step = runner.step();
     measureButton_.setEnabled(blocker.kind == rta::measure::AlignBlock::None);
-    sumButton_.setEnabled(!busy && (step == rta::measure::WizardStep::Computed ||
-                                    step == rta::measure::WizardStep::AskingPolarity));
+    // SUM refuses while the last excitation is still ramping out (the same
+    // `sourceIsQuiescent` predicate), so the button waits for it: H5 closeout D4.
+    lastQuiescent_ = runner.engineQuiescent();
+    sumButton_.setEnabled(!busy && lastQuiescent_ && (step == rta::measure::WizardStep::Computed ||
+                                                      step == rta::measure::WizardStep::AskingPolarity));
     const bool askable = !busy && runner.verdict().has_value() &&
                          (step == rta::measure::WizardStep::AskingCycle || step == rta::measure::WizardStep::Computed);
     // A run in flight keeps the answers it started with; the questions stay
@@ -259,6 +263,7 @@ void AlignPaneView::refresh() {
         input.cycleSamples = runner.cycleSamples();
         input.cycleFromIr = runner.cycleFromIr();
         input.irHintSamples = runner.irHintSamples();
+        input.seedDisagreement = runner.seedDisagreement();
         input.matchedPairBar = rta::measure::kAlignMatchedPairAgreement;
         std::string joined;
         for (const auto& line : rta::measure::verdictLines(input)) joined += line + "\n";

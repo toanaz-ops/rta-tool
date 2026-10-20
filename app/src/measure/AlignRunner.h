@@ -186,6 +186,13 @@ public:
     /// What the bound IRs imply (arrival difference minus the named topology's
     /// peak lag), shown as a hint when it fits no candidate clearly enough to use.
     [[nodiscard]] std::optional<std::ptrdiff_t> irHintSamples() const noexcept;
+    /// The seed and the measured crossing disagree by more than a third of an
+    /// octave: the IRs were not allowed to choose, both hints are given.
+    [[nodiscard]] std::optional<SeedDisagreement> seedDisagreement() const noexcept;
+    /// The output engine is quiescent (no excitation playing or ramping out):
+    /// the same predicate SUM's refusal reads, so the pane can disable SUM
+    /// instead of showing a button that refuses on press (H5 closeout D4).
+    [[nodiscard]] bool engineQuiescent() const noexcept;
     /// Milliseconds the fit and polarity table took on the message thread in
     /// the last run's low-pass step (0 before the first run).
     [[nodiscard]] double lastComputeMs() const noexcept;

@@ -247,11 +247,18 @@ New: `AlignRunner` ~160/300; `AlignReadout` ~60/160; `TransferDwell.h` ~30;
    evaluated at the corner you SEED (the lag scales as 1/fc), else at the
    measured acoustic crossing. So with NO seed it asks whenever the acoustic
    crossing is far from the processor corner (level offsets move it by up to an
-   octave); with the seed set to the corner it resolves. SET OFFSET stays usable
+   octave); with a seed within a third of an octave of the measured crossing the
+   lag is taken at the seed and it resolves. **Amended 2026-10-20 (H5 closeout,
+   D9):** a seed MORE than a third of an octave from the measured crossing no
+   longer lets the IRs choose at all (a wrong seed passed the guard with a
+   residual of 5.4 ms); the pane says "seed X Hz and crossing Y Hz disagree: the IRs did not choose"
+   and lists the IR integer with the lag taken at the seed and at the crossing. SET OFFSET stays usable
    and a typed offset overrides it, the status saying so. On the shipped
-   defaults (below): NO SEED crosses at about 60 Hz and the run asks with a hint
-   (about -0.8 ms); SEED 100 HZ resolves ("delay MAIN by 4.56 ms", the 96-sample
-   offset plus the band-pass skirt's group delay). The signal
+   defaults (below): NO SEED crosses at about 58 Hz and the run asks with a hint
+   (about -0.8 ms); ~~SEED 100 HZ resolves ("delay MAIN by 4.56 ms", the
+   96-sample offset plus the band-pass skirt's group delay)~~ **SEED 100 HZ is 0.79
+   octave from that crossing, so it asks too, with the disagreement note and both
+   integers** (it resolved to "delay MAIN by 4.56 ms" before D9). The signal
    lines read `rho: …` and `findPolarity, low-pass side: refused (BandTooHigh)`
    (`main-live-align-ir.png`). Picking `NO IR (TYPE THE OFFSET)` in either
    picker and pressing MEASURE brings the offset prompt back. With the SHIPPED defaults (ch 0 the

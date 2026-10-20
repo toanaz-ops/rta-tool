@@ -20,6 +20,7 @@
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
 #include "dev-support/SyntheticCrossoverHp.h"
+#include "measure/AlignReadout.h"
 #include "measure/CycleArrival.h"
 #include "measure/SyntheticCrossover.h"
 #include "view/AlignPaneView.h"
@@ -28,6 +29,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +47,39 @@ inline rta::view::AlignPaneView& alignPane(MainComponent& c) {
 }
 inline rta::measure::AlignRunner& runnerOf(MainComponent& c) { return Access::alignForTest(c).runnerForTest(); }
 inline MainComponentSweep& sweepOf(MainComponent& c) { return Access::sweepForTest(c); }
+
+// A sweep is played in REAL time by the loopback (13 s for the shipped 10 s + 3 s
+// tail), so how long a test may wait is a function of the sweep it asked for, not
+// a constant that load can blow: budget = kSlack x (sweep + tail + 1 s pre-roll),
+// floored at 60 s. kSlack = 6 is the headroom for a 100 %-loaded box (the wall
+// clock paces the loopback, the analysis shares the cores); unloaded the wait is
+// about 1.1 x nominal. An earlier fixed 60 s lost to load on a case that
+// legitimately runs 72 s end to end (two boxes x two sweeps).
+inline constexpr double kBudgetSlack = 6.0;
+inline double gSweepSeconds = 2.0;
+inline double gTailSeconds = 0.5;
+inline void setSweepDurations(MainComponent& c, double sweepSeconds, double tailSeconds) {
+    gSweepSeconds = sweepSeconds;
+    gTailSeconds = tailSeconds;
+    sweepOf(c).setDurationsForTest(sweepSeconds, tailSeconds);
+    // The sweep's own capture timeout (length + 5 s slack) runs on the wall clock
+    // while the loopback is paced by it too, so a saturated box aborts a healthy
+    // sweep ("no capture -- no REF on route 1?"). Stretch that slack by the same
+    // factor as the budgets above. The 100 ms settle is NOT stretched: the capture
+    // is armed at the click and the analysis window is sized for that settle, so a
+    // longer one moves the arrival out of it ("the arrival does not fit").
+    sweepOf(c).setTimeoutSlackForTest(5000.0 * kBudgetSlack);
+}
+/// MEASURE: two steps, each a settle (0.5 s) plus the dwell (transferFifoDepth *
+/// fftSize / fs = 1.365 s at the defaults) in real time, plus a 1 s allowance for
+/// the fit; the same slack; floored at 40 s (the former constant).
+inline int measureBudgetMs() {
+    constexpr double kDwellSeconds = 1.365;
+    return std::max(40000, static_cast<int>(1000.0 * kBudgetSlack * (2.0 * (0.5 + kDwellSeconds) + 1.0)));
+}
+inline int sweepBudgetMs() {
+    return std::max(60000, static_cast<int>(1000.0 * kBudgetSlack * (gSweepSeconds + gTailSeconds + 1.0)));
+}
 
 template <typename Predicate>
 bool tickUntil(MainComponent& c, Predicate&& done, int timeoutMs) {
@@ -98,7 +133,7 @@ inline void prepare(MainComponent& c, rta::measure::SyntheticInput::Config confi
                     int topologyId = 2) {
     c.setSyntheticMode(true);
     Access::restartSyntheticForTest(c, config);
-    sweepOf(c).setDurationsForTest(2.0, 0.5);
+    setSweepDurations(c, 2.0, 0.5);
     c.selectPaneView(rta::view::PaneSelectorButton::Align);
     auto& pane = alignPane(c);
     pane.highPassComboForTest().setSelectedId(1, juce::sendNotificationSync);   // MAIN is high-pass
@@ -109,10 +144,40 @@ inline void prepare(MainComponent& c, rta::measure::SyntheticInput::Config confi
 
 /// A SWEEP button's own handler, then the sweep to completion.
 inline void sweepThrough(MainComponent& c, juce::Button& button) {
-    REQUIRE(tickUntil(c, [&] { return button.isEnabled(); }, 20000));
+    // A press while the previous excitation is still ramping out is refused ("the output is
+    // still playing a source"); under load the ramp (paced by the wall clock) outlasts the
+    // finished sweep, so wait for the engine itself to report quiescence.
+    REQUIRE(tickUntil(c, [&] { return button.isEnabled() && Access::outputSourceQuiescentForTest(c); }, 20000));
     button.onClick();
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
     REQUIRE(sweepOf(c).busy());
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, sweepBudgetMs()));
+    UNSCOPED_INFO("sweep finished: " << sweepOf(c).readoutForTest());
+}
+
+/// The readout's delay is the fit candidate the cycle integer chose. Its VALUE
+/// carries the estimator's own tau* bias and jitter (wave A measured +0.05..0.24
+/// ms on an LR-4 pair, more on a steeper LR-8 phase: CI read 3.01 ms for 2 ms),
+/// so a fixed-decimal string ("delay MAIN by 2.") is the floor of one grid. What
+/// the test can honestly claim: the chosen candidate is the fit's own tau* (the
+/// right cycle), and it lies within HALF the candidate spacing of the ideal delay,
+/// which is the discrimination bound against the neighbouring cycle. The spacing
+/// is read from the candidate list (smallest gap), never typed. `direction` text
+/// stays asserted. Prints the actual tau, delta and crossing.
+inline void checkChosenCycleNearIdeal(MainComponent& c, double idealMs, const char* note) {
+    const auto& verdict = *runnerOf(c).verdict();
+    const auto resolved = rta::measure::resolveCycle(verdict, runnerOf(c).cycleSamples(), kFs);
+    auto sorted = verdict.candidateTausSeconds;
+    std::sort(sorted.begin(), sorted.end());
+    double spacing = 1.0 / verdict.crossoverHz;  // one candidate only: fall back to a cycle at the crossing
+    for (std::size_t i = 1; i < sorted.size(); ++i) spacing = std::min(spacing, sorted[i] - sorted[i - 1]);
+    const double tauMs = 1000.0 * resolved.tauSeconds;
+    WARN(note << ": chosen tau " << tauMs << " ms (tau* " << 1000.0 * verdict.tauSeconds << "), delta "
+              << verdict.deltaRadians * 180.0 / 3.14159265358979323846 << " deg, crossing " << verdict.crossoverHz
+              << " Hz, spacing " << 1000.0 * spacing << " ms, ideal " << idealMs << " ms");
+    CHECK(std::fabs(resolved.tauSeconds - verdict.tauSeconds) < 1.0e-9);  // the integer chose tau*'s own cycle
+    CHECK(std::fabs(tauMs - idealMs) < 1000.0 * spacing / 2.0);
+    CHECK(alignPane(c).readoutForTest().contains("delay MAIN by "));
 }
 
 }  // namespace alignir

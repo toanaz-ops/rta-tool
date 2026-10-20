@@ -177,6 +177,11 @@ public:
     /// The integer the bound IRs imply (arrival difference minus the named
     /// topology's peak lag), whether or not it was clear enough to use.
     [[nodiscard]] std::optional<std::ptrdiff_t> irCycleHintSamples() const noexcept { return irHint_; }
+    /// Set when the seed and the measured crossing disagree by more than a
+    /// third of an octave: the IRs were then not allowed to choose the cycle.
+    [[nodiscard]] const std::optional<SeedDisagreement>& seedDisagreement() const noexcept {
+        return seedDisagreement_;
+    }
     /// `cycleOffsetSamples()` came from the IRs, not from the operator.
     [[nodiscard]] bool cycleOffsetFromIr() const noexcept { return cycleFromIr_; }
     /// The options the fit was actually handed, so a test can assert the
@@ -239,6 +244,7 @@ private:
     std::vector<PolaritySignal> signals_;
     std::optional<std::ptrdiff_t> cycleOffset_;
     std::optional<std::ptrdiff_t> irHint_;
+    std::optional<SeedDisagreement> seedDisagreement_;
     bool cycleFromIr_ = false;
     rta::dsp::BandFitOptions lastFit_{};
 };

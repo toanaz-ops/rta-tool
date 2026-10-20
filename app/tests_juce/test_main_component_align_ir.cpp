@@ -104,7 +104,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
     REQUIRE(runnerOf(c).busy());
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     INFO("status: " << runnerOf(c).status());
     CHECK(runnerOf(c).step() == WizardStep::Computed);  // not AskingCycle
     CHECK(runnerOf(c).cycleFromIr());
@@ -115,7 +115,25 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(*runnerOf(c).cycleSamples() == subArrival - mainArrival - lag);
     WARN("T11 integer " << *runnerOf(c).cycleSamples() << " (raw " << subArrival - mainArrival << ", lag " << lag
                         << "), the fixture's pure delay is 96");
-    CHECK(std::llabs(static_cast<long long>(*runnerOf(c).cycleSamples()) - 96) <= 3);
+    // DERIVED bound (replaces a +-3 that was the floor of one grid). The arrivals
+    // are identical every run (main 4, sub 320); what moves is lag = lagAt(crossing),
+    // because SyntheticInput paces by wall clock and the snapshot is taken from the
+    // message-thread timer, so WHICH blocks of the fixed-seed (0x5EEDu) pink stream
+    // are averaged varies, and the crossing with them. Crossing resolution: the
+    // spectral crossover interpolates between bins of 48000/4096 = 11.7 Hz, so its
+    // reading cannot be off by more than half a bin, 5.9 Hz; with the fixture's
+    // corner at 100 Hz we allow dF = 5 Hz (measured jitter about +-1.5 Hz). The LR4
+    // lag is about 0.46 fs / f (2.2 samples per Hz here), so the integer may move
+    // over [raw - lagAt(100 - dF), raw - lagAt(100 + dF)] and nowhere else.
+    constexpr double kCornerHz = 100.0;
+    constexpr double kCrossingToleranceHz = 5.0;
+    const double crossingHz = runnerOf(c).verdict()->crossoverHz;
+    CHECK(std::fabs(crossingHz - kCornerHz) <= kCrossingToleranceHz);
+    const long raw = subArrival - mainArrival;
+    CHECK(*runnerOf(c).cycleSamples() >= raw - lagAt(kCornerHz - kCrossingToleranceHz));
+    CHECK(*runnerOf(c).cycleSamples() <= raw - lagAt(kCornerHz + kCrossingToleranceHz));
+    WARN("T11 crossing " << crossingHz << " Hz, allowed integer range [" << raw - lagAt(kCornerHz - kCrossingToleranceHz)
+                         << ", " << raw - lagAt(kCornerHz + kCrossingToleranceHz) << "]");
     CHECK(pane.offsetButtonForTest().isEnabled());  // a typed offset may always override
 
     // The signals are listed, with their reasons; the sub's findPolarity is a refusal.
@@ -128,7 +146,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(pane.irInfoForTest().contains("findPolarity, low-pass side: refused (BandTooHigh)"));
     // The verdict resolves the integer: candidates sit ~10.8 ms apart, the
     // corrected integer is within ~0.1 ms of the right one.
-    CHECK(pane.readoutForTest().contains("delay MAIN by 2."));
+    checkChosenCycleNearIdeal(c, 2.0, "T11 IR integer");
     CHECK_FALSE(pane.readoutForTest().contains("your offset"));
 
     // A typed offset overrides the IR integer, and the status says whose it is.
@@ -137,7 +155,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(*runnerOf(c).cycleSamples() == 96);
     CHECK_FALSE(runnerOf(c).cycleFromIr());
     CHECK(runnerOf(c).status().find("your typed offset") != std::string::npos);
-    CHECK(pane.readoutForTest().contains("delay MAIN by 2."));
+    checkChosenCycleNearIdeal(c, 2.0, "T11 typed 2.0 ms");
 
     // The cost of the fit on the message thread (EQ risk-2 precedent: > 100 ms moves to a worker).
     WARN("T11 compute() = " << runnerOf(c).lastComputeMs() << " ms on the message thread");
@@ -149,7 +167,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(runnerOf(c).boundIr(Source::Main) == nullptr);
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     CHECK(runnerOf(c).step() == WizardStep::AskingCycle);
     CHECK_FALSE(runnerOf(c).cycleFromIr());
 
@@ -158,7 +176,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     CHECK(runnerOf(c).step() == WizardStep::Computed);
     // The crossover is estimated afresh from pink noise each run, so its lag may differ by a sample or two.
     CHECK(*runnerOf(c).cycleSamples() == subArrival - mainArrival - lagAt(runnerOf(c).verdict()->crossoverHz));
@@ -200,7 +218,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN/SUB and MEASURE obey the same busy predica
     CHECK(sweepOf(c).readoutForTest().contains("refused"));
     CHECK(Access::libraryForTest(c).entries().size() == before);
     CHECK(runnerOf(c).busy());  // the run was not disturbed
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
 }
 
 TEST_CASE("align IR (T11): a result from another output does not bind", kTag) {
@@ -212,7 +230,7 @@ TEST_CASE("align IR (T11): a result from another output does not bind", kTag) {
     REQUIRE_FALSE(firstId.empty());
 
     // SWEEP SUB is running on output 2; a `swept` report naming output 1 is not its result.
-    REQUIRE(tickUntil(c, [&] { return panel.sweepSubButtonForTest().isEnabled(); }, 20000));
+    REQUIRE(tickUntil(c, [&] { return panel.sweepSubButtonForTest().isEnabled() && Access::outputSourceQuiescentForTest(c); }, 20000));
     panel.sweepSubButtonForTest().onClick();
     REQUIRE(sweepOf(c).busy());
     Access::alignForTest(c).onSwept(firstId, 0);
@@ -242,7 +260,7 @@ TEST_CASE("align IR (T11): an IR measured at another sample rate is ignored, and
     REQUIRE(runnerOf(c).busy());
     CHECK(runnerOf(c).status().find("IR MAIN ignored: its sample rate differs") != std::string::npos);
     CHECK(runnerOf(c).status().find("IR SUB ignored") != std::string::npos);
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     CHECK(runnerOf(c).step() == WizardStep::AskingCycle);  // nothing was supplied
     CHECK_FALSE(runnerOf(c).irHintSamples().has_value());
 }

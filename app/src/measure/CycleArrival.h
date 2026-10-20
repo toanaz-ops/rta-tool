@@ -52,10 +52,39 @@ namespace rta::measure {
 /// candidate is right only while the integer's error stays under HALF the
 /// spacing, where the next candidate becomes equally near. A guard at half
 /// would accept a margin of zero; at a quarter the chosen candidate is at least
-/// three times nearer than the runner-up (d <= s/4 against >= 3s/4). With one
-/// candidate there is no spacing to measure and nothing to confuse it with, so
-/// it is returned. nullopt: no candidates, or the integer sits between them.
+/// three times nearer than the runner-up (d <= s/4 against >= 3s/4).
+///
+/// With ONE candidate there is no gap to measure, but there is a bound on it
+/// (H5 closeout D6): the fit searched tau in [-R, R], R = `searchRangeSeconds`,
+/// and found a single local maximum at c. Its neighbours c + s and c - s were
+/// not found, so both lie outside the range: c + s > R and c - s < -R, i.e.
+/// s > R + |c|. The guard then uses that LOWER bound as the spacing, which is
+/// never looser than the real quarter-spacing rule (d <= (R + |c|) / 4 <= s / 4).
+/// Before this, one candidate accepted any integer, so an IR integer 50 ms from
+/// the fit's only candidate was "chosen". A non-positive range gives no bound:
+/// nullopt (ask). nullopt also: no candidates, or the integer sits between them.
 [[nodiscard]] std::optional<double> candidateWithinGuard(const std::vector<double>& candidatesSeconds,
-                                                         double targetSeconds);
+                                                         double targetSeconds,
+                                                         double searchRangeSeconds);
+
+/// The widest disagreement between the operator's SEED corner and the measured
+/// acoustic crossing for which the IR integer is still trusted (H5 closeout
+/// D9): 1/3 octave. The topology peak lag is evaluated at the seed, but the
+/// arrivals were produced at the true corner. A low-pass lag is k / fc, with
+/// k = 0.94 for LR8, the highest-lag shipped topology (`test_cycle_arrival.cpp`),
+/// so a seed at f_s against a true corner f_t mis-corrects the integer by
+/// (k / f_t) * |f_t / f_s - 1|. The guard accepts an error up to a quarter of
+/// the candidate spacing, about 1 / (4 f_t) (spacing about 1 / f_t for the
+/// shipped +-1 octave window; 10.8 ms at 100 Hz). Equating: |f_t / f_s - 1| <=
+/// 1 / (4 k) = 0.27 for LR8 (0.54 for LR4), and 2^(1/3) - 1 = 0.26 is the widest
+/// octave fraction inside the LR8 figure. Past that, one notch of cycle is a
+/// wrong integer the guard cannot see: a verifier found SEED 60 on a 200 Hz LR4
+/// corner passing at 5.4 ms and SEED 80 / 100 / 60 on 150 / 200 / 120 Hz LR8.
+inline constexpr double kSeedCrossingToleranceOctaves = 1.0 / 3.0;
+
+/// True when the seed and the crossing are within `kSeedCrossingToleranceOctaves`.
+/// A non-positive frequency on either side is "do not know": reported as agreeing,
+/// because there is nothing to compare (no seed means the lag uses the crossing).
+[[nodiscard]] bool seedAgreesWithCrossing(double seedHz, double crossingHz) noexcept;
 
 }  // namespace rta::measure

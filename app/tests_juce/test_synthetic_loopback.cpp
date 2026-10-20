@@ -239,9 +239,12 @@ TEST_CASE("SYNTHETIC + LOCATE reaches the closed-form synthetic delay", "[synthe
     //
     // PROVENANCE -- an EXTERNAL numeric oracle, NOT a closed form. An earlier
     // version of this comment derived 4.75 as a mean group delay over a
-    // hand-picked 200 Hz - 12 kHz band; PHAT does not average over that band
-    // (the same formula over DC..Nyquist gives 6.26), so that derivation was
-    // wrong and the agreement was luck. The value below comes from an
+    // hand-picked 200 Hz - 12 kHz band; PHAT does not average over that band,
+    // so that derivation was wrong and the agreement was luck. (An earlier
+    // revision also said the same formula over DC..Nyquist gives 6.26; that is
+    // not reproducible -- the phase-slope mean group delay of this band-pass
+    // over DC..Nyquist is 0.50 samples, 4.50 with the delay, also not 4.76:
+    // PHAT is a whitened correlation peak, not a mean group delay.) The value below comes from an
     // independent script (the verifier's review of PRs #67-#69): pink noise, a 4-sample delay,
     // butter(2, [40, 16000]) band-pass at fs = 48 kHz, -30 dB white noise,
     // GCC-PHAT with regularisation 1e-10 and parabolic refinement, which read
@@ -277,4 +280,26 @@ TEST_CASE("leaving SYNTHETIC mid-LOCATE cancels it instead of refusing LOCATE fo
     component.setSyntheticMode(true);
     MainComponentTestAccess::locateClickedForTest(component);
     CHECK(MainComponentTestAccess::locateActiveForTest(component));
+}
+
+TEST_CASE("leaving SYNTHETIC mid-LOCATE disarms the excitation: the engine falls quiet", "[synthetic_loopback]") {
+    // H5 closeout C2. cancelLocate() calls disarmSource(); with that call deleted
+    // the pink noise stays armed, the engine never reaches quiescence, and every
+    // later feature that needs setSource() (ALIGN, SWEEP, VERIFY) is refused. The
+    // case above only reads the flags, so it stayed green without the disarm.
+    MainComponent component;
+    component.setSyntheticMode(true);
+    MainComponentTestAccess::locateClickedForTest(component);
+    REQUIRE(MainComponentTestAccess::locateActiveForTest(component));
+    REQUIRE_FALSE(MainComponentTestAccess::outputSourceQuiescentForTest(component));  // armed
+
+    component.setSyntheticMode(false);  // the loopback thread is gone; nothing renders any more
+    // Drive the engine the way a device callback would: disarmed, the master gate
+    // ramps out and publishes idle; still armed, it never does.
+    auto& engine = MainComponentTestAccess::outputEngineForTest(component);
+    std::vector<float> left(512, 0.0f), right(512, 0.0f);
+    float* outs[2] = { left.data(), right.data() };
+    for (int block = 0; block < 32; ++block) engine.render(outs, 2, 512);
+    CHECK(engine.sourceIsQuiescent());
+    CHECK(MainComponentTestAccess::outputSourceQuiescentForTest(component));
 }

@@ -1092,7 +1092,7 @@ exists. Row B (VERIFY on hardware, from the EQ-UI entry) is still open.
 
 | # | Finding | Disposition |
 |---|---|---|
-| L1 | `test_synthetic_loopback.cpp`: the 4.75-sample LOCATE value was justified by a mean group delay over a hand-picked 200 Hz - 12 kHz band; PHAT uses DC - Nyquist, where that formula gives 6.26 | **FIXED (closeout PR)** — false derivation removed; the value is an external numeric GCC-PHAT oracle (4.756 - 4.766), labelled a regression lock |
+| L1 | `test_synthetic_loopback.cpp`: the 4.75-sample LOCATE value was justified by a mean group delay over a hand-picked 200 Hz - 12 kHz band; PHAT uses DC - Nyquist (~~where that formula gives 6.26~~ **corrected 2026-10-20, H5 closeout C1: that figure is not reproducible; the phase-slope mean group delay of `butter(2,[40,16000])` at 48 kHz over DC..Nyquist is 0.50 samples, 4.50 with the delay, also not 4.76**) | **FIXED (closeout PR)** — false derivation removed; the value is an external numeric GCC-PHAT oracle (4.756 - 4.766), labelled a regression lock. **C4 (H5 closeout): the oracle script itself is not in `tools/`** — KNOWN-LIMIT: a seed-deterministic script was judged not worth adding while the lock's tolerance (0.5 sample) is the estimator's own resolution; a reader cannot re-run the 4.756 - 4.766 and must take it from PR #67-#69's review |
 | L2 | `SyntheticInput.cpp`: render sees `armed == false`, `armSource` lands before `sourceIsQuiescent()` is read, one silent block goes onto the bus uncounted | **FIXED (closeout PR)** — documented in the comment with the reason it is harmless (LOCATE's settle clock is `renderedSamples()`) |
 | L3 | SYNTHETIC renders one output channel; ALIGN (`AlignmentWizard.cpp:88/172` solos main/sub = 0/1) and EqVerify (`EqVerify.cpp:148`) solo a channel other than 0, which is silence in SYNTHETIC | **DEFER to H5 T0** |
 | L4 | SYNTHETIC turned off (or the device stopped) mid-LOCATE leaves `locateWaitingForSettle_` / `locateCaptureArmed_` set; LOCATE refused until restart (pre-existing) | **FIXED (closeout PR)** for the mode change: `cancelLocate()` in `setSyntheticMode`, test "leaving SYNTHETIC mid-LOCATE ...". A plain device STOP mid-LOCATE with SYNTHETIC unchanged is NOT covered (no hook there; not changed) — **DEFER**, with L9 |
@@ -1104,6 +1104,69 @@ exists. Row B (VERIFY on hardware, from the EQ-UI entry) is still open.
 | L10 | The first 4 commits of PR #69 lack the Co-Authored-By trailer | cosmetic, no action |
 
 **Z25 is done** (accessor shipped in #69); Z3 and Z4 above are marked FIXED.
+
+### H5 ALIGN-UI — try it and lane LOWs (2026-10-20, closeout of H5)
+
+Source: the review loops across PRs #71 (`148b784`), #72 (`7fd8e4c`) and the
+closeout PR. Dispositions are the closeout session's. Nothing here is a HIGH or
+MEDIUM.
+
+**Human-try row — ALIGN, no hardware (a person at `rtatool.exe`, about 1 min):**
+
+1. Turn **SYNTHETIC** on, press **ALIGN** (sixth pane button).
+2. Answer MAIN IS HIGH-PASS, LR-4, NOT INVERTED, NO SEED (every question starts
+   "not asked"; MEASURE stays disabled with the blocker text until all are
+   answered). Press **MEASURE**: pink noise on out 1 only, then out 2 only.
+3. You SEE a crossover near 58 Hz, a "delay MAIN by ... ms" line (the shipped
+   defaults are NOT an LR-4 pair: a 2nd-order band-pass skirt against a 4th-order
+   low-pass), delta beyond 90 degrees and the OPPOSITE-polarity sentence, the
+   fit "unmeasured defaults" line, and the asked offset (`main-live-align.png`).
+   Type `2.0` in the coarse-offset box, press **SET OFFSET**.
+4. **SUM** is greyed until the last excitation has ramped out, then enabled;
+   press it: pink noise on both outputs, and `ALIGN SUM @ hh:mm:ss` is drawn
+   against the predicted sum.
+5. **Wave B (no typed offset):** press **SWEEP MAIN**, wait for its `IR +n
+   samples` line, press **SWEEP SUB**, then **MEASURE**. With NO SEED the IR
+   integer is only a hint on the shipped defaults (the run asks). Documented trade of D9: a CORRECT seed also asks whenever the acoustic crossing is more than a third of an octave off it (level offsets can do that), because the lag correction cannot then be trusted. **SEED 100 HZ**
+   is 0.79 octave from the 58 Hz crossing, so the run asks too, printing "seed 100
+   Hz and crossing 58 Hz disagree: the IRs did not choose" and "IR hint ... at seed
+   lag, ... at crossing lag" (`main-live-align-seed.png`). The LR-4 HP/LP pair of
+   the T6 bounds (tau about 2 ms, delta about 0, no inversion sentence) is
+   reachable through the test hook only (`main-live-align-lr4.png`, `-ir.png`).
+
+**Human-try row — ALIGN, real hardware (needs an interface, a main, a sub):**
+
+1. Out 1 -> main amp, out 2 -> sub amp; loop from the console split to in 2 (REF);
+   microphone on in 1 (MEAS), both route 1.
+2. Open ALIGN; answer from the processor's preset (topology and inversion come
+   from the preset, not the measurement); SEED with the processor corner only if
+   the crossing the pane reports is within a third of an octave of it.
+3. SWEEP MAIN, then SWEEP SUB: each IR delay about distance / 343 * fs.
+4. MEASURE: pink noise on main only, then sub only. Read crossover Hz, "delay X by
+   n ms", R (reported against an UNMEASURED 0.5 bar) and delta.
+5. Dial the delay into the processor, press SUM: the measured sum lies on the
+   predicted sum near fc.
+6. Move the sub 1 m back and repeat: the suggested delay grows by about 2.9 ms.
+
+SYNTHETIC cannot show reflections, drift or real driver band edges; that is what
+this row is for. Rows B (VERIFY) and C (SWEEP) remain open.
+
+| # | Finding | Disposition |
+|---|---|---|
+| D1 | `test_main_component_align.cpp`: SUM constant typed -1.8394 (true -1.8408); the asserted bin is `lround(fc/binHz)` (93.75 / 105.47 Hz), where the closed form is -1.57 / -2.04 dB | **FIXED (closeout PR)** — closed form evaluated at the asserted bin's own frequency (`unalignedLr4SumDb`, derivation in the comment, the three quoted values CHECKed) |
+| D2 | labelled regression lock | **RECORDED** — kept as a labelled lock, no code change (the verifier's text is not restated here; see PR #72's thread) |
+| D3 | readout label (112 px) vs the 7-line default-pair text | **FIXED (closeout PR)** — the default pair fits (`main-live-align.png`), but the new seed-disagreement readout is ten lines and its inversion sentence was clipped behind the chart in `main-live-align-seed.png`; `kReadoutHeight` 112 -> 132 and the two new lines shortened; the snapshot now renders that case |
+| D4 | SUM enabled before the last excitation ramps out, then refuses on screen | **FIXED (closeout PR)** — pane disables SUM until `OutputEngine::sourceIsQuiescent()` (the predicate SUM's refusal reads, via `AlignRunner::engineQuiescent()`); test "SUM stays disabled until the output source is quiescent" |
+| D5 | the IR peak can sit on a lobe of a band-limited response (measured 1.6 ms jump between lobes) | **KNOWN-LIMIT** — the arrival is the peak of |h|; an envelope / ETC (Hilbert) arrival would not jump lobes. Not built; the spacing/4 guard and the question to the operator are the defence |
+| D6 | the one-candidate guard accepted any integer | **FIXED (closeout PR), by bounding, not by documenting** — spacing > R + \|c\| when one maximum fills a search of +-R, so the integer must lie within (R + \|c\|)/4; a non-positive R asks (`candidateWithinGuard` 3rd argument) |
+| D7 | a grossly wrong topology answer is not detectable | **DEFER** — the wizard asks (a)-(d) and refuses to infer them (record §3); R and delta only report |
+| D8 | not named in the closeout brief | **no disposition recorded here** — check PR #72's review thread |
+| D9 | a wrong SEED far from the measured crossing silently picks a wrong cycle (SEED 60 on a 200 Hz LR4: 5.4 ms; LR8: SEED 80 on 150, 100 on 200, 60 on 120) | **FIXED (closeout PR)** — more than a third of an octave apart -> the IRs do not choose; `AskingCycle` with the note and both hints. Threshold derived in `CycleArrival.h` (`kSeedCrossingToleranceOctaves`) and record §4. **Behaviour change:** SEED 100 on the shipped defaults now asks (it resolved before) |
+| C1 | "the same formula over DC..Nyquist gives 6.26" is not reproducible | **FIXED (closeout PR)** — re-measured: phase-slope mean group delay of `butter(2,[40,16000])` at 48 kHz over DC..Nyquist is **0.50 samples** (the brief's 2.00 / 5.5 did not reproduce either), 4.50 with the delay, which is also not the oracle's 4.76; the figure is dropped in the test comment, the sweep plan (A2), the H4 table (L1) and the H4 handoff pitfall |
+| C2 | deleting `disarmSource()` in `cancelLocate()` left tests green | **FIXED (closeout PR)** — test "leaving SYNTHETIC mid-LOCATE disarms the excitation: the engine falls quiet" |
+| C3 | research note "LOCATE hangs in SYNTHETIC today" | **FIXED (closeout PR)** — correction note: fixed by PR #67 |
+| C4 | the external GCC-PHAT oracle is not in `tools/` | **KNOWN-LIMIT (decision: not added)** — the 4.756 - 4.766 read comes from a verifier script that varied the seed; a script deterministic and cheap enough to commit was not written, because the lock's tolerance (0.5 sample) is the estimator's own resolution |
+| C5 | sweep plan A5 cites `SweepIrWorker.h:46` | **FIXED (closeout PR)** — `SweepIrWorker.h:49` (`:46` falls in the doc comment that starts at `:43`); the neighbouring `MainComponentSweep.cpp:157` was also stale, now `:170` |
 
 <!-- Lane-end LOW triage — 2026-09-29, closeout of EQ-UI (H3) -->
 

@@ -137,20 +137,64 @@ TEST_CASE("T8: the integer is arrival(low) - arrival(high) - lag, keyed by sourc
 
 TEST_CASE("T8: the peak lag is evaluated at the operator's seed corner when one is given", "[alignment_wizard]") {
     // The fixture crosses at 750 Hz acoustically; the operator names the
-    // processor corner as 400 Hz. The low-pass lag scales as 1/fc (about 55
-    // samples at 400 Hz, 29 at 750), so a lag taken at the measured crossing is
-    // ~26 samples off, more than the guard (about 10) allows.
-    constexpr double kSeed = 400.0;
+    // processor corner as 600 Hz -- inside the third of an octave the IRs are
+    // still trusted for (log2(750/600) = 0.32; CycleArrival.h). The low-pass
+    // lag scales as 1/fc (about 36 samples at 600 Hz, 29 at 750), so a lag taken
+    // at the measured crossing instead of the seed changes the integer, which
+    // the exact-value check on the hint tells apart (a seed farther off is D9's
+    // case, below: the IRs then do not choose at all).
+    constexpr double kSeed = 600.0;
     const long raw = 60;  // sub 100 - main 40
     const long atSeed = raw - lagDifference(kSeed);
     const long atCrossing = raw - lagDifference(750.0);
-    REQUIRE(std::labs(atSeed - atCrossing) > 15);
+    REQUIRE(std::labs(atSeed - atCrossing) >= 5);
     OutputEngine engine;
     const auto wizard = run(engine, Source::Main, static_cast<double>(atSeed) / kFs, 40, 100, kSeed);
     REQUIRE(wizard->irCycleHintSamples().has_value());
     CHECK(*wizard->irCycleHintSamples() == atSeed);
     CHECK(wizard->step() != WizardStep::AskingCycle);
     CHECK(wizard->cycleOffsetFromIr());
+}
+
+TEST_CASE("D9: a seed far from the measured crossing does not let the IRs choose the cycle", "[alignment_wizard]") {
+    // The fixture crosses at 750 Hz. A seed at 300 Hz is 1.32 octaves away, so
+    // the lag taken there (about 73 samples against 29) would put the integer
+    // exactly on a candidate -- built that way on purpose, so only the
+    // disagreement check, not the guard, can refuse it.
+    constexpr double kSeed = 300.0;
+    const long raw = 60;
+    const long atSeed = raw - lagDifference(kSeed);
+    OutputEngine engine;
+    const auto wizard = run(engine, Source::Main, static_cast<double>(atSeed) / kFs, 40, 100, kSeed);
+    REQUIRE(wizard->verdict().has_value());
+    const double crossing = wizard->verdict()->crossoverHz;
+    REQUIRE(std::fabs(std::log2(kSeed / crossing)) > 1.0 / 3.0);
+    CHECK(wizard->step() == WizardStep::AskingCycle);
+    CHECK_FALSE(wizard->cycleOffsetFromIr());
+    CHECK_FALSE(wizard->cycleOffsetSamples().has_value());
+    REQUIRE(wizard->seedDisagreement().has_value());
+    const auto& d = *wizard->seedDisagreement();
+    CHECK(d.seedHz == kSeed);
+    CHECK(d.crossingHz == crossing);
+    CHECK(d.hintAtSeedSamples == atSeed);
+    CHECK(d.hintAtCrossingSamples == raw - lagDifference(crossing));
+    CHECK(d.hintAtSeedSamples != d.hintAtCrossingSamples);  // two different offers, not one repeated
+    REQUIRE(wizard->irCycleHintSamples().has_value());
+    CHECK(*wizard->irCycleHintSamples() == atSeed);
+}
+
+TEST_CASE("D9: no seed, or a seed within a third of an octave, leaves the IRs free to choose", "[alignment_wizard]") {
+    const auto f = measureFixture(Source::Main, 40, 100);
+    OutputEngine engine;
+    const auto noSeed = run(engine, Source::Main, static_cast<double>(f.expected) / kFs, 40, 100);
+    CHECK_FALSE(noSeed->seedDisagreement().has_value());
+    CHECK(noSeed->cycleOffsetFromIr());
+    OutputEngine engine2;
+    const double nearSeed = f.crossoverHz * std::pow(2.0, 0.25);
+    const long atNear = 60 - lagDifference(nearSeed);
+    const auto nearRun = run(engine2, Source::Main, static_cast<double>(atNear) / kFs, 40, 100, nearSeed);
+    CHECK_FALSE(nearRun->seedDisagreement().has_value());
+    CHECK(nearRun->cycleOffsetFromIr());
 }
 
 TEST_CASE("T8: an integer that sits between candidates is a hint, not an answer", "[alignment_wizard]") {

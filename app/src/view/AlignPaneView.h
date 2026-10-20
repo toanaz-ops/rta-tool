@@ -93,6 +93,7 @@ private:
     std::uint64_t lastRevision_ = ~std::uint64_t{ 0 };
     int lastOutputCount_ = -1;
     juce::String lastBlockerText_;
+    bool lastQuiescent_ = true;  ///< the engine state SUM's enabled flag was last computed from
 
     CrossoverSurface surface_;
     bool ready_ = false;

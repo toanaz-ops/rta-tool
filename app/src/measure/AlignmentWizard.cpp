@@ -308,18 +308,33 @@ void AlignmentWizard::compute() {
     cycleOffset_ = cycleAnswer_;
     cycleFromIr_ = false;
     irHint_.reset();
+    seedDisagreement_.reset();
     if (!cycleOffset_.has_value() && highSideIr() != nullptr && lowSideIr() != nullptr) {
+        const double fs = a.meta().sampleRate;
+        const auto hintWithLagAt = [&](double lagHz) {
+            const double lag = topologyPeakLagSamples(*topology_, false, lagHz, fs)
+                               - topologyPeakLagSamples(*topology_, true, lagHz, fs);
+            return static_cast<std::ptrdiff_t>(lowSideIr()->arrivalSamples)
+                   - static_cast<std::ptrdiff_t>(highSideIr()->arrivalSamples)
+                   - static_cast<std::ptrdiff_t>(std::llround(lag));
+        };
         // The lag belongs to the processor's CORNER, which is what the operator's
         // seed names; the measured acoustic crossing moves off it with level
         // offsets (up to an octave), and a low-pass's lag scales as 1/fc.
         const double lagHz = seedHz_.has_value() ? *seedHz_ : crossing.frequencyHz;
-        const double lag = topologyPeakLagSamples(*topology_, false, lagHz, a.meta().sampleRate)
-                           - topologyPeakLagSamples(*topology_, true, lagHz, a.meta().sampleRate);
-        irHint_ = static_cast<std::ptrdiff_t>(lowSideIr()->arrivalSamples)
-                  - static_cast<std::ptrdiff_t>(highSideIr()->arrivalSamples)
-                  - static_cast<std::ptrdiff_t>(std::llround(lag));
-        if (candidateWithinGuard(result.candidateTausSeconds,
-                                 static_cast<double>(*irHint_) / a.meta().sampleRate).has_value()) {
+        irHint_ = hintWithLagAt(lagHz);
+        // D9: a seed far from the measured crossing makes the lag correction
+        // wrong by more than the guard can see (threshold derivation:
+        // CycleArrival.h, kSeedCrossingToleranceOctaves). Do not resolve; keep
+        // both integers and ask.
+        const bool seedFar =
+            seedHz_.has_value() && !seedAgreesWithCrossing(*seedHz_, crossing.frequencyHz);
+        if (seedFar) {
+            seedDisagreement_ = SeedDisagreement{ *seedHz_, crossing.frequencyHz, *irHint_,
+                                                  hintWithLagAt(crossing.frequencyHz) };
+        } else if (candidateWithinGuard(result.candidateTausSeconds,
+                                        static_cast<double>(*irHint_) / fs,
+                                        lastFit_.tauRangeSeconds).has_value()) {
             cycleOffset_ = irHint_;
             cycleFromIr_ = true;
         }
