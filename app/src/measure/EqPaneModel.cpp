@@ -205,7 +205,9 @@ std::string EqPaneModel::trustReadout() const {
     if (!hasMeasurement()) return "";
     const auto trusted = session_.trusted();
     const auto count = std::count_if(trusted.begin(), trusted.end(), [](std::uint8_t t) { return t != 0; });
-    char text[64];
+    // Worst case 20 (lld) + 4 + 20 (zu) + 28 + 4 (%.2f of a 0..1 floor) + 1 + NUL = 78;
+    // 64 truncated in principle and gcc's -Wformat-truncation says so.
+    char text[96];
     std::snprintf(text, sizeof text, "%lld of %zu bins trusted (coherence >= %.2f)",
                   static_cast<long long>(count), trusted.size(), static_cast<double>(kEqTrustFloor));
     return text;
