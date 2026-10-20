@@ -129,7 +129,7 @@ TEST_CASE("the lead-in is half the distance to the 2nd harmonic packet, capped a
 
     // A 1 s sweep: Novak synchronisation rounds f1*L to the integer 3, so L = 3/20
     // = 0.15 s (not the unsynchronised 1/ln(1000) = 0.1448 s the plan estimated),
-    // and half the distance to the 2nd harmonic, 0.5 * 0.15 * ln 2 s, is 2495.4
+    // and half the distance to the 2nd harmonic, 0.5 * 0.15 * ln 2 s, is 2495.3
     // samples at 48 kHz, rounded DOWN to 2495 so it cannot cross the packet.
     auto config = rta::measure::shippedSweepConfig(48000.0);
     config.durationSec = 1.0;
@@ -152,7 +152,7 @@ TEST_CASE("the lead-in is half the distance to the 2nd harmonic packet, capped a
 
 TEST_CASE("63 Hz is refused as outside the sweep's trusted band and 125 Hz to 8 kHz are not", kTag) {
     // F3. The 63 Hz octave spans 44.7 to 89.1 Hz; the shipped sweep's trusted
-    // band starts at 80 Hz. 125 Hz spans 88.4 to 177 Hz and 8 kHz ends at 11.2 kHz,
+    // band starts at 80 Hz. 125 Hz spans 89.1 to 177 Hz (core's OctaveBands is base-ten: 125.893 / 10^(3/20)) and 8 kHz ends at 11.2 kHz,
     // both inside [80, 19700].
     const auto ir = fx::buildIr(flatSpec(0.80));
     const Rt60Result r = analyseRt60(&ir);
@@ -188,9 +188,16 @@ TEST_CASE("two octaves with different decays are reported under their own labels
     // A label shift (bands reversed, or one band's edges filtered under another's
     // name) would swap these: 1.20 s at 125 Hz, 0.40 s at 2 kHz, so a swap reads
     // 0.40 and 1.20 and is 0.80 s away from the truth; half is the 0.40 bound.
+    // Leakage makes the adjacent octaves read the component's decay too (250 Hz
+    // reads ~1.13 s), so a one-octave edge shift cannot be seen in the two
+    // component bands alone. The 500 Hz and 8 kHz octaves are two octaves from
+    // BOTH components and hold only the noise floor: they must refuse, and a
+    // band filtered with a neighbour's edges would read a leaked decay there.
+    // Edges come from the grid itself, never typed.
+    const auto grid = rta::measure::rt60OctaveBands();
     fx::IrSpec spec;
     spec.harmonicSpacingL = shippedL();
-    spec.components = {{88.4, 177.8, 1.20, 11}, {1412.0, 2818.0, 0.40, 12}};
+    spec.components = {{grid[1].lowHz, grid[1].highHz, 1.20, 11}, {grid[5].lowHz, grid[5].highHz, 0.40, 12}};
     const auto ir = fx::buildIr(spec);
     const Rt60Result r = analyseRt60(&ir);
     REQUIRE(r.analysed());
@@ -202,6 +209,10 @@ TEST_CASE("two octaves with different decays are reported under their own labels
     REQUIRE(r.bands[5].t30.has());
     CHECK(std::fabs(r.bands[1].t30.seconds - 1.20) < 0.40);
     CHECK(std::fabs(r.bands[5].t30.seconds - 0.40) < 0.40);
+    REQUIRE(r.bands[3].nominalHz == 500);
+    REQUIRE(r.bands[7].nominalHz == 8000);
+    CHECK_FALSE(r.bands[3].t30.has());  // no decay two octaves from either component
+    CHECK_FALSE(r.bands[7].t30.has());
 }
 
 TEST_CASE("no IR, no tail and no lead-in are named, and never throw", kTag) {

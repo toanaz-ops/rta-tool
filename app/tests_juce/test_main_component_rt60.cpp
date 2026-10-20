@@ -12,10 +12,11 @@
 // multiplier reads 1.60 s, so |T - 0.80| < 0.40. Accuracy is core's job.
 //
 // HELD TAIL, not requested. The capture keeps 1.0 s of pre-roll and the sweep
-// starts about 0.2 s into it, so the IR holds the TAIL choice PLUS about 0.8 s of
-// slack. The plan's "tail 1.0 -> advice, tail 2.0 -> none" assumed equal; with the
-// slack, 1.5 x 0.80 s = 1.2 s fits inside a 1.0 s choice already. The pair below is
-// therefore 0.1 s (held ~0.9 s, short of 1.2 s) and 2.0 s (held ~2.8 s); the
+// starts part-way into it, so the IR holds the TAIL choice PLUS about 0.9 s of
+// slack (measured: 2.0 s held 2.90 s, 0.1 s held 1.04 s). The plan's "tail 1.0 ->
+// advice, tail 2.0 -> none" assumed equal; with the slack, 1.5 x 0.80 s = 1.2 s
+// fits inside a 1.0 s choice already. The pair below is
+// therefore 0.1 s (held ~1.0 s, short of 1.2 s) and 2.0 s (held ~2.9 s); the
 // figures are printed.
 #include <catch2/catch_test_macros.hpp>
 
@@ -172,7 +173,7 @@ TEST_CASE("rt60: the pane's SWEEP button fills the table with the room's 0.80 s,
 }
 
 TEST_CASE("rt60: a tail too short for 1.5 x the decay gets an advice line, and a long one does not", kTag) {
-    // See the file comment: HELD tail = the choice plus ~0.8 s of pre-roll slack.
+    // See the file comment: HELD tail = the choice plus ~0.9 s of pre-roll slack.
     MainComponent c;
     startRoom(c);
     c.selectPaneView(rta::view::PaneSelectorButton::Rt60);
