@@ -28,6 +28,7 @@
 #include "snapshot_align.h"
 #include "snapshot_eq.h"
 #include "snapshot_routing.h"
+#include "snapshot_rt60.h"
 #include "snapshot_xover.h"
 
 #include "AppTypefaces.h"
@@ -302,6 +303,7 @@ int main (int argc, char** argv)
     renderRoutingSpecimen (outDir, failures);
     rta::tools::renderEqSpecimens (outDir, failures);  // main-live-eq*.png, L7-EQ UI wave A
     rta::tools::renderAlignSpecimen (outDir, failures);  // main-live-align.png, ALIGN-UI wave A
+    rta::tools::renderRt60Specimen (outDir, failures);  // main-live-rt60.png, RT60-UI wave A
 
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
     // tuning-visuals.md): paint-only components fed canned synthetic data,

@@ -61,6 +61,40 @@ private:
     std::size_t cursor_ = 0;
 };
 
+/// A feedback comb, y[n] = x[n] + g * y[n - D], carrying state across blocks
+/// (RT60-UI lane decision 10): the one-line "room" whose decay has a closed form.
+///
+/// Each trip round the loop multiplies the energy by g^2, so the energy falls
+/// 20*log10(1/g) dB per D samples and the 60 dB decay time is exactly
+/// T = 3 * D / (fs * log10(1/g)) in EVERY frequency band -- all of the comb's
+/// poles share the radius g^(1/D). An impulse comes out as pulses at k*D with
+/// amplitude g^k. A gain of 0 (or a delay of 0) is INACTIVE and the caller must
+/// then not run it: `x + 0.0f` changes -0.0 into +0.0, so "multiplied by zero"
+/// is not bit-identical and a default must not change one bit.
+class FeedbackComb {
+public:
+    FeedbackComb(int delaySamples, float gain)
+        : history_(static_cast<std::size_t>(std::max(0, delaySamples)), 0.0f), gain_(gain) {}
+
+    [[nodiscard]] bool active() const noexcept { return !history_.empty() && gain_ != 0.0f; }
+
+    /// In place. The state is the last D OUTPUT samples, so a block boundary
+    /// anywhere gives the same result as one long block.
+    void process(std::span<float> block) noexcept {
+        if (!active()) return;
+        for (float& v : block) {
+            v += gain_ * history_[cursor_];
+            history_[cursor_] = v;
+            cursor_ = (cursor_ + 1) % history_.size();
+        }
+    }
+
+private:
+    std::vector<float> history_;
+    std::size_t cursor_ = 0;
+    float gain_;
+};
+
 /// The MEASUREMENT channel's deterministic part: integer delay, then an
 /// optional `BiquadCascade` band-limit (sweep-IR lane, decision 8). Noise is
 /// added AFTER this, by the caller, so the noise floor stays flat -- a real
@@ -74,11 +108,13 @@ private:
 ///
 /// An empty filter is an identity, not a pass-through of a zero-section
 /// cascade -- the default must not change one bit for a caller that never
-/// opted in.
+/// opted in. The optional room comb comes LAST, after the filter, so an impulse
+/// through an empty filter is exactly pulses at D0 + k*D (RT60-UI T6).
 class MeasurementPath {
 public:
-    MeasurementPath(int delaySamples, std::vector<rta::dsp::Biquad::Coeffs> filter)
-        : delay_(delaySamples), filter_(std::move(filter)) {}
+    MeasurementPath(int delaySamples, std::vector<rta::dsp::Biquad::Coeffs> filter, int combDelaySamples = 0,
+                    float combGain = 0.0f)
+        : delay_(delaySamples), filter_(std::move(filter)), comb_(combDelaySamples, combGain) {}
 
     /// `out` may not alias `in` (DelayLine's rule); sizes bounded as there.
     void process(std::span<const float> in, std::span<float> out) noexcept {
@@ -86,11 +122,13 @@ public:
         if (filter_.size() > 0) {
             filter_.process(out, out);
         }
+        comb_.process(out);  // returns at once when inactive
     }
 
 private:
     DelayLine delay_;
     rta::dsp::BiquadCascade filter_;
+    FeedbackComb comb_;
 };
 
 /// Add independent noise of the given RMS, in place.

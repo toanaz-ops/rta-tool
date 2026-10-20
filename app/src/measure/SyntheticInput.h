@@ -99,6 +99,15 @@ public:
         int secondOutputDelaySamples = 0;
         std::vector<rta::dsp::Biquad::Coeffs> secondOutputFilter;
 
+        /// RT60-UI lane decision 10: a feedback comb at the END of output 0's
+        /// path, y[n] = x[n] + g*y[n-D] -- a "room" with the closed-form decay
+        /// T = 3*D / (fs * log10(1/g)) in every band (SyntheticImpairment.h).
+        /// Gain 0 is OFF and bit-identical to no comb; reachable only through
+        /// the test hook, because a default room would change every SYNTHETIC
+        /// magnitude test the earlier lanes settled.
+        int roomCombDelaySamples = 0;
+        float roomCombGain = 0.0f;
+
         /// The generator's output engine, or nullptr. When set, the
         /// constructor `prepare()`s it for one channel and every block is
         /// rendered from it: whenever its source is armed, THAT is the

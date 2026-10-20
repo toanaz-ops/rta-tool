@@ -22,7 +22,7 @@ line.
 | 1 | P1 RTA / SPL / generator | done | device START/STOP `view/DevicePanel.cpp:53`; SYNTHETIC toggle `MainComponent.cpp:97`; RTA and SPL pane buttons `MainComponentPanes.cpp:41,43`. **Generator gap:** the only output control is LOCATE's one-shot pink noise (`MainComponent.cpp:101`); no continuous generator / signal-type / level control exists | BUILT (partial) | report 002; T12 hardware steps **M2/M7 still pending a human** (`docs/reports/T12-hardware-run.md`) |
 | 2 | P2 dual-FFT (TRANSFER) | done | TRANSFER pane button `MainComponentPanes.cpp:42`; roles by the routing matrix (`view/RoutingMatrix.cpp:124`). **Gap:** TF slots 1..7 have no operator path — `RoutingMatrix::setActiveTransferFunction` (`RoutingMatrix.h:84`) has zero callers, so every assigned channel gets `tfIndex` 0 | BUILT | report 003 |
 | 3 | P3 MTW | done | MTW / FIXED toggle `view/TransferSourceToggle.cpp:18-19` inside the TRANSFER pane | BUILT | report 005 |
-| 4 | L4a + L4b sweep/IR core | done | ~~none — grep for `rt60`, `schroeder`, `lundeby`, `deconvol` in `app/src` (outside `dev/`) is empty~~ **updated after #69:** the IR producer half is operator-reachable: SWEEP button `MainComponentSweep.cpp:44` (`onClick` → `clicked()`; `sweep_.poll()` at `MainComponent.cpp:242`) → `SweepIrWorker` → `analyseSweepCapture` (`rta::ir::deconvolve`) → `TraceLibrary` + `IrStore`. **Still none for the RT60 half** (L4b: `schroeder` / `lundeby` have no `app/src` caller) | CORE ONLY (was; after #69: IR producer BUILT, RT60 half still CORE ONLY — row stays not BUILT) | `docs/dsp/2026-08-30-sweep-ir-l4a.md`; H4 SWEEP DONE (PRs #67, #68, #69); RT60 UI (H6) is PLANNED |
+| 4 | L4a + L4b sweep/IR core | done | ~~none — grep for `rt60`, `schroeder`, `lundeby`, `deconvol` in `app/src` (outside `dev/`) is empty~~ **updated after #69:** the IR producer half is operator-reachable: SWEEP button `MainComponentSweep.cpp:44` (`onClick` → `clicked()`; `sweep_.poll()` at `MainComponent.cpp:242`) → `SweepIrWorker` → `analyseSweepCapture` (`rta::ir::deconvolve`) → `TraceLibrary` + `IrStore`. ~~**Still none for the RT60 half** (L4b: `schroeder` / `lundeby` have no `app/src` caller)~~ **updated after H6 wave A:** the RT60 half is operator-reachable: RT60 pane button `MainComponentPanes.cpp:53` → pane SWEEP (`view/Rt60PaneView.cpp:77`, output + TAIL choice) → `MainComponentRt60::select` (`MainComponentRt60.cpp:60`) → `analyseRt60` (`measure/Rt60Analysis.cpp`: `bandFilterZeroPhase`, `energyDecayCurve`, `decayTimes` at `:63-66`) → table of T30 / T20 / EDT per octave 63 Hz to 8 kHz, with the reason beside every refused figure | BUILT (wave A; the ensemble, EDC plot and third-octave rows are wave B) — was CORE ONLY; after #69 IR producer BUILT, RT60 half still CORE ONLY | `docs/dsp/2026-08-30-sweep-ir-l4a.md`; H4 SWEEP DONE (PRs #67, #68, #69); H6 wave A (`app/rt60-ui-a`) numbers and decisions: `docs/plans/2026-10-20-rt60-ui-lane-plan.md` and the amendment at the end of `docs/dsp/2026-08-30-ir-decay-l4b.md` |
 | 5 | L4c IR gate / min-phase / offline WAV | no (only the `MinimumPhase` / `ExcessPhase` kernels, built for L7-EQ) | none | NOT STARTED | no plan yet; scope at `docs/dsp/2026-08-30-sweep-ir-l4a.md:22` |
 | 6 | P4b THD / STI | no | none | BLOCKED | needs IEC 60268-16 (a purchase); no THD/STI code in `core/` |
 | 7 | L5a trace library + session (STORE, Save/Open) | done | STORE `MainComponent.cpp:146` → `storeClicked` `MainComponentStore.cpp:126`; SAVE `MainComponentSession.cpp:71`; OPEN `:74` | BUILT | PR #43, #51; hardening #55, #57 |
@@ -122,6 +122,19 @@ Arithmetic: 13 / 19 = 0.6842, 9 / 19 = 0.4737, 14 / 19 = 0.7368; (a) does not
 move because H5 is an `app/` lane. **Next lane: H6 RT60-UI** (`app/rt60-ui`; its
 plan `docs/plans/2026-10-20-rt60-ui-lane-plan.md` lands with H6's first PR). H6
 flips row 4 and is the last unit in (c).
+
+**After H6 wave A (this branch, with #72 and #73 both counted):** row 4 flips
+to BUILT with no partial flag (wave B adds ensemble, EDC plot and third octaves;
+none is needed for the table an operator reads).
+
+| | formula | list counted | value after #72 | value after H6 wave A |
+|---|---|---|---|---|
+| (a) engine built | engine done / 19 | unchanged: 15 rows | 15 / 19 = 78.9 % | **15 / 19 = 78.9 %** |
+| (b) operator-reachable (BUILT + partial) | / 19 | rows 1, 2, 3, **4**, 7, 9, 10, 11, 13, 14, 15, 16, 17, 18 = 14 | 13 / 19 = 68.4 % | **14 / 19 = 73.7 %** |
+| (b-strict) BUILT, no partial flag | / 19 | rows 2, 3, **4**, 7, 10, 14, 15, 16, 17, 18 = 10 | 9 / 19 = 47.4 % | **10 / 19 = 52.6 %** |
+
+Arithmetic: 13 + 1 (row 4) = 14, 14 / 19 = 0.7368; 9 + 1 = 10, 10 / 19 = 0.5263;
+(a) does not move because H6 is an `app/` lane. (c) is now measured: 14 / 19.
 
 **Gaps found while verifying (none appears in an earlier status table):**
 1. `RoutingMatrix::setActiveTransferFunction` has zero callers — TF slots 1..7
@@ -270,7 +283,13 @@ the spacing/4 guard, SWEEP MAIN / SUB, IR binding); closed out by the
 `app/align-ui-closeout` PR.** **Next lane: H6 RT60-UI** (`app/rt60-ui`). H6 is
 PLANNED, not BUILT; it earns "BUILT" only once ctest proves it
 AND an operator can reach it in `rtatool.exe` (2026-09-27 decision 2, this
-document's own rule above).
+document's own rule above). **H6 wave A (RT60 pane, `app/rt60-ui-a`, T0-T8) is
+BUILT and flips row 4** (written after the code, 2026-10-20): the RT60 pane
+button, a pane-local SWEEP with a TAIL choice, and the per-octave T30 / T20 /
+EDT table are reachable in `rtatool.exe`; the headline counts are recomputed
+once, with H5 and H6 wave A both counted, in the block after "Arithmetic: 13 / 19"
+above (14 / 19 = 73.7 % operator-reachable). **Wave B (T9-T12: ensemble over several IRs, EDC
+plot, third-octave bands) is still PLANNED** and is not claimed.
 
 **Not in this run:** `CaptureSequencer` (still deferred — 2026-09-26 decision,
 table below), MTW storage (item 6 above), D10 (research, unscheduled).

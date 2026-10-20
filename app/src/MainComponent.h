@@ -15,6 +15,7 @@
 #include "MainComponentAlign.h"
 #include "MainComponentEq.h"
 #include "MainComponentRail.h"
+#include "MainComponentRt60.h"
 #include "MainComponentSession.h"
 #include "MainComponentSweep.h"
 #include "measure/AnalysisThread.h"
@@ -207,6 +208,7 @@ private:
     /// LOCATE/CAL flags VERIFY needs (MainComponentEqVerify.cpp).
     void wireEqVerify();
     void wireAlign();  // MainComponentAlign.cpp: device, snapshot and busy flags for MEASURE/SUM
+    void wireRt60();   // MainComponentRt60.cpp: the SWEEP half's IR store, readout and a tagged press
 
     /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
     /// into `channelRoleTable_` only when it actually changed -- called from
@@ -327,6 +329,7 @@ private:
     juce::TextButton paneXoverButton_{"XOVER"};  // ALIGN-R8 reversal: G18 live pane
     juce::TextButton paneEqButton_{"EQ"};        // L7-EQ UI lane: the auto-EQ pane
     juce::TextButton paneAlignButton_{"ALIGN"};  // ALIGN-UI lane: the alignment wizard pane
+    juce::TextButton paneRt60Button_{"RT60"};    // RT60-UI lane: the reverberation-time table
     rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
 
     // --- library_ before workspace_ is load-bearing too. See the class
@@ -338,6 +341,8 @@ private:
     MainComponentEq eq_;
     // Same ownership as eq_ (MainComponentAlign.h): declared before workspace_.
     MainComponentAlign align_;
+    // Same ownership and the same reason (MainComponentRt60.h): before workspace_.
+    MainComponentRt60 rt60_;
     // A pointer: selectPaneView rebuilds it wholesale (WorkspaceView's
     // factory is consumed once, in its own constructor).
     std::unique_ptr<rta::view::WorkspaceView> workspace_;

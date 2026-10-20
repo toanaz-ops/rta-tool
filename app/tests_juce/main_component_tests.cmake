@@ -76,6 +76,10 @@ add_executable(rtatool_main_component_tests
     test_main_component_align_ir.cpp
     test_main_component_align_ir_cycle.cpp
     test_main_component_panes_align.cpp
+    # RT60-UI lane wave A: the seventh pane (T3/T4) and Option A through the real
+    # SWEEP button against the SYNTHETIC comb room (T5).
+    test_main_component_panes_rt60.cpp
+    test_main_component_rt60.cpp
     # test_main_component_export.cpp: D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4
     # item 14) -- exportReportClicked()'s catch branch had no test at all.
     test_main_component_export.cpp

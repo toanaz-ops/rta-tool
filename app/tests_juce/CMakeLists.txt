@@ -158,6 +158,11 @@ add_executable(rtatool_view_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignReadout.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizardSignals.cpp
+    # RT60-UI wave A: PaneFactory.cpp's Rt60 branch builds Rt60PaneView, whose
+    # words come from Rt60Readout (and its types from Rt60Analysis).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/Rt60PaneView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Readout.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Analysis.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:

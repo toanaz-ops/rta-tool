@@ -10,8 +10,9 @@
 
 rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSource& source,
                                                       rta::view::EqPaneBinding eq,
-                                                      rta::view::AlignPaneBinding align) {
-    return [&source, eq, align](rta::view::PaneView view) -> std::unique_ptr<juce::Component> {
+                                                      rta::view::AlignPaneBinding align,
+                                                      rta::view::Rt60PaneBinding rt60) {
+    return [&source, eq, align, rt60](rta::view::PaneView view) -> std::unique_ptr<juce::Component> {
         if (view == rta::view::PaneView::Transfer) {
             return std::make_unique<rta::view::TransferView>(source);
         }
@@ -34,6 +35,11 @@ rta::view::WorkspaceView::PaneFactory makePaneFactory(rta::measure::SnapshotSour
             // The runner is MainComponentAlign's, like the EQ model: a pane
             // is widgets only, and the answers survive its rebuild.
             return std::make_unique<rta::view::AlignPaneView>(align);
+        }
+        if (view == rta::view::PaneView::Rt60) {
+            // Selection, cached analysis and settings are MainComponentRt60's: a
+            // pane is widgets only, and its table survives a rebuild.
+            return std::make_unique<rta::view::Rt60PaneView>(rt60);
         }
         return std::make_unique<rta::view::RtaView>(source);
     };

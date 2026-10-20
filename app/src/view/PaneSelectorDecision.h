@@ -27,7 +27,9 @@ namespace rta::view {
 /// `Eq` added by the L7-EQ UI lane (plan T4): the 5th button, same seam.
 ///
 /// `Align` added by the ALIGN-UI lane (plan T4): the 6th button, same seam.
-enum class PaneSelectorButton { Rta, Transfer, Spl, Xover, Eq, Align };
+///
+/// `Rt60` added by the RT60-UI lane (plan T3): the 7th button, same seam.
+enum class PaneSelectorButton { Rta, Transfer, Spl, Xover, Eq, Align, Rt60 };
 
 /// Maps a selector button to the `PaneView` the workspace should rebuild
 /// itself to show. Routed through `resolvePaneView` (`PaneRegistry.h`)
@@ -53,6 +55,7 @@ enum class PaneSelectorButton { Rta, Transfer, Spl, Xover, Eq, Align };
     if (button == PaneSelectorButton::Xover) return resolvePaneView("xover");
     if (button == PaneSelectorButton::Eq) return resolvePaneView("eq");
     if (button == PaneSelectorButton::Align) return resolvePaneView("align");
+    if (button == PaneSelectorButton::Rt60) return resolvePaneView("rt60");
     if (button == PaneSelectorButton::Rta) return resolvePaneView("rta");
 
     // Only reachable once a future enumerator is added to PaneSelectorButton
