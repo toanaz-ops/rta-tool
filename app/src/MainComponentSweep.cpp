@@ -21,8 +21,6 @@ constexpr double kPreRollSeconds = 1.0;
 // The arm is picked up at the next drain and drains run every 10 ms; 100 ms
 // puts the capture's first sample ahead of the sweep's.
 constexpr double kSettleMs = 100.0;
-// Slack on top of the capture's own duration before it is called stuck.
-constexpr double kTimeoutSlackMs = 5000.0;
 
 juce::String signedWhole(long value) { return (value >= 0 ? "+" : "") + juce::String(value); }
 juce::String signedOneDecimal(double value) {
@@ -111,7 +109,7 @@ bool MainComponentSweep::startOn(int outputChannel, bool named) {
     // changes while the worker runs (ALIGN compares the role string).
     armedDeviceName_ = host_.deviceName();
     armedChannelRoles_ = host_.channelRoles();
-    timeoutMs_ = 1000.0 * static_cast<double>(captureSamples) / fs + kTimeoutSlackMs;
+    timeoutMs_ = 1000.0 * static_cast<double>(captureSamples) / fs + timeoutSlackMs_;
     state_ = State::PreRoll;
     say("sweep: arming...");
     return true;

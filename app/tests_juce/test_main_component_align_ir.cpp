@@ -230,7 +230,7 @@ TEST_CASE("align IR (T11): a result from another output does not bind", kTag) {
     REQUIRE_FALSE(firstId.empty());
 
     // SWEEP SUB is running on output 2; a `swept` report naming output 1 is not its result.
-    REQUIRE(tickUntil(c, [&] { return panel.sweepSubButtonForTest().isEnabled(); }, 20000));
+    REQUIRE(tickUntil(c, [&] { return panel.sweepSubButtonForTest().isEnabled() && Access::outputSourceQuiescentForTest(c); }, 20000));
     panel.sweepSubButtonForTest().onClick();
     REQUIRE(sweepOf(c).busy());
     Access::alignForTest(c).onSwept(firstId, 0);

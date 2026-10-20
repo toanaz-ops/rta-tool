@@ -62,13 +62,13 @@ inline void setSweepDurations(MainComponent& c, double sweepSeconds, double tail
     gSweepSeconds = sweepSeconds;
     gTailSeconds = tailSeconds;
     sweepOf(c).setDurationsForTest(sweepSeconds, tailSeconds);
-    // The sweep's own capture timeout (length + 5 s) and 100 ms settle run on the
-    // wall clock while the loopback is paced by it too, so a saturated box aborts
-    // a healthy sweep ("no capture -- no REF on route 1?"). Run the sweep's clock
-    // kBudgetSlack times slower: every timeout inside it stretches by the same
-    // derived factor as the test budgets above.
-    sweepOf(c).setClockForTest(
-        [] { return juce::Time::getMillisecondCounterHiRes() / kBudgetSlack; });
+    // The sweep's own capture timeout (length + 5 s slack) runs on the wall clock
+    // while the loopback is paced by it too, so a saturated box aborts a healthy
+    // sweep ("no capture -- no REF on route 1?"). Stretch that slack by the same
+    // factor as the budgets above. The 100 ms settle is NOT stretched: the capture
+    // is armed at the click and the analysis window is sized for that settle, so a
+    // longer one moves the arrival out of it ("the arrival does not fit").
+    sweepOf(c).setTimeoutSlackForTest(5000.0 * kBudgetSlack);
 }
 /// MEASURE: two steps, each a settle (0.5 s) plus the dwell (transferFifoDepth *
 /// fftSize / fs = 1.365 s at the defaults) in real time, plus a 1 s allowance for

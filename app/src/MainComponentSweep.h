@@ -99,6 +99,9 @@ public:
         }
     }
     void setClockForTest(std::function<double()> nowMs) { nowMs_ = std::move(nowMs); }
+    /// Stretches the capture timeout slack (default 5 s) so a saturated box does not
+    /// abort a healthy sweep; the settle and the capture window are unchanged.
+    void setTimeoutSlackForTest(double ms) { timeoutSlackMs_ = ms; }
 
 private:
     bool startOn(int outputChannel, bool named);
@@ -128,6 +131,7 @@ private:
     double timeoutMs_ = 0.0;
     std::shared_ptr<const rta::measure::LocateCapture> lastHandled_;
     std::function<double()> nowMs_;
+    double timeoutSlackMs_ = 5000.0;  // slack on top of the capture's own duration before it is called stuck
     rta::trace::IrStore irStore_;
     rta::measure::SweepIrWorker worker_;  // LAST: joins first on destruction
 
