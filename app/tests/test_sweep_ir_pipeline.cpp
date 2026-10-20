@@ -64,6 +64,8 @@ TEST_CASE("a pure delay of 37 samples reads 37 from the relabelled origin, posit
     CHECK(static_cast<long>(peak) - static_cast<long>(outcome.ir.originIndex) == 37);
     CHECK(outcome.ir.samples[peak] > 0.0f);  // a delay, not an inversion
     CHECK(outcome.delaySamples == 37);
+    // T9: the IR carries its own arrival, the number ALIGN needs (F2).
+    CHECK(outcome.ir.arrivalSamples == 37);
     CHECK(outcome.referenceArrivalSamples == kPreRoll);
 }
 

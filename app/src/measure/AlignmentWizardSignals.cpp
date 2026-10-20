@@ -21,12 +21,12 @@ namespace rta::measure {
 
 void AlignmentWizard::buildPolaritySignals() {
     signals_.clear();
-    if (!irHigh_.has_value() || !irLow_.has_value()) return;
+    if (highSideIr() == nullptr || lowSideIr() == nullptr) return;
 
     const rta::ir::PolarityConfig polarityConfig{};
     const std::pair<PolaritySignalKind, const rta::ir::Deconvolution*> sides[]{
-        { PolaritySignalKind::FindPolarityHighSide, &*irHigh_ },
-        { PolaritySignalKind::FindPolarityLowSide, &*irLow_ },
+        { PolaritySignalKind::FindPolarityHighSide, &highSideIr()->deconvolution },
+        { PolaritySignalKind::FindPolarityLowSide, &lowSideIr()->deconvolution },
     };
     for (const auto& [kind, deconvolution] : sides) {
         const auto found = rta::ir::findPolarity(*deconvolution, polarityConfig);
@@ -46,7 +46,8 @@ void AlignmentWizard::buildPolaritySignals() {
         signals_.push_back(std::move(signal));
     }
 
-    const auto rho = rta::ir::relativePolarity(*irHigh_, *irLow_, {});
+    const auto rho = rta::ir::relativePolarity(highSideIr()->deconvolution,
+                                                lowSideIr()->deconvolution, {});
     PolaritySignal rhoSignal;
     rhoSignal.kind = PolaritySignalKind::RelativePolarityRho;
     rhoSignal.sign = rho.sign;

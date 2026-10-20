@@ -65,10 +65,18 @@ void AlignmentWizard::answerCycleOffsetSamples(std::optional<std::ptrdiff_t> sam
     }
 }
 
-void AlignmentWizard::supplyImpulseResponses(rta::ir::Deconvolution highSide,
-                                             rta::ir::Deconvolution lowSide) {
-    irHigh_ = std::move(highSide);
-    irLow_ = std::move(lowSide);
+void AlignmentWizard::supplyImpulseResponse(Source source, ImpulseWitness witness) {
+    ((source == Source::Sub) ? irSub_ : irMain_) = std::move(witness);
+}
+
+const ImpulseWitness* AlignmentWizard::highSideIr() const noexcept {
+    const auto& ir = (highPassSide_ == Source::Sub) ? irSub_ : irMain_;
+    return ir.has_value() ? &*ir : nullptr;
+}
+
+const ImpulseWitness* AlignmentWizard::lowSideIr() const noexcept {
+    const auto& ir = (highPassSide_ == Source::Sub) ? irMain_ : irSub_;
+    return ir.has_value() ? &*ir : nullptr;
 }
 
 void AlignmentWizard::supplyWhitenedPeakSign(rta::ir::Sign sign) { whitenedSign_ = sign; }
@@ -282,9 +290,13 @@ void AlignmentWizard::compute() {
     // a whitened correlator in this file -- PHAT on a band-limited source
     // relocates the ambiguity, it does not resolve it (record Sec.4) -- and a
     // scan over this file asserts no such call appears here.
-    if (irHigh_.has_value() && irLow_.has_value()) {
-        cycleOffset_ = static_cast<std::ptrdiff_t>(irLow_->originIndex)
-                       - static_cast<std::ptrdiff_t>(irHigh_->originIndex);
+    //
+    // From the ARRIVALS, not from `originIndex`: the origin is t = 0, and two
+    // t = 0 markers differ by whatever the two captures' timing happened to be
+    // (F2). Low-pass side minus high-pass side, the same orientation as tau.
+    if (highSideIr() != nullptr && lowSideIr() != nullptr) {
+        cycleOffset_ = static_cast<std::ptrdiff_t>(lowSideIr()->arrivalSamples)
+                       - static_cast<std::ptrdiff_t>(highSideIr()->arrivalSamples);
     } else {
         cycleOffset_ = cycleAnswer_;
     }

@@ -238,7 +238,14 @@ New: `AlignRunner` ~160/300; `AlignReadout` ~60/160; `TransferDwell.h` ~30;
    predicted sum near fc.
 6. Move the sub 1 m back and repeat: suggested delay grows by ~2.9 ms.
 7. No hardware: SYNTHETIC → ALIGN → answer HP = MAIN, LR-4, NOT INVERTED, NO
-   SEED → MEASURE → type 2 ms → SET OFFSET. With the SHIPPED defaults (ch 0 the
+   SEED → MEASURE → type 2 ms → SET OFFSET. **Wave B (no typed offset):**
+   press SWEEP MAIN, wait for its `IR +n samples` line, press SWEEP SUB, then
+   MEASURE: the pane's right-hand block lists `IR MAIN` / `IR SUB` with their
+   arrivals, the verdict carries no "type the coarse offset" prompt, SET OFFSET
+   stays greyed (the integer is sub arrival − main arrival), and the signal
+   lines read `rho: …` and `findPolarity, low-pass side: refused (BandTooHigh)`
+   (`main-live-align-ir.png`). Picking `NO IR (TYPE THE OFFSET)` in either
+   picker and pressing MEASURE brings the offset prompt back. With the SHIPPED defaults (ch 0 the
    H4 40 Hz–16 kHz band-pass +4, ch 1 the LR4 low-pass at 100 Hz +100, decision
    10) the pane reads a crossover between the two corners (about 55 Hz), a delay
    on MAIN of a few ms (the 96-sample offset plus the skirts' group delay), a Δ

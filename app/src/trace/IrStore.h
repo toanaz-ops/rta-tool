@@ -4,16 +4,16 @@
 // SWEEP lane task T5 (owner decision 6): the impulse response behind a SWEEP
 // trace, kept in memory next to the library and keyed by the trace's id. NOT
 // persisted: after Save/Open a trace comes back without its IR, which ALIGN
-// already handles as "no IR" (`AlignmentWizard.cpp:282-290`, AskingCycle).
+// already handles as "no IR" (AskingCycle).
 //
 // Capped at 8 with FIFO eviction because one entry is the whole linear
 // deconvolution -- about 4.6 MB at 48 kHz with the shipped 10 s sweep and
 // 3 s tail -- so an unbounded store would grow by that every press.
 // Message thread only; no locking.
 //
-// There is deliberately no lookup. ALIGN's lookup arrives with ALIGN-UI (H5);
-// building it here would be an orphan with no caller. `containsForTest` is
-// the observation point the eviction test needs and nothing else.
+// `find` is ALIGN-UI's lookup (H5 wave B, T9): the SWEEP IR pickers and the
+// binding at MEASURE time. `containsForTest` stays as the eviction test's
+// observation point.
 #pragma once
 
 #include "measure/SweepIrOutcome.h"
@@ -41,6 +41,18 @@ public:
         }
         entries_.emplace_back(std::move(traceId), std::move(ir));
         if (entries_.size() > kCapacity) entries_.pop_front();
+    }
+
+    /// The IR stored under `traceId`, or nullptr when it was never stored or
+    /// has been evicted. ALIGN's pickers list a SWEEP trace only while this
+    /// answers non-null, and its binding re-asks at MEASURE time. Matched by
+    /// id over the WHOLE store: the first entry is not the answer unless it
+    /// carries that id.
+    [[nodiscard]] std::shared_ptr<const rta::measure::SweepIr> find(const std::string& traceId) const {
+        for (const auto& entry : entries_) {
+            if (entry.first == traceId) return entry.second;
+        }
+        return nullptr;
     }
 
     [[nodiscard]] std::size_t size() const noexcept { return entries_.size(); }

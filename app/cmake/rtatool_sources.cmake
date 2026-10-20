@@ -139,8 +139,10 @@ set(RTATOOL_SOURCES
     src/measure/AlignmentWizardSignals.cpp
     src/measure/AlignRunner.cpp
     src/measure/AlignRunnerText.cpp
+    src/measure/AlignRunnerIr.cpp
     src/measure/AlignReadout.cpp
     src/view/AlignPaneView.cpp
+    src/view/AlignIrPanel.cpp
     # --- end ALIGN-UI lane wave A -----------------------------------------------
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).

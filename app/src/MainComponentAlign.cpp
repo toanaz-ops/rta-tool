@@ -30,4 +30,50 @@ void MainComponent::wireAlign() {
     host.nowMs = [] { return juce::Time::getMillisecondCounterHiRes(); };
     host.timeLabel = [] { return juce::Time::getCurrentTime().formatted("%H:%M:%S").toStdString(); };
     align_.attach(audioIo_.output(), library_, std::move(host));
+    // Wave B: ALIGN's SWEEP MAIN / SWEEP SUB press this component's own sweep
+    // on a named output, and read the IRs it keeps.
+    align_.attachSweep(MainComponentAlign::SweepAccess{
+        [this](int outputChannel) { return sweep_.clickedOnOutput(outputChannel); },
+        [this](const std::string& traceId) { return sweep_.irStore().find(traceId); },
+        [this] { return sweep_.readoutText().toStdString(); },
+        [this] { return sweep_.busy(); } });
+}
+
+void MainComponentAlign::sweepOnSide(rta::measure::Source side) {
+    if (!sweep_.start) return;
+    const auto& answers = runner_.answers();
+    const int channel = side == rta::measure::Source::Main ? answers.mainOutput : answers.subOutput;
+    // Recorded before the press and dropped if it is refused: `onSwept` binds
+    // only a sweep this button started, never the plain SWEEP button's.
+    pending_ = PendingSweep{ side, channel };
+    if (!sweep_.start(channel)) pending_.reset();
+}
+
+void MainComponentAlign::onSwept(const std::string& traceId, int outputChannel) {
+    if (!pending_.has_value() || pending_->outputChannel != outputChannel || !sweep_.find) return;
+    runner_.bindIr(pending_->side, traceId, sweep_.find(traceId));
+    pending_.reset();
+}
+
+rta::view::AlignIrHooks MainComponentAlign::irHooks() {
+    rta::view::AlignIrHooks hooks;
+    hooks.sweepOnSide = [this](rta::measure::Source side) { sweepOnSide(side); };
+    hooks.lookup = [this](const std::string& traceId) {
+        return sweep_.find ? sweep_.find(traceId) : std::shared_ptr<const rta::measure::SweepIr>{};
+    };
+    hooks.choices = [this] {
+        std::vector<rta::view::AlignIrChoice> choices;
+        if (library_ == nullptr || !sweep_.find) return choices;
+        const auto entries = library_->entries();
+        // Newest first: the sweep just taken is the one the operator wants.
+        for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+            if (it->group == "SWEEP" && sweep_.find(it->traceId) != nullptr) {
+                choices.push_back({ it->traceId, it->name });
+            }
+        }
+        return choices;
+    };
+    hooks.sweepReadout = [this] { return sweep_.readout ? sweep_.readout() : std::string(); };
+    hooks.sweepBusy = [this] { return sweep_.busy && sweep_.busy(); };
+    return hooks;
 }

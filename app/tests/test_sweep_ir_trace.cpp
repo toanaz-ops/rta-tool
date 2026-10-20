@@ -12,6 +12,7 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <vector>
 
 using rta::measure::SweepIr;
 using rta::measure::SweepIrOutcome;
@@ -200,9 +201,8 @@ TEST_CASE("re-adding an id replaces it in place and evicts nothing", "[sweep_ir_
 }
 
 TEST_CASE("re-adding an id swaps the stored IR, releasing the old one", "[sweep_ir_trace]") {
-    // No lookup exists to read the entry back (ALIGN's arrives with H5), so the
-    // swap is observed through ownership: the store held `first`, and after the
-    // replace it holds `second` and no longer `first`.
+    // The swap is observed through ownership: the store held `first`, and
+    // after the replace it holds `second` and no longer `first`.
     IrStore store;
     auto first = std::make_shared<const SweepIr>();
     auto second = std::make_shared<const SweepIr>();
@@ -212,4 +212,26 @@ TEST_CASE("re-adding an id swaps the stored IR, releasing the old one", "[sweep_
     CHECK(first.use_count() == 1);
     CHECK(second.use_count() == 2);
     CHECK(store.size() == 1);
+}
+
+// ALIGN-UI wave B, T9. Entries at positions first, middle and last, so a lookup
+// that returns the first (or the last) entry fails on one of them.
+TEST_CASE("IrStore::find returns the IR stored under that id, nullptr on a miss or after eviction",
+          "[sweep_ir_trace]") {
+    IrStore store;
+    std::vector<std::shared_ptr<const SweepIr>> irs;
+    for (int i = 0; i < 8; ++i) {
+        auto ir = std::make_shared<SweepIr>();
+        ir->arrivalSamples = 10 + i;
+        irs.push_back(ir);
+        store.add("t" + std::to_string(i), ir);
+    }
+    CHECK(store.find("t0") == irs[0]);
+    CHECK(store.find("t5") == irs[5]);
+    CHECK(store.find("t7") == irs[7]);
+    CHECK(store.find("absent") == nullptr);
+
+    store.add("t8", std::make_shared<const SweepIr>());
+    CHECK(store.find("t0") == nullptr);  // the ninth add evicted the first
+    CHECK(store.find("t1") == irs[1]);
 }

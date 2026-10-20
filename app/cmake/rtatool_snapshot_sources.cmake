@@ -180,8 +180,10 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/measure/AlignmentWizardSignals.cpp
     src/measure/AlignRunner.cpp
     src/measure/AlignRunnerText.cpp
+    src/measure/AlignRunnerIr.cpp
     src/measure/AlignReadout.cpp
     src/view/AlignPaneView.cpp
+    src/view/AlignIrPanel.cpp
     # --- end ALIGN-UI lane wave A -----------------------------------------------
     # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /
     # SplReportSections.cpp: see the matching entry in rtatool's own source
