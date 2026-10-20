@@ -77,11 +77,18 @@ TEST_CASE("The truncation correction is the regression line at the crossing, tim
     //  * The oscillating fixture adds a ripple of relative size
     //    1/(W |sin w|) in power to each block mean (geometric sum of cos(2wi)).
     //    W = 10/0.0025/5 = 800, w = 2 pi 0.0208 -> |sin w| = 0.13, ripple <= 1 %
-    //    = 0.043 dB per block. LS slope error from ripple e on n = 10 fit blocks
-    //    is e sqrt(12/(n(n^2-1))) = 0.0047 dB/block, read 24 blocks past the
-    //    fit's centre -> 0.11 dB; intercept error e/sqrt(n) = 0.014 dB.
-    //  * The slope also sets tau = 10/(slope ln10): 0.0047/2 = 0.24 %.
-    // Total <= 0.04 + 0.11 + 0.014 + 0.01 = 0.18 dB. The bound used is 0.25 dB.
+    //    = 0.043 dB per block (eps). The ripple is DETERMINISTIC, so its effect
+    //    is bounded by the absolute-value sum of the least-squares weights, not
+    //    by the iid formula e sqrt(12/(n(n^2-1))) (that one is an RMS over
+    //    random phases and understates the worst phase; lane-end LOW E2 -- it
+    //    read 0.18 dB where the worst phase reaches 0.41 dB). Slope weight of
+    //    block k on n = 10 fit blocks: (k - kbar)/Sxx, Sxx = n(n^2-1)/12 = 82.5,
+    //    sum|k - kbar| = 25, so |slope error| <= 25/82.5 eps = 0.0130 dB/block,
+    //    read 24 blocks past the fit's centre -> 0.31 dB. Intercept weights are
+    //    convex (1/n each): <= eps = 0.043 dB.
+    //  * The slope also sets tau = 10/(slope ln10): 0.0130/2 = 0.65 % = 0.028 dB.
+    // Worst case <= 0.04 + 0.31 + 0.043 + 0.028 = 0.42 dB. The bound used is
+    // 0.45 dB.
     const std::size_t n = static_cast<std::size_t>(1.2 * kFs);
 
     struct Case { bool osc; double w; double phase; double p0; };
@@ -105,7 +112,7 @@ TEST_CASE("The truncation correction is the regression line at the crossing, tim
         INFO("osc=" << c.osc << " phase=" << c.phase << " cut=" << cut
              << " got=" << curve.truncationCorrection << " expected=" << expected
              << " errDb=" << errDb);
-        CHECK(std::abs(errDb) < 0.25);
+        CHECK(std::abs(errDb) < 0.45);
 
         // What the old one-sample seed would have read, to show the fixture can
         // fail: squared sample just before the cut, times the same tau.
@@ -150,4 +157,55 @@ TEST_CASE("A late burst after the decay met the noise does not drag the fit",
     REQUIRE(curve.has());
     CHECK_THAT(curve.lateDecaySec, WithinAbs(kT60, 0.01 * kT60));
     CHECK(curve.crossingIndex < from);   // the cut is on the decay, not the burst
+}
+
+TEST_CASE("The truncation correction is the fitted line at the crossing, not the noise estimate",
+          "[ir][decay][truncation]") {
+    // Lane-end LOW E3. After the final iteration the noise estimate and the line
+    // at the crossing are the same number BY CONSTRUCTION (the crossing is where
+    // the line meets the noise), so a fixture that converges cannot tell
+    // `line * tau` from `noisePower * tau`. They part only when the loop ends
+    // before it converges: with `maxIterations = 1` the crossing comes from the
+    // first noise guess (last tenth of the record) and the noise is then
+    // RE-ESTIMATED from crossing + margin to the end of the record. Put a burst in
+    // that stretch (the fixture of the late-burst case below) and the re-estimate
+    // is dragged up by the burst while the line is still the room.
+    //
+    // Expected, from the fixture alone: exp(-2 cut / ta) * ta / 2 (plain, p0 = 1).
+    // The re-estimate a `noisePower` correction would use is the mean of h^2 from
+    // start = cut + 10 dB / (dB per sample) to the end, computed here from h
+    // itself; `mutantDb` is how far that sits above the expected value. The
+    // bound is half of it: a correction that reads the noise estimate misses by
+    // `mutantDb`, the right one by the first-window bias (sinh(x)/x with x = 1440
+    // / ta = 0.41 -> 0.12 dB) plus the floor's share of the last fit block
+    // (<= 0.4 dB), both far inside it.
+    const std::size_t n = static_cast<std::size_t>(1.5 * kFs);
+    auto h = makeTone(n, false, 0.0, 0.0);
+    const auto from = static_cast<std::size_t>(1.1 * kFs);
+    const auto len = static_cast<std::size_t>(0.03 * kFs);
+    const double amp = std::pow(10.0, -15.0 / 20.0);
+    for (std::size_t i = from; i < from + len; ++i) {
+        h[i] += static_cast<float>(amp * std::cos(kTwoPi * 0.05 * static_cast<double>(i)));
+    }
+
+    rta::ir::DecayConfig config;
+    config.maxIterations = 1;
+    const auto curve = rta::ir::energyDecayCurve(h, 0, kFs, 0.0, config);
+    REQUIRE(curve.has());
+    const double cut = static_cast<double>(curve.crossingIndex);
+    REQUIRE(curve.crossingIndex < from);
+
+    const double expected = std::exp(-2.0 * cut / kTa) * kTa / 2.0;
+    const double dbPerSample = 10.0 * std::log10(std::exp(2.0 / kTa));
+    const auto start = static_cast<std::size_t>(cut + config.noiseMarginDb / dbPerSample);
+    double sum = 0.0;
+    for (std::size_t i = start; i < n; ++i) sum += static_cast<double>(h[i]) * static_cast<double>(h[i]);
+    const double tailMean = sum / static_cast<double>(n - start);
+    const double mutantDb = 10.0 * std::log10(tailMean * kTa / 2.0 / expected);
+    INFO("cut=" << cut << " mutantDb=" << mutantDb << " got=" << curve.truncationCorrection
+         << " expected=" << expected);
+    REQUIRE(mutantDb > 20.0);   // the fixture can tell the two apart
+
+    const double errDb = 10.0 * std::log10(curve.truncationCorrection / expected);
+    CHECK(std::abs(errDb) < mutantDb / 2.0);
 }

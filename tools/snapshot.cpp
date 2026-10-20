@@ -197,6 +197,12 @@ int main (int argc, char** argv)
         MainComponent component;
         component.setSyntheticMode (true);
         juce::Thread::sleep (800);
+        // Lane-end LOW Z11: with no device the matrix has no rows (its row
+        // count follows the names a device poll supplies, RoutingMatrix.cpp),
+        // so the picture showed an empty box. Feed the eight names a typical
+        // interface reports, through the same call `applyChannelNames` makes.
+        MainComponentTestAccess::routingMatrixWidgetForTest (component).setChannelNames (
+            { "IN 1", "IN 2", "IN 3", "IN 4", "IN 5", "IN 6", "IN 7", "IN 8" });
         if (! renderComponent (component, outDir, "main-live.png", 1280, 800))
             ++failures;
     }

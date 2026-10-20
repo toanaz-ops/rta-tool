@@ -204,3 +204,36 @@ TEST_CASE("every VerifyBlock reads as a distinct, non-empty sentence except None
         }
     }
 }
+
+// Lane-end LOW Z24 (docs/HUMAN-QA-QUEUE.md): destroying the runner mid-run must
+// not leave the excitation armed -- the engine outlives the runner in
+// MainComponent (audioIo_ is declared before eq_), so nothing else would stop
+// a speaker on a live rig. The second runner is attached to the SAME engine as
+// `rig.runner`, so the engine is observable after the runner is gone.
+TEST_CASE("destroying a runner mid-run disarms the excitation; an idle runner never touches the engine") {
+    Rig rig;
+    {
+        rta::measure::EqVerifyRunner mid(rig.model);
+        mid.attach(rig.engine, rig.library, rig.runner.hostForTest());
+        REQUIRE(mid.press());
+        REQUIRE(mid.busy());
+        REQUIRE(rig.engine.role(0) == rta::platform::OutputRole::Routed);
+        REQUIRE_FALSE(rig.engine.sourceIsQuiescent());
+    }
+    // Disarmed: rendering the ramp out brings the engine to quiescence (the
+    // pattern of test_eq_verify_runner_flow.cpp's abort cases).
+    rig.renderOnly(8);
+    CHECK(rig.engine.sourceIsQuiescent());
+
+    // The other direction: a runner that never started must not disarm a source
+    // another owner (here rig.runner, standing in for LOCATE/CAL/SWEEP) holds.
+    REQUIRE(rig.runner.press());
+    REQUIRE_FALSE(rig.engine.sourceIsQuiescent());
+    {
+        rta::measure::EqVerifyRunner idle(rig.model);
+        idle.attach(rig.engine, rig.library, rig.runner.hostForTest());
+    }
+    rig.renderOnly(8);
+    CHECK_FALSE(rig.engine.sourceIsQuiescent());
+    CHECK(rig.runner.busy());
+}

@@ -47,6 +47,10 @@ std::string verifyBlockText(VerifyBlock kind) {
 
 EqVerifyRunner::EqVerifyRunner(EqPaneModel& model) : model_(model) {}
 
+EqVerifyRunner::~EqVerifyRunner() {
+    if (busy() && engine_ != nullptr) engine_->disarmSource();
+}
+
 void EqVerifyRunner::attach(rta::platform::OutputEngine& engine, rta::trace::TraceLibrary& library,
                             EqVerifyHost host) {
     engine_ = &engine;

@@ -195,8 +195,8 @@ TEST_CASE("disableSplLogging() actually calls through to SplLogPipeline::disable
     REQUIRE(waitForSplRequestLanded(thread, 0, 2000));
 
     // Secondary check, still real regression protection even though it is
-    // not what catches the no-op mutant above (see this test's own header
-    // comment for why a timing race cannot catch it): once the disable has
+    // not what catches the no-op mutant above (see the leading comment of
+    // this TEST_CASE for why a timing race cannot catch it): once the disable has
     // fully landed (drain + join + close), the files it wrote should be
     // complete, not merely non-empty.
     const auto files = csvFilesIn(dir.path);
