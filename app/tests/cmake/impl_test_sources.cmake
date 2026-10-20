@@ -82,6 +82,8 @@ set(RTA_IMPL_TEST_SOURCES
     # test_rt60_analysis.cpp / test_rt60_readout.cpp call straight into them.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Analysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Readout.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60EnsembleReadout.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Worker.cpp
     # AlignRunner.cpp / AlignReadout.cpp: ALIGN-UI lane wave A tasks T2/T3 --
     # test_align_runner*.cpp / test_align_readout.cpp call straight into them.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunner.cpp

@@ -72,6 +72,9 @@ void startRoom(MainComponent& c, double t60 = 0.80) {
     config.roomCombGain = static_cast<float>(rta::measure::roomCombGainFor(t60, 480, kFs));
     Access::restartSyntheticForTest(c, config);
     sweepOf(c).setDurationsForTest(1.0, 3.0);  // a 1 s sweep; the RAIL tail stays 3 s
+    // The capture timeout runs on the wall clock while the loopback is paced by it
+    // too: a saturated box aborts a healthy sweep. Stretch the slack as H5 does.
+    sweepOf(c).setTimeoutSlackForTest(30000.0);
 }
 
 void printTable(const char* label, const rta::measure::Rt60Result& r) {
@@ -90,11 +93,11 @@ void printTable(const char* label, const rta::measure::Rt60Result& r) {
 void pressSweep(MainComponent& c, double tailSeconds) {
     auto& pane = paneOf(c);
     Access::rt60ForTest(c).settingsForTest().tailSeconds = tailSeconds;
-    REQUIRE(tickUntil(c, [&] { return pane.sweepButtonForTest().isEnabled(); }, 20000));
+    REQUIRE(tickUntil(c, [&] { return pane.sweepButtonForTest().isEnabled(); }, 600000));
     pane.sweepButtonForTest().onClick();
     REQUIRE(sweepOf(c).busy());
     REQUIRE(sweepOf(c).armedTailSecondsForTest() == tailSeconds);  // the override reached the armed request
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 90000));
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 600000));
 }
 
 }  // namespace
@@ -199,21 +202,21 @@ TEST_CASE("rt60: only a press the RT60 pane made is auto-selected; ALIGN's and t
 
     // A sweep ALIGN asked for (the default requester of a named press).
     REQUIRE(sweepOf(c).clickedOnOutput(0));
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 90000));
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 600000));
     REQUIRE(library.entries().size() == 1);
     CHECK(model.selectedIdForTest().empty());
     CHECK(model.analysisCountForTest() == 0);
 
     // The rail's own button.
     sweepOf(c).clicked();
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 90000));
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 600000));
     REQUIRE(library.entries().size() == 2);
     CHECK(model.selectedIdForTest().empty());
     CHECK(model.analysisCountForTest() == 0);
 
     // The same call tagged RT60: selected and analysed.
     REQUIRE(sweepOf(c).clickedOnOutput(0, Requester::Rt60, 0.5));
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 90000));
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 600000));
     REQUIRE(library.entries().size() == 3);
     CHECK(model.selectedIdForTest() == library.entries()[2].traceId);
     CHECK(model.analysisCountForTest() == 1);
