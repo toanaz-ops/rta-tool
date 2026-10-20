@@ -1,121 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // ALIGN-UI lane wave B, tasks T10 and T11 (docs/plans/2026-10-20-align-ui-lane-plan.md):
-// SWEEP on a NAMED output, and the IR binding that lets the wizard take its
-// cycle integer from two arrivals. A real MainComponent in SYNTHETIC with the
-// wave-A fixture (output 0 an LR4 high-pass at 100 Hz after 4 samples, output 1
-// an LR4 low-pass at 100 Hz after 100), driven through the ALIGN pane's own
-// buttons and pickers. The 2 Hz timer is not pumped offscreen: `tickUntil`
-// drives it and the pane's own timer by hand, bounded.
-//
-// EXPECTED ARRIVALS are computed here, not read back: each is the path's delay
-// plus the argmax of |h| of the SAME biquad cascade the loopback builds, read off
-// an impulse (a closed-form identity of the linear path, not "whatever the code
-// printed"). Deconvolution is linear, so the measured IR is that h shifted by the
-// delay; its peak can sit one bin off h's own when h is flat-topped, which the
-// numbers printed below show whether it did.
-#include <catch2/catch_test_macros.hpp>
+// ALIGN-UI lane wave B, tasks T10 and T11 (docs/plans/2026-10-20-align-ui-lane-plan.md):
+// SWEEP on a NAMED output, the IR binding, and the busy predicates. Shared harness
+// and the fixture description: AlignIrFixture.h. What the bound IRs make of the
+// cycle integer is test_main_component_align_ir_cycle.cpp.
+#include "AlignIrFixture.h"
 
-#include "MainComponent.h"
-#include "MainComponentTestAccess.h"
-#include "dev-support/SyntheticCrossoverHp.h"
 #include "measure/AlignReadout.h"
-#include "measure/CycleArrival.h"
-#include "measure/SyntheticCrossover.h"
-#include "view/AlignPaneView.h"
 
-#include "rta/dsp/Biquad.h"
-
-#include <juce_core/juce_core.h>
-
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <optional>
 #include <string>
-#include <vector>
 
 namespace {
-
-using Access = MainComponentTestAccess;
+using namespace alignir;
 using rta::measure::Source;
 using rta::measure::WizardStep;
 constexpr const char* kTag = "[main_component_align_ir]";
-constexpr double kFs = 48000.0;
-
-rta::view::AlignPaneView& alignPane(MainComponent& c) {
-    auto* pane = dynamic_cast<rta::view::AlignPaneView*>(const_cast<juce::Component*>(&Access::pane(c)));
-    REQUIRE(pane != nullptr);
-    return *pane;
-}
-rta::measure::AlignRunner& runnerOf(MainComponent& c) { return Access::alignForTest(c).runnerForTest(); }
-MainComponentSweep& sweepOf(MainComponent& c) { return Access::sweepForTest(c); }
-
-template <typename Predicate>
-bool tickUntil(MainComponent& c, Predicate&& done, int timeoutMs) {
-    const auto deadline = juce::Time::getMillisecondCounter() + static_cast<std::uint32_t>(timeoutMs);
-    while (juce::Time::getMillisecondCounter() < deadline) {
-        Access::timerTickForTest(c);
-        if (c.currentPaneView() == rta::view::PaneView::Align) alignPane(c).tickForTest();
-        if (done()) return true;
-        juce::Thread::sleep(5);
-    }
-    Access::timerTickForTest(c);
-    return done();
-}
-
-rta::measure::SyntheticInput::Config fixtureConfig() {
-    rta::measure::SyntheticInput::Config config;
-    config.sampleRate = kFs;
-    config.measurementDelaySamples = 4;
-    config.measurementFilter = rta::measure::lr4HighPass(100.0, kFs);
-    config.secondOutputDelaySamples = 100;
-    config.secondOutputFilter = rta::measure::lr4LowPass(100.0, kFs);
-    return config;
-}
-
-/// delay + argmax|h| of a cascade, h read off a unit impulse.
-long expectedArrival(const std::vector<rta::dsp::Biquad::Coeffs>& sections, long delay) {
-    rta::dsp::BiquadCascade cascade(sections);
-    double best = 0.0;
-    long bestIndex = 0;
-    for (long n = 0; n < 4096; ++n) {
-        const double y = cascade.processSample(n == 0 ? 1.0 : 0.0);
-        if (std::fabs(y) > best) {
-            best = std::fabs(y);
-            bestIndex = n;
-        }
-    }
-    return delay + bestIndex;
-}
-/// The named topology's low-pass peak lag less its high-pass lag at `fc` (LR-4).
-long lagAt(double fc) {
-    const rta::measure::Topology lr4{ rta::measure::CrossoverFamily::LinkwitzRiley, 4 };
-    return std::lround(rta::measure::topologyPeakLagSamples(lr4, false, fc, kFs) -
-                       rta::measure::topologyPeakLagSamples(lr4, true, fc, kFs));
-}
-long expectedMainArrival() { return expectedArrival(rta::measure::lr4HighPass(100.0, kFs), 4); }
-long expectedSubArrival() { return expectedArrival(rta::measure::lr4LowPass(100.0, kFs), 100); }
-
-void prepare(MainComponent& c, rta::measure::SyntheticInput::Config config = fixtureConfig(), int topologyId = 2) {
-    c.setSyntheticMode(true);
-    Access::restartSyntheticForTest(c, config);
-    sweepOf(c).setDurationsForTest(2.0, 0.5);
-    c.selectPaneView(rta::view::PaneSelectorButton::Align);
-    auto& pane = alignPane(c);
-    pane.highPassComboForTest().setSelectedId(1, juce::sendNotificationSync);   // MAIN is high-pass
-    pane.topologyComboForTest().setSelectedId(topologyId, juce::sendNotificationSync);  // 2 = LR-4, 3 = LR-8
-    pane.inversionComboForTest().setSelectedId(1, juce::sendNotificationSync);  // NOT INVERTED
-    pane.seedComboForTest().setSelectedId(1, juce::sendNotificationSync);       // NO SEED
-}
-
-/// A SWEEP button's own handler, then the sweep to completion.
-void sweepThrough(MainComponent& c, juce::Button& button) {
-    REQUIRE(tickUntil(c, [&] { return button.isEnabled(); }, 20000));
-    button.onClick();
-    REQUIRE(sweepOf(c).busy());
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
-}
-
 }  // namespace
 
 TEST_CASE("align IR (T10): a sweep on output 2 plays on output 2 and is named for it", kTag) {
@@ -346,78 +245,4 @@ TEST_CASE("align IR (T11): an IR measured at another sample rate is ignored, and
     REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
     CHECK(runnerOf(c).step() == WizardStep::AskingCycle);  // nothing was supplied
     CHECK_FALSE(runnerOf(c).irHintSamples().has_value());
-}
-
-// An LR-8 pair, where the low-pass peaks 9.4 ms (about 450 samples) late and the
-// uncorrected arrival difference would sit most of a candidate spacing away: the
-// peak-lag correction is what lets the IRs choose the right cycle.
-TEST_CASE("align IR (T11): an LR-8 pair resolves to the right cycle from the IRs", kTag) {
-    const rta::measure::Topology lr8{ rta::measure::CrossoverFamily::LinkwitzRiley, 8 };
-    MainComponent c;
-    auto config = fixtureConfig();
-    config.measurementFilter = rta::measure::topologyCascade(lr8, true, 100.0, kFs);
-    config.secondOutputFilter = rta::measure::topologyCascade(lr8, false, 100.0, kFs);
-    prepare(c, config, /*topologyId=*/3);
-    sweepOf(c).setDurationsForTest(10.0, 3.0);
-    auto& pane = alignPane(c);
-    sweepThrough(c, pane.irPanelForTest().sweepMainButtonForTest());
-    sweepThrough(c, pane.irPanelForTest().sweepSubButtonForTest());
-    REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
-    REQUIRE(runnerOf(c).boundIr(Source::Sub) != nullptr);
-    const long raw = runnerOf(c).boundIr(Source::Sub)->arrivalSamples - runnerOf(c).boundIr(Source::Main)->arrivalSamples;
-    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-    pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
-    WARN("LR-8: raw arrival difference " << raw << ", used " << (runnerOf(c).cycleSamples() ? *runnerOf(c).cycleSamples() : -99999)
-                                         << ", readout: " << pane.readoutForTest().replace("\n", " | "));
-    CHECK(runnerOf(c).step() == WizardStep::Computed);
-    CHECK(runnerOf(c).cycleFromIr());
-    CHECK(pane.readoutForTest().contains("delay MAIN by 2."));
-    CHECK_FALSE(pane.readoutForTest().contains("another candidate"));
-}
-
-// The PR #72 verifier's refutation: a sub with ANOTHER filter in its path (a
-// subsonic high-pass), so the named LR-4 low-pass lag no longer explains the
-// whole arrival. Whatever the verdict, it must never be a full cycle wrong: a
-// resolved delay is the same cycle as the fit's best candidate tau* (within half
-// a millisecond; the next cycle is ~10.8 ms away), otherwise the run asks.
-TEST_CASE("align IR (T11): a box with extra filtering is resolved right or asked, never a wrong cycle", kTag) {
-    for (const long subDelay : { 100L, 16L }) {
-        CAPTURE(subDelay);
-        MainComponent c;
-        auto config = fixtureConfig();
-        config.secondOutputDelaySamples = static_cast<int>(subDelay);
-        auto sections = rta::measure::lr4LowPass(100.0, kFs);
-        for (const auto& s : rta::measure::lr4HighPass(40.0, kFs)) sections.push_back(s);
-        config.secondOutputFilter = sections;
-        prepare(c, config);
-        // The shipped sweep: the 2 s test sweep makes the 40 Hz high-pass's IR (a long
-        // tail whose peak the short window cannot place) refuse with ArrivalOutOfWindow.
-        sweepOf(c).setDurationsForTest(10.0, 3.0);
-        auto& pane = alignPane(c);
-        sweepThrough(c, pane.irPanelForTest().sweepMainButtonForTest());
-        sweepThrough(c, pane.irPanelForTest().sweepSubButtonForTest());
-        INFO("sweep readout: " << sweepOf(c).readoutForTest());
-        REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
-        REQUIRE(runnerOf(c).boundIr(Source::Sub) != nullptr);
-        REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-        pane.measureButtonForTest().onClick();
-        REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
-        const double pureMs = 1000.0 * static_cast<double>(subDelay - 4) / kFs;
-        WARN("probe sub delay " << subDelay << ": step " << static_cast<int>(runnerOf(c).step()) << ", hint "
-             << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999) << " samples, pure " << pureMs
-             << " ms, readout: " << pane.readoutForTest().replace("\n", " | "));
-        REQUIRE(runnerOf(c).verdict().has_value());
-        if (runnerOf(c).step() == WizardStep::Computed) {
-            const double tauMs = 1000.0 * rta::measure::resolveCycle(*runnerOf(c).verdict(), runnerOf(c).cycleSamples(), kFs).tauSeconds;
-            // The reference is the fit's own best candidate, NOT the pure delay: the
-            // extra 40 Hz high-pass adds its group delay inside the 50-200 Hz fit
-            // band (tau* reads about 3.8 ms here for 2 ms of delay), and that is
-            // part of what the phase measures. A wrong cycle is ~10.8 ms away.
-            CHECK(std::fabs(tauMs - 1000.0 * runnerOf(c).verdict()->tauSeconds) < 0.5);
-        } else {
-            CHECK(runnerOf(c).step() == WizardStep::AskingCycle);
-            CHECK(pane.readoutForTest().contains("IRs suggest about"));
-        }
-    }
 }

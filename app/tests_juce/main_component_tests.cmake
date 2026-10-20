@@ -74,6 +74,7 @@ add_executable(rtatool_main_component_tests
     test_main_component_align.cpp
     test_main_component_align_defaults.cpp
     test_main_component_align_ir.cpp
+    test_main_component_align_ir_cycle.cpp
     test_main_component_panes_align.cpp
     # test_main_component_export.cpp: D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4
     # item 14) -- exportReportClicked()'s catch branch had no test at all.

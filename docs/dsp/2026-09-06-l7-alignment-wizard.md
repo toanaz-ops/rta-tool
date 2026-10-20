@@ -316,14 +316,14 @@ What shipped instead:
   residual into a question (`AskingCycle`, the integer shown as "IRs suggest about
   X ms") instead of a silently wrong cycle. A one-candidate fit has no spacing to
   measure and is accepted. A typed offset always wins, before or after the fit
-  (`AlignmentWizard.cpp:60-71`, `AlignRunner.cpp`), and the readout says which one
+  (`AlignmentWizard.cpp:62-73`, `AlignRunner.cpp`), and the readout says which one
   chose ("the bound IRs chose…" versus "your offset chose…").
   Caveat measured in the same PR: an extra high-pass adds its group delay inside the
   fit band, so τ* itself reads about 3.8 ms for 2 ms of pure delay on that box; the
   right cycle is the one the fit ranks first, not the pure delay;
 - "uses the first when both sources have a sweep capture" now means: when the
   operator has bound a SWEEP IR to each source, `AlignRunner` supplies both at
-  MEASURE (`AlignRunnerIr.cpp:80`, called from `AlignRunner.cpp:134`); with fewer
+  MEASURE (`AlignRunnerIr.cpp:80`, called from `AlignRunner.cpp:137`); with fewer
   than two the wizard asks, as before.
 
 The one legitimate use of `originIndex` is unchanged: §7's ρ window is measured
