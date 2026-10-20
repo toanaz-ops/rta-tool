@@ -281,6 +281,8 @@ TEST_CASE("S12: flipping an answer mid-run does not relabel the captures", "[ali
     rig.runner.answers().highPass = Source::Sub;  // the operator flips a combo while it runs
     rig.runner.answers().mainOutput = 1;
     rig.runner.answers().subOutput = 0;
+    REQUIRE(rig.pumpUntil([&] { return rig.runner.step() == WizardStep::MeasuringLow; }));
+    CHECK(said(rig, "now pink noise on SUB (OUT 2) only"));  // the run's outputs, not the flipped ones
     REQUIRE(rig.pumpUntil([&] { return !rig.runner.busy(); }));
     REQUIRE(rig.library.entries().size() == 2);
     CHECK(rig.library.entries()[0].name.rfind("ALIGN MAIN @ ", 0) == 0);
