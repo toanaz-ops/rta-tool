@@ -142,10 +142,12 @@ void MainComponent::storeClicked() {
 
     auto trace = freezeSnapshot(*snapshot, pane);
     if (!trace.has_value()) {
-        // Unreachable from RTA/TRANSFER given the guard above and T6's own
-        // enable/disable -- kept as a stated refusal (never a silent no-op,
-        // never a dereference of an empty optional) for whichever future
-        // pane or edge this function does not yet know about.
+        // Reachable, though rarely: the first fixed-FFT frame after start
+        // carries a reference but no transfer block yet (lane-end LOW Z13;
+        // snapshot_xover.cpp waits for exactly that). The refusal is stated,
+        // never a silent no-op and never a dereference of an empty optional,
+        // and it also covers whichever future pane this function does not
+        // yet know about.
         storeReadout_.setText("store: nothing to freeze on this pane", juce::dontSendNotification);
         return;
     }

@@ -101,6 +101,13 @@ public:
     /// `model` is borrowed and must outlive the runner (MainComponentEq owns
     /// both, model first).
     explicit EqVerifyRunner(EqPaneModel& model);
+    /// A run still in flight owns the excitation; destroying the runner must
+    /// not leave a loudspeaker playing (output-path record sec.8). Only a
+    /// run in flight disarms: an idle runner never touches the engine, whose
+    /// source slot may belong to LOCATE, CAL or SWEEP.
+    ~EqVerifyRunner();
+    EqVerifyRunner(const EqVerifyRunner&) = delete;
+    EqVerifyRunner& operator=(const EqVerifyRunner&) = delete;
 
     /// Wires the runner to an engine, a library and the host. All three are
     /// borrowed. Called by MainComponent (MainComponentEqVerify.cpp).
