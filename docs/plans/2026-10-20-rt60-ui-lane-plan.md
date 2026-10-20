@@ -1,5 +1,13 @@
 # RT60-UI lane (H6, `app/rt60-ui`) — stations 1–3 research and plan
 
+**Status, 2026-10-21: BUILT, both waves, operator-reachable; lane closed.**
+Wave A (T0–T8) PR #74 `17f3010`; wave B (T9–T12) PR #77 `7b3375f`; audit fix
+(core decay truncation and clarity, `docs/dsp/2026-08-30-ir-decay-l4b.md` §11)
+PR #76 `df3d444`; closeout PR `app/rt60-ui-closeout` (status rows, QA queue
+"H6 RT60-UI", handoff, LOW batch). Row 4 of the master plan flipped after wave
+A. The real-hardware try (human-try steps 1–6) is unmeasured and stays in the
+QA queue as "later".
+
 *2026-10-20. Read at `origin/main` `148b784` (H4 SWEEP and H5 ALIGN-UI wave A
 merged, #71). H5 wave B (`app/align-ui-b`: `SweepIr::arrivalSamples`,
 `IrStore::find`, SWEEP on a named output + `swept` callback) **must merge
