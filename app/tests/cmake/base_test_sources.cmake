@@ -118,6 +118,16 @@ set(RTA_BASE_TEST_SOURCES
     test_alignment_wizard_refusals.cpp
     test_alignment_wizard_verdict.cpp
     test_alignment_wizard_signals.cpp
+    # ALIGN-UI lane wave A (docs/plans/2026-10-20-align-ui-lane-plan.md):
+    #   ...wizard_candidates.cpp  T1: Verdict::candidateTausSeconds, the C5 fixture through the wizard
+    #   test_align_runner.cpp     T2: refusals, the output each step plays on, the dwell
+    #   test_align_runner_flow.cpp T2: aborts, the verdict, the coarse offset, SUM
+    #   test_align_readout.cpp    T3: what the verdict says (UTF-8 bytes spelled out)
+    test_alignment_wizard_candidates.cpp
+    test_align_runner.cpp
+    test_align_runner_flow.cpp
+    test_align_runner_status.cpp
+    test_align_readout.cpp
     # test_crossover_surface.cpp: lane L7-ALIGN task I (record Sec.6) -- the
     # G18 surface model, JUCE-free so it is proven OFF on all three CI
     # operating systems. The specimen half is checked by rtatool_snapshot.

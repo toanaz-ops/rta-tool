@@ -3,6 +3,7 @@
 
 #include "measure/CaptureTimeout.h"
 #include "measure/EqTrustMask.h"
+#include "measure/TransferDwell.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -51,14 +52,6 @@ void EqVerifyRunner::attach(rta::platform::OutputEngine& engine, rta::trace::Tra
     engine_ = &engine;
     library_ = &library;
     host_ = std::move(host);
-}
-
-double EqVerifyRunner::dwellSeconds(const CaptureConfig& config, std::size_t fftSize, double sampleRate) {
-    // Analyser.h: the transfer FIFO holds `transferFifoDepth` frames of one
-    // window each. depth * fftSize samples of pure excitation guarantee no
-    // pre-excitation frame is left in it (deliberately the generous reading:
-    // frames overlap, so the true flush is shorter).
-    return static_cast<double>(config.transferFifoDepth) * static_cast<double>(fftSize) / sampleRate;
 }
 
 std::size_t EqVerifyRunner::boundFftSize() const {
@@ -212,8 +205,8 @@ void EqVerifyRunner::trySubmit(double now) {
     // clock the excitation runs on. A snapshot published before the FIFO has
     // turned over still carries the room WITHOUT the excitation; submitting it
     // would report the unchanged room as a failed correction.
-    const double dwellSamples = dwellSeconds(config, fftSize, fs) * engine_->sampleRate();
-    const double dwellMs = dwellSeconds(config, fftSize, fs) * 1000.0;
+    const double dwellSamples = transferDwellSeconds(config, fftSize, fs) * engine_->sampleRate();
+    const double dwellMs = transferDwellSeconds(config, fftSize, fs) * 1000.0;
     const double renderedSince = static_cast<double>(engine_->renderedSamples() - measuringRendered_);
     const auto stalled = [&] { return captureTimedOut(measuringAtMs_, now, dwellMs + kEqVerifyTimeoutMs); };
     const auto stall = [&] {

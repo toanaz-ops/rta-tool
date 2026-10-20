@@ -131,11 +131,6 @@ public:
     [[nodiscard]] VerifyOutcome outcomeForTest() const noexcept { return outcome_; }
     [[nodiscard]] const std::optional<VerifyReport>& reportForTest() const noexcept;
     [[nodiscard]] const std::string& afterTraceIdForTest() const noexcept { return afterTraceId_; }
-    /// depth * fftSize / fs, in seconds: how long after Measuring the live
-    /// transfer FIFO must have been fed the excitation alone (Analyser.h
-    /// CaptureConfig::transferFifoDepth).
-    [[nodiscard]] static double dwellSeconds(const CaptureConfig& config, std::size_t fftSize,
-                                             double sampleRate);
 
 private:
     void abort(VerifyOutcome why, std::string text);

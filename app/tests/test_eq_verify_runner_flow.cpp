@@ -8,6 +8,8 @@
 // excitation have rendered, then the room with the filters dialled in.
 #include "EqVerifyRunnerFixture.h"
 
+#include "measure/TransferDwell.h"
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -38,7 +40,7 @@ std::uint64_t dwellSamples() { return static_cast<std::uint64_t>(std::llround(dw
 TEST_CASE("VERIFY: the dwell is depth * fftSize / fs, 1.365 s at the defaults (Analyser.h:48-49)") {
     CHECK(rta::measure::CaptureConfig{}.transferFifoDepth == 16);
     CHECK(dwellSeconds() == Approx(1.365).margin(0.001));
-    CHECK(rta::measure::EqVerifyRunner::dwellSeconds(rta::measure::CaptureConfig{}, kFft, eqfixture::kFs) ==
+    CHECK(rta::measure::transferDwellSeconds(rta::measure::CaptureConfig{}, kFft, eqfixture::kFs) ==
           dwellSeconds());
     CHECK(dwellSamples() == 65536);
 }

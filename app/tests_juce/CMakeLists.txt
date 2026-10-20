@@ -147,6 +147,14 @@ add_executable(rtatool_view_tests
     # Wave B: EqPaneView drives the VERIFY runner (and the runner, EqVerify).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerifyRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.cpp
+    # ALIGN-UI wave A: PaneFactory.cpp's Align branch builds AlignPaneView,
+    # whose chain is the runner, its wizard and the readout (all JUCE-free).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/AlignPaneView.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunnerText.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignReadout.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizardSignals.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:

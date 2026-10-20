@@ -131,6 +131,13 @@ void MainComponent::applyClicked() {
         delaySuggestion_->verdict != rta::dsp::DelayVerdict::Accepted) {
         return;
     }
+    // APPLY rebuilds every analyser with a new delay, which would change
+    // `appliedDelaySamples` between ALIGN's two captures and leave them on
+    // different delay corrections (ALIGN-UI decision 12).
+    if (align_.busy()) {
+        delayReadout_.setText("delay: refused -- ALIGN is running", juce::dontSendNotification);
+        return;
+    }
     // An explicit rebuild (record sec.1.6, sec.8) -- sub-sample is shown,
     // never applied: the engine's own compensation is an integer sample
     // offset by design (DualFftEngine.h).

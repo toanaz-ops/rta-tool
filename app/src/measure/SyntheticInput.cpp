@@ -13,6 +13,7 @@ namespace rta::measure {
 namespace {
 
 constexpr int kChannels = 2;
+constexpr int kLoopbackOutputs = SyntheticInput::kOutputChannels;
 
 int millisecondsPerBlock(double sampleRate, int bufferSize) {
     if (sampleRate <= 0.0) {
@@ -40,6 +41,8 @@ SyntheticInput::SyntheticInput(rta::platform::CaptureBus& bus, const Config& con
     , block_(static_cast<std::size_t>(std::max(config.bufferSize, 0)))
     , measurementBlock_(static_cast<std::size_t>(std::max(config.bufferSize, 0)))
     , measurementPath_(config.measurementDelaySamples, config.measurementFilter)
+    , secondPath_(config.secondOutputDelaySamples, config.secondOutputFilter)
+    , secondPathBlock_(static_cast<std::size_t>(std::max(config.bufferSize, 0)))
     // config.seed already seeds SyntheticPink below; offset by a constant
     // rather than reuse it verbatim, so the delay's noise floor is not
     // correlated with the pink-noise generator's exact state.
@@ -56,6 +59,10 @@ SyntheticInput::SyntheticInput(rta::platform::CaptureBus& bus, const Config& con
         pink_ = std::make_unique<rta::gen::SyntheticPink>(blockSize, targetDbFs, config.seed);
     }
 
+    for (auto& block : outputBlock_) {
+        block.assign(static_cast<std::size_t>(std::max(config.bufferSize, 0)), 0.0f);
+    }
+
     // Message thread, before the thread body starts: satisfies the
     // precondition CaptureBus::prepare() documents (no concurrent writer).
     // No capacity argument: bus's rings were already sized once, at its own
@@ -66,11 +73,11 @@ SyntheticInput::SyntheticInput(rta::platform::CaptureBus& bus, const Config& con
     // OutputEngine::prepare's precondition (OutputEngine.h): the device
     // thread is not inside render() and the message thread is not inside
     // setSource(). Both hold -- setSyntheticMode stopped the device first,
-    // and our own thread starts on the line below. One output channel: the
-    // loopback carries ONE mono stimulus; the engine's channel-0 gate is the
-    // route the callers' `soloOutput(engine, 0)` already opens.
+    // and our own thread starts on the line below. Two output channels
+    // (ALIGN-UI T0): one mono stimulus, gated per output; `soloOutput(engine,
+    // 0)` opens the channel-0 route exactly as before, channel 1 is the sub.
     if (config.loopback != nullptr) {
-        config.loopback->prepare(config.sampleRate, 1);
+        config.loopback->prepare(config.sampleRate, kLoopbackOutputs);
     }
 
     startThread();
@@ -121,25 +128,47 @@ void SyntheticInput::runBody() {
         // block it is about come from the same engine state: a block rendered
         // while armed is used even if a disarm lands a moment later.
         bool useLoopback = false;
+        const std::size_t n = block_.size();
         if (config_.loopback != nullptr) {
-            float* out = block_.data();
-            config_.loopback->render(&out, 1, static_cast<int>(block_.size()));
+            float* outs[kLoopbackOutputs] = {outputBlock_[0].data(), outputBlock_[1].data()};
+            config_.loopback->render(outs, kLoopbackOutputs, static_cast<int>(n));
             useLoopback = !config_.loopback->sourceIsQuiescent();
         }
-        if (!useLoopback) {
+        if (useLoopback) {
+            // Reference = the lowest ROUTED output's block: the console's
+            // own signal, whichever output the wizard soloed. None routed
+            // (a gate still ramping out) reads output 0.
+            int referenceOutput = 0;
+            for (int c = 0; c < kLoopbackOutputs; ++c) {
+                if (config_.loopback->role(c) == rta::platform::OutputRole::Routed) {
+                    referenceOutput = c;
+                    break;
+                }
+            }
+            std::copy(outputBlock_[referenceOutput].begin(), outputBlock_[referenceOutput].end(),
+                      block_.begin());
+        } else {
             if (pink_) {
                 pink_->render(block_);
             } else {
                 sine_->render(block_);
             }
+            std::copy(block_.begin(), block_.end(), outputBlock_[0].begin());
+            std::fill(outputBlock_[1].begin(), outputBlock_[1].end(), 0.0f);
         }
 
         // Impairments land on the MEASUREMENT copy only -- block_ (the
-        // channel written as Reference below) stays clean. measurementDelay_
-        // and noiseState_ are members, not locals, precisely so the delay's
-        // history and the noise generator's state carry across this call;
-        // see SyntheticImpairment.h.
-        measurementPath_.process(block_, measurementBlock_);
+        // channel written as Reference below) stays clean. Each output has
+        // its own path; the microphone hears their sum. An unrouted output
+        // is exact zeros through a zero-state path, so a single-output run
+        // is bit-identical to the one-path code this replaced. See
+        // SyntheticImpairment.h for why the delay's history and the noise
+        // state are members.
+        measurementPath_.process(outputBlock_[0], measurementBlock_);
+        secondPath_.process(outputBlock_[1], secondPathBlock_);
+        for (std::size_t i = 0; i < n; ++i) {
+            measurementBlock_[i] += secondPathBlock_[i];
+        }
 
         // kNoiseOffDb is a genuine OFF, not just a very small level: below it
         // (or at it -- the default) the generator is not called at all, so a

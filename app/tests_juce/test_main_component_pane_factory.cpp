@@ -13,6 +13,7 @@
 
 #include "PaneFactory.h"
 #include "measure/SnapshotSource.h"
+#include "view/AlignPaneView.h"
 #include "view/CrossoverPaneView.h"
 #include "view/EqPaneView.h"
 #include "view/RtaView.h"
@@ -20,6 +21,8 @@
 #include "view/TransferView.h"
 
 using rta::measure::StaticSnapshotSource;
+using rta::view::AlignPaneBinding;
+using rta::view::AlignPaneView;
 using rta::view::CrossoverPaneView;
 using rta::view::EqPaneBinding;
 using rta::view::EqPaneView;
@@ -32,7 +35,8 @@ TEST_CASE("makePaneFactory builds an SplView, not an RtaView, for PaneView::Spl"
          "[main_component_pane_factory]") {
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} });
+    rta::measure::AlignRunner alignRunner;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner });
 
     auto pane = factory(PaneView::Spl);
     REQUIRE(pane != nullptr);
@@ -47,7 +51,8 @@ TEST_CASE("makePaneFactory still builds Transfer and Rta panes correctly",
          "[main_component_pane_factory]") {
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} });
+    rta::measure::AlignRunner alignRunner;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner });
 
     auto transferPane = factory(PaneView::Transfer);
     REQUIRE(transferPane != nullptr);
@@ -64,7 +69,8 @@ TEST_CASE("makePaneFactory builds a CrossoverPaneView for PaneView::Xover",
     // concrete type" property the Spl case above pins, one enumerator later.
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} });
+    rta::measure::AlignRunner alignRunner;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner });
 
     auto xoverPane = factory(PaneView::Xover);
     REQUIRE(xoverPane != nullptr);
@@ -80,7 +86,8 @@ TEST_CASE("makePaneFactory builds an EqPaneView, on the model it was handed, for
     // list the previous pane wrote (plan T5's survive-a-rebuild acceptance).
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} });
+    rta::measure::AlignRunner alignRunner;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner });
 
     auto first = factory(PaneView::Eq);
     REQUIRE(first != nullptr);
@@ -91,4 +98,33 @@ TEST_CASE("makePaneFactory builds an EqPaneView, on the model it was handed, for
 
     auto second = factory(PaneView::Eq);
     CHECK(&dynamic_cast<EqPaneView&>(*second).modelForTest() == &eqModel);
+}
+
+TEST_CASE("makePaneFactory builds an AlignPaneView, on the runner it was handed, for PaneView::Align",
+          "[main_component_pane_factory]") {
+    // ALIGN-UI lane, plan T4: the same "own branch, own concrete type"
+    // property the Spl, Xover and Eq cases pin, one enumerator later. The
+    // runner is the caller's, so a pane rebuilt by a selector click keeps the
+    // operator's answers. Mutant: delete the Align branch in PaneFactory.cpp --
+    // the fall-through builds an RtaView and the first CHECK goes RED.
+    StaticSnapshotSource source;
+    rta::measure::EqPaneModel eqModel;
+    rta::measure::AlignRunner alignRunner;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner });
+
+    auto first = factory(PaneView::Align);
+    REQUIRE(first != nullptr);
+    CHECK(dynamic_cast<AlignPaneView*>(first.get()) != nullptr);
+    CHECK(dynamic_cast<RtaView*>(first.get()) == nullptr);
+
+    // An answer written through one pane is read back by the next one.
+    auto* pane = dynamic_cast<AlignPaneView*>(first.get());
+    REQUIRE(pane != nullptr);
+    pane->topologyComboForTest().setSelectedId(2, juce::sendNotificationSync);
+    REQUIRE(alignRunner.answers().topology.has_value());
+    first.reset();
+    auto second = factory(PaneView::Align);
+    auto* next = dynamic_cast<AlignPaneView*>(second.get());
+    REQUIRE(next != nullptr);
+    CHECK(alignRunner.answers().topology.has_value());
 }

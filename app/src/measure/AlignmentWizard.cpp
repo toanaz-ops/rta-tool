@@ -257,6 +257,9 @@ void AlignmentWizard::compute() {
     result.crossoverHz = crossing.frequencyHz;
     result.crossingsHz = crossing.allCrossingsHz;
     result.tauSeconds = fit.tauSeconds;
+    for (const auto& candidate : fit.cycleCandidates) {
+        result.candidateTausSeconds.push_back(candidate.tauSeconds);
+    }
     result.interceptRadians = fit.interceptRadians;
     result.agreement = fit.agreement;
     result.meanFrequencyHz = fit.meanFrequencyHz;

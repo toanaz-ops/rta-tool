@@ -8,10 +8,9 @@
 #include "view/AxisMetrics.h"
 #include "view/CrossoverSurfaceRenderer.h"
 #include "view/MeasureColours.h"
+#include "view/TopologyChoices.h"
 
 #include <az_ui/az_ui.h>
-
-#include <array>
 
 namespace rta::view {
 namespace {
@@ -23,28 +22,6 @@ namespace {
 /// nothing a person could perceive as lag.
 constexpr int kTimerHz = 10;
 
-/// One entry in the topology picker: a real `rta::measure::Topology` this
-/// pane's `topology_` can hold, paired with the label the combo box shows.
-/// A FINITE, HAND-PICKED list -- `expectedOffset` (CrossoverTopology.h) is
-/// arithmetically valid at any order, but a combo box needs a finite set,
-/// and these seven are what Rane Note 160 (LR-2/4/8) and ordinary practice
-/// (BW-1..4) actually ship. Adding an order some rig actually uses is a
-/// one-line addition here, never a reason to invent a default.
-struct TopologyChoice {
-    rta::measure::Topology topology;
-    const char* label;
-};
-
-constexpr std::array<TopologyChoice, 7> kTopologyChoices{ {
-    { { rta::measure::CrossoverFamily::LinkwitzRiley, 2 }, "LR-2" },
-    { { rta::measure::CrossoverFamily::LinkwitzRiley, 4 }, "LR-4" },
-    { { rta::measure::CrossoverFamily::LinkwitzRiley, 8 }, "LR-8" },
-    { { rta::measure::CrossoverFamily::Butterworth, 1 }, "BW-1" },
-    { { rta::measure::CrossoverFamily::Butterworth, 2 }, "BW-2" },
-    { { rta::measure::CrossoverFamily::Butterworth, 3 }, "BW-3" },
-    { { rta::measure::CrossoverFamily::Butterworth, 4 }, "BW-4" },
-} };
-
 /// Centred at 1 kHz, 6 octaves either side -- outside the plotted 20 Hz-
 /// 20 kHz band both ways, so with no crossover frequency asked either, the
 /// relative-phase trace covers the whole visible band rather than a fit
@@ -55,23 +32,6 @@ constexpr std::array<TopologyChoice, 7> kTopologyChoices{ {
 constexpr PhaseWindow kDefaultWindow{ 1000.0, 6.0 };
 
 constexpr int kSummationHeight = 200;
-
-/// One entry in the inversion picker: wizard question (c)
-/// (CrossoverTopology.h's own comment on `ProcessorInversion`) -- "has the
-/// processor already inverted one output?" -- with all three answers a real
-/// operator can give, never just YES/NO. `Unknown` is not a refusal to
-/// answer: it is answered, and it means "draw both candidate lines" (Sec.13.3
-/// via `CrossoverSurface::targetAmbiguous()`), not "this pane doesn't know".
-struct InversionChoice {
-    rta::measure::ProcessorInversion inversion;
-    const char* label;
-};
-
-constexpr std::array<InversionChoice, 3> kInversionChoices{ {
-    { rta::measure::ProcessorInversion::No, "NOT INVERTED" },
-    { rta::measure::ProcessorInversion::Yes, "INVERTED" },
-    { rta::measure::ProcessorInversion::Unknown, "UNKNOWN -- SHOW BOTH" },
-} };
 
 }  // namespace
 

@@ -177,6 +177,8 @@ target_sources(rtatool_snapshot PRIVATE
     ${CMAKE_SOURCE_DIR}/tools/snapshot_routing.cpp
     # snapshot_eq.cpp: L7-EQ UI wave A's main-live-eq*.png, same reason.
     ${CMAKE_SOURCE_DIR}/tools/snapshot_eq.cpp
+    # snapshot_align.cpp: ALIGN-UI wave A's main-live-align.png, same reason.
+    ${CMAKE_SOURCE_DIR}/tools/snapshot_align.cpp
 )
 
 target_include_directories(rtatool_snapshot PRIVATE
