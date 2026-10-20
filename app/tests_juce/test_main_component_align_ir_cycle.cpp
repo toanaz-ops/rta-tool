@@ -134,6 +134,6 @@ TEST_CASE("align IR (T11): on the shipped defaults the run asks, without a seed 
     REQUIRE(runnerOf(c).seedDisagreement().has_value());
     CHECK(runnerOf(c).seedDisagreement()->seedHz == 100.0);
     CHECK(runnerOf(c).seedDisagreement()->hintAtSeedSamples != runnerOf(c).seedDisagreement()->hintAtCrossingSamples);
-    CHECK(pane.readoutForTest().contains("seed and measured crossing disagree (100 Hz vs "));
-    CHECK(pane.readoutForTest().contains("with the lag at the seed"));
+    CHECK(pane.readoutForTest().contains("seed 100 Hz and crossing "));
+    CHECK(pane.readoutForTest().contains("IR hint "));
 }

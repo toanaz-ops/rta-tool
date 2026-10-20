@@ -22,7 +22,7 @@ constexpr int kTimerHz = 10;
 constexpr int kButtonHeight = 30;
 constexpr int kStatusHeight = 20;
 constexpr int kBlockerHeight = 20;
-constexpr int kReadoutHeight = 112;
+constexpr int kReadoutHeight = 132;  // the seed-disagreement readout is ten lines (main-live-align-seed.png)
 constexpr int kSummationHeight = 180;
 constexpr int kMaxListedOutputs = 16;
 

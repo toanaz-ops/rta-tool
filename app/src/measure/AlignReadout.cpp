@@ -105,11 +105,11 @@ std::vector<std::string> verdictLines(const AlignReadoutInput& input) {
             };
             char text[200];
             std::snprintf(text, sizeof text,
-                          "seed and measured crossing disagree (%.0f Hz vs %.0f Hz); the IRs did not choose",
+                          "seed %.0f Hz and crossing %.0f Hz disagree: the IRs did not choose",
                           s.seedHz, s.crossingHz);
             lines.push_back(text);
             std::snprintf(text, sizeof text,
-                          "IRs suggest %+.2f ms with the lag at the seed, %+.2f ms at the crossing; type the offset",
+                          "IR hint %+.2f ms at seed lag, %+.2f ms at crossing lag; type the offset",
                           ms(s.hintAtSeedSamples), ms(s.hintAtCrossingSamples));
             lines.push_back(text);
         } else if (input.irHintSamples.has_value() && input.sampleRate > 0.0) {

@@ -251,9 +251,8 @@ New: `AlignRunner` ~160/300; `AlignReadout` ~60/160; `TransferDwell.h` ~30;
    lag is taken at the seed and it resolves. **Amended 2026-10-20 (H5 closeout,
    D9):** a seed MORE than a third of an octave from the measured crossing no
    longer lets the IRs choose at all (a wrong seed passed the guard with a
-   residual of 5.4 ms); the pane says "seed and measured crossing disagree (X Hz
-   vs Y Hz); the IRs did not choose" and lists the IR integer with the lag at the
-   seed and at the crossing. SET OFFSET stays usable
+   residual of 5.4 ms); the pane says "seed X Hz and crossing Y Hz disagree: the IRs did not choose"
+   and lists the IR integer with the lag taken at the seed and at the crossing. SET OFFSET stays usable
    and a typed offset overrides it, the status saying so. On the shipped
    defaults (below): NO SEED crosses at about 58 Hz and the run asks with a hint
    (about -0.8 ms); ~~SEED 100 HZ resolves ("delay MAIN by 4.56 ms", the

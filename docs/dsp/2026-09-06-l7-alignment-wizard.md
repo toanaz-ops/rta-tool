@@ -314,8 +314,12 @@ What shipped instead:
   than the runner-up. The lag correction can remove only the filter that was NAMED;
   a box with another filter in its path leaves a residual, and the guard turns that
   residual into a question (`AskingCycle`, the integer shown as "IRs suggest about
-  X ms") instead of a silently wrong cycle. A one-candidate fit has no spacing to
-  measure and is accepted. A typed offset always wins, before or after the fit
+  X ms") instead of a silently wrong cycle. ~~A one-candidate fit has no spacing to
+  measure and is accepted.~~ **Amended 2026-10-20 (H5 closeout D6):** a one-candidate
+  fit has no gap to measure but has a bound on it — the fit searched `[-R, R]` and
+  its neighbours were not found, so the spacing exceeds `R + |c|` and the integer must
+  lie within `(R + |c|) / 4` of the candidate (`candidateWithinGuard`'s third
+  argument; a non-positive `R` asks). It used to accept an integer 49 ms away. A typed offset always wins, before or after the fit
   (`AlignmentWizard.cpp:62-73`, `AlignRunner.cpp`), and the readout says which one
   chose ("the bound IRs chose…" versus "your offset chose…").
   Caveat measured in the same PR: an extra high-pass adds its group delay inside the
@@ -325,6 +329,24 @@ What shipped instead:
   operator has bound a SWEEP IR to each source, `AlignRunner` supplies both at
   MEASURE (`AlignRunnerIr.cpp:80`, called from `AlignRunner.cpp:137`); with fewer
   than two the wizard asks, as before.
+
+**AMENDED 2026-10-20 by the ALIGN-UI closeout (D9; written after the code, tests
+in `test_alignment_wizard_ir.cpp` and `test_cycle_arrival.cpp`).** The peak lag is
+taken at the SEED corner, but the arrivals were produced at the true corner, and a
+wrong seed shifts the integer by `(k / f_t)·|f_t/f_s − 1|` (k = 0.94 for LR8, the
+highest-lag shipped order). The guard tolerates a quarter of the candidate spacing,
+about `1 / (4 f_t)`, so the seed must satisfy `|f_t/f_s − 1| ≤ 1/(4k) = 0.27`; a
+third of an octave (`2^(1/3) − 1 = 0.26`) is the widest octave fraction inside it
+(`kSeedCrossingToleranceOctaves`, `CycleArrival.h`). The verifier's counter-cases
+(SEED 60 on a 200 Hz LR4 corner, residual 5.4 ms inside `[3s/4, 5s/4]`; for LR8
+SEED 80 on 150, 100 on 200, 60 on 120) are all more than a third of an octave off.
+So when a seed is given and `|log2(seed / measured crossing)| > 1/3` the wizard
+does NOT let the IRs choose: it stays in `AskingCycle`, keeps `irCycleHintSamples()`
+(lag at the seed) and `seedDisagreement()` (that integer and the one with the lag at
+the crossing), and the readout prints both ("IR hint ... at seed lag, ... at crossing lag") under the sentence "seed X Hz and
+crossing Y Hz disagree: the IRs did not choose". Without a seed the lag
+is taken at the crossing and nothing is compared. A consequence for the shipped
+SYNTHETIC defaults: SEED 100 on the ~58 Hz crossing now asks (it resolved before).
 
 The one legitimate use of `originIndex` is unchanged: §7's ρ window is measured
 FROM t = 0, so `relativePolarity()` and `findPolarity()` still read it as the
