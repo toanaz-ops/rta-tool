@@ -10,8 +10,8 @@
 // Third-octave bands (wave B, plan T11) are the same grid at fraction 3, 50 Hz
 // to 10 kHz: a band is in or out by its CENTRE, so the lowest is the 50.1 Hz
 // centre and the highest the 10000 Hz one. They triple the rows and bring
-// routine B*T refusals in the low bands (a 50 Hz third is 11.6 Hz wide, so a
-// decay under 0.52 s cannot clear the bar of 6), which is why they sit behind a
+// routine B*T refusals in the low bands (a 50 Hz third is 11.6 Hz wide; at a
+// 0.4 s decay core reads B*T = 5.4 there, under its bar of 6), which is why they sit behind a
 // toggle and the octave table stayed the default. The 63 Hz octave and the 63
 // and 80 Hz thirds are listed even though the shipped sweep cannot answer them
 // (its trusted band starts at 80 Hz, and a band is trusted only when its LOWER
