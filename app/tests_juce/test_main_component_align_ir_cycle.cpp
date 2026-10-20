@@ -40,7 +40,7 @@ TEST_CASE("align IR (T11): an LR-8 pair resolves to the right cycle from the IRs
                                          << ", readout: " << pane.readoutForTest().replace("\n", " | "));
     CHECK(runnerOf(c).step() == WizardStep::Computed);
     CHECK(runnerOf(c).cycleFromIr());
-    CHECK(pane.readoutForTest().contains("delay MAIN by 2."));
+    checkChosenCycleNearIdeal(c, 2.0, "LR-8");
     CHECK_FALSE(pane.readoutForTest().contains("another candidate"));
 }
 

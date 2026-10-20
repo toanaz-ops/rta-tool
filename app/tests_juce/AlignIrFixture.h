@@ -20,6 +20,7 @@
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
 #include "dev-support/SyntheticCrossoverHp.h"
+#include "measure/AlignReadout.h"
 #include "measure/CycleArrival.h"
 #include "measure/SyntheticCrossover.h"
 #include "view/AlignPaneView.h"
@@ -28,6 +29,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -113,6 +115,31 @@ inline void sweepThrough(MainComponent& c, juce::Button& button) {
     button.onClick();
     REQUIRE(sweepOf(c).busy());
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+}
+
+/// The readout's delay is the fit candidate the cycle integer chose. Its VALUE
+/// carries the estimator's own tau* bias and jitter (wave A measured +0.05..0.24
+/// ms on an LR-4 pair, more on a steeper LR-8 phase: CI read 3.01 ms for 2 ms),
+/// so a fixed-decimal string ("delay MAIN by 2.") is the floor of one grid. What
+/// the test can honestly claim: the chosen candidate is the fit's own tau* (the
+/// right cycle), and it lies within HALF the candidate spacing of the ideal delay,
+/// which is the discrimination bound against the neighbouring cycle. The spacing
+/// is read from the candidate list (smallest gap), never typed. `direction` text
+/// stays asserted. Prints the actual tau, delta and crossing.
+inline void checkChosenCycleNearIdeal(MainComponent& c, double idealMs, const char* note) {
+    const auto& verdict = *runnerOf(c).verdict();
+    const auto resolved = rta::measure::resolveCycle(verdict, runnerOf(c).cycleSamples(), kFs);
+    auto sorted = verdict.candidateTausSeconds;
+    std::sort(sorted.begin(), sorted.end());
+    double spacing = 1.0 / verdict.crossoverHz;  // one candidate only: fall back to a cycle at the crossing
+    for (std::size_t i = 1; i < sorted.size(); ++i) spacing = std::min(spacing, sorted[i] - sorted[i - 1]);
+    const double tauMs = 1000.0 * resolved.tauSeconds;
+    WARN(note << ": chosen tau " << tauMs << " ms (tau* " << 1000.0 * verdict.tauSeconds << "), delta "
+              << verdict.deltaRadians * 180.0 / 3.14159265358979323846 << " deg, crossing " << verdict.crossoverHz
+              << " Hz, spacing " << 1000.0 * spacing << " ms, ideal " << idealMs << " ms");
+    CHECK(std::fabs(resolved.tauSeconds - verdict.tauSeconds) < 1.0e-9);  // the integer chose tau*'s own cycle
+    CHECK(std::fabs(tauMs - idealMs) < 1000.0 * spacing / 2.0);
+    CHECK(alignPane(c).readoutForTest().contains("delay MAIN by "));
 }
 
 }  // namespace alignir

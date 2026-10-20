@@ -146,7 +146,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(pane.irInfoForTest().contains("findPolarity, low-pass side: refused (BandTooHigh)"));
     // The verdict resolves the integer: candidates sit ~10.8 ms apart, the
     // corrected integer is within ~0.1 ms of the right one.
-    CHECK(pane.readoutForTest().contains("delay MAIN by 2."));
+    checkChosenCycleNearIdeal(c, 2.0, "T11 IR integer");
     CHECK_FALSE(pane.readoutForTest().contains("your offset"));
 
     // A typed offset overrides the IR integer, and the status says whose it is.
@@ -155,7 +155,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(*runnerOf(c).cycleSamples() == 96);
     CHECK_FALSE(runnerOf(c).cycleFromIr());
     CHECK(runnerOf(c).status().find("your typed offset") != std::string::npos);
-    CHECK(pane.readoutForTest().contains("delay MAIN by 2."));
+    checkChosenCycleNearIdeal(c, 2.0, "T11 typed 2.0 ms");
 
     // The cost of the fit on the message thread (EQ risk-2 precedent: > 100 ms moves to a worker).
     WARN("T11 compute() = " << runnerOf(c).lastComputeMs() << " ms on the message thread");
