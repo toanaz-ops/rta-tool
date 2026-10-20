@@ -37,10 +37,6 @@ std::optional<Rt60Worker::Outcome> Rt60Worker::poll() {
     return out;
 }
 
-bool Rt60Worker::busy() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return pending_.has_value() || running_ || done_.has_value();
-}
 
 void Rt60Worker::loop() {
     std::unique_lock<std::mutex> lock(mutex_);

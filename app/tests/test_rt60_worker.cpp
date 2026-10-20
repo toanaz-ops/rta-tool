@@ -41,20 +41,17 @@ std::optional<Rt60Worker::Outcome> waitFor(Rt60Worker& worker) {
 
 TEST_CASE("worker: a single request returns the table, an ensemble request returns both", kTag) {
     Rt60Worker worker;
-    CHECK_FALSE(worker.busy());
     Rt60Worker::Request single;
     single.ticket = 1;
     single.set = Rt60BandSet::Third;
     single.primary = room(1000);
     worker.submit(single);
-    CHECK(worker.busy());
     const auto first = waitFor(worker);
     REQUIRE(first.has_value());
     CHECK(first->ticket == 1);
     REQUIRE(first->single != nullptr);
     CHECK(first->single->bands.size() == 24);  // the set reached the analysis
     CHECK(first->ensemble == nullptr);
-    CHECK_FALSE(worker.busy());
     CHECK_FALSE(worker.poll().has_value());  // taken once
 
     Rt60Worker::Request both;

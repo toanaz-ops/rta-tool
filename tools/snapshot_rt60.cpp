@@ -64,6 +64,9 @@ void renderRt60Specimen (const juce::File& outDir, int& failures)
     // A 1 s sweep keeps the specimen to seconds; the TAIL stays the pane's default 3 s.
     auto& sweep = Access::sweepForTest (component);
     sweep.setDurationsForTest (1.0, 3.0);
+    // The capture timeout runs on the wall clock while the loopback is paced by it
+    // too, so a busy machine aborts a healthy sweep; stretch the slack as H5 does.
+    sweep.setTimeoutSlackForTest (30000.0);
 
     component.selectPaneView (rta::view::PaneSelectorButton::Rt60);
     auto* pane = dynamic_cast<rta::view::Rt60PaneView*> (const_cast<juce::Component*> (&Access::pane (component)));

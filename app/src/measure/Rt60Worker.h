@@ -62,8 +62,6 @@ public:
     /// it was taken. A job superseded before it finished never appears.
     [[nodiscard]] std::optional<Outcome> poll();
 
-    /// True from `submit` until the outcome is taken by `poll`.
-    [[nodiscard]] bool busy() const;
 
 private:
     void loop();
