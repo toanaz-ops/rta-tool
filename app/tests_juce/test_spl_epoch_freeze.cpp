@@ -107,9 +107,9 @@ bool waitForSplBlocks(const AnalysisThread& thread, int channel, std::uint64_t t
 // that point -- and the count climbs by exactly the amount this test's own
 // polling arrived early by.
 //
-// The analysis thread drains every ring itself on the tick it sees the epoch
-// change (CaptureBus::drainAsConsumer, called from
-// rebuildAnalysersIfEpochChanged), BEFORE that tick's drain(). So a leftover
+// The analysis thread drains every ring itself behind the producer gate
+// (CaptureBus::serviceResyncAsConsumer, called from runBody()), BEFORE that
+// tick's drain(). So a leftover
 // pre-epoch hop can never survive to be miscounted as post-epoch: either it is
 // drained (and counted) before prepare() runs, or the consumer discards it.
 // That is what makes this a test-only race rather than a product one.

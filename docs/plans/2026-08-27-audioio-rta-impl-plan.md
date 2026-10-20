@@ -8,6 +8,8 @@ exact files, exact tests, exact acceptance numbers.*
 
 ---
 
+> **Correction note, 2026-10-21 (PR #78).** Rows below that say `prepare()` "drains every ring" (the test `prepare drains every ring and bumps the epoch`, the imported-rule row at the end of the document) describe the plan as written, not the shipped code: `CaptureBus::prepare()` no longer touches any ring. It raises a producer gate and the consumer drains behind it; see `docs/specs/2026-08-27-platform-audioio-design.md` (amended) and `CaptureBus.h` "Resync". The tests that now carry the property are `platform/tests/test_capture_bus_drain.cpp`, `test_capture_bus_guard.cpp` (G1, G4, G5) and `app/tests_juce/test_capture_bus_epoch_drain.cpp`.
+
 ## Amendment A1 (Fable review, before build)
 
 T1's deliverable is renamed to avoid a head-on collision with the generator

@@ -81,11 +81,30 @@ inline constexpr std::size_t kFixedRingCapacitySamples = 65536;
 /// `reset()` there can land between the consumer's two loads inside
 /// `discard()` and leave `write=0, read=R+hop` -- `availableToRead()` then
 /// wraps to ~2^64 and the analysis thread never leaves its drain loop. So
-/// `prepare()` touches no ring at all. Dropping the previous session's
-/// samples is the consumer's own job, `drainAsConsumer()`, which the
-/// consumer calls on the tick it sees `epoch()` change. The structural
-/// guard test `test_capture_bus_guard.cpp` fails the build if `prepare()`
-/// ever calls `reset(` again.
+/// `prepare()` touches no ring at all. The structural guard test
+/// `test_capture_bus_guard.cpp` fails the build if it ever calls `reset(`.
+///
+/// ## Resync: how the previous session's samples are dropped
+///
+/// Draining must leave every ring EMPTY at the same callback boundary, or
+/// reference and measurement end up offset (a ring that entered the epoch
+/// with more data keeps old-rate samples at its front; draining an equal
+/// count from each ring, or each ring's own backlog while the producer
+/// writes block-by-block, cannot fix that). So the drain is bracketed by a
+/// producer gate:
+///
+///   1. `prepare()` (device stopped) -- or the consumer, on seeing the SET of
+///      written channels change while running -- raises `resyncPending_`.
+///   2. `pushFromCallback` loads it once (acquire); while it is up the
+///      callback writes NO ring and counts the frames in `resyncFrames()`,
+///      which are not overflow drops.
+///   3. The consumer (`serviceResyncAsConsumer`) empties every ring with
+///      `discard(availableToRead())` -- stable, nothing is writing -- and
+///      only then lowers the flag. The next callback writes all routed rings
+///      together, so they all restart empty on one boundary.
+///
+/// The gate only exists while a consumer is attached (`attachConsumer`):
+/// with none there is nobody to lower it, and nobody to race.
 class CaptureBus {
 public:
     /// Allocates all `kMaxChannels` rings up front, each rounded up to a
@@ -105,33 +124,39 @@ public:
     /// Device-thread or message-thread call; the precondition is that the
     /// AUDIO CALLBACK is not running concurrently with it (device stopped, or
     /// not yet started). It performs no allocation, never invalidates a
-    /// `ring()` pointer, and -- the point of the 2026-10-21 fix -- never
-    /// touches any ring's indices (see the class comment), so it is safe
-    /// against a live `AnalysisThread`.
+    /// `ring()` pointer and never touches any ring's indices (see the class
+    /// comment), so it is safe against a live `AnalysisThread`.
     ///
-    /// Clears every drop counter (a device reconfiguration invalidates
-    /// whatever was dropped under the previous session too), re-labels the
-    /// rate and channel count, and bumps `epoch()` so the consumer can notice,
-    /// rebuild its analysis state and call `drainAsConsumer()`. Samples from
-    /// the previous session stay in the rings until that call: the consumer
-    /// must drain them before its first post-epoch read, or they would splice
-    /// onto the new session and mislabel every bin-to-Hz conversion.
+    /// Clears every drop and resync counter, re-labels the rate and channel
+    /// count, raises the resync gate if a consumer is attached, and bumps
+    /// `epoch()` so the consumer rebuilds its analysis state. Samples from the
+    /// previous session stay in the rings until the consumer's resync drains
+    /// them; the gate keeps new-session samples out until it has.
     void prepare(double sampleRate, int numChannels);
 
-    /// CONSUMER THREAD ONLY (AnalysisThread). Discards the previous session's
-    /// samples with `discard()` -- the one operation that moves `readIndex_`
-    /// from the side that owns it. Call it on the tick `epoch()` is seen to
-    /// change, before any read of that tick. A few milliseconds of new-session
-    /// samples that already landed are lost with the stale ones; that is the
-    /// accepted cost of never letting the producer side write the consumer's
-    /// index.
-    ///
-    /// The producer may be live meanwhile, so rings with a writer (role not
-    /// `Unused`) all discard the same count -- the smallest availability among
-    /// them -- rather than "everything": see the .cpp for why a per-ring
-    /// drain would offset reference from measurement by a block. Rings with
-    /// no writer are emptied fully.
+    /// The consumer announces itself (AnalysisThread's constructor) and
+    /// withdraws (its destructor, after the thread has stopped). Attached,
+    /// `prepare()` raises the resync gate; detaching lowers it.
+    void attachConsumer() noexcept;
+    void detachConsumer() noexcept;
+
+    /// CONSUMER THREAD ONLY, once per tick, before any read. Detects a change
+    /// in the set of channels with a writer (a role assigned or cleared while
+    /// running) and raises the gate for it, returning false so a callback
+    /// already inside `pushFromCallback` can finish; on a later tick, while
+    /// the gate is up, empties every ring and lowers it (returns true).
+    /// Returns false when nothing is pending.
+    bool serviceResyncAsConsumer() noexcept;
+
+    /// CONSUMER THREAD ONLY: `discard(availableToRead())` on every ring.
+    /// Correct only while nothing is writing -- the resync gate is up, or the
+    /// device is stopped. Public so tests can play the consumer.
     void drainAsConsumer() noexcept;
+
+    /// True while the producer is gated off. Frames the callback refused
+    /// during a resync; NOT overflow drops, and not in `totalDrops()`.
+    [[nodiscard]] bool resyncPending() const noexcept { return resyncPending_.load(std::memory_order_acquire); }
+    [[nodiscard]] std::uint64_t resyncFrames() const noexcept { return resyncFrames_.load(std::memory_order_relaxed); }
 
     /// Message thread OR device thread -- a relaxed atomic store, so it is
     /// safe from either, and `AudioIo` calls it from all three of its
@@ -230,6 +255,12 @@ private:
     std::array<std::atomic<std::uint64_t>, static_cast<std::size_t>(kMaxChannels)> drops_{};
     std::atomic<bool> active_{false};
     std::atomic<std::uint64_t> epoch_{0};
+    std::atomic<bool> consumerAttached_{false};
+    std::atomic<bool> resyncPending_{false};
+    std::atomic<std::uint64_t> resyncFrames_{0};
+    // Consumer thread only (serviceResyncAsConsumer): bit ch set = channel ch had a writer.
+    std::uint64_t consumerWriterMask_ = 0;
+    [[nodiscard]] std::uint64_t writerMask() const noexcept;
     std::atomic<double> sampleRate_{0.0};
     std::atomic<int> preparedChannels_{0};
 };

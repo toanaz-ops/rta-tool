@@ -169,8 +169,9 @@ void AudioIo::audioDeviceAboutToStart(juce::AudioIODevice* device) {
     // and channel count and bumps the epoch; it does NOT touch any ring
     // (RingBuffer::reset() writes the consumer's read index, which races a
     // live AnalysisThread -- see CaptureBus.h). The drain is the CONSUMER's:
-    // AnalysisThread calls CaptureBus::drainAsConsumer() on the tick it sees
-    // the epoch change, before its first post-epoch read. No capacity
+    // prepare() raises a producer gate and AnalysisThread empties every ring
+    // and lowers it (serviceResyncAsConsumer), so every ring restarts empty
+    // on one callback boundary. No capacity
     // argument: every ring was sized once, in bus_'s constructor, at the fixed
     // kFixedRingCapacitySamples. prepare() is safe to call here with no extra
     // synchronisation for the write side: JUCE invokes this BEFORE inserting

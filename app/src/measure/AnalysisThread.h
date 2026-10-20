@@ -67,7 +67,7 @@ public:
     /// `CaptureBus::prepare`), the internal `Analyser` is rebuilt at
     /// `bus.sampleRate()` instead, and the fresh `Analyser` (no buffered
     /// samples, no running average) is itself the drain on this side of the
-    /// bus; the rings are drained on this thread (`CaptureBus::drainAsConsumer`),
+    /// bus; the rings are drained on this thread (`serviceResyncAsConsumer`),
     /// never by `prepare()`, since only the consumer may write a read index.
     ///
     /// Starts the thread immediately; there is no separate `start()`.

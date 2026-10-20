@@ -44,6 +44,9 @@ AnalysisThread::AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::C
     for (auto& scratch : channelScratch_) {
         scratch.assign(config.hopSize, 0.0f);
     }
+    // Attached before the thread starts: from here a prepare() raises the
+    // producer gate and this thread lowers it (CaptureBus.h, "Resync").
+    bus_.attachConsumer();
     startThread();
 }
 
@@ -51,6 +54,7 @@ AnalysisThread::~AnalysisThread() {
     // Trap T-1: belt and braces even though the owner's member-declaration
     // order also guarantees this thread stops before bus_ is torn down.
     stopThread(2000);
+    bus_.detachConsumer();
 }
 
 SnapshotPtr AnalysisThread::latest() const {
@@ -123,6 +127,10 @@ void AnalysisThread::runBody() {
             throw std::runtime_error("injected analysis fault");
         }
 
+        // Before any read of this tick: empties every ring behind the
+        // producer gate after a prepare() or a change of written channels.
+        // Never in prepare() itself: only this thread may write a read index.
+        bus_.serviceResyncAsConsumer();
         rebuildAnalysersIfEpochChanged();
         applyPendingReferenceDelay();
 
@@ -137,9 +145,6 @@ void AnalysisThread::rebuildAnalysersIfEpochChanged() {
     if (epoch == lastEpoch_) {
         return;
     }
-    // 0 = "never saw an epoch": the first one has no earlier session behind
-    // it, so what is in the rings was written for IT -- keep it.
-    const bool firstEpoch = lastEpoch_ == 0;
     lastEpoch_ = epoch;
 
     Analyser::Config cfg = baseConfig_;
@@ -147,16 +152,10 @@ void AnalysisThread::rebuildAnalysersIfEpochChanged() {
     if (rate > 0.0) {
         cfg.sampleRate = rate;
     }
-    // The ring drain happens HERE, on the consumer, never in
-    // CaptureBus::prepare(): RingBuffer::reset() writes readIndex_, which only
-    // this thread may write (audit prj010-fable-audit-20261021, high). It runs
-    // before this tick's drain(), so stale old-rate frames never splice onto
-    // the new session. The fresh Analysers below are the same drain on the
-    // analysis side; every position is rebuilt together, since a device
-    // reconfiguration invalidates every engine's running state.
-    if (!firstEpoch) {
-        bus_.drainAsConsumer();
-    }
+    // The ring side of this reset is runBody()'s serviceResyncAsConsumer(),
+    // gated on the bus's resync flag rather than on this epoch. The fresh
+    // Analysers below are the analysis-side drain; every position is rebuilt
+    // together, since a device reconfiguration invalidates every engine.
 
     for (auto& analyser : analysers_) {
         analyser = std::make_unique<Analyser>(cfg);

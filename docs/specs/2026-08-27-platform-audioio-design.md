@@ -32,7 +32,7 @@ the shape proven in production by handsfree's `AudioEngine`.
 | Rule | Source |
 |---|---|
 | `ScopedNoDenormals` is the FIRST statement in the callback | handsfree: subnormal limit cycle measured at ~80x CPU (77 ms/s vs 0.9 ms/s) |
-| `audioDeviceAboutToStart` retargets rate-dependent state AND drains every ring | stale samples from the previous device splice onto the new session and mislabel every bin-to-Hz conversion |
+| `audioDeviceAboutToStart` retargets rate-dependent state AND drains every ring | stale samples from the previous device splice onto the new session and mislabel every bin-to-Hz conversion. **Amended 2026-10-21 against the shipped code (PR #78):** the drain is the consumer's, not `prepare()`'s -- `RingBuffer::reset()` writes the consumer's read index, which raced a live `AnalysisThread`. `CaptureBus::prepare()` raises a producer gate (`resyncPending_`); `pushFromCallback` writes nothing and counts `resyncFrames()` while it is up; `AnalysisThread` empties every ring with `discard()` and then lowers it, so all rings restart empty on one callback boundary. The same resync runs when a role assignment changes the set of written channels while running. See `CaptureBus.h`, "Resync". |
 | Read the device type BACK from the manager; never echo the requested string | JUCE silently keeps the current type if "ASIO" isn't registered |
 | `setAudioDeviceSetup` returns EMPTY string on success | inverse of the usual convention |
 | The callback defensively checks a validity atomic | on some platform/JUCE combos callbacks keep firing after `closeAudioDevice()` |

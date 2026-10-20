@@ -60,16 +60,44 @@ TEST_CASE("G1 CaptureBus::prepare never resets a ring", "[capture_bus_guard]") {
     CHECK(body.find("discard(") == std::string::npos);
 }
 
-TEST_CASE("G2 the consumer drains the bus on an epoch change", "[capture_bus_guard]") {
+TEST_CASE("G2 the consumer services the bus resync every tick", "[capture_bus_guard]") {
     const std::string code =
         rta::test::codeText(repoFile("app/src/measure/AnalysisThread.cpp"));
-    const std::string body =
-        bodyOf(code, "void analysisthread::rebuildanalysersifepochchanged(");
+    const std::string body = bodyOf(code, "void analysisthread::runbody(");
 
-    // Without this call the previous session's samples stay in the rings, and
-    // since prepare() no longer clears them they would splice onto the new one.
-    INFO("rebuildAnalysersIfEpochChanged() body: " << body);
-    CHECK(body.find("bus_.drainasconsumer(") != std::string::npos);
+    // Without this call the previous session's samples stay in the rings and,
+    // the producer gate never being lowered, no new sample ever lands.
+    INFO("runBody() body: " << body);
+    CHECK(body.find("bus_.serviceresyncasconsumer(") != std::string::npos);
+}
+
+TEST_CASE("G4 the consumer lowers the gate only after the drain", "[capture_bus_guard]") {
+    const std::string code =
+        rta::test::codeText(repoFile("platform/types/src/CaptureBus.cpp"));
+    const std::string body = bodyOf(code, "bool capturebus::serviceresyncasconsumer(");
+
+    // Lowered first, the producer writes into rings still being emptied -- the
+    // misalignment the gate exists to prevent. One thread cannot observe the
+    // order at run time, so the order is pinned here.
+    const auto drain = body.find("drainasconsumer(");
+    const auto lower = body.find("resyncpending_.store(false");
+    INFO("serviceResyncAsConsumer() body: " << body);
+    REQUIRE(drain != std::string::npos);
+    REQUIRE(lower != std::string::npos);
+    CHECK(drain < lower);
+}
+
+TEST_CASE("G5 the producer honours the gate before writing any ring", "[capture_bus_guard]") {
+    const std::string code =
+        rta::test::codeText(repoFile("platform/types/src/CaptureBus.cpp"));
+    const std::string body = bodyOf(code, "void capturebus::pushfromcallback(");
+
+    const auto gate = body.find("resyncpending_.load(");
+    const auto write = body.find("->write(");
+    INFO("pushFromCallback() body: " << body);
+    REQUIRE(gate != std::string::npos);
+    REQUIRE(write != std::string::npos);
+    CHECK(gate < write);
 }
 
 TEST_CASE("G3 drainPaired takes its hop budget from pairedHopCount", "[capture_bus_guard]") {

@@ -62,8 +62,8 @@ void pushRecognisableBlock(AudioIo& io, int numChannels, int numSamples, float b
 // back out.
 
 TEST_CASE(
-    "a sample-rate change drains every ring and advances the epoch, so no "
-    "pre-change sample survives",
+    "a sample-rate change leaves the rings to the consumer's drain and advances "
+    "the epoch, so no pre-change sample survives it",
     "[audio_io][m3]") {
     AudioIo io;
     FakeAudioIODevice fake48k(48000.0, 512, 2, 2);
@@ -112,8 +112,8 @@ TEST_CASE(
 // inside audioDeviceAboutToStart.
 
 TEST_CASE(
-    "a buffer-size change completes, drains every ring, and leaves state "
-    "consistent",
+    "a buffer-size change completes, leaves the drain to the consumer, and "
+    "leaves state consistent",
     "[audio_io][m4]") {
     AudioIo io;
     FakeAudioIODevice fakeSmallBuffer(48000.0, 256, 2, 2);

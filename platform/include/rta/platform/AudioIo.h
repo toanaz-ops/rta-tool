@@ -139,11 +139,14 @@ public:
                                            int numSamples,
                                            const juce::AudioIODeviceCallbackContext& context) override;
 
-    /// Retargets `bus_` to the device's actual rate/channel count and drains
-    /// every ring (decision record: "retargets rate-dependent state AND
+    /// Retargets `bus_` to the device's actual rate/channel count and starts
+    /// the ring drain (decision record: "retargets rate-dependent state AND
     /// drains every ring" -- stale samples from the previous session would
     /// otherwise splice onto the new one and mislabel every bin-to-Hz
-    /// conversion). Also retargets `output_` (L7-OUT record sec.4-5): bumps
+    /// conversion). `CaptureBus::prepare` itself empties nothing: it raises the
+    /// producer gate and the CONSUMER (AnalysisThread) empties every ring and
+    /// lowers it (CaptureBus.h, "Resync"); until then the callback drops
+    /// frames into `CaptureBus::resyncFrames()`. Also retargets `output_` (L7-OUT record sec.4-5): bumps
     /// its epoch, disarms the active source, and rescales every gate's ramp
     /// length to the new rate -- same "safe from here, no extra
     /// synchronisation" reasoning as `bus_.prepare` below. Safe to call
