@@ -1127,7 +1127,7 @@ MEDIUM.
    against the predicted sum.
 5. **Wave B (no typed offset):** press **SWEEP MAIN**, wait for its `IR +n
    samples` line, press **SWEEP SUB**, then **MEASURE**. With NO SEED the IR
-   integer is only a hint on the shipped defaults (the run asks). **SEED 100 HZ**
+   integer is only a hint on the shipped defaults (the run asks). Documented trade of D9: a CORRECT seed also asks whenever the acoustic crossing is more than a third of an octave off it (level offsets can do that), because the lag correction cannot then be trusted. **SEED 100 HZ**
    is 0.79 octave from the 58 Hz crossing, so the run asks too, printing "seed 100
    Hz and crossing 58 Hz disagree: the IRs did not choose" and "IR hint ... at seed
    lag, ... at crossing lag" (`main-live-align-seed.png`). The LR-4 HP/LP pair of

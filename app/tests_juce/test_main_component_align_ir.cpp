@@ -115,7 +115,25 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(*runnerOf(c).cycleSamples() == subArrival - mainArrival - lag);
     WARN("T11 integer " << *runnerOf(c).cycleSamples() << " (raw " << subArrival - mainArrival << ", lag " << lag
                         << "), the fixture's pure delay is 96");
-    CHECK(std::llabs(static_cast<long long>(*runnerOf(c).cycleSamples()) - 96) <= 3);
+    // DERIVED bound (replaces a +-3 that was the floor of one grid). The arrivals
+    // are identical every run (main 4, sub 320); what moves is lag = lagAt(crossing),
+    // because SyntheticInput paces by wall clock and the snapshot is taken from the
+    // message-thread timer, so WHICH blocks of the fixed-seed (0x5EEDu) pink stream
+    // are averaged varies, and the crossing with them. Crossing resolution: the
+    // spectral crossover interpolates between bins of 48000/4096 = 11.7 Hz, so its
+    // reading cannot be off by more than half a bin, 5.9 Hz; with the fixture's
+    // corner at 100 Hz we allow dF = 5 Hz (measured jitter about +-1.5 Hz). The LR4
+    // lag is about 0.46 fs / f (2.2 samples per Hz here), so the integer may move
+    // over [raw - lagAt(100 - dF), raw - lagAt(100 + dF)] and nowhere else.
+    constexpr double kCornerHz = 100.0;
+    constexpr double kCrossingToleranceHz = 5.0;
+    const double crossingHz = runnerOf(c).verdict()->crossoverHz;
+    CHECK(std::fabs(crossingHz - kCornerHz) <= kCrossingToleranceHz);
+    const long raw = subArrival - mainArrival;
+    CHECK(*runnerOf(c).cycleSamples() >= raw - lagAt(kCornerHz - kCrossingToleranceHz));
+    CHECK(*runnerOf(c).cycleSamples() <= raw - lagAt(kCornerHz + kCrossingToleranceHz));
+    WARN("T11 crossing " << crossingHz << " Hz, allowed integer range [" << raw - lagAt(kCornerHz - kCrossingToleranceHz)
+                         << ", " << raw - lagAt(kCornerHz + kCrossingToleranceHz) << "]");
     CHECK(pane.offsetButtonForTest().isEnabled());  // a typed offset may always override
 
     // The signals are listed, with their reasons; the sub's findPolarity is a refusal.
