@@ -49,6 +49,17 @@ bool anyLineContains(const std::vector<std::string>& lines, const std::string& p
 
 const std::string kNoIrText = "no IR: opened from file or dropped from memory (8 kept); sweep again";
 
+// Paints the pane and says whether the table half of paint() ran to its end.
+bool paintDrewTable(rta::view::Rt60PaneView& pane) {
+    if (pane.getWidth() <= 0) {  // a component with no desktop peer is not laid out by setBounds alone
+        pane.setBounds(0, 0, 900, 500);
+        static_cast<juce::Component&>(pane).resized();
+    }
+    REQUIRE(pane.getWidth() > 0);
+    pane.createComponentSnapshot(pane.getLocalBounds(), true);
+    return pane.lastPaintDrewTableForTest();
+}
+
 }  // namespace
 
 TEST_CASE("rt60 pane: the selector builds an Rt60PaneView, returns to RTA, and a saved rt60 pane reopens", kTag) {
@@ -91,6 +102,7 @@ TEST_CASE("rt60 pane: the picker lists a trace without an IR, with the reason, a
     auto* pane = rt60PaneOf(c);
     REQUIRE(pane != nullptr);
     pane->tickForTest();
+    CHECK_FALSE(paintDrewTable(*pane));  // nothing picked: the empty state, no table
 
     // Newest first, both listed; the one without an IR carries the reason.
     const auto items = pane->pickerTextsForTest();
@@ -119,6 +131,7 @@ TEST_CASE("rt60 pane: the picker lists a trace without an IR, with the reason, a
     CHECK(lines[2].find(" s") != std::string::npos);
     CHECK(pane->footnoteForTest().contains("EDT has no validity check"));
     CHECK(pane->headerForTest().contains("Lundeby truncation, zero-phase octave filters"));
+    CHECK(paintDrewTable(*pane));  // the nine lines above are what the paint ran through
     // One analysis for the one IR picked, however many ticks pass.
     pane->tickForTest();
     pane->tickForTest();
