@@ -17,7 +17,9 @@
 #pragma once
 
 #include "measure/Rt60Analysis.h"
+#include "measure/Rt60EnsembleReadout.h"
 #include "measure/Rt60Readout.h"
+#include "view/Rt60Chart.h"
 #include "view/PaneRegistry.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -45,6 +47,11 @@ struct Rt60Choice {
 struct Rt60Settings {
     int outputChannel = 0;
     double tailSeconds = 3.0;
+    /// Octave or third-octave rows (wave B, T11). The controller re-analyses on a change.
+    rta::measure::Rt60BandSet bandSet = rta::measure::Rt60BandSet::Octave;
+    /// The row whose decay curve the chart shows (T10); -1 is "pick one for me".
+    /// An index into the CURRENT band set, reset whenever the set changes.
+    int selectedBand = -1;
 };
 
 /// The pane's whole wiring, handed to `makePaneFactory`. Every hook is optional
@@ -69,6 +76,20 @@ struct Rt60PaneBinding {
     std::function<std::string()> sweepReadout;
     std::function<int()> outputChannels;
     Rt60Settings* settings = nullptr;
+
+    // --- wave B -------------------------------------------------------------
+    /// OCTAVE / THIRD: re-analyses the selected trace (and the ensemble) in the new set.
+    std::function<void(rta::measure::Rt60BandSet)> setBandSet;
+    /// The ticked ensemble members' trace ids, in the order they were ticked.
+    std::function<std::vector<std::string>()> ensembleIds;
+    /// Ticks or unticks a trace; false when the ensemble is full (eight) or the trace has no IR.
+    std::function<bool(const std::string& traceId)> toggleEnsemble;
+    std::function<void()> clearEnsemble;
+    /// The ensemble's analysis; null below two members or while it runs.
+    std::function<std::shared_ptr<const rta::measure::Rt60EnsembleResult>()> ensembleResult;
+    std::function<std::vector<std::string>()> ensembleNames;
+    /// True while the worker thread holds a job: the table is empty by design.
+    std::function<bool()> analysing;
 };
 
 class Rt60PaneView final : public juce::Component, public LibraryConsumer, private juce::Timer {
@@ -101,12 +122,34 @@ public:
     /// One turn of the pane's own 10 Hz timer (a test harness pumps no message loop).
     void tickForTest() { timerCallback(); }
 
+    // Wave B hooks, referenced whole-word from the same two test files.
+    [[nodiscard]] juce::Button& ensembleButtonForTest() noexcept { return ensembleButton_; }
+    [[nodiscard]] juce::Button& bandSetButtonForTest() noexcept { return bandSetButton_; }
+    [[nodiscard]] const Rt60Chart& chartForTest() const noexcept { return chart_; }
+    /// The ensemble menu as the operator would see it, one entry per line, prefixed
+    /// "[x] " when ticked and "[ ] " when not, and "(full)" suffixed when disabled.
+    [[nodiscard]] juce::StringArray ensembleMenuForTest() const;
+    /// Runs what the menu does for the entry at `index` of `ensembleMenuForTest`.
+    void chooseEnsembleEntryForTest(int index) { chooseEnsembleEntry(index); }
+    /// Clicks a table row, 0-based among the bands shown.
+    void clickRowForTest(int row) { selectRow(row); }
+    [[nodiscard]] bool showingEnsembleForTest() const noexcept { return ensembleShown_ != nullptr; }
+    [[nodiscard]] int chartBandIndexForTest() const noexcept { return chartBand_; }
+
 private:
     void timerCallback() override;
     void refresh();
     void refreshPicker();
     void refreshOutputCombo();
     void picked();
+    void mouseDown(const juce::MouseEvent&) override;
+    void layoutBody();
+    void selectRow(int row);
+    void refreshChart();
+    void refreshButtons();
+    [[nodiscard]] std::size_t bandCount() const;
+    [[nodiscard]] juce::PopupMenu buildEnsembleMenu(std::vector<std::string>* idsByItem) const;
+    void chooseEnsembleEntry(int index);
 
     Rt60PaneBinding binding_;
     std::uint64_t lastRevision_ = ~std::uint64_t{0};
@@ -121,8 +164,20 @@ private:
     std::string wholeRefusal_;
     bool lastPaintDrewTable_ = false;
 
+    // Wave B: the ensemble that replaces the single table when two or more
+    // captures are ticked, the row the chart follows, and what the menu offers.
+    std::shared_ptr<const rta::measure::Rt60EnsembleResult> ensembleShown_;
+    int chartBand_ = -1;
+    bool columnsAreEnsemble_ = false;
+    bool analysingShown_ = false;
+    int rowHeight_ = 26;
+    juce::Rectangle<int> rowsArea_;
+
     juce::ComboBox irCombo_, outputCombo_, tailCombo_;
     juce::TextButton sweepButton_{"SWEEP"};
+    juce::TextButton ensembleButton_{"ENSEMBLE"};
+    juce::TextButton bandSetButton_{"OCTAVE"};
+    Rt60Chart chart_;
     juce::Label headerLabel_, statusLabel_, adviceLabel_, footnoteLabel_;
     juce::Rectangle<int> tableArea_;
 

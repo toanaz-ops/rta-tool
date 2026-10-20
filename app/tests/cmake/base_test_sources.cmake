@@ -161,4 +161,7 @@ set(RTA_BASE_TEST_SOURCES
     # (Option B, closed-form IRs), T2 the words and numbers, T6 the room comb.
     test_rt60_analysis.cpp
     test_rt60_readout.cpp
+    # Wave B (T9 ensemble, T10 EDC, T11 thirds) and the worker thread.
+    test_rt60_wave_b.cpp
+    test_rt60_worker.cpp
 )

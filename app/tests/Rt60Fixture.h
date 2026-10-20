@@ -138,9 +138,9 @@ inline rta::measure::SweepIr buildIr(const IrSpec& spec) {
 /// Every octave from 63 Hz to 8 kHz decaying with the same T60: the table a
 /// perfect room would give. Edges are the base-ten octave edges (centre / and *
 /// 10^(3/20)).
-inline std::vector<Component> flatRoom(double t60) {
+inline std::vector<Component> flatRoom(double t60, std::uint32_t seedBase = 1000) {
     std::vector<Component> out;
-    std::uint32_t seed = 1000;
+    std::uint32_t seed = seedBase;
     for (const double centre : {63.0957, 125.893, 251.189, 501.187, 1000.0, 1995.26, 3981.07, 7943.28}) {
         const double edge = std::pow(10.0, 3.0 / 20.0);
         out.push_back({centre / edge, centre * edge, t60, seed++});

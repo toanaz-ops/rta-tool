@@ -194,7 +194,11 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/MainComponentRt60.cpp
     src/measure/Rt60Analysis.cpp
     src/measure/Rt60Readout.cpp
+    src/measure/Rt60EnsembleReadout.cpp
+    src/measure/Rt60Worker.cpp
     src/view/Rt60PaneView.cpp
+    src/view/Rt60PaneTable.cpp
+    src/view/Rt60Chart.cpp
     # --- end RT60-UI lane wave A ------------------------------------------------
     # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /
     # SplReportSections.cpp: see the matching entry in rtatool's own source
