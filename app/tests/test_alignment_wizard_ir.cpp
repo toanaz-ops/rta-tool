@@ -49,6 +49,21 @@ ImpulseWitness witness(std::size_t origin, long arrival) {
     return w;
 }
 
+/// Magnitudes that cross at bin 8 (750 Hz), not at the fixture's mid-band 12 kHz:
+/// an LR-4 low-pass peaks 0.46/fc late, about 29 samples at 750 Hz but ~2 at 12
+/// kHz, so only a crossover this low makes the peak-lag correction large enough
+/// to matter against the guard (a quarter of the ~0.8 ms candidate spacing, ~10
+/// samples).
+std::vector<float> crossingDb(bool rising) {
+    constexpr double kCrossBin = 8.0;
+    std::vector<float> db(rta::test::pointCount());
+    for (std::size_t k = 0; k < db.size(); ++k) {
+        const double d = 2.0 * (static_cast<double>(k) - kCrossBin);
+        db[k] = static_cast<float>(rising ? d : -d);
+    }
+    return db;
+}
+
 /// The low-pass side arrives later by `phaseDelaySeconds` in the captures, and
 /// `mainArrival` / `subArrival` in the IRs; origins 12345 apart (the pre-roll
 /// jitter F2 is about).
@@ -63,9 +78,8 @@ std::unique_ptr<AlignmentWizard> run(OutputEngine& engine, Source highPass, doub
     wizard->supplyImpulseResponse(Source::Main, witness(100, mainArrival));
     wizard->supplyImpulseResponse(Source::Sub, witness(100 + 12345, subArrival));
     runSequence(*wizard, engine,
-                rta::test::makeCapture("hp", rta::test::risingDb(), rta::test::constantPhase(0.0)),
-                rta::test::makeCapture("lp", rta::test::fallingDb(),
-                                       rta::test::delayedPhase(phaseDelaySeconds)));
+                rta::test::makeCapture("hp", crossingDb(true), rta::test::constantPhase(0.0)),
+                rta::test::makeCapture("lp", crossingDb(false), rta::test::delayedPhase(phaseDelaySeconds)));
     return wizard;
 }
 
@@ -96,9 +110,9 @@ Fixture measureFixture(Source highPass, long mainArrival, long subArrival) {
 
 TEST_CASE("T8: the integer is arrival(low) - arrival(high) - lag, keyed by source", "[alignment_wizard]") {
     SECTION("high-pass = MAIN: sub is the low side") {
-        const auto f = measureFixture(Source::Main, 40, 64);
+        const auto f = measureFixture(Source::Main, 40, 100);
         OutputEngine engine;
-        const auto wizard = run(engine, Source::Main, static_cast<double>(f.expected) / kFs, 40, 64);
+        const auto wizard = run(engine, Source::Main, static_cast<double>(f.expected) / kFs, 40, 100);
         REQUIRE(wizard->irCycleHintSamples().has_value());
         CHECK(*wizard->irCycleHintSamples() == f.expected);
         CHECK(wizard->step() != WizardStep::AskingCycle);
@@ -107,9 +121,9 @@ TEST_CASE("T8: the integer is arrival(low) - arrival(high) - lag, keyed by sourc
         CHECK(*wizard->cycleOffsetSamples() == f.expected);
     }
     SECTION("high-pass = SUB: main is the low side (a fixed mapping reads the opposite sign)") {
-        const auto f = measureFixture(Source::Sub, 64, 40);
+        const auto f = measureFixture(Source::Sub, 100, 40);
         OutputEngine engine;
-        const auto wizard = run(engine, Source::Sub, static_cast<double>(f.expected) / kFs, 64, 40);
+        const auto wizard = run(engine, Source::Sub, static_cast<double>(f.expected) / kFs, 100, 40);
         REQUIRE(wizard->irCycleHintSamples().has_value());
         CHECK(*wizard->irCycleHintSamples() == f.expected);
         CHECK(wizard->step() != WizardStep::AskingCycle);
@@ -123,9 +137,9 @@ TEST_CASE("T8: the integer is arrival(low) - arrival(high) - lag, keyed by sourc
 TEST_CASE("T8: an integer that sits between candidates is a hint, not an answer", "[alignment_wizard]") {
     // Arrival difference 10 ms: well past a quarter of the candidate spacing
     // from every candidate the fit offers around 0.46 ms.
-    const auto f = measureFixture(Source::Main, 40, 64);
+    const auto f = measureFixture(Source::Main, 40, 100);
     OutputEngine engine;
-    const auto wizard = run(engine, Source::Main, static_cast<double>(f.expected) / kFs, 40, 64 + 480);
+    const auto wizard = run(engine, Source::Main, static_cast<double>(f.expected) / kFs, 40, 100 + 480);
     REQUIRE(wizard->irCycleHintSamples().has_value());
     CHECK(*wizard->irCycleHintSamples() == f.expected + 480);
     CHECK(wizard->step() == WizardStep::AskingCycle);
@@ -134,9 +148,9 @@ TEST_CASE("T8: an integer that sits between candidates is a hint, not an answer"
 }
 
 TEST_CASE("T8: a typed offset overrides the IR integer, before and after the fit", "[alignment_wizard]") {
-    const auto f = measureFixture(Source::Main, 40, 64);
+    const auto f = measureFixture(Source::Main, 40, 100);
     OutputEngine engine;
-    const auto wizard = run(engine, Source::Main, static_cast<double>(f.expected) / kFs, 40, 64);
+    const auto wizard = run(engine, Source::Main, static_cast<double>(f.expected) / kFs, 40, 100);
     REQUIRE(wizard->cycleOffsetFromIr());
     wizard->answerCycleOffsetSamples(7);  // after the fit, in Computed
     CHECK(*wizard->cycleOffsetSamples() == 7);

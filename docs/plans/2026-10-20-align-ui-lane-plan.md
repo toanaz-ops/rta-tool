@@ -241,8 +241,11 @@ New: `AlignRunner` ~160/300; `AlignReadout` ~60/160; `TransferDwell.h` ~30;
    SEED → MEASURE → type 2 ms → SET OFFSET. **Wave B (no typed offset):**
    press SWEEP MAIN, wait for its `IR +n samples` line, press SWEEP SUB, then
    MEASURE: the pane's right-hand block lists `IR MAIN` / `IR SUB` with their
-   arrivals, the verdict carries no "type the coarse offset" prompt, SET OFFSET
-   stays greyed (the integer is sub arrival − main arrival), and the signal
+   arrivals, the verdict carries no "type the coarse offset" prompt (the integer
+   is sub arrival − main arrival less the named topology's low-pass peak lag; SET
+   OFFSET stays usable and a typed offset overrides it, the status saying so; if
+   the integer fits no candidate clearly the pane shows "IRs suggest about X ms"
+   and asks instead), and the signal
    lines read `rho: …` and `findPolarity, low-pass side: refused (BandTooHigh)`
    (`main-live-align-ir.png`). Picking `NO IR (TYPE THE OFFSET)` in either
    picker and pressing MEASURE brings the offset prompt back. With the SHIPPED defaults (ch 0 the
