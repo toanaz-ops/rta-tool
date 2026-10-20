@@ -65,14 +65,27 @@ inline constexpr std::size_t kFixedRingCapacitySamples = 65536;
 /// locking on the platform side can fix without also making the audio
 /// callback lock-taking (which real-time safety forbids).
 ///
-/// The fix is to make reallocation impossible rather than to guard it: this
-/// class allocates all `kMaxChannels` rings ONCE, in the constructor, at
-/// `kFixedRingCapacitySamples` (see above), and never again. `prepare()` now
-/// only resets and re-labels those same, permanently-allocated objects --
+/// The fix for THAT hazard is to make reallocation impossible rather than to
+/// guard it: this class allocates all `kMaxChannels` rings ONCE, in the
+/// constructor, at `kFixedRingCapacitySamples` (see above), and never again.
 /// `ring(k)` returns the identical object across any number of `prepare()`
 /// calls, so a pointer an analysis thread is holding stays valid for the
-/// life of the `CaptureBus`, full stop. No lock was added; the hazard is
-/// closed because the thing it depended on (reallocation) no longer exists.
+/// life of the `CaptureBus`.
+///
+/// ## What `prepare()` must NOT do: touch a ring's indices
+///
+/// Closing reallocation did not close the index race. `RingBuffer` is SPSC:
+/// the consumer alone writes `readIndex_`, and `RingBuffer::reset()` writes
+/// it ("call only when both sides are known to be stopped"). `prepare()`
+/// runs on the device or message thread while `AnalysisThread` is live, so a
+/// `reset()` there can land between the consumer's two loads inside
+/// `discard()` and leave `write=0, read=R+hop` -- `availableToRead()` then
+/// wraps to ~2^64 and the analysis thread never leaves its drain loop. So
+/// `prepare()` touches no ring at all. Dropping the previous session's
+/// samples is the consumer's own job, `drainAsConsumer()`, which the
+/// consumer calls on the tick it sees `epoch()` change. The structural
+/// guard test `test_capture_bus_guard.cpp` fails the build if `prepare()`
+/// ever calls `reset(` again.
 class CaptureBus {
 public:
     /// Allocates all `kMaxChannels` rings up front, each rounded up to a
@@ -89,26 +102,36 @@ public:
     CaptureBus(CaptureBus&&) = delete;
     CaptureBus& operator=(CaptureBus&&) = delete;
 
-    /// Message-thread call, and ONLY the message thread: the precondition is
-    /// that the audio callback is not running concurrently with this call
-    /// (device stopped, or not yet started) -- unchanged from before. What
-    /// changed is that this no longer needs a second precondition about
-    /// consumers: it performs no allocation and never invalidates a
-    /// `ring()` pointer a consumer thread already holds (see the class
-    /// comment).
+    /// Device-thread or message-thread call; the precondition is that the
+    /// AUDIO CALLBACK is not running concurrently with it (device stopped, or
+    /// not yet started). It performs no allocation, never invalidates a
+    /// `ring()` pointer, and -- the point of the 2026-10-21 fix -- never
+    /// touches any ring's indices (see the class comment), so it is safe
+    /// against a live `AnalysisThread`.
     ///
-    /// Resets every one of the `kMaxChannels` rings -- not only the first
-    /// `numChannels` -- back to empty (`RingBuffer::reset()`, index zero on
-    /// both sides; the storage itself, already zero-initialised at
-    /// construction, is left alone since a reader never sees past its own
-    /// write index). That is the drain the decision record requires on
-    /// every device reconfiguration: stale samples from the previous
-    /// session would otherwise splice onto the new one and mislabel every
-    /// bin-to-Hz conversion. Also clears every drop counter (a device
-    /// reconfiguration invalidates whatever was dropped under the previous
-    /// session too) and bumps `epoch()` so a consumer thread can notice and
-    /// rebuild its own analysis state.
+    /// Clears every drop counter (a device reconfiguration invalidates
+    /// whatever was dropped under the previous session too), re-labels the
+    /// rate and channel count, and bumps `epoch()` so the consumer can notice,
+    /// rebuild its analysis state and call `drainAsConsumer()`. Samples from
+    /// the previous session stay in the rings until that call: the consumer
+    /// must drain them before its first post-epoch read, or they would splice
+    /// onto the new session and mislabel every bin-to-Hz conversion.
     void prepare(double sampleRate, int numChannels);
+
+    /// CONSUMER THREAD ONLY (AnalysisThread). Discards the previous session's
+    /// samples with `discard()` -- the one operation that moves `readIndex_`
+    /// from the side that owns it. Call it on the tick `epoch()` is seen to
+    /// change, before any read of that tick. A few milliseconds of new-session
+    /// samples that already landed are lost with the stale ones; that is the
+    /// accepted cost of never letting the producer side write the consumer's
+    /// index.
+    ///
+    /// The producer may be live meanwhile, so rings with a writer (role not
+    /// `Unused`) all discard the same count -- the smallest availability among
+    /// them -- rather than "everything": see the .cpp for why a per-ring
+    /// drain would offset reference from measurement by a block. Rings with
+    /// no writer are emptied fully.
+    void drainAsConsumer() noexcept;
 
     /// Message thread OR device thread -- a relaxed atomic store, so it is
     /// safe from either, and `AudioIo` calls it from all three of its
@@ -184,7 +207,7 @@ public:
     /// Bumped by every `prepare()` -- a device-level reconfiguration. See
     /// `ChannelConfig::configEpoch()` for the (deliberately separate) role
     /// change counter.
-    [[nodiscard]] std::uint64_t epoch() const noexcept { return epoch_.load(std::memory_order_relaxed); }
+    [[nodiscard]] std::uint64_t epoch() const noexcept { return epoch_.load(std::memory_order_acquire); }
 
     [[nodiscard]] double sampleRate() const noexcept { return sampleRate_.load(std::memory_order_relaxed); }
 

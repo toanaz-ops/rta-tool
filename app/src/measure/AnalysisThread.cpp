@@ -4,7 +4,10 @@
 // docs/plans/2026-09-06-L6b-impl-plan.md task B2 (record §6).
 #include "measure/AnalysisThread.h"
 
+#include "measure/PairedDrain.h"
+
 #include <exception>
+#include <stdexcept>
 #include <utility>
 
 namespace rta::measure {
@@ -116,6 +119,9 @@ void AnalysisThread::runBody() {
         if (threadShouldExit()) {
             return;
         }
+        if (throwNextTick_.exchange(false, std::memory_order_acquire)) {
+            throw std::runtime_error("injected analysis fault");
+        }
 
         rebuildAnalysersIfEpochChanged();
         applyPendingReferenceDelay();
@@ -131,6 +137,9 @@ void AnalysisThread::rebuildAnalysersIfEpochChanged() {
     if (epoch == lastEpoch_) {
         return;
     }
+    // 0 = "never saw an epoch": the first one has no earlier session behind
+    // it, so what is in the rings was written for IT -- keep it.
+    const bool firstEpoch = lastEpoch_ == 0;
     lastEpoch_ = epoch;
 
     Analyser::Config cfg = baseConfig_;
@@ -138,16 +147,17 @@ void AnalysisThread::rebuildAnalysersIfEpochChanged() {
     if (rate > 0.0) {
         cfg.sampleRate = rate;
     }
-    // A fresh Analyser has no buffered samples and no running average --
-    // that IS the drain on this side of the bus, matching the freshly
-    // RESET (not rebuilt -- CaptureBus::prepare() no longer reallocates,
-    // see CaptureBus.h) RingBuffer objects CaptureBus::prepare() just
-    // emptied for the new device session (decision record: "drains every
-    // ring"). Without this, stale frames analysed at the old sample rate
-    // would splice onto the new one and mislabel every bin-to-Hz
-    // conversion. Every position is rebuilt together: a device
-    // reconfiguration invalidates every engine's running state, not only
-    // the one a particular route happens to name.
+    // The ring drain happens HERE, on the consumer, never in
+    // CaptureBus::prepare(): RingBuffer::reset() writes readIndex_, which only
+    // this thread may write (audit prj010-fable-audit-20261021, high). It runs
+    // before this tick's drain(), so stale old-rate frames never splice onto
+    // the new session. The fresh Analysers below are the same drain on the
+    // analysis side; every position is rebuilt together, since a device
+    // reconfiguration invalidates every engine's running state.
+    if (!firstEpoch) {
+        bus_.drainAsConsumer();
+    }
+
     for (auto& analyser : analysers_) {
         analyser = std::make_unique<Analyser>(cfg);
     }
@@ -225,16 +235,19 @@ void AnalysisThread::drainPaired(int refChannel, const RoutingPlan& plan) {
     // see `routeHopCount`'s own header comment for why: `tfIndex` is the
     // GROUPING tag two routes here deliberately share, and using it as the
     // array slot would collide two same-reference routes onto one Analyser.
-    std::size_t hops = refRing->availableToRead() / hop;
+    // Each ring's availability is sampled ONCE, then handed to pairedHopCount
+    // (PairedDrain.h): a ring that has vanished contributes 0, which holds the
+    // whole group back, the same as the explicit break this used to be.
+    std::array<std::size_t, static_cast<std::size_t>(rta::platform::kMaxChannels) + 1> available{};
+    std::size_t availableCount = 0;
+    available[availableCount++] = refRing->availableToRead();
     for (const auto& route : plan.routes) {
         if (route.referenceChannel != refChannel) continue;
         auto* measurementRing = bus_.ring(route.measurementChannel);
-        if (measurementRing == nullptr) {
-            hops = 0;
-            break;
-        }
-        hops = std::min(hops, measurementRing->availableToRead() / hop);
+        available[availableCount++] = measurementRing == nullptr ? 0 : measurementRing->availableToRead();
     }
+    const std::size_t hops = pairedHopCount(
+        std::span<const std::size_t>(available.data(), availableCount), hop);
 
     for (std::size_t i = 0; i < hops; ++i) {
         // Peek every ring in this group BEFORE discarding any of them: a

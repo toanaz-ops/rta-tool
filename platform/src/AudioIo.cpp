@@ -165,19 +165,17 @@ void AudioIo::audioDeviceAboutToStart(juce::AudioIODevice* device) {
     const int numChannels = activeInputs > kMaxChannels ? kMaxChannels : activeInputs;
 
     // Decision record: "audioDeviceAboutToStart retargets rate-dependent
-    // state AND drains every ring". CaptureBus::prepare() does both in one
-    // call -- resets every ring (back to empty; the drain) and bumps the
-    // epoch so the analysis thread notices and rebuilds its own state. No
-    // capacity argument any more: every ring was sized once, in bus_'s
-    // constructor, at the fixed kFixedRingCapacitySamples (see CaptureBus.h)
-    // -- that is what makes it safe for prepare() to run here, on the
-    // device thread, while AnalysisThread may be mid-drain on its own
-    // thread with no lock between the two (see CaptureBus.h's class
-    // comment for the hazard this closes). Safe to call here with no extra
-    // synchronisation for the SAME reason it always was for the write side:
-    // JUCE invokes this BEFORE inserting the callback into its dispatch
-    // list (see the header), so the audio thread cannot be inside
-    // pushFromCallback yet.
+    // state AND drains every ring". CaptureBus::prepare() retargets the rate
+    // and channel count and bumps the epoch; it does NOT touch any ring
+    // (RingBuffer::reset() writes the consumer's read index, which races a
+    // live AnalysisThread -- see CaptureBus.h). The drain is the CONSUMER's:
+    // AnalysisThread calls CaptureBus::drainAsConsumer() on the tick it sees
+    // the epoch change, before its first post-epoch read. No capacity
+    // argument: every ring was sized once, in bus_'s constructor, at the fixed
+    // kFixedRingCapacitySamples. prepare() is safe to call here with no extra
+    // synchronisation for the write side: JUCE invokes this BEFORE inserting
+    // the callback into its dispatch list, so the audio thread cannot be
+    // inside pushFromCallback yet.
     bus_.prepare(sampleRate, numChannels);
 
     // L7-OUT (decision record docs/dsp/2026-09-06-l7-output-path.md sec.4-5):

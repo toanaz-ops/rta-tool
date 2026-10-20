@@ -67,8 +67,8 @@ public:
     /// `CaptureBus::prepare`), the internal `Analyser` is rebuilt at
     /// `bus.sampleRate()` instead, and the fresh `Analyser` (no buffered
     /// samples, no running average) is itself the drain on this side of the
-    /// bus -- the `RingBuffer`s CaptureBus::prepare() just reset (never
-    /// rebuilt; see `CaptureBus.h`) are already empty.
+    /// bus; the rings are drained on this thread (`CaptureBus::drainAsConsumer`),
+    /// never by `prepare()`, since only the consumer may write a read index.
     ///
     /// Starts the thread immediately; there is no separate `start()`.
     AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::Config& config);
@@ -245,15 +245,11 @@ public:
     /// no dependency on how fast the writer thread's own drain happens to
     /// run relative to whatever else is going on. `test_spl_log_wiring_
     /// disable.cpp` uses this to catch a disable path that skips the call
-    /// entirely, a race a burst-then-read-the-files timing test cannot
-    /// reliably win: this project's own analysis thread meters incoming
-    /// audio no faster than roughly one hop per `kPollMs` poll (measured:
-    /// an 800-hop, 8-channel burst took ~1.2 s to finish metering), so the
-    /// writer thread -- whose own per-row cost is two to three orders of
-    /// magnitude smaller -- never meaningfully falls behind regardless of
-    /// burst size, and a mutant that skips the call entirely still reads as
-    /// "files already complete" under any burst this test could practically
-    /// push. Safe from any thread, same reason `splLogWriteFailed` is.
+    /// entirely, which a burst-then-read-the-files timing test cannot
+    /// reliably do: the writer thread never meaningfully falls behind the
+    /// ~1 hop per `kPollMs` metering rate (measured: an 800-hop, 8-channel
+    /// burst took ~1.2 s). Safe from any thread, same reason
+    /// `splLogWriteFailed` is.
     ///
     /// `ForTest` suffix (lane-end LOW batch round 1, LOW V4): no production
     /// caller reads this -- production code decides its own SPL-logging
@@ -263,6 +259,10 @@ public:
     /// `*ForTest` convention exists to name (tools/orphan_check.py's own
     /// TEST HOOK rule) rather than leave reading as an unwired orphan.
     [[nodiscard]] bool isSplLoggingEnabledForTest() const noexcept;
+
+    /// Makes the next `runBody()` tick throw, so a test can drive `run()`'s
+    /// catch, `lastFault()` and its readers without a real bad_alloc.
+    void throwOnNextTickForTest() noexcept { throwNextTick_.store(true, std::memory_order_release); }
 
     /// Message-thread call: END check's drift > cl. 5.2's 0.5 dB, cleared by
     /// a fresh `enableSplLogging` -- read by `fillSplPublishInput` (§15 A2).
@@ -367,6 +367,7 @@ private:
     std::atomic<int> requestedRouteIndex_{-1};
     std::atomic<std::size_t> requestedCaptureLength_{0};
     std::atomic<bool> locateArmRequested_{false};
+    std::atomic<bool> throwNextTick_{false};  // throwOnNextTickForTest
     /// Same substitution, same reason (measure/AtomicSharedPtr.h): this one
     /// is written by the analysis thread when a Locate capture fills and read
     /// by the message thread that polls `locateCapture()`.

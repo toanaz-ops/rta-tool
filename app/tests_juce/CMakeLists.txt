@@ -258,6 +258,11 @@ add_executable(rtatool_routing_live_tests
     # with, not Config{}'s compile-time defaults. Same real shape as every
     # other file in this target.
     test_analysis_thread_config.cpp
+    # test_capture_bus_epoch_drain.cpp / test_analysis_thread_fault.cpp: audit
+    # prj010-fable-audit-20261021 -- the consumer-side ring drain on an epoch
+    # change, and run()'s fault record, against a real AnalysisThread.
+    test_capture_bus_epoch_drain.cpp
+    test_analysis_thread_fault.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------
     # The SPL feed AnalysisThread.cpp now calls: its own split-off half, the

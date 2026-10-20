@@ -65,7 +65,10 @@ MainComponent::MainComponent()
       // No device open yet, so no input channels to show a row for: the
       // routing matrix's rows follow the device's channel list from the first
       // refreshChannelNamesFromDevice() on (D1, lane H2), not a fixed 8.
-      rail_(audioIo_, 0),
+      // analysisThread_ is constructed above (declaration order), so the
+      // device panel's fault slot can read its lastFault() from the first
+      // poll on; the lambda dies with rail_, before analysisThread_.
+      rail_(audioIo_, 0, [this] { return analysisThread_.lastFault(); }),
       // The default workspace when none has been loaded: exactly one `rta`
       // pane, so the app's opening screen stays byte-for-byte what it was
       // before this task (task brief, step 3). Nothing in this class loads

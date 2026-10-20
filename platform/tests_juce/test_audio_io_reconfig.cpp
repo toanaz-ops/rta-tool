@@ -9,9 +9,10 @@
 // invoked here with no device ever opened.
 //
 // Read CaptureBus::prepare's contract first (see
-// platform/types/include/rta/platform/CaptureBus.h): it drains every ring,
-// updates sampleRate(), and unconditionally bumps epoch() -- but it does NOT
-// touch ChannelConfig (roles survive a prepare()). The assertions below are
+// platform/types/include/rta/platform/CaptureBus.h): it updates sampleRate()
+// and unconditionally bumps epoch() -- but it touches NEITHER ChannelConfig
+// (roles survive a prepare()) NOR any ring: the consumer drains the rings
+// (CaptureBus::drainAsConsumer), so these tests play the consumer. The assertions below are
 // written against exactly that contract, not against anything stronger.
 #include <catch2/catch_test_macros.hpp>
 
@@ -80,10 +81,14 @@ TEST_CASE(
     FakeAudioIODevice fake96k(96000.0, 512, 2, 2);
     io.audioDeviceAboutToStart(&fake96k);
 
-    // Identity, not just emptiness: prepare() resets in place (CaptureBus.h's
-    // class comment) rather than reallocating, so a consumer holding this
-    // pointer across the change stays valid.
+    // Identity: prepare() never reallocates (CaptureBus.h's class comment), so
+    // a consumer holding this pointer across the change stays valid. It also
+    // does not empty the ring -- that is the consumer's drain, which this test
+    // plays by calling drainAsConsumer() as AnalysisThread does on an epoch
+    // change.
     CHECK(io.bus().ring(0) == ringBefore);
+    CHECK(io.bus().ring(0)->availableToRead() == 512);
+    io.bus().drainAsConsumer();
     CHECK(io.bus().ring(0)->availableToRead() == 0);
     CHECK(io.bus().sampleRate() == 96000.0);
     CHECK(io.bus().epoch() > epochBefore);
@@ -124,6 +129,10 @@ TEST_CASE(
     FakeAudioIODevice fakeLargeBuffer(48000.0, 1024, 2, 2);
     io.audioDeviceAboutToStart(&fakeLargeBuffer);  // completing at all is the M4 evidence
 
+    // prepare() leaves the ring alone; the consumer drains it (AnalysisThread
+    // does, on the epoch change -- played here by drainAsConsumer()).
+    CHECK(io.bus().ring(0)->availableToRead() == 256);
+    io.bus().drainAsConsumer();
     CHECK(io.bus().ring(0)->availableToRead() == 0);
     CHECK(io.bus().sampleRate() == 48000.0);
     CHECK(io.bus().epoch() > epochBefore);

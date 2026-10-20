@@ -8,6 +8,7 @@
 #include "rta/platform/AudioIo.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -30,14 +31,26 @@ namespace rta::view {
 /// this panel handles the same way: re-read, never trust the request.
 class DevicePanel final : public juce::Component, private juce::Timer {
 public:
-    explicit DevicePanel(rta::platform::AudioIo& audioIo);
+    /// `analysisFault` reads `AnalysisThread::lastFault()` (or anything with
+    /// that shape); empty means "no analysis thread to watch". It is called
+    /// from the message thread only, on the 4 Hz poll and on paint.
+    explicit DevicePanel(rta::platform::AudioIo& audioIo,
+                         std::function<rta::platform::Fault()> analysisFault = {});
     ~DevicePanel() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    /// The text the fault slot would paint right now ("" when no fault).
+    /// Test hook: the slot is pixels, and a test reads text.
+    [[nodiscard]] std::string faultLineTextForTest() const { return currentFault().message; }
+
 private:
     void timerCallback() override;
+
+    /// The one fault the slot shows: device fault, else analysis-thread fault
+    /// (FaultLine.h). Every read of "the fault" goes through here.
+    [[nodiscard]] rta::platform::Fault currentFault() const;
 
     /// Re-reads `AudioIo::currentState()` and `AudioIo::lastFault()` and
     /// repopulates every combo's item list and selection, plus the
@@ -53,6 +66,7 @@ private:
     void startStopClicked();
 
     rta::platform::AudioIo& audioIo_;
+    std::function<rta::platform::Fault()> analysisFault_;
 
     juce::ComboBox deviceTypeCombo_;
     juce::ComboBox deviceCombo_;

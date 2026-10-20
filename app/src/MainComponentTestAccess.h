@@ -88,6 +88,9 @@ struct MainComponentTestAccess {
     [[nodiscard]] static const juce::Component& devicePanelForTest(const MainComponent& c) {
         return c.rail_.devicePanelForTest();
     }
+    [[nodiscard]] static std::string devicePanelFaultTextForTest(const MainComponent& c) {
+        return c.rail_.devicePanelFaultTextForTest();
+    }
     static void applyChannelNamesForTest(MainComponent& c, std::vector<std::string> names) {
         c.applyChannelNames(std::move(names));
     }

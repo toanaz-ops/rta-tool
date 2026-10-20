@@ -36,7 +36,10 @@
 /// here is what MainComponent used to call directly on the three widgets.
 class MainComponentRail final {
 public:
-    MainComponentRail(rta::platform::AudioIo& audioIo, int channelCount);
+    /// `analysisFault` is forwarded to the device panel's fault slot
+    /// (view/FaultLine.h): MainComponent passes `analysisThread_.lastFault`.
+    MainComponentRail(rta::platform::AudioIo& audioIo, int channelCount,
+                      std::function<rta::platform::Fault()> analysisFault);
 
     /// Adds the viewport (the only child MainComponent itself sees) into
     /// `parent` and wires the three widgets as the viewport content's own
@@ -73,6 +76,8 @@ private:
     [[nodiscard]] const juce::Viewport& railViewportForTest() const noexcept { return railScrollView_; }
     [[nodiscard]] const juce::Component& railContentForTest() const noexcept { return railScrollContent_; }
     [[nodiscard]] const juce::Component& devicePanelForTest() const noexcept { return devicePanel_; }
+    // The text the device panel's fault slot shows now (device fault, else analysis fault).
+    [[nodiscard]] std::string devicePanelFaultTextForTest() const { return devicePanel_.faultLineTextForTest(); }
 
     rta::view::DevicePanel devicePanel_;
     rta::view::ChannelRoleTable channelRoleTable_;

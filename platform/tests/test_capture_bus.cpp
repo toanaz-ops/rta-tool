@@ -111,7 +111,7 @@ TEST_CASE("A full ring counts the whole block as dropped", "[capturebus]") {
     CHECK(after == beforeContents);  // existing contents untouched
 }
 
-TEST_CASE("prepare drains every ring and bumps the epoch", "[capturebus]") {
+TEST_CASE("prepare leaves rings alone, drainAsConsumer empties them, prepare bumps the epoch", "[capturebus]") {
     CaptureBus bus(4096);
     bus.prepare(48000.0, 2);
     REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
@@ -127,9 +127,14 @@ TEST_CASE("prepare drains every ring and bumps the epoch", "[capturebus]") {
     auto* ring0Before = bus.ring(0);
     bus.prepare(96000.0, 2);
 
-    // Same object, not a fresh one: prepare() resets in place, it does not
-    // reallocate (see CaptureBus.h's class comment).
+    // Same object, not a fresh one: prepare() never reallocates (see
+    // CaptureBus.h's class comment). It also does NOT empty the rings -- that
+    // would write the consumer's read index from the wrong thread. The
+    // previous session's samples stay until the consumer drains them.
     CHECK(bus.ring(0) == ring0Before);
+    CHECK(bus.ring(0)->availableToRead() == 512);
+    CHECK(bus.ring(1)->availableToRead() == 512);
+    bus.drainAsConsumer();
     CHECK(bus.ring(0)->availableToRead() == 0);
     CHECK(bus.ring(1)->availableToRead() == 0);
     CHECK(bus.sampleRate() == 96000.0);
@@ -307,7 +312,7 @@ TEST_CASE("pushFromCallback allocates nothing", "[capturebus]") {
 // consumer that can be mid-drain, holding a ring() pointer on its own thread
 // with no lock between the two. A prepare() landing there was a genuine
 // use-after-free. The fix is to make reallocation impossible (allocate once,
-// in the constructor; prepare() only resets in place) rather than to guard
+// in the constructor; prepare() touches no ring) rather than to guard
 // it with a lock the audio callback cannot afford. These two tests pin that
 // invariant directly, so a future edit that reintroduces `rings_.clear()` /
 // `make_unique` inside prepare() fails immediately instead of only under
