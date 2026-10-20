@@ -7,6 +7,7 @@
 // makeDecay/kLeadIn/kFs fixture.
 #include "rta/ir/Decay.h"
 #include "rta/ir/DecayEnsemble.h"
+#include "rta/ir/IrSpectrum.h"
 #include "support/DecayFixtures.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -39,7 +40,7 @@ TEST_CASE("Clarity of a two-burst fixture is derivable in closed form",
     curve.truncationCorrection = 0.0;
     curve.refusal = rta::ir::DecayRefusal::None;
 
-    const auto c = rta::ir::clarity(h, 0, kFs, curve);
+    const auto c = rta::ir::clarity(h, 0, kFs, 400.0, curve);
     REQUIRE(c.c50Db.has());
     REQUIRE(c.d50.has());
     CHECK_THAT(c.c50Db.value, WithinAbs(0.0, 1e-9));
@@ -72,8 +73,8 @@ TEST_CASE("Clarity does not depend on how long the recorder ran", "[ir][decay]")
     REQUIRE(ca.has());
     REQUIRE(cb.has());
 
-    const auto x = rta::ir::clarity(a, kLeadIn, kFs, ca);
-    const auto y = rta::ir::clarity(b, kLeadIn, kFs, cb);
+    const auto x = rta::ir::clarity(a, kLeadIn, kFs, 566.0, ca);
+    const auto y = rta::ir::clarity(b, kLeadIn, kFs, 566.0, cb);
     REQUIRE(x.c50Db.has());
     REQUIRE(y.c50Db.has());
     CHECK_THAT(x.c50Db.value, WithinAbs(y.c50Db.value, 1.5));
@@ -92,7 +93,7 @@ TEST_CASE("Clarity inherits the curve's refusal rather than inventing one",
     refused.sampleRate = kFs;
     refused.refusal = rta::ir::DecayRefusal::BandwidthTimeTooSmall;
 
-    const auto c = rta::ir::clarity(h, 0, kFs, refused);
+    const auto c = rta::ir::clarity(h, 0, kFs, 400.0, refused);
     CHECK_FALSE(c.any());
     CHECK(c.c50Db.refusal == rta::ir::DecayRefusal::BandwidthTimeTooSmall);
     CHECK(c.c80Db.refusal == rta::ir::DecayRefusal::BandwidthTimeTooSmall);
@@ -111,7 +112,7 @@ TEST_CASE("A capture that ends before the split point refuses", "[ir][decay]") {
     curve.crossingIndex = h.size();
     curve.refusal = rta::ir::DecayRefusal::None;
 
-    const auto c = rta::ir::clarity(h, 0, kFs, curve);
+    const auto c = rta::ir::clarity(h, 0, kFs, 400.0, curve);
     CHECK_FALSE(c.any());
     CHECK(c.c50Db.refusal == rta::ir::DecayRefusal::RangeTooSmall);
 }
@@ -154,20 +155,30 @@ TEST_CASE("Energy the filter moved before the arrival counts as early",
     curve.truncationCorrection = 0.0;
     curve.refusal = rta::ir::DecayRefusal::None;
 
-    double preOrigin = 0.0, early = 0.0, total = 0.0;
+    // Only the filter's own pre-ring -- two cycles of the low edge before the
+    // origin -- is counted; the rest of the lead-in is outside the bound.
+    const std::size_t preRing = rta::ir::leadInSamplesFor(kFs, lo);
+    REQUIRE(preRing < kLeadIn);                                   // premise
+    double preOrigin = 0.0, early = 0.0, total = 0.0, dropped = 0.0;
     const auto at50 = static_cast<std::size_t>(0.050 * kFs);
     for (std::size_t i = 0; i < band.size(); ++i) {
         const double e = static_cast<double>(band[i]) * static_cast<double>(band[i]);
+        if (i < kLeadIn - preRing) { dropped += e; continue; }
         total += e;
         if (i < kLeadIn) preOrigin += e;
         else if (i - kLeadIn < at50) early += e;
     }
+    // The bound is not free, and this is its measured price (regression lock,
+    // not a derivation): at a 1/3-octave 63 Hz band the energy beyond two cycles
+    // of the low edge is 3.4 % of the response's total, so D50 here moves by at
+    // most 0.034 (the dropped share bounds the shift of a 0..1 ratio).
+    CHECK(dropped < 0.05 * (dropped + total));
 
     // The filter really does put a substantial share before the arrival --
     // otherwise this test would pass for both conventions and prove nothing.
     REQUIRE(preOrigin > 0.05 * total);
 
-    const auto c = rta::ir::clarity(band, kLeadIn, kFs, curve);
+    const auto c = rta::ir::clarity(band, kLeadIn, kFs, lo, curve);
     REQUIRE(c.d50.has());
     CHECK_THAT(c.d50.value, WithinRel((preOrigin + early) / total, 1e-6));
     CHECK(c.d50.value > early / total);   // i.e. NOT the excluding convention
@@ -244,4 +255,53 @@ TEST_CASE("When every capture refuses, the reason survives the aggregation",
     CHECK(across.t30.value.refusal == rta::ir::DecayRefusal::BandwidthTimeTooSmall);
     CHECK_FALSE(across.edt.value.has());
     CHECK(across.edt.value.refusal == rta::ir::DecayRefusal::BandwidthTimeTooSmall);
+}
+
+TEST_CASE("Clarity counts the pre-ring but not the sweep-length pre-arrival region",
+          "[ir][decay]") {
+    // On a real Deconvolution `originIndex` is a whole sweep length in (here
+    // 2 s), and the region before it holds pre-arrival floor and harmonic
+    // packets. Only the last leadInSamplesFor(fs, lowHz) samples before the
+    // arrival are the filter's own pre-ring.
+    //
+    // Hand-built response, closed form. 400 Hz low edge -> 2*48000/400 = 240
+    // pre-ring samples, so the counted window is [arrival-240, arrival).
+    //   unit packet at the arrival and another at +60 ms
+    //   a unit packet INSIDE the bound (arrival-240, its first sample)
+    //   big packets OUTSIDE it (arrival-241, and far back at index 1000)
+    // Counted: early50 = 1 (arrival) + 1 (pre-ring) = 2, late50 = 1, total = 3:
+    //   C50 = 10 log10(2),  D50 = 2/3  -- the outside packets must not appear.
+    const std::size_t arrival = static_cast<std::size_t>(2.0 * kFs);
+    std::vector<float> h(arrival + static_cast<std::size_t>(0.3 * kFs), 0.0f);
+    h[arrival] = 1.0f;
+    h[arrival + static_cast<std::size_t>(0.060 * kFs)] = 1.0f;
+    h[arrival - 240] = 1.0f;
+    h[arrival - 241] = 5.0f;
+    h[1000] = 5.0f;
+
+    rta::ir::EnergyDecayCurve curve;
+    curve.sampleRate = kFs;
+    curve.crossingIndex = h.size() - arrival;
+    curve.truncationCorrection = 0.0;
+    curve.refusal = rta::ir::DecayRefusal::None;
+
+    const auto c = rta::ir::clarity(h, arrival, kFs, 400.0, curve);
+    REQUIRE(c.c50Db.has());
+    REQUIRE(c.d50.has());
+    CHECK_THAT(c.c50Db.value, WithinAbs(10.0 * std::log10(2.0), 1e-9));
+    CHECK_THAT(c.d50.value, WithinAbs(2.0 / 3.0, 1e-9));
+
+    // An arrival nearer the start than the bound uses what there is.
+    std::vector<float> g(static_cast<std::size_t>(0.3 * kFs), 0.0f);
+    g[100] = 1.0f;
+    g[100 + static_cast<std::size_t>(0.060 * kFs)] = 1.0f;
+    g[40] = 1.0f;                                         // 60 samples before it
+    rta::ir::EnergyDecayCurve gc = curve;
+    gc.crossingIndex = g.size() - 100;
+    const auto d = rta::ir::clarity(g, 100, kFs, 400.0, gc);
+    REQUIRE(d.d50.has());
+    CHECK_THAT(d.d50.value, WithinAbs(2.0 / 3.0, 1e-9));
+
+    // A band with no low edge cannot size the bound: refuse, never guess.
+    CHECK_FALSE(rta::ir::clarity(h, arrival, kFs, 0.0, curve).any());
 }

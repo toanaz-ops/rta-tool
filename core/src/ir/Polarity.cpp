@@ -15,7 +15,7 @@ namespace rta::ir {
 namespace {
 
 std::size_t nextPowerOfTwo(std::size_t n) {
-    std::size_t p = 1;
+    std::size_t p = 4;                  // RealFft's documented minimum
     while (p < n) p <<= 1;
     return p;
 }
@@ -63,7 +63,6 @@ Edges bandEdges(const Deconvolution& source, std::size_t from, std::size_t to,
     if (to <= from || to > source.samples.size()) return {};
     const std::size_t span = to - from;
     const std::size_t fftSize = nextPowerOfTwo(span);
-    if (fftSize < 2) return {};
 
     dsp::RealFft fft(fftSize);
     std::vector<float> padded(fftSize, 0.0f);
