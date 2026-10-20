@@ -267,6 +267,40 @@ the sub's capture to pick the cycle:** PHAT on a band-limited signal is the
 one weakness its own record names (`dual-fft.md` §4), and a narrowband
 correlation peaks every `1/f_c` — the same ambiguity, moved.
 
+**AMENDED 2026-10-20 by ALIGN-UI wave B (branch `app/align-ui-b`, tasks T8, T9,
+T11; written after the code it describes, checked sentence by sentence against
+it). The parenthesis "L4a's `Deconvolution::originIndex`, coarse and
+unambiguous" two paragraphs up is wrong, and the wizard that shipped from it
+returned a plausible, wrong integer.** `originIndex` is t = 0, not an arrival:
+in `core` it is the end of the inverse filter (`core/include/rta/ir/Deconvolver.h:34`),
+and in a SWEEP IR it is the reference (loop) peak (`SweepIrPipeline.cpp:151`).
+The difference of two origins is therefore the difference of the two captures'
+pre-roll timing — anything from 0 to about half a second for two button presses —
+and has nothing to do with the two loudspeakers' path lengths. What is
+unambiguous and coarse is the ARRIVAL: the measured peak relative to t = 0,
+`measPeak − refPeak`.
+
+What shipped instead:
+- an IR travels with its arrival, `ImpulseWitness{Deconvolution, arrivalSamples}`
+  (`AlignmentWizard.h:86-91`); a SWEEP IR carries `SweepIr::arrivalSamples`
+  (`SweepIrOutcome.h:55`), set to the pipeline's `delay` (`SweepIrPipeline.cpp:152`);
+- the API is keyed by SOURCE, `supplyImpulseResponse(Source, ImpulseWitness)`
+  (`AlignmentWizard.cpp:68`), and which IR is the high-pass side's is resolved
+  inside the wizard from question (a) (`AlignmentWizard.cpp:72-81`) — a caller
+  cannot pair an IR with the wrong role, which the former high/low pair allowed;
+- the integer is `arrival(low-pass side) − arrival(high-pass side)`
+  (`AlignmentWizard.cpp:297-299`), the same orientation as τ; with origins 12345
+  samples apart and arrivals 40 (main) and 136 (sub) it reads +96 when main is the
+  high-pass side and −96 when sub is (`app/tests/test_alignment_wizard_ir.cpp`);
+- "uses the first when both sources have a sweep capture" now means: when the
+  operator has bound a SWEEP IR to each source, `AlignRunner` supplies both at
+  MEASURE (`AlignRunnerIr.cpp:80`, called from `AlignRunner.cpp:134`); with fewer
+  than two the wizard asks, as before.
+
+The one legitimate use of `originIndex` is unchanged: §7's ρ window is measured
+FROM t = 0, so `relativePolarity()` and `findPolarity()` still read it as the
+window start. That is a position inside one IR, not a difference between two.
+
 **AMENDED 2026-09-16 by the Wave 3a build (branch `l7/align-wave3a-core`, tasks
 A–F; case C5b in `core/tests/test_crossover_band_candidates.cpp`). The competing
 delays this fit returns do NOT sit at `τ* ± n/f̄`, and the paragraph above should
