@@ -68,13 +68,14 @@ std::vector<float> crossingDb(bool rising) {
 /// `mainArrival` / `subArrival` in the IRs; origins 12345 apart (the pre-roll
 /// jitter F2 is about).
 std::unique_ptr<AlignmentWizard> run(OutputEngine& engine, Source highPass, double phaseDelaySeconds,
-                                     long mainArrival, long subArrival) {
+                                     long mainArrival, long subArrival,
+                                     std::optional<double> seedHz = std::nullopt) {
     engine.prepare(kFs, kChannels);
     auto wizard = std::make_unique<AlignmentWizard>(engine, pinkNoise(), rta::test::makeConfig());
     wizard->answerHighPassSide(highPass);
     wizard->answerTopology(kLr4);
     wizard->answerInversion(ProcessorInversion::No);
-    wizard->answerCrossoverSeed(std::nullopt);
+    wizard->answerCrossoverSeed(seedHz);
     wizard->supplyImpulseResponse(Source::Main, witness(100, mainArrival));
     wizard->supplyImpulseResponse(Source::Sub, witness(100 + 12345, subArrival));
     runSequence(*wizard, engine,
@@ -132,6 +133,24 @@ TEST_CASE("T8: the integer is arrival(low) - arrival(high) - lag, keyed by sourc
     }
     // run() puts the origins 12345 apart; an origin-difference integer would
     // read 12345 in either section, and both would fail.
+}
+
+TEST_CASE("T8: the peak lag is evaluated at the operator's seed corner when one is given", "[alignment_wizard]") {
+    // The fixture crosses at 750 Hz acoustically; the operator names the
+    // processor corner as 400 Hz. The low-pass lag scales as 1/fc (about 55
+    // samples at 400 Hz, 29 at 750), so a lag taken at the measured crossing is
+    // ~26 samples off, more than the guard (about 10) allows.
+    constexpr double kSeed = 400.0;
+    const long raw = 60;  // sub 100 - main 40
+    const long atSeed = raw - lagDifference(kSeed);
+    const long atCrossing = raw - lagDifference(750.0);
+    REQUIRE(std::labs(atSeed - atCrossing) > 15);
+    OutputEngine engine;
+    const auto wizard = run(engine, Source::Main, static_cast<double>(atSeed) / kFs, 40, 100, kSeed);
+    REQUIRE(wizard->irCycleHintSamples().has_value());
+    CHECK(*wizard->irCycleHintSamples() == atSeed);
+    CHECK(wizard->step() != WizardStep::AskingCycle);
+    CHECK(wizard->cycleOffsetFromIr());
 }
 
 TEST_CASE("T8: an integer that sits between candidates is a hint, not an answer", "[alignment_wizard]") {

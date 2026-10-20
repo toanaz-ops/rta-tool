@@ -89,3 +89,44 @@ TEST_CASE("align IR (T11): a box with extra filtering is resolved right or asked
         }
     }
 }
+
+// PR #72 round 2: the SHIPPED SYNTHETIC defaults (a 40 Hz - 16 kHz band-pass on
+// MAIN, an LR-4 low-pass at 100 Hz on SUB) cross acoustically at about 58 Hz,
+// not at the 100 Hz corner, and an LR-4 low-pass lags 0.46/fc: 380 samples at the
+// crossing against the real 221. The lag belongs to the corner the operator names
+// as the seed. Without a seed the integer is only a hint (the run asks); with a
+// 100 Hz seed the same IRs resolve it.
+TEST_CASE("align IR (T11): on the shipped defaults a 100 Hz seed lets the IRs resolve; without one the run asks", kTag) {
+    MainComponent c;
+    c.setSyntheticMode(true);  // the shipped defaults: no restartSyntheticForTest
+    sweepOf(c).setDurationsForTest(10.0, 3.0);
+    c.selectPaneView(rta::view::PaneSelectorButton::Align);
+    auto& pane = alignPane(c);
+    pane.highPassComboForTest().setSelectedId(1, juce::sendNotificationSync);
+    pane.topologyComboForTest().setSelectedId(2, juce::sendNotificationSync);   // LR-4
+    pane.inversionComboForTest().setSelectedId(1, juce::sendNotificationSync);
+    pane.seedComboForTest().setSelectedId(1, juce::sendNotificationSync);       // NO SEED
+    sweepThrough(c, pane.irPanelForTest().sweepMainButtonForTest());
+    sweepThrough(c, pane.irPanelForTest().sweepSubButtonForTest());
+    REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
+    REQUIRE(runnerOf(c).boundIr(Source::Sub) != nullptr);
+
+    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
+    pane.measureButtonForTest().onClick();
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    WARN("no seed: step " << static_cast<int>(runnerOf(c).step()) << ", crossover " << runnerOf(c).verdict()->crossoverHz
+         << " Hz, hint " << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999));
+    CHECK(runnerOf(c).step() == WizardStep::AskingCycle);
+    CHECK(runnerOf(c).irHintSamples().has_value());
+    CHECK(pane.readoutForTest().contains("IRs suggest about"));
+
+    pane.seedComboForTest().setSelectedId(4, juce::sendNotificationSync);  // SEED 100 HZ
+    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
+    pane.measureButtonForTest().onClick();
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    WARN("seed 100: step " << static_cast<int>(runnerOf(c).step()) << ", crossover " << runnerOf(c).verdict()->crossoverHz
+         << " Hz, hint " << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999)
+         << ", readout: " << pane.readoutForTest().replace("\n", " | "));
+    CHECK(runnerOf(c).step() == WizardStep::Computed);
+    CHECK(runnerOf(c).cycleFromIr());
+}

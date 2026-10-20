@@ -241,11 +241,17 @@ New: `AlignRunner` ~160/300; `AlignReadout` ~60/160; `TransferDwell.h` ~30;
    SEED → MEASURE → type 2 ms → SET OFFSET. **Wave B (no typed offset):**
    press SWEEP MAIN, wait for its `IR +n samples` line, press SWEEP SUB, then
    MEASURE: the pane's right-hand block lists `IR MAIN` / `IR SUB` with their
-   arrivals, the verdict carries no "type the coarse offset" prompt (the integer
-   is sub arrival − main arrival less the named topology's low-pass peak lag; SET
-   OFFSET stays usable and a typed offset overrides it, the status saying so; if
-   the integer fits no candidate clearly the pane shows "IRs suggest about X ms"
-   and asks instead), and the signal
+   arrivals, and the IRs either resolve the cycle or the pane shows "IRs suggest
+   about X ms but fit no candidate clearly; type the offset" and asks. The integer
+   is sub arrival − main arrival less the named topology's low-pass peak lag,
+   evaluated at the corner you SEED (the lag scales as 1/fc), else at the
+   measured acoustic crossing. So with NO seed it asks whenever the acoustic
+   crossing is far from the processor corner (level offsets move it by up to an
+   octave); with the seed set to the corner it resolves. SET OFFSET stays usable
+   and a typed offset overrides it, the status saying so. On the shipped
+   defaults (below): NO SEED crosses at about 60 Hz and the run asks with a hint
+   (about -0.8 ms); SEED 100 HZ resolves ("delay MAIN by 4.56 ms", the 96-sample
+   offset plus the band-pass skirt's group delay). The signal
    lines read `rho: …` and `findPolarity, low-pass side: refused (BandTooHigh)`
    (`main-live-align-ir.png`). Picking `NO IR (TYPE THE OFFSET)` in either
    picker and pressing MEASURE brings the offset prompt back. With the SHIPPED defaults (ch 0 the

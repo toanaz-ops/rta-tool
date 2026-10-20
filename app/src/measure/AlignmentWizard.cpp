@@ -309,8 +309,12 @@ void AlignmentWizard::compute() {
     cycleFromIr_ = false;
     irHint_.reset();
     if (!cycleOffset_.has_value() && highSideIr() != nullptr && lowSideIr() != nullptr) {
-        const double lag = topologyPeakLagSamples(*topology_, false, crossing.frequencyHz, a.meta().sampleRate)
-                           - topologyPeakLagSamples(*topology_, true, crossing.frequencyHz, a.meta().sampleRate);
+        // The lag belongs to the processor's CORNER, which is what the operator's
+        // seed names; the measured acoustic crossing moves off it with level
+        // offsets (up to an octave), and a low-pass's lag scales as 1/fc.
+        const double lagHz = seedHz_.has_value() ? *seedHz_ : crossing.frequencyHz;
+        const double lag = topologyPeakLagSamples(*topology_, false, lagHz, a.meta().sampleRate)
+                           - topologyPeakLagSamples(*topology_, true, lagHz, a.meta().sampleRate);
         irHint_ = static_cast<std::ptrdiff_t>(lowSideIr()->arrivalSamples)
                   - static_cast<std::ptrdiff_t>(highSideIr()->arrivalSamples)
                   - static_cast<std::ptrdiff_t>(std::llround(lag));

@@ -289,7 +289,7 @@ What shipped instead:
   inside the wizard from question (a) (`AlignmentWizard.cpp:72-81`) — a caller
   cannot pair an IR with the wrong role, which the former high/low pair allowed;
 - the integer is `arrival(low-pass side) − arrival(high-pass side)` less the
-  named topology's peak lag (`AlignmentWizard.cpp:312-316`), the same orientation
+  named topology's peak lag (`AlignmentWizard.cpp:312-320`), evaluated at the corner the operator SEEDS when one is given (the processor corner; a low-pass lag scales as 1/fc and the measured acoustic crossing can sit an octave off it), else at the measured crossing, the same orientation
   as τ. **An arrival is the peak of |h|, and a band-limited path peaks late**:
   an LR-4 low-pass at 100 Hz peaks about 4.6 ms (221 samples at 48 kHz) after the
   wavefront entered it, an LR-8 about 9.4 ms, a high-pass about 0. Uncorrected,
@@ -306,7 +306,7 @@ What shipped instead:
   reads 98 samples against 96 of pure delay (raw 316), and an LR-8 pair, whose raw
   difference (554) is a cycle wrong, reads 100 (`tests_juce/test_main_component_align_ir.cpp`);
 - **the corrected integer is used only when it is clearly nearest one candidate**
-  (`CycleArrival.cpp:72-83`, applied at `AlignmentWizard.cpp:317-321`): its distance
+  (`CycleArrival.cpp:72-83`, applied at `AlignmentWizard.cpp:321-325`): its distance
   to the nearest candidate must be at most a quarter of the candidate spacing (the
   smallest gap between neighbours). The nearest candidate is right only while the
   integer's error stays under half the spacing, where the next one becomes equally
