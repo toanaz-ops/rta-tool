@@ -330,3 +330,18 @@ TEST_CASE("sign and refusal cannot disagree", "[ir][polarity]") {
     for (const auto& got : results)
         CHECK((got.sign != Sign::Unknown) == (got.refusal == Refusal::None));
 }
+
+TEST_CASE("A capture of two samples after the arrival refuses instead of throwing",
+          "[ir][polarity]") {
+    // `last - originIndex == 2` is allowed through to the band-edge estimator,
+    // whose FFT size was rounded up from 1 and came out as 2 -- below RealFft's
+    // minimum of 4 -- so findPolarity threw std::invalid_argument where every
+    // other short capture returns a refusal.
+    auto source = measureThrough(60.0, 15000.0, 4, +1.0f);
+    source.samples.resize(source.originIndex + 2);
+
+    rta::ir::PolarityResult got;
+    CHECK_NOTHROW(got = rta::ir::findPolarity(source, {}));
+    CHECK(got.sign == Sign::Unknown);
+    CHECK(got.refusal != Refusal::None);
+}

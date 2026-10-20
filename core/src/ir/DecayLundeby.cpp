@@ -39,15 +39,24 @@ bool leastSquares(std::span<const double> x, std::span<const double> y,
     const auto n = static_cast<double>(x.size());
     if (x.size() < 2) return false;
 
-    double sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0;
-    for (std::size_t i = 0; i < x.size(); ++i) {
-        sx += x[i]; sy += y[i]; sxx += x[i] * x[i]; sxy += x[i] * y[i];
-    }
-    const double denom = n * sxx - sx * sx;
-    if (std::abs(denom) < 1e-12) return false;
+    // x is a sample index, up to ~1e6 on a long high-rate record, while its
+    // SPREAD may be a few thousand. n*sum(x^2) - (sum x)^2 then subtracts two
+    // numbers of order 1e12 to get one of order 1e9 and loses ~3 digits.
+    // Centring x on its mean first makes the sums those of the spread alone; the
+    // line is shifted back afterwards, so slope and intercept mean what they did.
+    double mean = 0.0;
+    for (const double v : x) mean += v;
+    mean /= n;
 
-    slope = (n * sxy - sx * sy) / denom;
-    intercept = (sy - slope * sx) / n;
+    double sy = 0.0, sxx = 0.0, sxy = 0.0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        const double dx = x[i] - mean;
+        sy += y[i]; sxx += dx * dx; sxy += dx * y[i];
+    }
+    if (sxx < 1e-12) return false;
+
+    slope = sxy / sxx;
+    intercept = sy / n - slope * mean;
     return true;
 }
 
@@ -89,22 +98,10 @@ bool findCrossing(std::span<const double> squared, double sampleRate,
     bool haveCrossing = false;
     double crossing = 0.0;
     double slope = 0.0;
+    double intercept = 0.0;
 
     for (int iter = 0; iter < cfg.maxIterations; ++iter) {
         const double noiseDb = powerToDb(noise);
-
-        // Keep the regression clear of the knee. Everything at or below
-        // `noiseDb + standoff` is where decay and noise are comparable, and a
-        // fit that reaches into it flattens -- one-sided, so it reads long.
-        std::size_t lastUsable = 0;
-        bool any = false;
-        for (std::size_t i = 0; i < levels.size(); ++i) {
-            if (powerToDb(levels[i]) > noiseDb + cfg.standoffDb) {
-                lastUsable = i;
-                any = true;
-            }
-        }
-        if (!any || lastUsable < 1) return false;
 
         // The fit starts at the PEAK of the smoothed curve, not at its first
         // block.
@@ -121,9 +118,28 @@ bool findCrossing(std::span<const double> squared, double sampleRate,
         // "Late decay" is not a loose description; it is what makes the fit a
         // fit of the room rather than of the filter's onset.
         std::size_t peak = 0;
-        for (std::size_t i = 1; i <= lastUsable; ++i) {
+        for (std::size_t i = 1; i < levels.size(); ++i) {
             if (levels[i] > levels[peak]) peak = i;
         }
+
+        // Keep the regression clear of the knee, and end it at the FIRST block
+        // that reaches it. Everything at or below `noiseDb + standoff` is where
+        // decay and noise are comparable, and a fit that reaches into it
+        // flattens -- one-sided, so it reads long.
+        //
+        // Walking forward from the peak and stopping is Lundeby's own rule, and
+        // it is not the same as "the last block above the line": a late event
+        // (a door, an HVAC cycle) that rises back above the line after the decay
+        // has already met the noise would, under that reading, drag the end of
+        // the fit out to itself, across the whole knee between.
+        const double usableDb = noiseDb + cfg.standoffDb;
+        if (!(powerToDb(levels[peak]) > usableDb)) return false;
+        std::size_t lastUsable = peak;
+        while (lastUsable + 1 < levels.size() &&
+               powerToDb(levels[lastUsable + 1]) > usableDb) {
+            ++lastUsable;
+        }
+
         const double top = powerToDb(levels[peak]);
         fitX.clear();
         fitY.clear();
@@ -136,7 +152,6 @@ bool findCrossing(std::span<const double> squared, double sampleRate,
         }
         if (fitX.size() < 2) return false;
 
-        double intercept = 0.0;
         if (!leastSquares(fitX, fitY, slope, intercept)) return false;
         if (slope >= 0.0) return false;
 
@@ -183,6 +198,7 @@ bool findCrossing(std::span<const double> squared, double sampleRate,
     out.index = static_cast<std::size_t>(crossing);
     out.noisePower = noise;
     out.slopeDbPerSample = -slope;
+    out.interceptDb = intercept;
     return out.index >= 16;
 }
 
