@@ -267,6 +267,69 @@ the sub's capture to pick the cycle:** PHAT on a band-limited signal is the
 one weakness its own record names (`dual-fft.md` §4), and a narrowband
 correlation peaks every `1/f_c` — the same ambiguity, moved.
 
+**AMENDED 2026-10-20 by ALIGN-UI wave B (branch `app/align-ui-b`, tasks T8, T9,
+T11; written after the code it describes, checked sentence by sentence against
+it). The parenthesis "L4a's `Deconvolution::originIndex`, coarse and
+unambiguous" two paragraphs up is wrong, and the wizard that shipped from it
+returned a plausible, wrong integer.** `originIndex` is t = 0, not an arrival:
+in `core` it is the end of the inverse filter (`core/include/rta/ir/Deconvolver.h:34`),
+and in a SWEEP IR it is the reference (loop) peak (`SweepIrPipeline.cpp:151`).
+The difference of two origins is therefore the difference of the two captures'
+pre-roll timing — anything from 0 to about half a second for two button presses —
+and has nothing to do with the two loudspeakers' path lengths. What is
+unambiguous and coarse is the ARRIVAL: the measured peak relative to t = 0,
+`measPeak − refPeak`.
+
+What shipped instead:
+- an IR travels with its arrival, `ImpulseWitness{Deconvolution, arrivalSamples}`
+  (`AlignmentWizard.h:86-91`); a SWEEP IR carries `SweepIr::arrivalSamples`
+  (`SweepIrOutcome.h:55`), set to the pipeline's `delay` (`SweepIrPipeline.cpp:152`);
+- the API is keyed by SOURCE, `supplyImpulseResponse(Source, ImpulseWitness)`
+  (`AlignmentWizard.cpp:68`), and which IR is the high-pass side's is resolved
+  inside the wizard from question (a) (`AlignmentWizard.cpp:72-81`) — a caller
+  cannot pair an IR with the wrong role, which the former high/low pair allowed;
+- the integer is `arrival(low-pass side) − arrival(high-pass side)` less the
+  named topology's peak lag (`AlignmentWizard.cpp:312-320`), evaluated at the corner the operator SEEDS when one is given (the processor corner; a low-pass lag scales as 1/fc and the measured acoustic crossing can sit an octave off it), else at the measured crossing, the same orientation
+  as τ. **An arrival is the peak of |h|, and a band-limited path peaks late**:
+  an LR-4 low-pass at 100 Hz peaks about 4.6 ms (221 samples at 48 kHz) after the
+  wavefront entered it, an LR-8 about 9.4 ms, a high-pass about 0. Uncorrected,
+  the raw difference carries the low side's whole lag, and once that exceeds half
+  the candidate spacing (about 10.8 ms on the shipped fit) it picks a cycle a full
+  spacing wrong — found by the PR #72 verifier with an LR-4 pair plus a subsonic
+  high-pass on the sub (integer 7.88 ms against a 7.57 ms midpoint). The lag is
+  computed from the same biquad design the topology is built from, argmax|h| of
+  its low- and high-pass impulse responses at the measured crossover
+  (`CycleArrival.cpp:52-70`, `topologyCascade` `:39`), not from a typed `0.46/fc`;
+  an unusable frequency or order corrects nothing. With origins 12345 samples
+  apart the integer is the arrival difference less that lag in either role
+  assignment (`app/tests/test_alignment_wizard_ir.cpp`); end to end an LR-4 pair
+  reads 98 samples against 96 of pure delay (raw 316), and an LR-8 pair, whose raw
+  difference (554) is a cycle wrong, reads 100 (`tests_juce/test_main_component_align_ir.cpp`);
+- **the corrected integer is used only when it is clearly nearest one candidate**
+  (`CycleArrival.cpp:72-83`, applied at `AlignmentWizard.cpp:321-325`): its distance
+  to the nearest candidate must be at most a quarter of the candidate spacing (the
+  smallest gap between neighbours). The nearest candidate is right only while the
+  integer's error stays under half the spacing, where the next one becomes equally
+  near; a quarter guarantees the chosen candidate is at least three times nearer
+  than the runner-up. The lag correction can remove only the filter that was NAMED;
+  a box with another filter in its path leaves a residual, and the guard turns that
+  residual into a question (`AskingCycle`, the integer shown as "IRs suggest about
+  X ms") instead of a silently wrong cycle. A one-candidate fit has no spacing to
+  measure and is accepted. A typed offset always wins, before or after the fit
+  (`AlignmentWizard.cpp:62-73`, `AlignRunner.cpp`), and the readout says which one
+  chose ("the bound IRs chose…" versus "your offset chose…").
+  Caveat measured in the same PR: an extra high-pass adds its group delay inside the
+  fit band, so τ* itself reads about 3.8 ms for 2 ms of pure delay on that box; the
+  right cycle is the one the fit ranks first, not the pure delay;
+- "uses the first when both sources have a sweep capture" now means: when the
+  operator has bound a SWEEP IR to each source, `AlignRunner` supplies both at
+  MEASURE (`AlignRunnerIr.cpp:80`, called from `AlignRunner.cpp:137`); with fewer
+  than two the wizard asks, as before.
+
+The one legitimate use of `originIndex` is unchanged: §7's ρ window is measured
+FROM t = 0, so `relativePolarity()` and `findPolarity()` still read it as the
+window start. That is a position inside one IR, not a difference between two.
+
 **AMENDED 2026-09-16 by the Wave 3a build (branch `l7/align-wave3a-core`, tasks
 A–F; case C5b in `core/tests/test_crossover_band_candidates.cpp`). The competing
 delays this fit returns do NOT sit at `τ* ± n/f̄`, and the paragraph above should

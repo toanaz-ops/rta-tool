@@ -116,7 +116,8 @@ TEST_CASE("H7: the polarity-signal table is data, and a refusal is listed as a r
         wizard->answerTopology({ CrossoverFamily::LinkwitzRiley, 4 });
         wizard->answerInversion(ProcessorInversion::No);
         wizard->answerCrossoverSeed(std::nullopt);
-        wizard->supplyImpulseResponses(std::move(high), std::move(low));
+        wizard->supplyImpulseResponse(Source::Main, { std::move(high), 0 });
+        wizard->supplyImpulseResponse(Source::Sub, { std::move(low), 0 });
         wizard->supplyWhitenedPeakSign(rta::ir::Sign::Positive);
         runSequence(*wizard, engine,
                     rta::test::makeCapture("hp", rta::test::risingDb(),
@@ -236,7 +237,8 @@ TEST_CASE("H8: rho's sign cannot reach the verdict -- an invariance, not a grep"
         wizard->answerTopology({ CrossoverFamily::Butterworth, 2 });
         wizard->answerInversion(ProcessorInversion::No);
         wizard->answerCrossoverSeed(std::nullopt);
-        wizard->supplyImpulseResponses(std::move(high), std::move(low));
+        wizard->supplyImpulseResponse(Source::Main, { std::move(high), 0 });
+        wizard->supplyImpulseResponse(Source::Sub, { std::move(low), 0 });
         runSequence(*wizard, engine,
                     rta::test::makeCapture("hp", rta::test::risingDb(),
                                            rta::test::constantPhase(0.7)),

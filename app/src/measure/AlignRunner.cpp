@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "measure/AlignRunner.h"
 
+#include "measure/AlignRunnerState.h"
 #include "measure/AlignRunnerText.h"
-#include "measure/AlignmentWizard.h"
 #include "measure/CaptureTimeout.h"
 #include "measure/TransferDwell.h"
 
-#include "rta/gen/Noise.h"
-#include "rta/gen/Prng.h"
+#include <chrono>
 
 #include <cmath>
 #include <cstdio>
@@ -15,69 +14,6 @@
 
 namespace rta::measure {
 using namespace detail;
-struct AlignRunnerState {
-    rta::platform::OutputEngine* engine = nullptr;
-    rta::trace::TraceLibrary* library = nullptr;
-    AlignHost host;
-    AlignAnswers answers;
-    AlignAnswers runAnswers;  ///< `answers` as of the last press
-    std::unique_ptr<AlignmentWizard> wizard;
-
-    std::string status = "ALIGN: not run yet";
-    AlignBlock refusal = AlignBlock::None;
-    AlignOutcome outcome = AlignOutcome::None;
-    WizardRefusal wizardRefusal = WizardRefusal::None;
-    std::uint64_t revision = 0;
-    std::optional<std::ptrdiff_t> cycleSamples;
-
-    // What the run was started against; every step re-checks them.
-    std::uint64_t pressedEpoch = 0;
-    bool pressedSynthetic = false;
-    std::size_t pressedFftSize = 0;
-    double pressedSampleRate = 0.0;
-    rta::dsp::TransferAveraging pressedAveraging = rta::dsp::TransferAveraging::Fifo;
-    // The clock of THIS step's solo: the dwell is counted from it, never from
-    // the arm (each solo re-ramps a different output gate, and the transfer
-    // FIFO still holds the previous step's frames).
-    std::uint64_t stepStartRendered = 0;
-    double stepStartMs = 0.0;
-
-    void say(std::string text) {
-        status = std::move(text);
-        ++revision;
-    }
-    [[nodiscard]] bool attached() const {
-        return engine != nullptr && library != nullptr && host.environment && host.latest &&
-               host.captureConfig && host.freeze && host.nowMs;
-    }
-    [[nodiscard]] bool measuring() const {
-        if (!wizard) return false;
-        const auto s = wizard->step();
-        return s == WizardStep::MeasuringHigh || s == WizardStep::MeasuringLow || s == WizardStep::MeasuringSum;
-    }
-    void markStepStart() {
-        stepStartRendered = engine->renderedSamples();
-        stepStartMs = host.nowMs();
-    }
-    void abort(AlignOutcome why, std::string text) {
-        // disarmSource() first: nothing past a failed run may keep the
-        // loudspeaker playing (output-path record sec.8).
-        engine->disarmSource();
-        wizard.reset();
-        outcome = why;
-        say(std::move(text));
-    }
-    [[nodiscard]] Source measuredSource() const {
-        const bool high = wizard->step() == WizardStep::MeasuringHigh;
-        return (high == (runAnswers.highPass == Source::Main)) ? Source::Main : Source::Sub;
-    }
-    [[nodiscard]] rta::platform::SourceVariant pinkSource() const {
-        const auto seed = static_cast<std::uint64_t>(host.nowMs());
-        return rta::gen::PinkNoise(rta::gen::Pcg32(seed, 1), kAlignLevelDbFs);
-    }
-    void afterSubmit(const AlignAnswers& asked);
-    void trySubmit(double now);
-};
 
 AlignRunner::AlignRunner() : impl_(std::make_unique<AlignRunnerState>()) {}
 AlignRunner::~AlignRunner() = default;
@@ -104,7 +40,15 @@ const std::optional<Verdict>& AlignRunner::verdict() const noexcept {
     static const std::optional<Verdict> kNone;
     return impl_->wizard ? impl_->wizard->verdict() : kNone;
 }
-std::optional<std::ptrdiff_t> AlignRunner::cycleSamples() const noexcept { return impl_->cycleSamples; }
+std::optional<std::ptrdiff_t> AlignRunner::cycleSamples() const noexcept {
+    if (impl_->cycleSamples.has_value()) return impl_->cycleSamples;
+    return impl_->wizard ? impl_->wizard->cycleOffsetSamples() : std::nullopt;  // from the IR arrivals
+}
+bool AlignRunner::cycleFromIr() const noexcept { return impl_->cycleFromIr; }
+std::optional<std::ptrdiff_t> AlignRunner::irHintSamples() const noexcept {
+    return impl_->wizard ? impl_->wizard->irCycleHintSamples() : std::nullopt;
+}
+double AlignRunner::lastComputeMs() const noexcept { return impl_->lastComputeMs; }
 double AlignRunner::sampleRate() const noexcept { return impl_->pressedSampleRate; }
 const rta::trace::Trace* AlignRunner::mainCapture() const noexcept {
     return impl_->wizard && impl_->wizard->mainCapture() ? &*impl_->wizard->mainCapture() : nullptr;
@@ -188,6 +132,9 @@ bool AlignRunner::press() {
     fresh->answerTopology(*a.topology);
     fresh->answerInversion(*a.inversion);
     fresh->answerCrossoverSeed(a.seedHz);
+    // The IRs the operator bound, keyed by SOURCE: which is the high-pass side
+    // is the wizard's business (question (a)), so no role is chosen here.
+    const std::string irNote = d.supplyBoundIrs(*fresh);
     fresh->arm();
     if (fresh->lastRefusal() != WizardRefusal::None) {
         d.wizardRefusal = fresh->lastRefusal();
@@ -207,11 +154,12 @@ bool AlignRunner::press() {
     d.refusal = AlignBlock::None;
     d.outcome = AlignOutcome::None;
     d.cycleSamples.reset();
+    d.cycleFromIr = false;
     d.markStepStart();
     const Source first = d.measuredSource();
     d.say(std::string("ALIGN: pink noise on ") + sourceLabel(first) + " (OUT " +
           std::to_string((first == Source::Main ? a.mainOutput : a.subOutput) + 1) +
-          ") only, waiting for the excitation to settle");
+          ") only, waiting for the excitation to settle" + irNote);
     return true;
 }
 
@@ -268,12 +216,15 @@ bool AlignRunner::answerCycleMs(double milliseconds) {
         d.say("OFFSET: run MEASURE first, then type a finite offset in ms");
         return false;
     }
+    const bool overridesIr = d.cycleFromIr;  // a typed offset always wins over the IR integer
     const auto samples =
         static_cast<std::ptrdiff_t>(std::llround(milliseconds * d.pressedSampleRate / 1000.0));
     d.wizard->answerCycleOffsetSamples(samples);
+    d.cycleFromIr = false;
     d.cycleSamples = samples;
-    char text[96];
-    std::snprintf(text, sizeof text, "ALIGN: coarse offset %+.2f ms = %+td samples accepted", milliseconds, samples);
+    char text[160];
+    std::snprintf(text, sizeof text, "ALIGN: coarse offset %+.2f ms = %+td samples accepted%s", milliseconds, samples,
+                  overridesIr ? " (your typed offset, not the bound IRs')" : "");
     d.say(text);
     return true;
 }
@@ -351,7 +302,13 @@ void AlignRunnerState::trySubmit(double now) {
     }
     const Source who = measuredSource();
     library->add(*trace, std::string("ALIGN ") + sourceLabel(who) + " @ " + label, kAlignGroup);
+    // The LOW step's submit runs the fit and the polarity table on this thread.
+    // Timed so the PR can say whether it needs a worker (EQ risk-2 precedent).
+    const auto computeStart = std::chrono::steady_clock::now();
     wizard->submitCapture(std::move(*trace));
+    if (before == WizardStep::MeasuringLow) {
+        lastComputeMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - computeStart).count();
+    }
     if (wizard->lastRefusal() != WizardRefusal::None && wizard->step() == before) {
         wizardRefusal = wizard->lastRefusal();
         abort(AlignOutcome::SettingsChanged,
@@ -384,9 +341,15 @@ void AlignRunnerState::afterSubmit(const AlignAnswers& asked) {
         return;
     }
     outcome = AlignOutcome::Measured;
-    say(now == WizardStep::AskingCycle
-            ? "ALIGN: fit done -- type the coarse offset in ms to choose among the candidates"
-            : "ALIGN: fit done");
+    if (now == WizardStep::AskingCycle) {
+        say(wizard->irCycleHintSamples().has_value()
+                ? "ALIGN: fit done -- the bound IRs fit no candidate clearly (see the hint); type the coarse offset in ms"
+                : "ALIGN: fit done -- type the coarse offset in ms to choose among the candidates");
+        return;
+    }
+    cycleFromIr = wizard->cycleOffsetFromIr();
+    say(cycleFromIr ? "ALIGN: fit done -- the bound IRs chose the cycle (type an offset to override)"
+                    : "ALIGN: fit done");
 }
 
 }  // namespace rta::measure

@@ -51,7 +51,7 @@ bool fail (const char* what, const char* fileName, int& failures)
 // (output 0 a 40 Hz - 16 kHz band-pass, output 1 an LR4 low-pass at 100 Hz).
 // true: the plan's LR4 high-pass / low-pass pair, reachable only through the
 // test hook, which is the pair the T6 bounds are derived from.
-void renderOne (const juce::File& outDir, const char* fileName, bool useFixture, int& failures)
+void renderOne (const juce::File& outDir, const char* fileName, bool useFixture, bool bindIrs, int& failures)
 {
     constexpr double kFs = 48000.0;
     MainComponent component;
@@ -83,6 +83,34 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
     pane->inversionComboForTest().setSelectedId (1, juce::sendNotificationSync);  // NOT INVERTED
     pane->seedComboForTest().setSelectedId (1, juce::sendNotificationSync);       // NO SEED
 
+    if (bindIrs)
+    {
+        // Wave B: SWEEP MAIN then SWEEP SUB through the pane's own buttons. Each
+        // sweep binds its IR to the side that asked, so MEASURE needs no typed offset.
+        auto& sweep = Access::sweepForTest (component);
+        sweep.setDurationsForTest (2.0, 0.5);
+        for (auto* button : { &pane->irPanelForTest().sweepMainButtonForTest(),
+                              &pane->irPanelForTest().sweepSubButtonForTest() })
+        {
+            if (! pumpUntil (component, *pane, [&] { return button->isEnabled(); }, 20000))
+            {
+                fail ("a SWEEP button never became enabled", fileName, failures);
+                return;
+            }
+            button->onClick();
+            if (! pumpUntil (component, *pane, [&] { return ! sweep.busy(); }, 60000))
+            {
+                fail ("a sweep did not finish", fileName, failures);
+                return;
+            }
+        }
+        if (runner.boundIr (rta::measure::Source::Main) == nullptr || runner.boundIr (rta::measure::Source::Sub) == nullptr)
+        {
+            fail ("a sweep did not bind its IR", fileName, failures);
+            return;
+        }
+    }
+
     if (! pumpUntil (component, *pane, [&] { return pane->measureButtonForTest().isEnabled(); }, 20000))
     {
         fail ("MEASURE never became enabled (no TRANSFER snapshot)", fileName, failures);
@@ -94,8 +122,16 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
         fail ("MEASURE did not reach a verdict", fileName, failures);
         return;
     }
-    pane->offsetEditorForTest().setText ("2.0", juce::dontSendNotification);
-    pane->offsetButtonForTest().onClick();
+    if (bindIrs && runner.step() == rta::measure::WizardStep::AskingCycle)
+    {
+        fail ("the bound IRs did not give the cycle integer", fileName, failures);
+        return;
+    }
+    if (! bindIrs)
+    {
+        pane->offsetEditorForTest().setText ("2.0", juce::dontSendNotification);
+        pane->offsetButtonForTest().onClick();
+    }
     // The last step's excitation ramps out before SUM may take the output.
     pumpUntil (component, *pane, [&] { return Access::outputSourceQuiescentForTest (component); }, 20000);
     if (! pane->sumButtonForTest().isEnabled())
@@ -119,8 +155,9 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
 
 void renderAlignSpecimen (const juce::File& outDir, int& failures)
 {
-    renderOne (outDir, "main-live-align.png", false, failures);
-    renderOne (outDir, "main-live-align-lr4.png", true, failures);
+    renderOne (outDir, "main-live-align.png", false, false, failures);
+    renderOne (outDir, "main-live-align-lr4.png", true, false, failures);
+    renderOne (outDir, "main-live-align-ir.png", true, true, failures);
 }
 
 } // namespace rta::tools

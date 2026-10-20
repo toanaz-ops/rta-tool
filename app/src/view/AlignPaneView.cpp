@@ -35,7 +35,8 @@ juce::String fromUtf8(const std::string& text) { return juce::String(juce::CharP
 
 }  // namespace
 
-AlignPaneView::AlignPaneView(AlignPaneBinding binding) : binding_(binding) {
+AlignPaneView::AlignPaneView(AlignPaneBinding binding)
+    : binding_(binding), irPanel_(*binding.runner, binding.ir) {
     jassert(binding_.runner != nullptr);
 
     mainCombo_.setTextWhenNothingSelected("MAIN OUTPUT");
@@ -88,10 +89,12 @@ AlignPaneView::AlignPaneView(AlignPaneBinding binding) : binding_(binding) {
     blockerLabel_.setColour(juce::Label::textColourId, az::ui::faded);
     readoutLabel_.setJustificationType(juce::Justification::topLeft);
     readoutLabel_.setFont(az::ui::monoFont(az::ui::readoutFontSize));
+    irInfoLabel_.setJustificationType(juce::Justification::topLeft);
+    irInfoLabel_.setFont(az::ui::monoFont(az::ui::readoutFontSize));
 
     for (juce::Component* c : std::initializer_list<juce::Component*>{
              &measureButton_, &sumButton_, &offsetButton_, &offsetEditor_, &statusLabel_, &blockerLabel_,
-             &readoutLabel_}) {
+             &readoutLabel_, &irInfoLabel_, &irPanel_}) {
         addAndMakeVisible(*c);
     }
     restoreAnswers();
@@ -104,6 +107,10 @@ AlignPaneView::~AlignPaneView() { stopTimer(); }
 void AlignPaneView::setLibrary(const rta::trace::TraceLibrary*) {}
 
 void AlignPaneView::timerCallback() {
+    // A sweep finishing (or auto-binding its IR) is not a runner state change.
+    irPanel_.refresh();
+    const auto irInfo = irPanel_.infoText();
+    if (irInfo != irInfoLabel_.getText()) irInfoLabel_.setText(irInfo, juce::dontSendNotification);
     const juce::String blocker = fromUtf8(binding_.runner->blocker().text);
     if (binding_.runner->revision() != lastRevision_ || blocker != lastBlockerText_ ||
         binding_.runner->outputChannels() != lastOutputCount_) {
@@ -250,12 +257,16 @@ void AlignPaneView::refresh() {
         input.inversion = *run.inversion;
         input.sampleRate = runner.sampleRate();
         input.cycleSamples = runner.cycleSamples();
+        input.cycleFromIr = runner.cycleFromIr();
+        input.irHintSamples = runner.irHintSamples();
         input.matchedPairBar = rta::measure::kAlignMatchedPairAgreement;
         std::string joined;
         for (const auto& line : rta::measure::verdictLines(input)) joined += line + "\n";
         readout = fromUtf8(joined);
     }
     readoutLabel_.setText(readout, juce::dontSendNotification);
+    irPanel_.refresh();
+    irInfoLabel_.setText(irPanel_.infoText(), juce::dontSendNotification);
 
     rebuildSurface();
     repaint();
@@ -291,6 +302,7 @@ void AlignPaneView::resized() {
     };
     row({ &mainCombo_, &subCombo_, &highPassCombo_ }, az::ui::fieldHeight);
     row({ &topologyCombo_, &inversionCombo_, &seedCombo_ }, az::ui::fieldHeight);
+    row({ &irPanel_ }, az::ui::fieldHeight);
 
     auto buttons = area.removeFromTop(kButtonHeight);
     measureButton_.setBounds(buttons.removeFromLeft(140));
@@ -304,7 +316,13 @@ void AlignPaneView::resized() {
 
     statusLabel_.setBounds(area.removeFromTop(kStatusHeight));
     blockerLabel_.setBounds(area.removeFromTop(kBlockerHeight));
-    readoutLabel_.setBounds(area.removeFromTop(kReadoutHeight));
+    // The verdict on the left, what is bound and how the signals read on the
+    // right: the IR text rides in the readout's own height, so the charts
+    // below keep what they had.
+    auto readoutRow = area.removeFromTop(kReadoutHeight);
+    readoutLabel_.setBounds(readoutRow.removeFromLeft(readoutRow.getWidth() * 11 / 20));
+    readoutRow.removeFromLeft(az::ui::gap);
+    irInfoLabel_.setBounds(readoutRow);
     area.removeFromTop(az::ui::gap);
 
     chartArea_ = area;

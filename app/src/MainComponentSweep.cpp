@@ -58,25 +58,35 @@ void MainComponentSweep::layout(juce::Rectangle<int> row) {
     readout_.setBounds(row);
 }
 
-void MainComponentSweep::clicked() {
+void MainComponentSweep::clicked() { startOn(/*outputChannel=*/0, /*named=*/false); }
+
+bool MainComponentSweep::clickedOnOutput(int outputChannel) { return startOn(outputChannel, /*named=*/true); }
+
+bool MainComponentSweep::startOn(int outputChannel, bool named) {
     if (state_ != State::Idle) {
         say("sweep: already running");
-        return;
+        return false;
     }
     if (host_.outputBusy()) {
         say("sweep: refused -- LOCATE, CAL or VERIFY is using the output");
-        return;
+        return false;
+    }
+    // A named output must exist: soloOutput on a channel the device lacks would
+    // arm a capture nothing excites. The plain button is output 1 and always did.
+    if (named && host_.outputChannels && (outputChannel < 0 || outputChannel >= host_.outputChannels())) {
+        say("sweep: refused -- this device has no output " + juce::String(outputChannel + 1));
+        return false;
     }
     // setSource fails unless the engine is quiescent (OutputEngine.h): refuse
     // here, with a reason, rather than arm a capture nothing will excite.
     if (!output_.sourceIsQuiescent()) {
         say("sweep: refused -- the output is still playing a source");
-        return;
+        return false;
     }
     const double fs = output_.sampleRate();
     if (!(fs > 0.0) || host_.inputSampleRate() != fs) {
         say("sweep: refused -- input and output sample rates differ");
-        return;
+        return false;
     }
 
     armedRequest_ = request_;
@@ -86,11 +96,13 @@ void MainComponentSweep::clicked() {
         std::ceil((kPreRollSeconds + sweep.durationSec() + armedRequest_.tailSeconds) * fs));
     if (!output_.setSource(std::move(sweep))) {
         say("sweep: refused -- the output is still playing a source");
-        return;
+        return false;
     }
-    rta::measure::soloOutput(output_, /*outputChannel=*/0);  // route 0 only (decision 10)
+    rta::measure::soloOutput(output_, outputChannel);  // that output only (decision 10; out 1 for the button)
     analysis_.armLocateCapture(/*routeIndex=*/0, captureSamples);
 
+    armedOutput_ = outputChannel;
+    armedNamed_ = named;
     armedEpoch_ = output_.outputEpoch();
     armedSynthetic_ = host_.synthetic();
     armedAtMs_ = nowMs_();
@@ -102,6 +114,7 @@ void MainComponentSweep::clicked() {
     timeoutMs_ = 1000.0 * static_cast<double>(captureSamples) / fs + kTimeoutSlackMs;
     state_ = State::PreRoll;
     say("sweep: arming...");
+    return true;
 }
 
 void MainComponentSweep::abort(const juce::String& why) {
@@ -173,7 +186,10 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
         say("sweep: no trace could be built from this capture");
         return;
     }
-    const juce::String name = "SWEEP @ " + juce::Time::getCurrentTime().formatted("%H:%M:%S");
+    // The ALIGN path names the output it played on: two sweeps minutes apart
+    // are told apart by which loudspeaker they were of.
+    const juce::String outputTag = armedNamed_ ? " out" + juce::String(armedOutput_ + 1) : juce::String();
+    const juce::String name = "SWEEP" + outputTag + " @ " + juce::Time::getCurrentTime().formatted("%H:%M:%S");
     const auto id = library_.add(std::move(*trace), name.toStdString(), "SWEEP");
     if (id.empty()) {
         say("sweep: failed (duplicate capture id)");
@@ -182,6 +198,7 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
     // Aliases the outcome: the IR stays alive with it, with no 4.6 MB copy.
     const bool evicts = irStore_.size() == rta::trace::IrStore::kCapacity;
     irStore_.add(id, std::shared_ptr<const rta::measure::SweepIr>(owner, &owner->ir));
+    if (armedNamed_ && host_.swept) host_.swept(id, armedOutput_);
 
     const double ms = 1000.0 * static_cast<double>(outcome.delaySamples) / outcome.ir.sampleRate;
     juce::String text = "IR " + signedWhole(outcome.delaySamples) + " samples (" + signedOneDecimal(ms) +

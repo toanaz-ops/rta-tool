@@ -149,6 +149,7 @@ SweepIrOutcome analyseChecked(const SweepCapture& capture, const SweepIrRequest&
     SweepIrOutcome out;
     out.status = SweepIrStatus::Ok;
     out.ir.originIndex = refPeak.index;  // metadata only; the samples are untouched
+    out.ir.arrivalSamples = delay;
     out.ir.sampleRate = fs;
     out.ir.normalisationGain = measurement.normalisationGain;
     out.ir.harmonicSpacingL = measurement.harmonicSpacingL;

@@ -48,6 +48,13 @@ public:
         std::function<double()> inputSampleRate;
         std::function<std::string()> deviceName;
         std::function<std::string()> channelRoles;
+        /// ALIGN-UI T10: outputs the device (or the SYNTHETIC loopback) has,
+        /// so a sweep on a named output can refuse one that does not exist.
+        std::function<int()> outputChannels;
+        /// ALIGN-UI T10: a sweep started with `clickedOnOutput` stored this
+        /// trace id, played on this 0-based output. Never fired for the plain
+        /// SWEEP button.
+        std::function<void(const std::string& traceId, int outputChannel)> swept;
     };
 
     /// Declare AFTER the three references (trap T-1): `worker_` joins in its
@@ -59,7 +66,16 @@ public:
     void layout(juce::Rectangle<int> row);
 
     /// The button's handler; public so the offscreen harness can call it.
+    /// Plays on output 1 and stores `SWEEP @ HH:MM:SS`, as it always has.
     void clicked();
+    /// ALIGN-UI T10: the same press on a NAMED 0-based output, stored as
+    /// `SWEEP out<N> @ HH:MM:SS` and reported through `Host::swept`. Returns
+    /// true when the sweep armed; false (reason in the readout) when refused.
+    bool clickedOnOutput(int outputChannel);
+    /// The readout the operator reads for this sweep (the ALIGN pane repeats it).
+    [[nodiscard]] juce::String readoutText() const { return readout_.getText(); }
+    /// IRs kept for ALIGN's pickers (`IrStore::find`).
+    [[nodiscard]] const rta::trace::IrStore& irStore() const noexcept { return irStore_; }
     /// Called from MainComponent's 2 Hz timer.
     void poll();
 
@@ -85,6 +101,7 @@ public:
     void setClockForTest(std::function<double()> nowMs) { nowMs_ = std::move(nowMs); }
 
 private:
+    bool startOn(int outputChannel, bool named);
     void say(const juce::String& text) { readout_.setText(text, juce::dontSendNotification); }
     void abort(const juce::String& why);
     void startAnalysis();
@@ -101,6 +118,8 @@ private:
     State state_ = State::Idle;
     rta::measure::SweepIrRequest request_;       ///< the shipped config; tests shorten it
     rta::measure::SweepIrRequest armedRequest_;  ///< what the running sweep was armed with
+    int armedOutput_ = 0;
+    bool armedNamed_ = false;  ///< started by clickedOnOutput (ALIGN), not the SWEEP button
     std::uint64_t armedEpoch_ = 0;
     bool armedSynthetic_ = false;
     std::string armedDeviceName_;

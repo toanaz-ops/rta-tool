@@ -23,18 +23,43 @@
 #include "measure/AlignRunner.h"
 #include "view/AlignPaneView.h"
 
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+
 class MainComponentAlign {
 public:
     /// Called once by MainComponent::wireAlign (MainComponentAlign.cpp).
     void attach(rta::platform::OutputEngine& engine, rta::trace::TraceLibrary& library,
                 rta::measure::AlignHost host) {
+        library_ = &library;
         runner_.attach(engine, library, std::move(host));
     }
 
+    /// What MainComponent's SWEEP half offers ALIGN (wave B, T10/T11): start a
+    /// sweep on a named 0-based output, find a stored IR by trace id, read the
+    /// sweep's own readout, and whether it is running. Set once by wireAlign.
+    struct SweepAccess {
+        std::function<bool(int outputChannel)> start;
+        std::function<std::shared_ptr<const rta::measure::SweepIr>(const std::string&)> find;
+        std::function<std::string()> readout;
+        std::function<bool()> busy;
+    };
+    void attachSweep(SweepAccess sweep) { sweep_ = std::move(sweep); }
+
     /// The wiring `makePaneFactory` gives every AlignPaneView it builds.
     [[nodiscard]] rta::view::AlignPaneBinding binding() noexcept {
-        return rta::view::AlignPaneBinding{ &runner_ };
+        return rta::view::AlignPaneBinding{ &runner_, irHooks() };
     }
+
+    /// SWEEP MAIN / SWEEP SUB: sweep on the output named for that source and
+    /// remember which source the result belongs to. The same busy predicates
+    /// as every other capture: MainComponentSweep refuses while ALIGN runs.
+    void sweepOnSide(rta::measure::Source side);
+    /// MainComponentSweep's `Host::swept`: auto-binds the just-swept IR to the
+    /// source whose button asked for it.
+    void onSwept(const std::string& traceId, int outputChannel);
 
     /// From MainComponent's 2 Hz timer.
     void poll() { runner_.poll(); }
@@ -46,5 +71,15 @@ public:
     [[nodiscard]] rta::measure::AlignRunner& runnerForTest() noexcept { return runner_; }
 
 private:
+    [[nodiscard]] rta::view::AlignIrHooks irHooks();
+
     rta::measure::AlignRunner runner_;
+    rta::trace::TraceLibrary* library_ = nullptr;
+    SweepAccess sweep_;
+    /// Which source's button started the sweep now running, and on which output.
+    struct PendingSweep {
+        rta::measure::Source side = rta::measure::Source::Main;
+        int outputChannel = 0;
+    };
+    std::optional<PendingSweep> pending_;
 };

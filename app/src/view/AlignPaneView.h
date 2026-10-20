@@ -21,6 +21,7 @@
 #pragma once
 
 #include "measure/AlignRunner.h"
+#include "view/AlignIrPanel.h"
 #include "view/CrossoverSurface.h"
 #include "view/PaneRegistry.h"
 
@@ -35,6 +36,9 @@ namespace rta::view {
 /// from MainComponentAlign and must outlive every pane built from this.
 struct AlignPaneBinding {
     rta::measure::AlignRunner* runner = nullptr;
+    /// Wave B: SWEEP MAIN / SWEEP SUB and the IR pickers (AlignIrPanel.h). All
+    /// optional: a pane built without them simply has dead sweep buttons.
+    AlignIrHooks ir;
 };
 
 class AlignPaneView final : public juce::Component, public LibraryConsumer, private juce::Timer {
@@ -66,6 +70,8 @@ public:
     [[nodiscard]] juce::String statusForTest() const { return statusLabel_.getText(); }
     [[nodiscard]] juce::String blockerTextForTest() const { return blockerLabel_.getText(); }
     [[nodiscard]] juce::String readoutForTest() const { return readoutLabel_.getText(); }
+    [[nodiscard]] AlignIrPanel& irPanelForTest() noexcept { return irPanel_; }
+    [[nodiscard]] juce::String irInfoForTest() const { return irInfoLabel_.getText(); }
     [[nodiscard]] const CrossoverSurface& surfaceForTest() const noexcept { return surface_; }
     [[nodiscard]] bool lastPaintDrewChartForTest() const noexcept { return lastPaintDrewChart_; }
     /// One turn of the pane's own 10 Hz timer (a test harness pumps no message loop).
@@ -95,7 +101,8 @@ private:
     juce::ComboBox mainCombo_, subCombo_, highPassCombo_, topologyCombo_, inversionCombo_, seedCombo_;
     juce::TextButton measureButton_{ "MEASURE" }, sumButton_{ "SUM" }, offsetButton_{ "SET OFFSET" };
     juce::TextEditor offsetEditor_;
-    juce::Label statusLabel_, blockerLabel_, readoutLabel_;
+    juce::Label statusLabel_, blockerLabel_, readoutLabel_, irInfoLabel_;
+    AlignIrPanel irPanel_;
 
     juce::Rectangle<int> chartArea_, phaseArea_, summationArea_;
 

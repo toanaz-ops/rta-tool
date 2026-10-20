@@ -92,7 +92,14 @@ MainComponent::MainComponent()
                  [this] {
                      return isSyntheticMode() ? std::string("SYNTHETIC") : audioIo_.currentState().deviceName;
                  },
-                 [this] { return rta::trace::channelRolesSummary(audioIo_.bus().config()); }}) {
+                 [this] { return rta::trace::channelRolesSummary(audioIo_.bus().config()); },
+                 // ALIGN-UI T10: a sweep on a named output needs the output count,
+                 // and tells ALIGN which IR it has just stored.
+                 [this] {
+                     return isSyntheticMode() ? rta::measure::SyntheticInput::kOutputChannels
+                                              : audioIo_.currentState().numOutputChannels;
+                 },
+                 [this](const std::string& traceId, int outputChannel) { align_.onSwept(traceId, outputChannel); }}) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };

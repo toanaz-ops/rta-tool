@@ -26,6 +26,7 @@
 #include "measure/Analyser.h"
 #include "measure/CrossoverTopology.h"
 #include "measure/Snapshot.h"
+#include "measure/SweepIrOutcome.h"
 #include "trace/Trace.h"
 #include "trace/TraceLibrary.h"
 
@@ -37,6 +38,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace rta::measure {
 
@@ -176,8 +178,27 @@ public:
     [[nodiscard]] WizardStep step() const noexcept;
     [[nodiscard]] const std::string& status() const noexcept;
     [[nodiscard]] const std::optional<Verdict>& verdict() const noexcept;
-    /// The integer the operator's offset resolved to, once there is one.
+    /// The integer the run used, once there is one: the operator's typed offset,
+    /// or the difference of the bound IRs' arrivals.
     [[nodiscard]] std::optional<std::ptrdiff_t> cycleSamples() const noexcept;
+    /// That integer came from the bound IRs (a typed offset still overrides it).
+    [[nodiscard]] bool cycleFromIr() const noexcept;
+    /// What the bound IRs imply (arrival difference minus the named topology's
+    /// peak lag), shown as a hint when it fits no candidate clearly enough to use.
+    [[nodiscard]] std::optional<std::ptrdiff_t> irHintSamples() const noexcept;
+    /// Milliseconds the fit and polarity table took on the message thread in
+    /// the last run's low-pass step (0 before the first run).
+    [[nodiscard]] double lastComputeMs() const noexcept;
+
+    // ---- wave B: the SWEEP impulse responses the operator bound by SOURCE --
+    /// Binds `ir`, taken from the SWEEP trace `traceId`, to a source. A null
+    /// `ir` unbinds. Applied at the NEXT press; a run in flight keeps its own.
+    void bindIr(Source source, std::string traceId, std::shared_ptr<const SweepIr> ir);
+    [[nodiscard]] const std::string& boundIrId(Source source) const noexcept;
+    [[nodiscard]] std::shared_ptr<const SweepIr> boundIr(Source source) const noexcept;
+    /// One line per polarity signal of the last run: its standing, its figure
+    /// and its reason, or the refusal. Empty with no IR pair.
+    [[nodiscard]] std::vector<std::string> polaritySignalLines() const;
     [[nodiscard]] double sampleRate() const noexcept;
     /// The frozen captures of this run, by SOURCE (nullptr until taken).
     [[nodiscard]] const rta::trace::Trace* mainCapture() const noexcept;

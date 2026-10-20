@@ -78,6 +78,18 @@ struct PolaritySignal {
     std::string reason;
 };
 
+/// One source's impulse response and WHERE its direct sound arrived.
+///
+/// The arrival is a separate number on purpose. `Deconvolution::originIndex`
+/// is t = 0 (the end of the inverse filter in core; the loop peak in SWEEP),
+/// not the arrival, so a difference of two origins is pre-roll jitter and
+/// not a path-length difference (F2, docs/plans/2026-10-20-align-ui-lane-plan.md).
+/// `arrivalSamples` is the measured peak relative to t = 0.
+struct ImpulseWitness {
+    rta::ir::Deconvolution deconvolution;
+    long arrivalSamples = 0;
+};
+
 class AlignmentWizard {
 public:
     struct Config {
@@ -122,7 +134,11 @@ public:
     [[nodiscard]] std::optional<double> crossoverSeedHz() const noexcept { return seedHz_; }
 
     // ---- witnesses the wizard is GIVEN, never ones it computes -------------
-    void supplyImpulseResponses(rta::ir::Deconvolution highSide, rta::ir::Deconvolution lowSide);
+    /// Keyed by SOURCE: which one is the high-pass side is question (a)'s
+    /// answer and is resolved inside compute(), so the caller cannot pair the
+    /// wrong IR with the wrong role. The cycle integer is
+    /// arrival(low-pass side) - arrival(high-pass side).
+    void supplyImpulseResponse(Source source, ImpulseWitness witness);
     /// The sign of a PHAT-whitened correlation peak, if the caller has one.
     /// The wizard does not compute it: PHAT on a band-limited source relocates
     /// the ambiguity rather than resolving it (record Sec.4), and PR #3 Sec.5
@@ -158,6 +174,11 @@ public:
     [[nodiscard]] std::optional<std::ptrdiff_t> cycleOffsetSamples() const noexcept {
         return cycleOffset_;
     }
+    /// The integer the bound IRs imply (arrival difference minus the named
+    /// topology's peak lag), whether or not it was clear enough to use.
+    [[nodiscard]] std::optional<std::ptrdiff_t> irCycleHintSamples() const noexcept { return irHint_; }
+    /// `cycleOffsetSamples()` came from the IRs, not from the operator.
+    [[nodiscard]] bool cycleOffsetFromIr() const noexcept { return cycleFromIr_; }
     /// The options the fit was actually handed, so a test can assert the
     /// appliedDelaySamples reconciliation was passed once and correctly
     /// (ALIGN-R2, H5) instead of trusting that it was.
@@ -198,8 +219,11 @@ private:
     bool seedAnswered_ = false;
     std::optional<std::ptrdiff_t> cycleAnswer_;
 
-    std::optional<rta::ir::Deconvolution> irHigh_;
-    std::optional<rta::ir::Deconvolution> irLow_;
+    [[nodiscard]] const ImpulseWitness* highSideIr() const noexcept;
+    [[nodiscard]] const ImpulseWitness* lowSideIr() const noexcept;
+
+    std::optional<ImpulseWitness> irMain_;
+    std::optional<ImpulseWitness> irSub_;
     std::optional<rta::ir::Sign> whitenedSign_;
 
     std::optional<rta::trace::Trace> mainCapture_;
@@ -214,6 +238,8 @@ private:
     std::optional<Verdict> verdict_;
     std::vector<PolaritySignal> signals_;
     std::optional<std::ptrdiff_t> cycleOffset_;
+    std::optional<std::ptrdiff_t> irHint_;
+    bool cycleFromIr_ = false;
     rta::dsp::BandFitOptions lastFit_{};
 };
 

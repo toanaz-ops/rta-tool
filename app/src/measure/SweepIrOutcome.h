@@ -9,7 +9,7 @@
 // file that includes them is one `deconvolve()` call away from a UI stall.
 // For that reason `SweepIr` below mirrors `rta::ir::Deconvolution` field for
 // field instead of holding one; a later ALIGN caller copies the fields back
-// (`AlignmentWizard::supplyImpulseResponses`, H5), which is a struct
+// (`AlignmentWizard::supplyImpulseResponse`, H5), which is a struct
 // assignment, not a reason to share a header.
 #pragma once
 
@@ -48,6 +48,11 @@ enum class SweepIrStatus {
 struct SweepIr {
     std::vector<float> samples;
     std::size_t originIndex = 0;
+    /// WHERE the direct sound arrived, in samples after t = 0 (`originIndex`):
+    /// the same number as `SweepIrOutcome::delaySamples`, carried on the IR
+    /// itself because the IR is what travels to ALIGN. `originIndex` is not an
+    /// arrival -- two sweeps' origins differ by their pre-roll timing (F2).
+    long arrivalSamples = 0;
     double sampleRate = 0.0;
     /// The scalar already applied to `samples` (the loop's in-band mean).
     double normalisationGain = 1.0;
