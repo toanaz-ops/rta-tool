@@ -225,6 +225,12 @@ void AlignPaneView::refresh() {
                                     step == rta::measure::WizardStep::AskingPolarity));
     const bool askable = !busy && runner.verdict().has_value() &&
                          (step == rta::measure::WizardStep::AskingCycle || step == rta::measure::WizardStep::Computed);
+    // A run in flight keeps the answers it started with; the questions stay
+    // read-only until it ends so the screen cannot disagree with what plays.
+    for (auto* combo : { &mainCombo_, &subCombo_, &highPassCombo_, &topologyCombo_, &inversionCombo_,
+                         &seedCombo_ }) {
+        combo->setEnabled(!busy);
+    }
     offsetButton_.setEnabled(askable);
     offsetEditor_.setEnabled(askable);
 

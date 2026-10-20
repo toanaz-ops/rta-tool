@@ -69,7 +69,7 @@ struct AlignRunnerState {
     }
     [[nodiscard]] Source measuredSource() const {
         const bool high = wizard->step() == WizardStep::MeasuringHigh;
-        return (high == (answers.highPass == Source::Main)) ? Source::Main : Source::Sub;
+        return (high == (runAnswers.highPass == Source::Main)) ? Source::Main : Source::Sub;
     }
     [[nodiscard]] rta::platform::SourceVariant pinkSource() const {
         const auto seed = static_cast<std::uint64_t>(host.nowMs());
@@ -339,7 +339,7 @@ void AlignRunnerState::trySubmit(double now) {
         return;
     }
 
-    const AlignAnswers asked = answers;
+    const AlignAnswers asked = runAnswers;  // the run's own answers, never the combos' live ones
     const std::string label = host.timeLabel ? host.timeLabel() : std::string("--");
     const WizardStep before = wizard->step();
     if (before == WizardStep::MeasuringSum) {

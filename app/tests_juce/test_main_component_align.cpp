@@ -98,7 +98,15 @@ void measureToVerdict(MainComponent& c) {
     REQUIRE(tickUntil(c, [&] { return alignPane(c).measureButtonForTest().isEnabled(); }, 20000));
     alignPane(c).measureButtonForTest().onClick();
     REQUIRE(runnerOf(c).busy());
+    // The four questions and both output pickers are read-only while it runs.
+    CHECK_FALSE(alignPane(c).highPassComboForTest().isEnabled());
+    CHECK_FALSE(alignPane(c).topologyComboForTest().isEnabled());
+    CHECK_FALSE(alignPane(c).inversionComboForTest().isEnabled());
+    CHECK_FALSE(alignPane(c).seedComboForTest().isEnabled());
+    CHECK_FALSE(alignPane(c).mainOutputComboForTest().isEnabled());
+    CHECK_FALSE(alignPane(c).subOutputComboForTest().isEnabled());
     REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    CHECK(alignPane(c).highPassComboForTest().isEnabled());
 }
 
 }  // namespace
@@ -128,6 +136,11 @@ TEST_CASE("align: MEASURE, the coarse offset and SUM through the real pane (the 
     WARN("T6 tau = " << tauMs << " ms (bound |tau - 2| < 2), delta = " << deltaDeg
                      << " deg (bound |delta| < 90), R = " << verdict.agreement << ", crossover "
                      << verdict.crossoverHz << " Hz, " << verdict.candidateTausSeconds.size() << " candidates");
+    // The ON estimate runs through the dual-FFT estimator (pink noise, Hann, few
+    // bins inside the fit window, a 100-sample intra-frame delay) and reads
+    // tau about +0.05..+0.24 ms high and delta -5..-15 deg; the OFF analytic
+    // fixture reads 2.000 ms exactly. Record l7 sec.4's tau*/phi0 trade-off, not
+    // a defect: the bound below only separates a swapped solo (about -2 ms).
     CHECK(std::abs(tauMs - 2.0) < 2.0);
     CHECK(std::abs(deltaDeg) < 90.0);
     CHECK(alignPane(c).readoutForTest().contains("crossover "));
@@ -158,16 +171,25 @@ TEST_CASE("align: MEASURE, the coarse offset and SUM through the real pane (the 
     CHECK(library.entries()[2].name.rfind("ALIGN SUM @ ", 0) == 0);
     CHECK(library.entries()[2].group == "ALIGN");
 
-    // The measured sum against the predicted sum, at the crossover bin.
+    // SUM routed BOTH outputs (a main-only SUM reads 6.02 dB lower). The
+    // fixture never dials the 96-sample delay in, so the measured sum is the
+    // UNALIGNED one: at fc each LR4 side is -6.02 dB (amplitude 1/2) and the
+    // two are 2*pi*fc*96/fs = 72 degrees apart, so the sum is
+    // 2*(1/2)*cos(36 deg) = 0.809 = -1.84 dB (closed form). The bound 0.9 dB is
+    // half the distance to the ALIGNED sum (0 dB) -- discrimination, not
+    // accuracy -- and 4.2 dB from the main-only mutant.
     alignPane(c).tickForTest();
     const auto& surface = alignPane(c).surfaceForTest();
     REQUIRE(surface.gap().has_value());
     const auto bin = static_cast<std::size_t>(std::lround(verdict.crossoverHz / surface.binWidthHz()));
     REQUIRE(bin < surface.gap()->perBinDb.size());
     const double gapDb = surface.gap()->perBinDb[bin];
-    WARN("T6 SUM gap at fc = " << gapDb << " dB (bound |gap| < 3), measured "
-                               << surface.measuredSumDb()[bin] << " dB, predicted "
-                               << surface.predictedSumDb()[bin] << " dB");
+    const double measuredDb = surface.measuredSumDb()[bin];
+    constexpr double kUnalignedSumDb = -1.8394;  // 20*log10(cos(36 deg))
+    WARN("T6 SUM at fc: measured " << measuredDb << " dB (closed form " << kUnalignedSumDb
+                                   << ", bound 0.9), predicted " << surface.predictedSumDb()[bin]
+                                   << " dB, gap " << gapDb << " dB (bound |gap| < 3)");
+    CHECK(std::abs(measuredDb - kUnalignedSumDb) < 0.9);
     CHECK(std::abs(gapDb) < 3.0);
 }
 

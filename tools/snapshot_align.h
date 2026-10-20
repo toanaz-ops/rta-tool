@@ -8,12 +8,14 @@
 namespace rta::tools
 {
 
-// Drives the REAL ALIGN pane against SYNTHETIC with the plan's fixture (an
-// LR4 high-pass after 4 samples on output 0, an LR4 low-pass after 100 on
-// output 1): answers the four questions through the pane's own combos, presses
-// MEASURE, types the coarse offset, presses SUM, then renders
-// "main-live-align.png". Increments `failures` and prints a FAILED message --
-// never a silent placeholder render -- if any step does not complete.
+// Drives the REAL ALIGN pane against SYNTHETIC: answers the four questions
+// through the pane's own combos, presses MEASURE, types the coarse offset,
+// presses SUM, then renders it twice -- "main-live-align.png" with the SHIPPED
+// SYNTHETIC defaults (what an operator sees) and "main-live-align-lr4.png" with
+// the plan's LR4 high-pass / low-pass fixture (what the T6 bounds are derived
+// from; reachable only through the test hook). Increments `failures` and
+// prints a FAILED message -- never a silent placeholder render -- if any step
+// does not complete.
 void renderAlignSpecimen (const juce::File& outDir, int& failures);
 
 } // namespace rta::tools

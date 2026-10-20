@@ -237,8 +237,18 @@ New: `AlignRunner` ~160/300; `AlignReadout` ~60/160; `TransferDwell.h` ~30;
 5. Dial the delay into the processor, press SUM: measured sum lies on the
    predicted sum near fc.
 6. Move the sub 1 m back and repeat: suggested delay grows by ~2.9 ms.
-7. No hardware: SYNTHETIC → ALIGN → MEASURE → type 2 ms → verdict for the ch 1
-   default pair.
+7. No hardware: SYNTHETIC → ALIGN → answer HP = MAIN, LR-4, NOT INVERTED, NO
+   SEED → MEASURE → type 2 ms → SET OFFSET. With the SHIPPED defaults (ch 0 the
+   H4 40 Hz–16 kHz band-pass +4, ch 1 the LR4 low-pass at 100 Hz +100, decision
+   10) the pane reads a crossover between the two corners (about 55 Hz), a delay
+   on MAIN of a few ms (the 96-sample offset plus the skirts' group delay), a Δ
+   beyond 90° and the opposite-polarity sentence. That is the right reading of
+   THAT pair, not a fault: a 2nd-order band-pass skirt against a 4th-order
+   low-pass is not an LR-4 crossover (`test_main_component_align_defaults.cpp`
+   locks these structural facts; `main-live-align.png` shows them). The LR4
+   high-pass/low-pass pair the T6 bounds come from (τ ≈ 2 ms, Δ ≈ 0, no
+   inversion sentence; `main-live-align-lr4.png`) is reachable through the test
+   hook `restartSyntheticForTest` only, not from a button.
 
 SYNTHETIC cannot show reflections, drift or real driver band edges.
 

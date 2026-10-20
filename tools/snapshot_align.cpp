@@ -40,35 +40,40 @@ bool pumpUntil (MainComponent& component, rta::view::AlignPaneView& pane, Predic
     return done();
 }
 
-bool fail (const char* what, int& failures)
+bool fail (const char* what, const char* fileName, int& failures)
 {
-    std::printf ("FAILED: main-live-align.png -- %s\n", what);
+    std::printf ("FAILED: %s -- %s\n", fileName, what);
     ++failures;
     return false;
 }
 
-} // namespace
-
-void renderAlignSpecimen (const juce::File& outDir, int& failures)
+// `useFixture` false: the SHIPPED SYNTHETIC defaults, what an operator gets
+// (output 0 a 40 Hz - 16 kHz band-pass, output 1 an LR4 low-pass at 100 Hz).
+// true: the plan's LR4 high-pass / low-pass pair, reachable only through the
+// test hook, which is the pair the T6 bounds are derived from.
+void renderOne (const juce::File& outDir, const char* fileName, bool useFixture, int& failures)
 {
     constexpr double kFs = 48000.0;
     MainComponent component;
     component.setSyntheticMode (true);
 
-    rta::measure::SyntheticInput::Config config;
-    config.sampleRate = kFs;
-    config.measurementDelaySamples = 4;
-    config.measurementFilter = rta::measure::lr4HighPass (100.0, kFs);
-    config.secondOutputDelaySamples = 100;
-    config.secondOutputFilter = rta::measure::lr4LowPass (100.0, kFs);
-    Access::restartSyntheticForTest (component, config);
+    if (useFixture)
+    {
+        rta::measure::SyntheticInput::Config config;
+        config.sampleRate = kFs;
+        config.measurementDelaySamples = 4;
+        config.measurementFilter = rta::measure::lr4HighPass (100.0, kFs);
+        config.secondOutputDelaySamples = 100;
+        config.secondOutputFilter = rta::measure::lr4LowPass (100.0, kFs);
+        Access::restartSyntheticForTest (component, config);
+    }
 
     component.selectPaneView (rta::view::PaneSelectorButton::Align);
     auto* pane = dynamic_cast<rta::view::AlignPaneView*> (
         const_cast<juce::Component*> (&Access::pane (component)));
     if (pane == nullptr)
     {
-        fail ("the ALIGN pane did not build", failures);
+        fail ("the ALIGN pane did not build", fileName, failures);
         return;
     }
     auto& runner = Access::alignForTest (component).runnerForTest();
@@ -80,13 +85,13 @@ void renderAlignSpecimen (const juce::File& outDir, int& failures)
 
     if (! pumpUntil (component, *pane, [&] { return pane->measureButtonForTest().isEnabled(); }, 20000))
     {
-        fail ("MEASURE never became enabled (no TRANSFER snapshot)", failures);
+        fail ("MEASURE never became enabled (no TRANSFER snapshot)", fileName, failures);
         return;
     }
     pane->measureButtonForTest().onClick();
     if (! pumpUntil (component, *pane, [&] { return ! runner.busy(); }, 40000) || ! runner.verdict().has_value())
     {
-        fail ("MEASURE did not reach a verdict", failures);
+        fail ("MEASURE did not reach a verdict", fileName, failures);
         return;
     }
     pane->offsetEditorForTest().setText ("2.0", juce::dontSendNotification);
@@ -95,7 +100,7 @@ void renderAlignSpecimen (const juce::File& outDir, int& failures)
     pumpUntil (component, *pane, [&] { return Access::outputSourceQuiescentForTest (component); }, 20000);
     if (! pane->sumButtonForTest().isEnabled())
     {
-        fail ("SUM stayed disabled after the coarse offset", failures);
+        fail ("SUM stayed disabled after the coarse offset", fileName, failures);
         return;
     }
     pane->sumButtonForTest().onClick();
@@ -103,11 +108,19 @@ void renderAlignSpecimen (const juce::File& outDir, int& failures)
     pane->tickForTest();  // the pane redraws on the revision the finished SUM bumped
     if (! sumDone || ! pane->surfaceForTest().gap().has_value())
     {
-        fail ("SUM did not produce a measured sum", failures);
+        fail ("SUM did not produce a measured sum", fileName, failures);
         return;
     }
-    if (! renderComponent (component, outDir, "main-live-align.png", 1280, 800))
+    if (! renderComponent (component, outDir, fileName, 1280, 800))
         ++failures;
+}
+
+} // namespace
+
+void renderAlignSpecimen (const juce::File& outDir, int& failures)
+{
+    renderOne (outDir, "main-live-align.png", false, failures);
+    renderOne (outDir, "main-live-align-lr4.png", true, failures);
 }
 
 } // namespace rta::tools
