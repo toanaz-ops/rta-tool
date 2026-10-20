@@ -64,15 +64,18 @@ void startRoom(MainComponent& c, std::uint32_t seed) {
     config.seed = seed;
     Access::restartSyntheticForTest(c, config);
     sweepOf(c).setDurationsForTest(1.0, 3.0);
+    // The capture timeout runs on the wall clock while the loopback is paced by it
+    // too: a saturated box aborts a healthy sweep. Stretch the slack as H5 does.
+    sweepOf(c).setTimeoutSlackForTest(30000.0);
 }
 
 void pressSweep(MainComponent& c, double tailSeconds) {
     auto& pane = paneOf(c);
     Access::rt60ForTest(c).settingsForTest().tailSeconds = tailSeconds;
-    REQUIRE(tickUntil(c, [&] { return pane.sweepButtonForTest().isEnabled(); }, 20000));
+    REQUIRE(tickUntil(c, [&] { return pane.sweepButtonForTest().isEnabled(); }, 600000));
     pane.sweepButtonForTest().onClick();
     REQUIRE(sweepOf(c).busy());
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 90000));
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 600000));
 }
 
 void paintAll(rta::view::Rt60PaneView& pane) {
@@ -103,6 +106,8 @@ TEST_CASE("rt60 B: the comb room's decay curve is a straight line to within a st
         std::printf("RT60-W comb %5d Hz  T30 %.3f  -5/-35 fit: max residual %.2f dB (bound 1.5, step 0.75)  points %zu\n",
                     band.nominalHz, band.t30.seconds, band.edc.t30.maxResidualDb, band.edc.db.size());
         CHECK(band.edc.t30.maxResidualDb < 1.5);
+        // A staircase is not a line: a residual of exactly zero means nothing was measured.
+        CHECK(band.edc.t30.maxResidualDb > 0.0);
         ++checked;
     }
     CHECK(checked == 7);

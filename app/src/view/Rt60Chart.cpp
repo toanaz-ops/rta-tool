@@ -92,9 +92,14 @@ void Rt60Chart::paint(juce::Graphics& g) {
     // Grid: a hairline every 10 dB, labelled at the left, and a time tick at a
     // readable step along the bottom.
     g.setFont(az::ui::monoFont(az::ui::readoutFontSize));
-    for (float db = 0.0f; db >= floorDb; db -= kFloorStepDb) {
+    // Labels thin out (every 20, 40 dB) when the plot is too short to keep them apart.
+    const float pixelsPerStep = plot.getHeight() * kFloorStepDb / -floorDb;
+    const int labelEvery = pixelsPerStep >= 14.0f ? 1 : (pixelsPerStep >= 7.0f ? 2 : 4);
+    int stepIndex = 0;
+    for (float db = 0.0f; db >= floorDb; db -= kFloorStepDb, ++stepIndex) {
         g.setColour(grid);
         g.drawHorizontalLine(static_cast<int>(yOf(db)), plot.getX(), plot.getRight());
+        if (stepIndex % labelEvery != 0) continue;
         g.setColour(axisText);
         g.drawText(juce::String(static_cast<int>(db)), bounds.getX(), static_cast<int>(yOf(db)) - 7, kMarginLeft - 6, 14,
                    juce::Justification::centredRight, false);
@@ -147,11 +152,11 @@ void Rt60Chart::paint(juce::Graphics& g) {
     g.setFont(az::ui::monoFont(az::ui::readoutFontSize));
     g.setColour(az::ui::dim);
     g.drawText(juce::String(juce::CharPointer_UTF8(caption_.c_str())), bounds.getX() + kMarginLeft, 0,
-               bounds.getWidth() / 2, kMarginTop, juce::Justification::centredLeft, true);
+               bounds.getWidth() * 2 / 5, kMarginTop, juce::Justification::centredLeft, true);
     juce::String legendText;
     for (const auto& line : legend_) legendText += juce::String(line) + "   ";
     g.setColour(az::ui::text);
-    g.drawText(legendText.trimEnd(), bounds.getX() + bounds.getWidth() / 2, 0, bounds.getWidth() / 2 - kMarginRight,
+    g.drawText(legendText.trimEnd(), bounds.getX() + bounds.getWidth() * 2 / 5, 0, bounds.getWidth() * 3 / 5 - kMarginRight,
                kMarginTop, juce::Justification::centredRight, true);
 }
 

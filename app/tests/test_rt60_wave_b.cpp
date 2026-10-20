@@ -310,6 +310,45 @@ TEST_CASE("an ensemble refuses what it cannot average: no IR, different sample r
     CHECK(analyseRt60Ensemble({}).refusal == Rt60Refusal::NoIr);
 }
 
+TEST_CASE("an ensemble answers only where EVERY capture established the band", kTag) {
+    auto a = fx::buildIr(roomSpec(0.80, 1000));  // trusted from 80 Hz
+    auto b = fx::buildIr(roomSpec(0.80, 2000));
+    b.trustedLowHz = 100.0;  // a sweep that started higher: the 125 Hz octave's edge, 89.1 Hz, is outside
+    const std::vector<const SweepIr*> both = {&a, &b};
+    const auto ens = analyseRt60Ensemble(both);
+    REQUIRE(ens.analysed());
+    CHECK(ens.trustedLowHz == 100.0);  // the tighter of the two, not the looser
+    const auto* low = ensembleBandAt(ens, 125);
+    REQUIRE(low != nullptr);
+    CHECK(low->refusal == Rt60Refusal::OutsideTrustedBand);
+    CHECK(rt60EnsembleRow(*low, ens).note.find("(100 Hz)") != std::string::npos);
+    const auto* mid = ensembleBandAt(ens, 1000);
+    REQUIRE(mid != nullptr);
+    CHECK(mid->t30.has());
+}
+
+TEST_CASE("an ensemble band too narrow for the decay says so with B*T, as the single table does", kTag) {
+    fx::IrSpec spec;
+    spec.harmonicSpacingL = shippedL();
+    spec.trustedLowHz = 0.0;
+    spec.trustedHighHz = 0.0;
+    spec.components = fx::flatRoom(0.40, 1000);
+    const auto a = fx::buildIr(spec);
+    spec.components = fx::flatRoom(0.40, 2000);
+    spec.floorSeed = 123;
+    const auto b = fx::buildIr(spec);
+    const std::vector<const SweepIr*> two = {&a, &b};
+    const auto ens = analyseRt60Ensemble(two, Rt60BandSet::Third);
+    REQUIRE(ens.analysed());
+    const auto* fifty = ensembleBandAt(ens, 50);
+    REQUIRE(fifty != nullptr);
+    CHECK(fifty->t30.refusal == Rt60Refusal::BandwidthTimeTooSmall);
+    CHECK(fifty->bandwidthTime > 0.0);  // a 11.6 Hz band at a decay under 0.52 s: below the bar of 6
+    CHECK(fifty->bandwidthTime < 6.0);
+    CHECK(rt60EnsembleRow(*fifty, ens).note.find("band too narrow for a decay this short") != std::string::npos);
+    CHECK(rt60EnsembleRow(*fifty, ens).t30 == "--");
+}
+
 TEST_CASE("wall time of the heavy analyses, printed for decision 11", kTag) {
     const auto a = fx::buildIr(roomSpec(0.80, 1000));
     std::vector<SweepIr> irs;

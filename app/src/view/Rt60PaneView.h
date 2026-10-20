@@ -93,6 +93,8 @@ struct Rt60PaneBinding {
 };
 
 class Rt60PaneView final : public juce::Component, public LibraryConsumer, private juce::Timer {
+    static constexpr int kHzColumnProbe = 20;  // inside the Hz column of every row
+
 public:
     explicit Rt60PaneView(Rt60PaneBinding binding);
     ~Rt60PaneView() override;
@@ -133,6 +135,11 @@ public:
     void chooseEnsembleEntryForTest(int index) { chooseEnsembleEntry(index); }
     /// Clicks a table row, 0-based among the bands shown.
     void clickRowForTest(int row) { selectRow(row); }
+    /// Where the middle of table row `row` is, in the pane's own coordinates, so a
+    /// test can deliver a real mouse-down to it instead of calling `selectRow`.
+    [[nodiscard]] juce::Point<int> rowCentreForTest(int row) const {
+        return {tableArea_.getX() + kHzColumnProbe, tableArea_.getY() + (row + 1) * rowHeight_ + rowHeight_ / 2};
+    }
     [[nodiscard]] bool showingEnsembleForTest() const noexcept { return ensembleShown_ != nullptr; }
     [[nodiscard]] int chartBandIndexForTest() const noexcept { return chartBand_; }
 

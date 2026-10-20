@@ -165,6 +165,23 @@ TEST_CASE("rt60 pane B: a row click feeds the chart the band's own curve, spans 
     paintAll(pane);
     CHECK(pane.chartForTest().drawnPointsForTest().empty());
     CHECK(pane.chartForTest().captionForTest().find("63 Hz: no decay curve") != std::string::npos);
+    // The same through a real mouse-down on the painted row: row 3 is 500 Hz, and
+    // the heading line above row 0 is not a row.
+    const auto mouseDownAt = [&pane](juce::Point<int> where) {
+        const juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(), where.toFloat(),
+                                     juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &pane, &pane,
+                                     juce::Time::getCurrentTime(), where.toFloat(), juce::Time::getCurrentTime(), 1,
+                                     false);
+        static_cast<juce::Component&>(pane).mouseDown(event);
+    };
+    mouseDownAt(pane.rowCentreForTest(3));
+    CHECK(pane.chartBandIndexForTest() == 3);
+    CHECK(result->bands[3].nominalHz == 500);
+    mouseDownAt(pane.rowCentreForTest(-1));  // the column heading
+    CHECK(pane.chartBandIndexForTest() == 3);
+    mouseDownAt(pane.rowCentreForTest(7));   // the last row (8000 Hz)
+    CHECK(pane.chartBandIndexForTest() == 7);
+    pane.clickRowForTest(0);
     // Out-of-range clicks change nothing.
     pane.clickRowForTest(99);
     pane.clickRowForTest(-1);

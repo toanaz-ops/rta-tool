@@ -73,7 +73,9 @@ void Rt60PaneView::layoutBody() {
     statusLabel_.setBounds(area.removeFromTop(kStatusHeight));
     area.removeFromTop(az::ui::gap);
     footnoteLabel_.setBounds(area.removeFromBottom(kFootnoteHeight));
-    adviceLabel_.setBounds(area.removeFromBottom(kAdviceHeight));
+    // The advice line takes its height only when there is advice: an empty one
+    // would otherwise take 40 px from a chart that is already short.
+    adviceLabel_.setBounds(area.removeFromBottom(adviceLabel_.getText().isEmpty() ? 0 : kAdviceHeight));
 
     const int lines = static_cast<int>(bandCount()) + 1;  // + the column heading
     rowHeight_ = std::clamp((area.getHeight() - kChartMinHeight) / lines, kMinRowHeight, kRowHeight);
