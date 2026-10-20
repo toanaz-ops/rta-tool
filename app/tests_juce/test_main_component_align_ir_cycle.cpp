@@ -26,7 +26,7 @@ TEST_CASE("align IR (T11): an LR-8 pair resolves to the right cycle from the IRs
     config.measurementFilter = rta::measure::topologyCascade(lr8, true, 100.0, kFs);
     config.secondOutputFilter = rta::measure::topologyCascade(lr8, false, 100.0, kFs);
     prepare(c, config, /*topologyId=*/3);
-    sweepOf(c).setDurationsForTest(10.0, 3.0);
+    setSweepDurations(c, 10.0, 3.0);
     auto& pane = alignPane(c);
     sweepThrough(c, pane.irPanelForTest().sweepMainButtonForTest());
     sweepThrough(c, pane.irPanelForTest().sweepSubButtonForTest());
@@ -35,7 +35,7 @@ TEST_CASE("align IR (T11): an LR-8 pair resolves to the right cycle from the IRs
     const long raw = runnerOf(c).boundIr(Source::Sub)->arrivalSamples - runnerOf(c).boundIr(Source::Main)->arrivalSamples;
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     WARN("LR-8: raw arrival difference " << raw << ", used " << (runnerOf(c).cycleSamples() ? *runnerOf(c).cycleSamples() : -99999)
                                          << ", readout: " << pane.readoutForTest().replace("\n", " | "));
     CHECK(runnerOf(c).step() == WizardStep::Computed);
@@ -61,7 +61,7 @@ TEST_CASE("align IR (T11): a box with extra filtering is resolved right or asked
         prepare(c, config);
         // The shipped sweep: the 2 s test sweep makes the 40 Hz high-pass's IR (a long
         // tail whose peak the short window cannot place) refuse with ArrivalOutOfWindow.
-        sweepOf(c).setDurationsForTest(10.0, 3.0);
+        setSweepDurations(c, 10.0, 3.0);
         auto& pane = alignPane(c);
         sweepThrough(c, pane.irPanelForTest().sweepMainButtonForTest());
         sweepThrough(c, pane.irPanelForTest().sweepSubButtonForTest());
@@ -70,7 +70,7 @@ TEST_CASE("align IR (T11): a box with extra filtering is resolved right or asked
         REQUIRE(runnerOf(c).boundIr(Source::Sub) != nullptr);
         REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
         pane.measureButtonForTest().onClick();
-        REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+        REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
         const double pureMs = 1000.0 * static_cast<double>(subDelay - 4) / kFs;
         WARN("probe sub delay " << subDelay << ": step " << static_cast<int>(runnerOf(c).step()) << ", hint "
              << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999) << " samples, pure " << pureMs
@@ -101,7 +101,7 @@ TEST_CASE("align IR (T11): a box with extra filtering is resolved right or asked
 TEST_CASE("align IR (T11): on the shipped defaults the run asks, without a seed and with a 100 Hz one", kTag) {
     MainComponent c;
     c.setSyntheticMode(true);  // the shipped defaults: no restartSyntheticForTest
-    sweepOf(c).setDurationsForTest(10.0, 3.0);
+    setSweepDurations(c, 10.0, 3.0);
     c.selectPaneView(rta::view::PaneSelectorButton::Align);
     auto& pane = alignPane(c);
     pane.highPassComboForTest().setSelectedId(1, juce::sendNotificationSync);
@@ -115,7 +115,7 @@ TEST_CASE("align IR (T11): on the shipped defaults the run asks, without a seed 
 
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     WARN("no seed: step " << static_cast<int>(runnerOf(c).step()) << ", crossover " << runnerOf(c).verdict()->crossoverHz
          << " Hz, hint " << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999));
     CHECK(runnerOf(c).step() == WizardStep::AskingCycle);
@@ -125,7 +125,7 @@ TEST_CASE("align IR (T11): on the shipped defaults the run asks, without a seed 
     pane.seedComboForTest().setSelectedId(4, juce::sendNotificationSync);  // SEED 100 HZ
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     WARN("seed 100: step " << static_cast<int>(runnerOf(c).step()) << ", crossover " << runnerOf(c).verdict()->crossoverHz
          << " Hz, hint " << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999)
          << ", readout: " << pane.readoutForTest().replace("\n", " | "));

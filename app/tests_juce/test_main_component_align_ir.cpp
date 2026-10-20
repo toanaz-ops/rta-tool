@@ -104,7 +104,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
     REQUIRE(runnerOf(c).busy());
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     INFO("status: " << runnerOf(c).status());
     CHECK(runnerOf(c).step() == WizardStep::Computed);  // not AskingCycle
     CHECK(runnerOf(c).cycleFromIr());
@@ -167,7 +167,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(runnerOf(c).boundIr(Source::Main) == nullptr);
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     CHECK(runnerOf(c).step() == WizardStep::AskingCycle);
     CHECK_FALSE(runnerOf(c).cycleFromIr());
 
@@ -176,7 +176,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
     REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
     pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     CHECK(runnerOf(c).step() == WizardStep::Computed);
     // The crossover is estimated afresh from pink noise each run, so its lag may differ by a sample or two.
     CHECK(*runnerOf(c).cycleSamples() == subArrival - mainArrival - lagAt(runnerOf(c).verdict()->crossoverHz));
@@ -218,7 +218,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN/SUB and MEASURE obey the same busy predica
     CHECK(sweepOf(c).readoutForTest().contains("refused"));
     CHECK(Access::libraryForTest(c).entries().size() == before);
     CHECK(runnerOf(c).busy());  // the run was not disturbed
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
 }
 
 TEST_CASE("align IR (T11): a result from another output does not bind", kTag) {
@@ -260,7 +260,7 @@ TEST_CASE("align IR (T11): an IR measured at another sample rate is ignored, and
     REQUIRE(runnerOf(c).busy());
     CHECK(runnerOf(c).status().find("IR MAIN ignored: its sample rate differs") != std::string::npos);
     CHECK(runnerOf(c).status().find("IR SUB ignored") != std::string::npos);
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, 40000));
+    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
     CHECK(runnerOf(c).step() == WizardStep::AskingCycle);  // nothing was supplied
     CHECK_FALSE(runnerOf(c).irHintSamples().has_value());
 }

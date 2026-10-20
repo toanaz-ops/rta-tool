@@ -48,6 +48,39 @@ inline rta::view::AlignPaneView& alignPane(MainComponent& c) {
 inline rta::measure::AlignRunner& runnerOf(MainComponent& c) { return Access::alignForTest(c).runnerForTest(); }
 inline MainComponentSweep& sweepOf(MainComponent& c) { return Access::sweepForTest(c); }
 
+// A sweep is played in REAL time by the loopback (13 s for the shipped 10 s + 3 s
+// tail), so how long a test may wait is a function of the sweep it asked for, not
+// a constant that load can blow: budget = kSlack x (sweep + tail + 1 s pre-roll),
+// floored at 60 s. kSlack = 6 is the headroom for a 100 %-loaded box (the wall
+// clock paces the loopback, the analysis shares the cores); unloaded the wait is
+// about 1.1 x nominal. An earlier fixed 60 s lost to load on a case that
+// legitimately runs 72 s end to end (two boxes x two sweeps).
+inline constexpr double kBudgetSlack = 6.0;
+inline double gSweepSeconds = 2.0;
+inline double gTailSeconds = 0.5;
+inline void setSweepDurations(MainComponent& c, double sweepSeconds, double tailSeconds) {
+    gSweepSeconds = sweepSeconds;
+    gTailSeconds = tailSeconds;
+    sweepOf(c).setDurationsForTest(sweepSeconds, tailSeconds);
+    // The sweep's own capture timeout (length + 5 s) and 100 ms settle run on the
+    // wall clock while the loopback is paced by it too, so a saturated box aborts
+    // a healthy sweep ("no capture -- no REF on route 1?"). Run the sweep's clock
+    // kBudgetSlack times slower: every timeout inside it stretches by the same
+    // derived factor as the test budgets above.
+    sweepOf(c).setClockForTest(
+        [] { return juce::Time::getMillisecondCounterHiRes() / kBudgetSlack; });
+}
+/// MEASURE: two steps, each a settle (0.5 s) plus the dwell (transferFifoDepth *
+/// fftSize / fs = 1.365 s at the defaults) in real time, plus a 1 s allowance for
+/// the fit; the same slack; floored at 40 s (the former constant).
+inline int measureBudgetMs() {
+    constexpr double kDwellSeconds = 1.365;
+    return std::max(40000, static_cast<int>(1000.0 * kBudgetSlack * (2.0 * (0.5 + kDwellSeconds) + 1.0)));
+}
+inline int sweepBudgetMs() {
+    return std::max(60000, static_cast<int>(1000.0 * kBudgetSlack * (gSweepSeconds + gTailSeconds + 1.0)));
+}
+
 template <typename Predicate>
 bool tickUntil(MainComponent& c, Predicate&& done, int timeoutMs) {
     const auto deadline = juce::Time::getMillisecondCounter() + static_cast<std::uint32_t>(timeoutMs);
@@ -100,7 +133,7 @@ inline void prepare(MainComponent& c, rta::measure::SyntheticInput::Config confi
                     int topologyId = 2) {
     c.setSyntheticMode(true);
     Access::restartSyntheticForTest(c, config);
-    sweepOf(c).setDurationsForTest(2.0, 0.5);
+    setSweepDurations(c, 2.0, 0.5);
     c.selectPaneView(rta::view::PaneSelectorButton::Align);
     auto& pane = alignPane(c);
     pane.highPassComboForTest().setSelectedId(1, juce::sendNotificationSync);   // MAIN is high-pass
@@ -111,10 +144,15 @@ inline void prepare(MainComponent& c, rta::measure::SyntheticInput::Config confi
 
 /// A SWEEP button's own handler, then the sweep to completion.
 inline void sweepThrough(MainComponent& c, juce::Button& button) {
-    REQUIRE(tickUntil(c, [&] { return button.isEnabled(); }, 20000));
+    // A press while the previous excitation is still ramping out is refused ("the output is
+    // still playing a source"); under load the ramp (paced by the wall clock) outlasts the
+    // finished sweep, so wait for the engine itself to report quiescence.
+    REQUIRE(tickUntil(c, [&] { return button.isEnabled() && Access::outputSourceQuiescentForTest(c); }, 20000));
     button.onClick();
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
     REQUIRE(sweepOf(c).busy());
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, sweepBudgetMs()));
+    UNSCOPED_INFO("sweep finished: " << sweepOf(c).readoutForTest());
 }
 
 /// The readout's delay is the fit candidate the cycle integer chose. Its VALUE
