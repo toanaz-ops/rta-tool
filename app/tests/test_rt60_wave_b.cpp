@@ -110,7 +110,7 @@ TEST_CASE("third-octave bands under the shipped sweep: 50, 63 and 80 Hz refused 
 }
 
 TEST_CASE("a third-octave band too narrow for a 0.4 s decay refuses on B*T, 40 Hz and 50 Hz included", kTag) {
-    // B*T < 6 refuses (core's bar). B = 0.2316 * centre for a third; T = 0.4 s:
+    // B*T < 6 refuses (core's bar). B = 0.2308 * centre for a third (base ten: 10^0.05 - 10^-0.05); T = 0.4 s:
     // 40 Hz -> 3.7, 50 Hz -> 4.6. The table starts at 50 Hz, so the 40 Hz third is
     // reached through the explicit-band entry point.
     fx::IrSpec spec;

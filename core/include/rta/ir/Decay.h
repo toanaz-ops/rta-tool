@@ -336,12 +336,27 @@ struct DecayConfig {
 /// response, excluding costs -3.06 dB at 1/3-octave 40 Hz where including costs
 /// -0.33 dB. Both conventions were measured; the numbers are in Decay.cpp.
 ///
+/// Only the filter's own pre-ring is counted, not everything before the origin.
+///
+/// `lowBandEdgeHz` is the low edge of the band `bandResponse` was filtered to.
+/// The energy summed before the origin is limited to the last
+/// `leadInSamplesFor(sampleRate, lowBandEdgeHz)` samples -- two cycles of that
+/// edge, the same extent `analyseSpectrum` treats as the filter's pre-ring.
+/// Without the bound the sum ran from sample 0, and on a `Deconvolution` the
+/// origin is a whole sweep length in: seconds of pre-arrival floor and the
+/// harmonic-distortion packets at -L*ln(N) were booked as EARLY, biasing
+/// C50/C80/D50 upward by an amount set by the sweep length and the
+/// loudspeaker's distortion rather than by the room. If the buffer holds fewer
+/// samples before the origin than that, all of them are used. A non-positive
+/// `lowBandEdgeHz` refuses every figure, like a non-positive sample rate.
+///
 /// Refuses when the response ends before the split point, rather than treating
 /// a missing late half as silence, which would report a magnificent room for a
 /// capture that simply stopped early.
 [[nodiscard]] Clarity clarity(std::span<const float> bandResponse,
                               std::size_t originIndex,
                               double sampleRate,
+                              double lowBandEdgeHz,
                               const EnergyDecayCurve& curve);
 
 }  // namespace rta::ir

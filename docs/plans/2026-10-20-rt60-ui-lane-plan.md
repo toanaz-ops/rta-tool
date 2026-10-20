@@ -27,7 +27,7 @@ literature and tools that restate the standards, attributed to their source.
   h(t) = n(t)·e^{−t/τ} it is a straight line in dB, slope −60/T,
   T = 3·ln10·τ — the closed form behind every device-free bound below.
 - Lundeby, Vigran, Bietz, Vorländer, Acustica 81 (1995) 344–355: iterative
-  crossing search + correction `p²(t_c)·τ`. Derived in core (`DecayLundeby.cpp`;
+  crossing search + a correction that reads the regression line at t_c (record §11a; it was one sample, `p²(t_c)·τ`, until the audit). Derived in core (`DecayLundeby.cpp`;
   record §3 lists every constant).
 - Chu, JASA 63 (1978) 1444–1450: subtract mean noise power. Not adopted (decision 6).
 - Jacobsen 1987 / Jacobsen & Rindel 1987: band-passed decay valid for
@@ -269,7 +269,7 @@ New: `Rt60Analysis` ~80/190; `Rt60Bands.h` ~45; `Rt60Readout` ~50/130;
    fault. The comb room (T = 0.80 s) is reachable only via
    `restartSyntheticForTest`; `main-live-rt60.png` shows it.
 
-**Added by wave B (what a human sees now; record section 11):**
+**Added by wave B (what a human sees now; record section 12):**
 
 8. Click a table row: the chart under the table draws that band's decay curve
    (dB down, seconds across) with the EDT, T20 and T30 fit spans over it and

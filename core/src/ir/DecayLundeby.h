@@ -36,6 +36,12 @@ struct Crossing {
     std::size_t index = 0;
     double noisePower = 0.0;
     double slopeDbPerSample = 0.0;
+
+    /// The late-decay regression line, `level_dB(i) = interceptDb - slopeDbPerSample * i`,
+    /// with `i` in samples from the start of the squared response. Carried so the
+    /// truncation correction can read the line at the crossing instead of a single
+    /// noisy sample there.
+    double interceptDb = 0.0;
 };
 
 /// Lundeby's iterative search for where the decay meets the noise floor.
