@@ -48,6 +48,12 @@ bool AlignRunner::cycleFromIr() const noexcept { return impl_->cycleFromIr; }
 std::optional<std::ptrdiff_t> AlignRunner::irHintSamples() const noexcept {
     return impl_->wizard ? impl_->wizard->irCycleHintSamples() : std::nullopt;
 }
+std::optional<SeedDisagreement> AlignRunner::seedDisagreement() const noexcept {
+    return impl_->wizard ? impl_->wizard->seedDisagreement() : std::nullopt;
+}
+bool AlignRunner::engineQuiescent() const noexcept {
+    return impl_->engine != nullptr && impl_->engine->sourceIsQuiescent();
+}
 double AlignRunner::lastComputeMs() const noexcept { return impl_->lastComputeMs; }
 double AlignRunner::sampleRate() const noexcept { return impl_->pressedSampleRate; }
 const rta::trace::Trace* AlignRunner::mainCapture() const noexcept {
@@ -342,6 +348,16 @@ void AlignRunnerState::afterSubmit(const AlignAnswers& asked) {
     }
     outcome = AlignOutcome::Measured;
     if (now == WizardStep::AskingCycle) {
+        if (wizard->seedDisagreement().has_value()) {
+            const SeedDisagreement& s = *wizard->seedDisagreement();
+            char text[200];
+            std::snprintf(text, sizeof text,
+                          "ALIGN: fit done -- seed and measured crossing disagree (%.0f Hz vs %.0f Hz), so the "
+                          "IRs did not choose; type the coarse offset in ms (both IR hints are shown)",
+                          s.seedHz, s.crossingHz);
+            say(text);
+            return;
+        }
         say(wizard->irCycleHintSamples().has_value()
                 ? "ALIGN: fit done -- the bound IRs fit no candidate clearly (see the hint); type the coarse offset in ms"
                 : "ALIGN: fit done -- type the coarse offset in ms to choose among the candidates");

@@ -62,6 +62,18 @@ enum class WizardStep {
     Done,
 };
 
+/// The operator's SEED corner and the measured acoustic crossing differ by more
+/// than `kSeedCrossingToleranceOctaves` (CycleArrival.h, H5 closeout D9), so the
+/// IR integer was NOT used to choose a cycle: the topology peak lag taken at the
+/// seed cannot be trusted against arrivals produced at the other frequency. Both
+/// integers are kept so the readout can show each and ask.
+struct SeedDisagreement {
+    double seedHz = 0.0;
+    double crossingHz = 0.0;
+    std::ptrdiff_t hintAtSeedSamples = 0;      ///< the IR integer with the lag taken at the seed
+    std::ptrdiff_t hintAtCrossingSamples = 0;  ///< the same, with the lag taken at the crossing
+};
+
 /// The comparison of the fitted intercept against the topology the operator
 /// NAMED. No time-domain sign reaches this struct -- H8's invariance is what
 /// holds that true, because a grep cannot scope itself to "the verdict path".

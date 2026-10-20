@@ -14,7 +14,11 @@ running app. Research and plan only.*
    `:352`). None of those is a capture button. This lane is P4's "Farina
    quick-measure mode" (master plan `:352`). Call it **SWEEP** and leave L4c's
    scope alone, so that shipping the capture does not tick off the gate too.
-2. **LOCATE hangs in SYNTHETIC today.**
+2. **LOCATE hangs in SYNTHETIC today.** *(Correction 2026-10-20, H5
+   closeout C3: true when this was written; fixed by SWEEP wave A,
+   PR #67 — the loopback `OutputEngine` -> `SyntheticInput` now renders the
+   output, so LOCATE's `renderedSamples()` advances in SYNTHETIC. The finding
+   below is kept as the history that motivated #67.)*
    - `pollLocatePipeline` waits for `output().renderedSamples()` ≥ 480
      (`app/src/MainComponentDelay.cpp:49-54`).
    - The only caller of `OutputEngine::render` is the device callback

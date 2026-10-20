@@ -69,13 +69,25 @@ double topologyPeakLagSamples(Topology topology, bool highPass, double crossover
     return static_cast<double>(bestIndex);
 }
 
-std::optional<double> candidateWithinGuard(const std::vector<double>& candidatesSeconds, double targetSeconds) {
+bool seedAgreesWithCrossing(double seedHz, double crossingHz) noexcept {
+    if (!(seedHz > 0.0) || !(crossingHz > 0.0)) return true;
+    return std::fabs(std::log2(seedHz / crossingHz)) <= kSeedCrossingToleranceOctaves;
+}
+
+std::optional<double> candidateWithinGuard(const std::vector<double>& candidatesSeconds, double targetSeconds,
+                                           double searchRangeSeconds) {
     if (candidatesSeconds.empty()) return std::nullopt;
     double best = candidatesSeconds.front();
     for (const double c : candidatesSeconds) {
         if (std::fabs(c - targetSeconds) < std::fabs(best - targetSeconds)) best = c;
     }
-    if (candidatesSeconds.size() < 2) return best;
+    if (candidatesSeconds.size() < 2) {
+        // See the header: the spacing is bounded below by R + |c| when the
+        // range held only this one maximum.
+        if (!(searchRangeSeconds > 0.0)) return std::nullopt;
+        const double spacingFloor = searchRangeSeconds + std::fabs(best);
+        return std::fabs(best - targetSeconds) <= spacingFloor / 4.0 ? std::optional<double>(best) : std::nullopt;
+    }
     std::vector<double> sorted = candidatesSeconds;
     std::sort(sorted.begin(), sorted.end());
     double spacing = sorted[1] - sorted[0];

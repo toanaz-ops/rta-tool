@@ -70,7 +70,7 @@ Không có gì đang làm dở.
 - **`tools/diffmut.py` đưa `SyntheticInput` sang sai test target** trong target map của nó: chạy test target đúng bằng tay (`rtatool_main_component_tests` cho loopback, `rtatool_analysis_tests` cho worker) thay vì tin kết quả diffmut cho file đó.
 - **SYNTHETIC render MỘT output channel**: ALIGN/VERIFY solo của channel khác 0 sẽ im lặng trong SYNTHETIC. Quan trọng với H5 — một test ALIGN-UI dùng SYNTHETIC không chứng minh được solo của channel 1+.
 - **Bật SYNTHETIC tăng `outputEpoch()`, tắt thì không** (destructor của `SyntheticInput` không gọi `prepare`): SWEEP vì thế còn so cờ `host_.synthetic()` lúc arm; mọi tính năng giữ source armed qua một lần đổi mode phải làm tương tự (LOCATE dùng `cancelLocate()` từ closeout này).
-- **Một derivation đúng số vẫn có thể sai lý do:** kỳ vọng LOCATE 4.75 mẫu từng được "suy" từ group delay trung bình trên band 200 Hz–12 kHz; PHAT dùng DC–Nyquist (cùng công thức cho 6.26). Giờ kỳ vọng là oracle số bên ngoài, ghi nhãn regression lock.
+- **Một derivation đúng số vẫn có thể sai lý do:** kỳ vọng LOCATE 4.75 mẫu từng được "suy" từ group delay trung bình trên band 200 Hz–12 kHz; PHAT dùng DC–Nyquist ~~(cùng công thức cho 6.26)~~. Giờ kỳ vọng là oracle số bên ngoài, ghi nhãn regression lock. **Sửa 2026-10-20 (H5 closeout, C1):** con số 6.26 không tái lập được; đo lại bằng phase-slope mean group delay của `butter(2,[40,16000])` ở 48 kHz trên DC..Nyquist ra **0.50 mẫu** (4.50 cùng delay 4), cũng không phải 4.76 của oracle — PHAT là đỉnh tương quan đã whiten, không phải group delay trung bình, nên không có closed form nào cho 4.76.
 - `memory/a-mutant-counted-red-must-name-the-failing-line.md` vẫn áp dụng: bảng mutant ở trên in file:line.
 
 ## Kế tiếp
