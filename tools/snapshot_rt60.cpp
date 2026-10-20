@@ -98,6 +98,24 @@ void renderRt60Specimen (const juce::File& outDir, int& failures)
     }
     if (! renderComponent (component, outDir, fileName, 1280, 800))
         ++failures;
+
+    // The same IR in third-octave bands: the toggle, the worker thread, the table
+    // of 24 rows and the chart under it. A click on the 1 kHz third feeds the chart.
+    constexpr const char* thirdName = "main-live-rt60-third.png";
+    pane->bandSetButtonForTest().onClick();
+    if (! pumpUntil (component, *pane, [&] { return ! Access::rt60ForTest (component).analysingForTest(); }, 60000))
+    {
+        fail ("the third-octave analysis did not finish", thirdName, failures);
+        return;
+    }
+    pane->clickRowForTest (13);
+    if (pane->tableLinesForTest().size() != 25)
+    {
+        fail ("the third-octave table is not 24 rows", thirdName, failures);
+        return;
+    }
+    if (! renderComponent (component, outDir, thirdName, 1280, 800))
+        ++failures;
 }
 
 } // namespace rta::tools
