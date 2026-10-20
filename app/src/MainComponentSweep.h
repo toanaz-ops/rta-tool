@@ -33,11 +33,16 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 class MainComponentSweep final {
 public:
     enum class State { Idle, PreRoll, Playing, Analysing };
+    /// Who pressed: the rail's SWEEP button, ALIGN's SWEEP MAIN / SWEEP SUB, or
+    /// the RT60 pane's SWEEP. `Host::swept` carries it, so each pane gets only
+    /// the sweeps it asked for (RT60-UI T5: only RT60's result is auto-selected).
+    enum class Requester { Rail, Align, Rt60 };
 
     /// What only the composition root knows. Callbacks rather than a pointer
     /// to MainComponent, so this class never includes it.
@@ -52,9 +57,9 @@ public:
         /// so a sweep on a named output can refuse one that does not exist.
         std::function<int()> outputChannels;
         /// ALIGN-UI T10: a sweep started with `clickedOnOutput` stored this
-        /// trace id, played on this 0-based output. Never fired for the plain
-        /// SWEEP button.
-        std::function<void(const std::string& traceId, int outputChannel)> swept;
+        /// trace id, played on this 0-based output, for this requester. Never
+        /// fired for the plain SWEEP button.
+        std::function<void(const std::string& traceId, int outputChannel, Requester requester)> swept;
     };
 
     /// Declare AFTER the three references (trap T-1): `worker_` joins in its
@@ -71,7 +76,11 @@ public:
     /// ALIGN-UI T10: the same press on a NAMED 0-based output, stored as
     /// `SWEEP out<N> @ HH:MM:SS` and reported through `Host::swept`. Returns
     /// true when the sweep armed; false (reason in the readout) when refused.
-    bool clickedOnOutput(int outputChannel);
+    /// RT60-UI T5: `tailSeconds` overrides the capture tail for THIS press only
+    /// (the rail button keeps `request_`'s 3 s), and `requester` rides along to
+    /// `Host::swept`.
+    bool clickedOnOutput(int outputChannel, Requester requester = Requester::Align,
+                         std::optional<double> tailSeconds = std::nullopt);
     /// The readout the operator reads for this sweep (the ALIGN pane repeats it).
     [[nodiscard]] juce::String readoutText() const { return readout_.getText(); }
     /// IRs kept for ALIGN's pickers (`IrStore::find`).
@@ -87,6 +96,8 @@ public:
     [[nodiscard]] const rta::trace::IrStore& irStoreForTest() const noexcept { return irStore_; }
     [[nodiscard]] const juce::Component& buttonForTest() const noexcept { return button_; }
     [[nodiscard]] const juce::Component& readoutComponentForTest() const noexcept { return readout_; }
+    /// The tail the running (or last) press was armed with, for the override case.
+    [[nodiscard]] double armedTailSecondsForTest() const noexcept { return armedRequest_.tailSeconds; }
     /// A shorter sweep and tail so a case runs in seconds, not 14 s.
     void setDurationsForTest(double sweepSeconds, double tailSeconds) {
         request_.sweep.durationSec = sweepSeconds;
@@ -98,10 +109,15 @@ public:
             irStore_.add("filler-" + std::to_string(i), std::make_shared<const rta::measure::SweepIr>());
         }
     }
+    /// Stores an IR under a library trace's id without a sweep (the RT60 pane's
+    /// picker and table need an IR with a known closed form).
+    void addIrForTest(const std::string& traceId, std::shared_ptr<const rta::measure::SweepIr> ir) {
+        irStore_.add(traceId, std::move(ir));
+    }
     void setClockForTest(std::function<double()> nowMs) { nowMs_ = std::move(nowMs); }
 
 private:
-    bool startOn(int outputChannel, bool named);
+    bool startOn(int outputChannel, Requester requester, std::optional<double> tailSeconds);
     void say(const juce::String& text) { readout_.setText(text, juce::dontSendNotification); }
     void abort(const juce::String& why);
     void startAnalysis();
@@ -119,7 +135,7 @@ private:
     rta::measure::SweepIrRequest request_;       ///< the shipped config; tests shorten it
     rta::measure::SweepIrRequest armedRequest_;  ///< what the running sweep was armed with
     int armedOutput_ = 0;
-    bool armedNamed_ = false;  ///< started by clickedOnOutput (ALIGN), not the SWEEP button
+    Requester armedRequester_ = Requester::Rail;  ///< not Rail: started by clickedOnOutput
     std::uint64_t armedEpoch_ = 0;
     bool armedSynthetic_ = false;
     std::string armedDeviceName_;

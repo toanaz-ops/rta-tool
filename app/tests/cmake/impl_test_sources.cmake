@@ -78,6 +78,10 @@ set(RTA_IMPL_TEST_SOURCES
     # the authoritative estimator and the table of witnesses.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignmentWizardSignals.cpp
+    # Rt60Analysis.cpp / Rt60Readout.cpp: RT60-UI lane wave A tasks T1/T2 --
+    # test_rt60_analysis.cpp / test_rt60_readout.cpp call straight into them.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Analysis.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Readout.cpp
     # AlignRunner.cpp / AlignReadout.cpp: ALIGN-UI lane wave A tasks T2/T3 --
     # test_align_runner*.cpp / test_align_readout.cpp call straight into them.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunner.cpp

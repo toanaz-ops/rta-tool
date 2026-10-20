@@ -246,4 +246,9 @@ struct MainComponentTestAccess {
     [[nodiscard]] static rta::platform::OutputEngine& outputEngineForTest(MainComponent& c) {
         return c.audioIo_.output();
     }
+
+    // RT60-UI wave A (T5): app/tests_juce/test_main_component_rt60.cpp and
+    // tools/snapshot_rt60.cpp. The selection, the cached analysis and the
+    // output/TAIL settings live in `MainComponentRt60`.
+    [[nodiscard]] static MainComponentRt60& rt60ForTest(MainComponent& c) { return c.rt60_; }
 };

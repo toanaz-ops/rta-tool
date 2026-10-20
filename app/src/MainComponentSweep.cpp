@@ -58,11 +58,14 @@ void MainComponentSweep::layout(juce::Rectangle<int> row) {
     readout_.setBounds(row);
 }
 
-void MainComponentSweep::clicked() { startOn(/*outputChannel=*/0, /*named=*/false); }
+void MainComponentSweep::clicked() { startOn(/*outputChannel=*/0, Requester::Rail, std::nullopt); }
 
-bool MainComponentSweep::clickedOnOutput(int outputChannel) { return startOn(outputChannel, /*named=*/true); }
+bool MainComponentSweep::clickedOnOutput(int outputChannel, Requester requester, std::optional<double> tailSeconds) {
+    return startOn(outputChannel, requester, tailSeconds);
+}
 
-bool MainComponentSweep::startOn(int outputChannel, bool named) {
+bool MainComponentSweep::startOn(int outputChannel, Requester requester, std::optional<double> tailSeconds) {
+    const bool named = requester != Requester::Rail;
     if (state_ != State::Idle) {
         say("sweep: already running");
         return false;
@@ -90,6 +93,8 @@ bool MainComponentSweep::startOn(int outputChannel, bool named) {
     }
 
     armedRequest_ = request_;
+    // Per press: the RT60 pane's TAIL choice. `request_` keeps the rail's 3 s.
+    if (tailSeconds.has_value()) armedRequest_.tailSeconds = *tailSeconds;
     armedRequest_.sweep.sampleRate = fs;
     rta::gen::Sweep sweep(armedRequest_.sweep);
     const auto captureSamples = static_cast<std::size_t>(
@@ -102,7 +107,7 @@ bool MainComponentSweep::startOn(int outputChannel, bool named) {
     analysis_.armLocateCapture(/*routeIndex=*/0, captureSamples);
 
     armedOutput_ = outputChannel;
-    armedNamed_ = named;
+    armedRequester_ = requester;
     armedEpoch_ = output_.outputEpoch();
     armedSynthetic_ = host_.synthetic();
     armedAtMs_ = nowMs_();
@@ -188,7 +193,8 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
     }
     // The ALIGN path names the output it played on: two sweeps minutes apart
     // are told apart by which loudspeaker they were of.
-    const juce::String outputTag = armedNamed_ ? " out" + juce::String(armedOutput_ + 1) : juce::String();
+    const bool named = armedRequester_ != Requester::Rail;
+    const juce::String outputTag = named ? " out" + juce::String(armedOutput_ + 1) : juce::String();
     const juce::String name = "SWEEP" + outputTag + " @ " + juce::Time::getCurrentTime().formatted("%H:%M:%S");
     const auto id = library_.add(std::move(*trace), name.toStdString(), "SWEEP");
     if (id.empty()) {
@@ -198,7 +204,7 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
     // Aliases the outcome: the IR stays alive with it, with no 4.6 MB copy.
     const bool evicts = irStore_.size() == rta::trace::IrStore::kCapacity;
     irStore_.add(id, std::shared_ptr<const rta::measure::SweepIr>(owner, &owner->ir));
-    if (armedNamed_ && host_.swept) host_.swept(id, armedOutput_);
+    if (named && host_.swept) host_.swept(id, armedOutput_, armedRequester_);
 
     const double ms = 1000.0 * static_cast<double>(outcome.delaySamples) / outcome.ir.sampleRate;
     juce::String text = "IR " + signedWhole(outcome.delaySamples) + " samples (" + signedOneDecimal(ms) +

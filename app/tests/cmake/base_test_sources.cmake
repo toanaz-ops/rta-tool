@@ -157,4 +157,8 @@ set(RTA_BASE_TEST_SOURCES
     test_sweep_ir_tolerance.cpp
     test_sweep_ir_worker.cpp
     test_sweep_ir_trace.cpp
+    # RT60-UI lane wave A (docs/plans/2026-10-20-rt60-ui-lane-plan.md): T1 the analysis
+    # (Option B, closed-form IRs), T2 the words and numbers, T6 the room comb.
+    test_rt60_analysis.cpp
+    test_rt60_readout.cpp
 )

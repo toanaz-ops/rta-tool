@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Part of RTA Tool -- app/tests. The impairments that make the hardware-free
 // path produce a transfer function worth looking at.
+#include "dev-support/SyntheticRoomComb.h"
 #include "measure/SyntheticImpairment.h"
 #include "rta/dsp/ButterworthDesign.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <span>
 #include <vector>
 
@@ -137,4 +141,82 @@ TEST_CASE("an empty filter leaves the measurement path a pure delay", "[syntheti
     path.process(in, out);
     const std::vector<float> expected{0, 0, 0, 1, 2, 3};
     REQUIRE(out == expected);
+}
+
+// --- RT60-UI lane T6: the feedback comb (decision 10) --------------------------
+
+TEST_CASE("a comb with gain 0 is bit-identical to no comb, including a negative zero",
+          "[synthetic-impairment]") {
+    // `x + 0.0f` turns -0.0 into +0.0, so a comb that merely MULTIPLIES by zero is
+    // not an identity. The input carries a -0.0 that reaches the comb with an
+    // empty history; applying the comb at gain 0 would flip its sign bit.
+    std::vector<float> in(3000);
+    std::uint32_t state = 7u;
+    for (auto& v : in) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        v = static_cast<float>(state) / 2147483648.0f - 1.0f;
+    }
+    in[0] = -0.0f;
+
+    rta::measure::MeasurementPath plain(4, {});
+    rta::measure::MeasurementPath inert(4, {}, 480, 0.0f);
+    std::vector<float> a(in.size()), b(in.size());
+    plain.process(in, a);
+    inert.process(in, b);
+    REQUIRE(std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    CHECK(std::signbit(a[4]));  // the fixture really did carry the negative zero through
+}
+
+TEST_CASE("a comb turns an impulse into pulses at D0 + k*D of amplitude g^k and nothing else",
+          "[synthetic-impairment]") {
+    // Closed form: y[n] = x[n] + g*y[n-D] on an impulse is g^k at k*D and exactly
+    // zero elsewhere. Behind the 4-sample path delay the first pulse is at 4.
+    constexpr int kDelay = 480;
+    constexpr int kPathDelay = 4;
+    const float gain = static_cast<float>(rta::measure::roomCombGainFor(0.80, kDelay, 48000.0));
+    CHECK(gain == Catch::Approx(0.91728f).margin(1e-5));  // 0.75 dB per trip
+
+    std::vector<float> in(kPathDelay + kDelay * 20 + 100, 0.0f);
+    in[0] = 1.0f;
+    rta::measure::MeasurementPath whole(kPathDelay, {}, kDelay, gain);
+    std::vector<float> out(in.size());
+    whole.process(in, out);
+
+    for (std::size_t n = 0; n < out.size(); ++n) {
+        const long offset = static_cast<long>(n) - kPathDelay;
+        if (offset >= 0 && offset % kDelay == 0) {
+            const int k = static_cast<int>(offset / kDelay);
+            const double expected = std::pow(static_cast<double>(gain), k);
+            // k float products, each within half an ulp (6.0e-8 relative).
+            INFO("pulse " << k << " at " << n << ": " << out[n] << " vs " << expected);
+            CHECK(std::fabs(out[n] - expected) <= k * 6.0e-8 * expected + 1e-30);
+        } else {
+            INFO("sample " << n);
+            CHECK(out[n] == 0.0f);
+        }
+    }
+
+    // Blocks of 512 give the same bits: the state is the last D outputs, not a
+    // per-block loop.
+    rta::measure::MeasurementPath blocked(kPathDelay, {}, kDelay, gain);
+    std::vector<float> chunked(in.size());
+    for (std::size_t i = 0; i < in.size(); i += 512) {
+        const std::size_t n = std::min<std::size_t>(512, in.size() - i);
+        blocked.process(std::span<const float>(in).subspan(i, n), std::span<float>(chunked).subspan(i, n));
+    }
+    CHECK(std::memcmp(out.data(), chunked.data(), out.size() * sizeof(float)) == 0);
+}
+
+TEST_CASE("the comb gain for a chosen RT60 closes the loop: 60 dB in exactly that time",
+          "[synthetic-impairment]") {
+    // T = 3*D / (fs*log10(1/g)): the formula the T5 acceptance bounds are derived
+    // from, run backwards from the gain it produced.
+    for (const double t60 : {0.40, 0.80, 1.50}) {
+        const double g = rta::measure::roomCombGainFor(t60, 480, 48000.0);
+        CHECK(3.0 * 480.0 / (48000.0 * std::log10(1.0 / g)) == Catch::Approx(t60).epsilon(1e-12));
+    }
+    CHECK(20.0 * std::log10(1.0 / rta::measure::roomCombGainFor(0.80, 480, 48000.0)) ==
+          Catch::Approx(0.75).epsilon(1e-12));
 }

@@ -145,6 +145,16 @@ set(RTATOOL_SOURCES
     src/view/AlignPaneView.cpp
     src/view/AlignIrPanel.cpp
     # --- end ALIGN-UI lane wave A -----------------------------------------------
+    # --- RT60-UI lane wave A (docs/plans/2026-10-20-rt60-ui-lane-plan.md) ------
+    # The RT60 pane and everything it reaches. Rt60Analysis.cpp is the production
+    # caller of core's bandFilterZeroPhase / energyDecayCurve / decayTimes (orphans
+    # in this target until now), MainComponentRt60.cpp the composition root's half,
+    # Rt60Readout.cpp the JUCE-free words, Rt60PaneView.cpp the pane.
+    src/MainComponentRt60.cpp
+    src/measure/Rt60Analysis.cpp
+    src/measure/Rt60Readout.cpp
+    src/view/Rt60PaneView.cpp
+    # --- end RT60-UI lane wave A ------------------------------------------------
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
     src/view/TraceStroke.cpp

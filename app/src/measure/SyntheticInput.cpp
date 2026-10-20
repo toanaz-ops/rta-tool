@@ -40,7 +40,8 @@ SyntheticInput::SyntheticInput(rta::platform::CaptureBus& bus, const Config& con
     , waitMs_(millisecondsPerBlock(config.sampleRate, config.bufferSize))
     , block_(static_cast<std::size_t>(std::max(config.bufferSize, 0)))
     , measurementBlock_(static_cast<std::size_t>(std::max(config.bufferSize, 0)))
-    , measurementPath_(config.measurementDelaySamples, config.measurementFilter)
+    , measurementPath_(config.measurementDelaySamples, config.measurementFilter, config.roomCombDelaySamples,
+                       config.roomCombGain)
     , secondPath_(config.secondOutputDelaySamples, config.secondOutputFilter)
     , secondPathBlock_(static_cast<std::size_t>(std::max(config.bufferSize, 0)))
     // config.seed already seeds SyntheticPink below; offset by a constant

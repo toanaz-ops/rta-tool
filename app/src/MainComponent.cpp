@@ -72,7 +72,7 @@ MainComponent::MainComponent()
       // a session yet. The pane selector (`selectPaneView`) can rebuild this
       // to a different single pane; the shape it starts in is unchanged.
       workspace_(std::make_unique<rta::view::WorkspaceView>(
-          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_, eq_.binding(), align_.binding()))),
+          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_, eq_.binding(), align_.binding(), rt60_.binding()))),
       // Session persistence: Save reads EVERY pane in `workspace_` (F4,
       // docs/HUMAN-QA-QUEUE.md D11) through `WorkspaceView::paneSpecs()`,
       // via a callback rather than a stored pointer, matching
@@ -99,7 +99,15 @@ MainComponent::MainComponent()
                      return isSyntheticMode() ? rta::measure::SyntheticInput::kOutputChannels
                                               : audioIo_.currentState().numOutputChannels;
                  },
-                 [this](const std::string& traceId, int outputChannel) { align_.onSwept(traceId, outputChannel); }}) {
+                 // Each pane gets only the sweeps it asked for: RT60 selects its own
+                 // result, ALIGN binds its own (a Rail press never reaches here).
+                 [this](const std::string& traceId, int outputChannel, MainComponentSweep::Requester requester) {
+                     if (requester == MainComponentSweep::Requester::Rt60) {
+                         rt60_.onSwept(traceId);
+                     } else {
+                         align_.onSwept(traceId, outputChannel);
+                     }
+                 }}) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };
@@ -165,6 +173,7 @@ MainComponent::MainComponent()
     sweep_.attachTo(*this);
     wireEqVerify();
     wireAlign();
+    wireRt60();
 
     rail_.attachTo(*this);
 

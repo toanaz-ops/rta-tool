@@ -53,6 +53,12 @@ struct SweepIr {
     /// itself because the IR is what travels to ALIGN. `originIndex` is not an
     /// arrival -- two sweeps' origins differ by their pre-roll timing (F2).
     long arrivalSamples = 0;
+    /// How long the capture ran after the sweep left the output, counted from
+    /// the loop's arrival of the sweep START plus the sweep (H6 RT60-UI, F1).
+    /// Past `originIndex + tailSamples` the deconvolution's overlap with the
+    /// inverse filter shrinks into an artefact, not a room, so a decay
+    /// analysis must stop there. Zero means "not stated" (a hand-built IR).
+    std::size_t tailSamples = 0;
     double sampleRate = 0.0;
     /// The scalar already applied to `samples` (the loop's in-band mean).
     double normalisationGain = 1.0;

@@ -6,6 +6,7 @@
 #include "measure/SnapshotSource.h"
 #include "view/AlignPaneView.h"
 #include "view/EqPaneView.h"
+#include "view/Rt60PaneView.h"
 #include "view/WorkspaceView.h"
 
 /// `MainComponent`'s pane factory (`workspace_` is built with this) -- the
@@ -38,6 +39,10 @@
 /// ownership and the same reason as `eq`: the runner and the answers live in
 /// MainComponentAlign, so a pane rebuilt by a selector click keeps the
 /// operator's answers and the last verdict.
+///
+/// `rt60` (RT60-UI lane, plan T3) is the RT60 pane's wiring, owned by
+/// MainComponentRt60 for the same reason: the cached analysis, the selection
+/// and the output/TAIL choices survive the pane being rebuilt.
 [[nodiscard]] rta::view::WorkspaceView::PaneFactory makePaneFactory(
     rta::measure::SnapshotSource& source, rta::view::EqPaneBinding eq,
-    rta::view::AlignPaneBinding align);
+    rta::view::AlignPaneBinding align, rta::view::Rt60PaneBinding rt60);

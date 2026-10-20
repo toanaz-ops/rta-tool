@@ -87,6 +87,19 @@ TEST_CASE("a tail one sample short is refused and the exact tail is accepted",
     CHECK(exact.status == SweepIrStatus::Ok);
 }
 
+TEST_CASE("the IR carries the tail the capture held after the sweep ended", "[sweep_ir_pipeline]") {
+    // H6 T0. A tail that is neither the required one nor a round number, so a
+    // field left at 0 or filled from the request cannot pass.
+    const auto request = shortRequest();
+    const std::size_t held = rta::measure::requiredTailSamples(request) + 777;
+    const auto capture = fx::delayCapture(request.sweep, kPreRoll, held, 37);
+    const std::size_t sweepSamples = rta::gen::Sweep(request.sweep).lengthSamples();
+    const auto outcome = analyseSweepCapture(capture, request);
+    REQUIRE(outcome.status == SweepIrStatus::Ok);
+    CHECK(outcome.ir.tailSamples == capture.reference.size() - (outcome.referenceArrivalSamples + sweepSamples));
+    CHECK(outcome.ir.tailSamples == held);
+}
+
 // --- (d) reference not found ---------------------------------------------------
 
 TEST_CASE("an inverted reference is ReferenceNotFound", "[sweep_ir_pipeline]") {
