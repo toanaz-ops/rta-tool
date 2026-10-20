@@ -105,7 +105,7 @@ std::vector<std::string> rt60EnsembleHeaderLines(const Rt60EnsembleResult& resul
 std::string rt60EnsembleRefusalText(const Rt60EnsembleResult& result) {
     if (result.analysed()) return {};
     if (!result.message.empty()) return "ensemble failed: " + result.message;
-    if (result.refusal == Rt60Refusal::NoIr) return "ensemble withheld: a selected capture has no IR in memory; sweep again";
+    if (result.refusal == Rt60Refusal::NoIr) return "ensemble withheld: a selected capture has no IR in memory; clear the ensemble and tick again";
     const Rt60Result single = [&result] {
         Rt60Result r;
         r.refusal = result.refusal;

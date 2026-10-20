@@ -288,3 +288,51 @@ TEST_CASE("rt60 pane B: eight ticked captures analyse together, in thirds, witho
     REQUIRE(menu.size() == 9);  // 8 traces + Clear: the store keeps 8 IRs, so a ninth cannot exist
     for (int i = 0; i < 8; ++i) CHECK(menu[static_cast<std::size_t>(i)].startsWith("[x] "));
 }
+
+TEST_CASE("rt60 pane B: a ticked capture the store evicts leaves the ensemble, and the survivors keep working", kTag) {
+    MainComponent c;
+    std::vector<std::string> ids;
+    for (std::uint32_t i = 0; i < 8; ++i) ids.push_back(addRoom(c, "SWEEP " + std::to_string(i), 1000 + 1000 * i));
+    c.selectPaneView(rta::view::PaneSelectorButton::Rt60);
+    auto& pane = paneOf(c);
+    auto& model = Access::rt60ForTest(c);
+    pane.tickForTest();
+    // Menu is newest first: entry 7 is SWEEP 0 (the oldest), 6 is SWEEP 1, 0 is SWEEP 7.
+    pane.chooseEnsembleEntryForTest(7);
+    pane.chooseEnsembleEntryForTest(6);
+    pane.chooseEnsembleEntryForTest(0);
+    settle(c, pane);
+    REQUIRE(model.ensembleIdsForTest().size() == 3);
+    CHECK(model.ensembleForTest()->captureCount == 3);
+
+    // A ninth IR pops the oldest, which is ticked. The pane's next tick drops it.
+    addRoom(c, "SWEEP 8", 9000);
+    settle(c, pane);
+    CHECK(model.ensembleIdsForTest() == std::vector<std::string>{ids[1], ids[7]});
+    const auto ensemble = model.ensembleForTest();
+    REQUIRE(ensemble != nullptr);
+    REQUIRE(ensemble->analysed());  // not the "no IR in memory" refusal
+    CHECK(ensemble->captureCount == 2);
+    CHECK(pane.showingEnsembleForTest());
+    CHECK(pane.ensembleButtonForTest().getButtonText() == "ENSEMBLE (2)");
+
+    // The menu offers the eight IRs that exist, the two survivors ticked, and the evicted one is gone.
+    const auto menu = pane.ensembleMenuForTest();
+    REQUIRE(menu.size() == 9);  // 8 traces + Clear
+    CHECK(menu[0] == "[ ] SWEEP 8");
+    for (const auto& line : menu) CHECK_FALSE(line.contains("SWEEP 0"));
+
+    // Tick all eight, add another: the evicted one leaves, so the new id is tickable, not "(full)".
+    for (int i = 0; i < 8; ++i) {
+        if (menu[static_cast<std::size_t>(i)].startsWith("[ ] ")) pane.chooseEnsembleEntryForTest(i);
+    }
+    settle(c, pane);
+    CHECK(model.ensembleIdsForTest().size() == 8);
+    addRoom(c, "SWEEP 9", 10000);
+    settle(c, pane);
+    CHECK(model.ensembleIdsForTest().size() == 7);  // SWEEP 1 was the oldest left and is gone
+    const auto after = pane.ensembleMenuForTest();
+    CHECK(after[0] == "[ ] SWEEP 9");  // enabled: no "(full)"
+    pane.chooseEnsembleEntryForTest(0);
+    CHECK(model.ensembleIdsForTest().size() == 8);
+}

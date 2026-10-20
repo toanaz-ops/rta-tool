@@ -96,6 +96,9 @@ public:
 
 private:
     void reanalyse();
+    /// Drops ensemble ids whose IR the store no longer holds (it keeps 8, oldest
+    /// out). True when any went.
+    bool pruneEvicted();
     [[nodiscard]] std::string nameOf(const std::string& traceId) const;
     [[nodiscard]] std::vector<rta::view::Rt60Choice> choices() const;
     [[nodiscard]] bool selectedIrInMemory() const;

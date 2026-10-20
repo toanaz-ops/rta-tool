@@ -56,6 +56,15 @@ std::string MainComponentRt60::nameOf(const std::string& traceId) const {
     return traceId;
 }
 
+bool MainComponentRt60::pruneEvicted() {
+    if (!sweep_.find) return false;
+    const auto gone = [this](const std::string& id) { return sweep_.find(id) == nullptr; };
+    const auto end = std::remove_if(ensembleIds_.begin(), ensembleIds_.end(), gone);
+    const bool changed = end != ensembleIds_.end();
+    ensembleIds_.erase(end, ensembleIds_.end());
+    return changed;
+}
+
 void MainComponentRt60::select(const std::string& traceId) {
     if (traceId == selectedId_ && (result_ != nullptr || analysing_)) return;  // once per selection change
     selectedId_ = traceId;
@@ -70,6 +79,10 @@ void MainComponentRt60::select(const std::string& traceId) {
 void MainComponentRt60::reanalyse() {
     ++revision_;
     const auto primary = (sweep_.find && !selectedId_.empty()) ? sweep_.find(selectedId_) : nullptr;
+    // An evicted member is dropped first: the store keeps 8 IRs, so a ninth sweep
+    // pops the oldest, and a ticked id with no IR would refuse the whole ensemble
+    // and could not be unticked (it is not in the menu).
+    pruneEvicted();
     const bool ensembleOn = ensembleIds_.size() >= 2;
     const auto set = settings_.bandSet;
     if (set == rta::measure::Rt60BandSet::Octave && !ensembleOn) {
@@ -150,6 +163,8 @@ rta::view::Rt60PaneBinding MainComponentRt60::binding() {
         // The worker's answer lands here: every consumer reads the revision before
         // anything else, so asking for it is what takes a finished job.
         poll();
+        // A sweep from anywhere (the rail, ALIGN) can evict a ticked IR.
+        if (pruneEvicted()) reanalyse();
         // The IR leaving the store changes what the header says without a new
         // analysis, so it is part of the revision.
         return revision_ * 2 + (selectedIrInMemory() ? 1 : 0);
