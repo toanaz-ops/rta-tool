@@ -267,7 +267,9 @@ add_executable(rtatool_routing_live_tests
     # change, and run()'s fault record, against a real AnalysisThread.
     test_capture_bus_epoch_drain.cpp
     test_analysis_thread_fault.cpp
+    test_spl_resync_gap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThreadLoop.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------
     # The SPL feed AnalysisThread.cpp now calls: its own split-off half, the
     # session that owns the meters, and the per-channel chain. D1b/D2/D3 in

@@ -41,11 +41,19 @@ void CaptureBus::prepare(double sampleRate, int numChannels) {
     // Gate the producer BEFORE the epoch moves: a consumer that sees the new
     // epoch must find the gate up. Only with a consumer to lower it.
     if (consumerAttached_.load(std::memory_order_acquire)) {
-        resyncPending_.store(true, std::memory_order_release);
+        raiseGate();
     }
     // release: pairs with epoch()'s acquire, so a consumer that observes the
     // new epoch also observes every ring write that preceded prepare().
     epoch_.fetch_add(1, std::memory_order_release);
+}
+
+void CaptureBus::raiseGate() noexcept {
+    // The mark goes in BEFORE the gate rises: only a callback that observes
+    // the gate can move gateSeen_ past it.
+    gateSeenAtRaise_.store(gateSeen_.load(std::memory_order_acquire), std::memory_order_relaxed);
+    resyncSeq_.fetch_add(1, std::memory_order_release);
+    resyncPending_.store(true, std::memory_order_release);
 }
 
 std::uint64_t CaptureBus::writerMask() const noexcept {
@@ -70,31 +78,59 @@ void CaptureBus::detachConsumer() noexcept {
 bool CaptureBus::serviceResyncAsConsumer() noexcept {
     // A role assigned or cleared while the device runs changes WHICH rings
     // are written: the new one starts empty while the others hold a backlog,
-    // so the pair is offset for good. Raise the gate, and drain on a later
-    // tick -- the callback that may already be past its gate check finishes
-    // within one poll, and a drain that raced it would split a block.
+    // so the pair is offset for good. Raise the gate.
     const std::uint64_t mask = writerMask();
     if (mask != consumerWriterMask_) {
         consumerWriterMask_ = mask;
-        resyncPending_.store(true, std::memory_order_release);
-        return false;
+        raiseGate();
     }
     if (!resyncPending_.load(std::memory_order_acquire)) {
+        consumerWaiting_ = false;
         return false;
     }
-    drainAsConsumer();
+
+    // A callback already past its gate check when the flag rose may still be
+    // mid-block, and a drain that raced it would split that block across the
+    // rings. Callbacks run one at a time, so one that SEES the gate up proves
+    // the earlier one returned: wait for gateSeen_ to move. No callbacks at
+    // all (bus inactive) means nothing can be in flight; and the wait is
+    // bounded, so a stalled device cannot keep the consumer from draining.
+    const auto now = std::chrono::steady_clock::now();
+    if (!consumerWaiting_) {
+        consumerWaiting_ = true;
+        consumerRaisedAt_ = now;
+    }
+    const bool acknowledged = gateSeen_.load(std::memory_order_acquire) !=
+                              gateSeenAtRaise_.load(std::memory_order_relaxed);
+    const bool idle = !active_.load(std::memory_order_relaxed);
+    const bool timedOut = now - consumerRaisedAt_ >= consumerAckTimeout_;
+    if (!acknowledged && !idle && !timedOut) {
+        return false;
+    }
+    if (timedOut && !acknowledged && !idle) {
+        resyncAckTimeouts_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // What the drain throws away is lost time, like the frames the gate
+    // refused; the SPL feed reports both (resyncLostFrames()).
+    resyncLostFrames_.fetch_add(drainAsConsumer(), std::memory_order_relaxed);
+    resyncSeq_.fetch_add(1, std::memory_order_release);
+    consumerWaiting_ = false;
     // Lowered only AFTER the drain: lowering first would let the callback
     // write into rings still being emptied.
     resyncPending_.store(false, std::memory_order_release);
     return true;
 }
 
-void CaptureBus::drainAsConsumer() noexcept {
+std::size_t CaptureBus::drainAsConsumer() noexcept {
     // Every ring, including those with no writer now (measurement last
     // session): none may serve stale samples if a later role brings it back.
+    std::size_t largest = 0;
     for (auto& ring : rings_) {
-        ring->discard(ring->availableToRead());
+        const std::size_t discarded = ring->discard(ring->availableToRead());
+        if (discarded > largest) largest = discarded;
     }
+    return largest;
 }
 
 void CaptureBus::pushFromCallback(const float* const* input, int numChannels, int numSamples) noexcept {
@@ -108,7 +144,10 @@ void CaptureBus::pushFromCallback(const float* const* input, int numChannels, in
     // Resync gate: while the consumer is emptying the rings this block must
     // not land in some of them and not others. One acquire load, no lock.
     if (resyncPending_.load(std::memory_order_acquire)) {
+        // Seeing the gate up is the acknowledgement the consumer waits for.
+        gateSeen_.fetch_add(1, std::memory_order_relaxed);
         resyncFrames_.fetch_add(static_cast<std::uint64_t>(numSamples), std::memory_order_relaxed);
+        resyncLostFrames_.fetch_add(static_cast<std::uint64_t>(numSamples), std::memory_order_relaxed);
         return;
     }
 

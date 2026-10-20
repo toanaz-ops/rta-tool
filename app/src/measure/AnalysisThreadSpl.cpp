@@ -185,7 +185,11 @@ void AnalysisThread::feedSpl(int channel) {
     // `CaptureBus::dropCount` is a relaxed atomic the callback increments
     // (platform/types/src/CaptureBus.cpp) -- reading it here is the whole of
     // this thread's knowledge that time went missing.
-    splState_.session.noteDropCount(channel, bus_.dropCount(channel));
+    // PLUS what the resync threw away (frames its gate refused, backlog its
+    // drain discarded): a role change while logging raises the gate with no
+    // epoch change, so the freeze above does not cover it, and a block that
+    // closed short must say so.
+    splState_.session.noteDropCount(channel, bus_.dropCount(channel) + bus_.resyncLostFrames());
     splState_.session.feedHop(channel, channelScratch_[static_cast<std::size_t>(channel)]);
 
     // W2-E1: fold every CONFIGURED CHAIN's newly closed block into this

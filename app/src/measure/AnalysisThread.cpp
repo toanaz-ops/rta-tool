@@ -6,18 +6,11 @@
 
 #include "measure/PairedDrain.h"
 
-#include <exception>
-#include <stdexcept>
 #include <utility>
 
 namespace rta::measure {
 
 namespace {
-
-// Poll granularity: how often run() wakes to check for new samples even
-// with nothing to do. Short enough that a hop's worth of audio at any
-// reasonable buffer size is never left waiting more than one tick.
-constexpr int kPollMs = 10;
 
 // Plan §1.4: analysis publish rate is at most 20 Hz. A view repainting
 // faster than the eye resolves costs CPU during a show and buys nothing.
@@ -101,65 +94,6 @@ void AnalysisThread::recordFault(rta::platform::Fault::Kind kind, const std::str
     fault_.kind = kind;
     fault_.message = message;
     ++fault_.sequence;
-}
-
-void AnalysisThread::run() {
-    // Trap T-3, verbatim: wrap the whole body, record the message as a
-    // fault, stop cleanly. Nothing below this point may let an exception
-    // reach juce::Thread's caller.
-    try {
-        runBody();
-    } catch (const std::exception& e) {
-        recordFault(rta::platform::Fault::Kind::DeviceError, e.what());
-    } catch (...) {
-        recordFault(rta::platform::Fault::Kind::DeviceError,
-                     "AnalysisThread::run: unknown exception");
-    }
-}
-
-void AnalysisThread::runBody() {
-    while (!threadShouldExit()) {
-        wait(kPollMs);
-        if (threadShouldExit()) {
-            return;
-        }
-        if (throwNextTick_.exchange(false, std::memory_order_acquire)) {
-            throw std::runtime_error("injected analysis fault");
-        }
-
-        // Before any read of this tick: empties every ring behind the
-        // producer gate after a prepare() or a change of written channels.
-        // Never in prepare() itself: only this thread may write a read index.
-        bus_.serviceResyncAsConsumer();
-        rebuildAnalysersIfEpochChanged();
-        applyPendingReferenceDelay();
-
-        drain();
-
-        publishIfDue();
-    }
-}
-
-void AnalysisThread::rebuildAnalysersIfEpochChanged() {
-    const std::uint64_t epoch = bus_.epoch();
-    if (epoch == lastEpoch_) {
-        return;
-    }
-    lastEpoch_ = epoch;
-
-    Analyser::Config cfg = baseConfig_;
-    const double rate = bus_.sampleRate();
-    if (rate > 0.0) {
-        cfg.sampleRate = rate;
-    }
-    // The ring side of this reset is runBody()'s serviceResyncAsConsumer(),
-    // gated on the bus's resync flag rather than on this epoch. The fresh
-    // Analysers below are the analysis-side drain; every position is rebuilt
-    // together, since a device reconfiguration invalidates every engine.
-
-    for (auto& analyser : analysers_) {
-        analyser = std::make_unique<Analyser>(cfg);
-    }
 }
 
 void AnalysisThread::applyPendingReferenceDelay() {

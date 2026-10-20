@@ -206,6 +206,8 @@ set(RTATOOL_SOURCES
     # makeSyntheticSnapshot() instead (see its own target_sources below) and
     # must not link juce_audio_devices.
     src/measure/AnalysisThread.cpp
+    # AnalysisThreadLoop.cpp: the thread loop, split off AnalysisThread.cpp (400-line cap).
+    src/measure/AnalysisThreadLoop.cpp
     # --- L6a Wave 0 task W0-D ---------------------------------------------
     # AnalysisThreadSpl.cpp: AnalysisThread.cpp's SPL half, split off at the
     # 400-line hard cap -- same class, second translation unit, the shape

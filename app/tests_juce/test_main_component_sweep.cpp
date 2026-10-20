@@ -323,3 +323,24 @@ TEST_CASE("sweep: the 9th IR says the oldest was dropped", kTag) {
     CHECK(readout.contains(" IRs 8/8 (oldest dropped)"));
     CHECK(sweepOf(c).irStoreForTest().size() == 8);
 }
+
+TEST_CASE("sweep: a channel-role change mid-capture resyncs the input and aborts it", kTag) {
+    // A resync discards samples the IR origin is measured from, and unlike a
+    // device change it moves neither the output epoch nor the input mode, so
+    // without its own check the sweep would finish with a shifted origin and
+    // no sign of it (PR #78 fix round 2, LOW).
+    MainComponent c;
+    startSynthetic(c);
+    double now = 1000.0;
+    sweepOf(c).setClockForTest([&] { return now; });
+    sweepOf(c).clicked();
+    now += 200.0;
+    MainComponentTestAccess::timerTickForTest(c);
+    REQUIRE(sweepOf(c).stateForTest() == State::Playing);
+
+    REQUIRE(MainComponentTestAccess::channelConfigForTest(c).setRole(2, rta::platform::ChannelRole::Measurement));
+    REQUIRE(tickUntil(c, [&] { return sweepOf(c).stateForTest() == State::Idle; }, 3000));
+
+    CHECK(sweepOf(c).readoutForTest().contains("resynced"));
+    CHECK(MainComponentTestAccess::libraryForTest(c).entries().empty());
+}

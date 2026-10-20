@@ -4,6 +4,7 @@
 #include "rta/platform/CaptureBus.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <numeric>
 #include <thread>
@@ -207,7 +208,11 @@ TEST_CASE("Concurrent producer and consumer keep the stream intact through pushF
     bus.setActive(true);
 
     std::atomic<bool> mismatch{false};
+    std::atomic<bool> timedOut{false};
     std::atomic<std::size_t> produced{0};
+    // Both loops are bounded: a broken bus must fail this test, not hang the
+    // executable (a mutant once did). 200 000 samples take milliseconds.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
 
     std::thread producer([&] {
         auto* ring = bus.ring(0);
@@ -223,6 +228,10 @@ TEST_CASE("Concurrent producer and consumer keep the stream intact through pushF
             // gapless stream this test is checking for, exactly like
             // core/tests/test_ringbuffer.cpp's producer spins on write().
             while (ring->availableToWrite() < n) {
+                if (std::chrono::steady_clock::now() > deadline) {
+                    timedOut.store(true);
+                    return;
+                }
                 std::this_thread::yield();
             }
             const float* channels[1] = {chunk.data()};
@@ -239,6 +248,10 @@ TEST_CASE("Concurrent producer and consumer keep the stream intact through pushF
         while (expected < kTotal) {
             const std::size_t n = ring->read(std::span<float>(chunk.data(), kChunk));
             if (n == 0) {
+                if (std::chrono::steady_clock::now() > deadline) {
+                    timedOut.store(true);
+                    return;
+                }
                 std::this_thread::yield();
                 continue;
             }
@@ -255,6 +268,7 @@ TEST_CASE("Concurrent producer and consumer keep the stream intact through pushF
     producer.join();
     consumer.join();
 
+    CHECK_FALSE(timedOut.load());
     CHECK_FALSE(mismatch.load());
     CHECK(produced.load() == kTotal);
     CHECK(bus.dropCount(0) == 0);

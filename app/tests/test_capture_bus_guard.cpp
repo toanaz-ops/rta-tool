@@ -62,13 +62,22 @@ TEST_CASE("G1 CaptureBus::prepare never resets a ring", "[capture_bus_guard]") {
 
 TEST_CASE("G2 the consumer services the bus resync every tick", "[capture_bus_guard]") {
     const std::string code =
-        rta::test::codeText(repoFile("app/src/measure/AnalysisThread.cpp"));
+        rta::test::codeText(repoFile("app/src/measure/AnalysisThreadLoop.cpp"));
     const std::string body = bodyOf(code, "void analysisthread::runbody(");
 
     // Without this call the previous session's samples stay in the rings and,
     // the producer gate never being lowered, no new sample ever lands.
     INFO("runBody() body: " << body);
-    CHECK(body.find("bus_.serviceresyncasconsumer(") != std::string::npos);
+    const auto service = body.find("bus_.serviceresyncasconsumer(");
+    REQUIRE(service != std::string::npos);
+    // And the rings are not READ while the gate is up: they still hold the
+    // previous session, which would splice into the fresh Analysers.
+    const auto pendingCheck = body.find("bus_.resyncpending(");
+    const auto drain = body.find("drain(");
+    REQUIRE(pendingCheck != std::string::npos);
+    REQUIRE(drain != std::string::npos);
+    CHECK(service < pendingCheck);
+    CHECK(pendingCheck < drain);
 }
 
 TEST_CASE("G4 the consumer lowers the gate only after the drain", "[capture_bus_guard]") {

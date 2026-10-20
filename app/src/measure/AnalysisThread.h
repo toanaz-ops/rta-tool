@@ -242,27 +242,26 @@ public:
     /// before the join that follows (SplLogPipeline.cpp's own comment on
     /// `disable()`), so this flipping to `false` is a direct observation of
     /// "the disable path actually called `SplLogPipeline::disable()`" with
-    /// no dependency on how fast the writer thread's own drain happens to
-    /// run relative to whatever else is going on. `test_spl_log_wiring_
-    /// disable.cpp` uses this to catch a disable path that skips the call
-    /// entirely, which a burst-then-read-the-files timing test cannot
-    /// reliably do: the writer thread never meaningfully falls behind the
-    /// ~1 hop per `kPollMs` metering rate (measured: an 800-hop, 8-channel
-    /// burst took ~1.2 s). Safe from any thread, same reason
+    /// no dependency on how fast the writer thread's own drain runs.
+    /// `test_spl_log_wiring_disable.cpp` uses this to catch a disable path
+    /// that skips the call, which a burst-then-read-the-files timing test
+    /// cannot reliably do. Safe from any thread, same reason
     /// `splLogWriteFailed` is.
     ///
-    /// `ForTest` suffix (lane-end LOW batch round 1, LOW V4): no production
-    /// caller reads this -- production code decides its own SPL-logging
-    /// state from `SplLoggingDecision.h`'s own inputs, never by re-reading
-    /// this flag back. Every real caller is a test (test_main_component_
-    /// panes.cpp, test_spl_log_wiring_disable.cpp), which is what the
-    /// `*ForTest` convention exists to name (tools/orphan_check.py's own
-    /// TEST HOOK rule) rather than leave reading as an unwired orphan.
+    /// `ForTest` suffix (LOW V4): no production caller reads this -- production
+    /// decides its SPL-logging state from `SplLoggingDecision.h`'s own inputs.
+    /// Every real caller is a test, which is what tools/orphan_check.py's
+    /// TEST HOOK rule exists to name.
     [[nodiscard]] bool isSplLoggingEnabledForTest() const noexcept;
 
     /// Makes the next `runBody()` tick throw, so a test can drive `run()`'s
     /// catch, `lastFault()` and its readers without a real bad_alloc.
     void throwOnNextTickForTest() noexcept { throwNextTick_.store(true, std::memory_order_release); }
+
+    /// The bus's resync state (CaptureBus.h): a capture armed before a change
+    /// of `resyncSequence()` is shifted by the resync and must be abandoned.
+    [[nodiscard]] std::uint64_t resyncSequence() const noexcept { return bus_.resyncSequence(); }
+    [[nodiscard]] bool resyncPending() const noexcept { return bus_.resyncPending(); }
 
     /// Message-thread call: END check's drift > cl. 5.2's 0.5 dB, cleared by
     /// a fresh `enableSplLogging` -- read by `fillSplPublishInput` (§15 A2).

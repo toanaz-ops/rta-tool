@@ -9,6 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
+#include <thread>
 #include <vector>
 
 using rta::platform::CaptureBus;
@@ -51,6 +53,7 @@ TEST_CASE("while the resync gate is up the producer writes no ring and counts re
     CHECK(avail(bus, 0) == 0);
     CHECK(avail(bus, 1) == 0);
     CHECK(bus.resyncFrames() == 256);
+    CHECK(bus.resyncLostFrames() == 256);
     CHECK(bus.totalDrops() == 0);
 
     REQUIRE(bus.serviceResyncAsConsumer());
@@ -96,8 +99,10 @@ TEST_CASE("a role assigned while running, then an epoch change, leaves every wri
     push(bus, 3, 512);
     push(bus, 3, 512);
 
+    bus.setActive(false);  // a device change stops the device before prepare()...
     bus.prepare(96000.0, 3);
     REQUIRE(bus.serviceResyncAsConsumer());  // drains every ring, then lowers the gate
+    bus.setActive(true);                     // ...and starts it after
 
     CHECK(avail(bus, 0) == 0);
     CHECK(avail(bus, 1) == 0);
@@ -119,10 +124,20 @@ TEST_CASE("a role change alone realigns the writer rings", "[capturebus][resync]
     push(bus, 3, 512);  // ch0 and ch1 now hold a backlog ch2 will never have
     REQUIRE(avail(bus, 0) == 512);
     REQUIRE(bus.config().setRole(2, ChannelRole::Measurement));
-    CHECK_FALSE(bus.serviceResyncAsConsumer());  // tick 1 raises the gate, drains nothing yet
+    const auto sequenceBefore = bus.resyncSequence();
+    // Tick 1 raises the gate, but no callback has SEEN it yet, so one might
+    // still be mid-block: the consumer must not drain.
+    CHECK_FALSE(bus.serviceResyncAsConsumer());
+    CHECK(bus.resyncPending());
     CHECK(avail(bus, 0) == 512);
-    CHECK(bus.serviceResyncAsConsumer());        // tick 2: in-flight callback long done, drain
+    push(bus, 3, 64);  // a callback observes the gate up: the acknowledgement
+    CHECK(bus.serviceResyncAsConsumer());
     CHECK(avail(bus, 0) == 0);
+    CHECK(bus.resyncSequence() != sequenceBefore);
+    // Everything thrown away is reported: the 64 frames the gate refused and
+    // the 512-sample backlog the drain discarded (the SPL feed adds this to
+    // the channel's drop count, so the block carries Gap).
+    CHECK(bus.resyncLostFrames() == 64 + 512);
 
     push(bus, 3, 256);
     CHECK(avail(bus, 0) == 256);
@@ -168,4 +183,31 @@ TEST_CASE("drainAsConsumer empties rings even when their backlogs differ", "[cap
     bus.drainAsConsumer();
     CHECK(avail(bus, 0) == 0);
     CHECK(avail(bus, 2) == 0);
+}
+
+TEST_CASE("an inactive bus is drained at once: no callback can be in flight", "[capturebus][resync]") {
+    CaptureBus bus(4096);
+    REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
+    bus.attachConsumer();
+    bus.prepare(48000.0, 1);
+    bus.setActive(false);
+    const std::vector<float> stale(64, 1.0f);
+    REQUIRE(bus.ring(0)->write(stale));
+    CHECK(bus.serviceResyncAsConsumer());
+    CHECK(avail(bus, 0) == 0);
+}
+
+TEST_CASE("with no acknowledgement the drain goes ahead after the bounded wait, and says so",
+          "[capturebus][resync]") {
+    CaptureBus bus(4096);
+    REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
+    bus.attachConsumer();
+    bus.setResyncAckTimeout(std::chrono::milliseconds(20));
+    bus.prepare(48000.0, 1);
+    bus.setActive(true);  // active, but no callback ever arrives
+    CHECK_FALSE(bus.serviceResyncAsConsumer());
+    CHECK(bus.resyncAckTimeouts() == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    CHECK(bus.serviceResyncAsConsumer());
+    CHECK(bus.resyncAckTimeouts() == 1);
 }

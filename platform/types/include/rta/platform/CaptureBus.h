@@ -7,6 +7,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -103,6 +104,19 @@ inline constexpr std::size_t kFixedRingCapacitySamples = 65536;
 ///      only then lowers the flag. The next callback writes all routed rings
 ///      together, so they all restart empty on one boundary.
 ///
+/// "Nothing is writing" is a proof, not a hope: a callback that was already
+/// past its gate check when the flag rose could still be mid-block. The
+/// audio thread runs callbacks one at a time, so a callback that SEES the
+/// flag up proves the previous one has returned. It bumps `gateSeen_`; the
+/// consumer drains only after that counter has moved since it started
+/// waiting -- or at once when the bus is not active (no callbacks exist), or
+/// after a bounded wait (`resyncAckTimeouts()` counts that fallback).
+///
+/// Everything the resync throws away is time the SPL log must not mistake
+/// for continuous: `resyncLostFrames()` (frames the gate refused plus the
+/// backlog the drain discarded) is added to the per-channel drop count the
+/// SPL feed reports, so the affected block carries `BlockFlag::Gap`.
+///
 /// The gate only exists while a consumer is attached (`attachConsumer`):
 /// with none there is nobody to lower it, and nobody to race.
 class CaptureBus {
@@ -142,21 +156,36 @@ public:
 
     /// CONSUMER THREAD ONLY, once per tick, before any read. Detects a change
     /// in the set of channels with a writer (a role assigned or cleared while
-    /// running) and raises the gate for it, returning false so a callback
-    /// already inside `pushFromCallback` can finish; on a later tick, while
-    /// the gate is up, empties every ring and lowers it (returns true).
-    /// Returns false when nothing is pending.
+    /// running) and raises the gate for it. While the gate is up it waits for
+    /// proof that no callback is mid-block (see the class comment), then
+    /// empties every ring and lowers the gate (returns true). Returns false
+    /// when nothing is pending or the proof has not arrived yet.
     bool serviceResyncAsConsumer() noexcept;
 
-    /// CONSUMER THREAD ONLY: `discard(availableToRead())` on every ring.
-    /// Correct only while nothing is writing -- the resync gate is up, or the
+    /// CONSUMER THREAD ONLY: `discard(availableToRead())` on every ring;
+    /// returns the largest count discarded from any one ring. Correct only
+    /// while nothing is writing -- the gate is up and acknowledged, or the
     /// device is stopped. Public so tests can play the consumer.
-    void drainAsConsumer() noexcept;
+    std::size_t drainAsConsumer() noexcept;
+
+    /// How long the consumer waits for a callback to acknowledge the gate
+    /// before draining anyway. Default 500 ms; a setter so a test need not
+    /// sleep that long. Consumer thread (or before it starts).
+    void setResyncAckTimeout(std::chrono::milliseconds timeout) noexcept { consumerAckTimeout_ = timeout; }
 
     /// True while the producer is gated off. Frames the callback refused
     /// during a resync; NOT overflow drops, and not in `totalDrops()`.
     [[nodiscard]] bool resyncPending() const noexcept { return resyncPending_.load(std::memory_order_acquire); }
     [[nodiscard]] std::uint64_t resyncFrames() const noexcept { return resyncFrames_.load(std::memory_order_relaxed); }
+    /// Monotonic, never reset: frames the gate refused + backlog the drains
+    /// discarded. What the SPL feed adds to a channel's drop count.
+    [[nodiscard]] std::uint64_t resyncLostFrames() const noexcept { return resyncLostFrames_.load(std::memory_order_relaxed); }
+    /// Monotonic; bumped when the gate rises and again when a drain completes,
+    /// so a value that differs from the one read earlier means a resync began
+    /// or finished in between (a sweep capture armed before it is shifted).
+    [[nodiscard]] std::uint64_t resyncSequence() const noexcept { return resyncSeq_.load(std::memory_order_acquire); }
+    /// Drains that went ahead on the timeout, with no callback acknowledgement.
+    [[nodiscard]] std::uint64_t resyncAckTimeouts() const noexcept { return resyncAckTimeouts_.load(std::memory_order_relaxed); }
 
     /// Message thread OR device thread -- a relaxed atomic store, so it is
     /// safe from either, and `AudioIo` calls it from all three of its
@@ -258,6 +287,18 @@ private:
     std::atomic<bool> consumerAttached_{false};
     std::atomic<bool> resyncPending_{false};
     std::atomic<std::uint64_t> resyncFrames_{0};
+    std::atomic<std::uint64_t> resyncLostFrames_{0};
+    std::atomic<std::uint64_t> resyncSeq_{0};
+    std::atomic<std::uint64_t> resyncAckTimeouts_{0};
+    std::atomic<std::uint64_t> gateSeen_{0};  // callbacks that observed the gate up
+    // gateSeen_ as it stood when the gate last rose: a callback that sees the
+    // gate up AFTER that moves gateSeen_ past it, which is the acknowledgement.
+    std::atomic<std::uint64_t> gateSeenAtRaise_{0};
+    void raiseGate() noexcept;
+    // Consumer thread only: the clock on the bounded wait for that.
+    bool consumerWaiting_ = false;
+    std::chrono::steady_clock::time_point consumerRaisedAt_{};
+    std::chrono::milliseconds consumerAckTimeout_{500};
     // Consumer thread only (serviceResyncAsConsumer): bit ch set = channel ch had a writer.
     std::uint64_t consumerWriterMask_ = 0;
     [[nodiscard]] std::uint64_t writerMask() const noexcept;
