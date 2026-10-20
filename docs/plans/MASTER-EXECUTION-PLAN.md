@@ -123,6 +123,19 @@ move because H5 is an `app/` lane. **Next lane: H6 RT60-UI** (`app/rt60-ui`; its
 plan `docs/plans/2026-10-20-rt60-ui-lane-plan.md` lands with H6's first PR). H6
 flips row 4 and is the last unit in (c).
 
+**After H6 wave A (this branch, with #72 and #73 both counted):** row 4 flips
+to BUILT with no partial flag (wave B adds ensemble, EDC plot and third octaves;
+none is needed for the table an operator reads).
+
+| | formula | list counted | value after #72 | value after H6 wave A |
+|---|---|---|---|---|
+| (a) engine built | engine done / 19 | unchanged: 15 rows | 15 / 19 = 78.9 % | **15 / 19 = 78.9 %** |
+| (b) operator-reachable (BUILT + partial) | / 19 | rows 1, 2, 3, **4**, 7, 9, 10, 11, 13, 14, 15, 16, 17, 18 = 14 | 13 / 19 = 68.4 % | **14 / 19 = 73.7 %** |
+| (b-strict) BUILT, no partial flag | / 19 | rows 2, 3, **4**, 7, 10, 14, 15, 16, 17, 18 = 10 | 9 / 19 = 47.4 % | **10 / 19 = 52.6 %** |
+
+Arithmetic: 13 + 1 (row 4) = 14, 14 / 19 = 0.7368; 9 + 1 = 10, 10 / 19 = 0.5263;
+(a) does not move because H6 is an `app/` lane. (c) is now measured: 14 / 19.
+
 **Gaps found while verifying (none appears in an earlier status table):**
 1. `RoutingMatrix::setActiveTransferFunction` has zero callers — TF slots 1..7
    are unreachable, so multichannel can average positions into one TF but
@@ -273,8 +286,9 @@ AND an operator can reach it in `rtatool.exe` (2026-09-27 decision 2, this
 document's own rule above). **H6 wave A (RT60 pane, `app/rt60-ui-a`, T0-T8) is
 BUILT and flips row 4** (written after the code, 2026-10-20): the RT60 pane
 button, a pane-local SWEEP with a TAIL choice, and the per-octave T30 / T20 /
-EDT table are reachable in `rtatool.exe`; the headline counts in the snapshot
-above are not recomputed here. **Wave B (T9-T12: ensemble over several IRs, EDC
+EDT table are reachable in `rtatool.exe`; the headline counts are recomputed
+once, with H5 and H6 wave A both counted, in the block after "Arithmetic: 13 / 19"
+above (14 / 19 = 73.7 % operator-reachable). **Wave B (T9-T12: ensemble over several IRs, EDC
 plot, third-octave bands) is still PLANNED** and is not claimed.
 
 **Not in this run:** `CaptureSequencer` (still deferred — 2026-09-26 decision,
