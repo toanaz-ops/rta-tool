@@ -77,11 +77,14 @@ void MainComponent::resized() {
     rail.removeFromTop(az::ui::gap * 2);
 
     // H7 generator (T3): GEN / - / + on one row, its readout on the next.
-    auto generatorButtons = rail.removeFromTop(az::ui::buttonCellHeight);
-    rail.removeFromTop(az::ui::gap);
-    auto generatorReadout = rail.removeFromTop(az::ui::buttonCellHeight);
+    // Compact rows (a touch target, then a field): at 1280x800 the rail above
+    // already leaves the device panel ~100 px, and two full-height rows would
+    // take it to zero (test_main_component_sweep's rail-layout case).
+    auto generatorButtons = rail.removeFromTop(az::ui::touchTarget);
+    rail.removeFromTop(az::ui::spacing);
+    auto generatorReadout = rail.removeFromTop(az::ui::fieldHeight);
     generator_.layout(generatorButtons, generatorReadout);
-    rail.removeFromTop(az::ui::gap * 2);
+    rail.removeFromTop(az::ui::gap);
 
     // L6a Wave 3: one more fixed row, same shape as the Locate row above --
     // CAL START, CAL END, and the readout sharing what's left.
