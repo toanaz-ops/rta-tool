@@ -126,7 +126,7 @@ public:
     /// Starts the thread immediately; there is no separate `start()`.
     SyntheticInput(rta::platform::CaptureBus& bus, const Config& config);
 
-    /// Same stop discipline as `AnalysisThread` (trap T-1): `stopThread`
+    /// Same stop discipline as `AnalysisThread` (trap T-1): `stopThreadNoKill`
     /// in this class's own destructor, belt and braces against the owner's
     /// member-declaration order.
     ~SyntheticInput() override;

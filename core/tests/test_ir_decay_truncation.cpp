@@ -168,7 +168,7 @@ TEST_CASE("The truncation correction is the fitted line at the crossing, not the
     // before it converges: with `maxIterations = 1` the crossing comes from the
     // first noise guess (last tenth of the record) and the noise is then
     // RE-ESTIMATED from crossing + margin to the end of the record. Put a burst in
-    // that stretch (the fixture of the late-burst case below) and the re-estimate
+    // that stretch (the fixture of the late-burst case above) and the re-estimate
     // is dragged up by the burst while the line is still the room.
     //
     // Expected, from the fixture alone: exp(-2 cut / ta) * ta / 2 (plain, p0 = 1).

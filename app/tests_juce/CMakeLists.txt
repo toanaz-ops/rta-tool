@@ -267,6 +267,13 @@ add_executable(rtatool_routing_live_tests
     # change, and run()'s fault record, against a real AnalysisThread.
     test_capture_bus_epoch_drain.cpp
     test_analysis_thread_fault.cpp
+    # test_analyser_rebuild_live.cpp / test_thread_exit.cpp: the one-slot-per-tick
+    # Analyser rebuild (AnalyserRebuild.h) and the no-force-kill thread join
+    # (ThreadStop.h), against a real AnalysisThread + SyntheticInput.
+    # SyntheticInput.cpp is linked for them.
+    test_analyser_rebuild_live.cpp
+    test_thread_exit.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/SyntheticInput.cpp
     test_spl_resync_gap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThread.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AnalysisThreadLoop.cpp

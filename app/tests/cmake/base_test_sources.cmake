@@ -25,6 +25,8 @@ set(RTA_BASE_TEST_SOURCES
     test_phase_decimator.cpp
     test_coherence_alpha.cpp
     test_paired_drain.cpp
+    test_analyser_rebuild.cpp
+    test_analyser_rebuild_timing.cpp
     # Structural guards + fault slot decision (CaptureBus drain race audit fix).
     test_capture_bus_guard.cpp
     test_fault_line.cpp

@@ -143,6 +143,13 @@ bool drawnTrusted(const EqChartData& data, std::size_t k) {
 
 }  // namespace
 
+bool eqChartHasDrawnTrusted(const EqChartData& data) {
+    for (std::size_t k = 0; k < data.hz.size(); ++k) {
+        if (drawnTrusted(data, k)) return true;
+    }
+    return false;
+}
+
 EqDbRange eqChartDbRange(const EqChartData& data) {
     // The range follows the TRUSTED bins: below the coherence floor a transfer
     // estimate is a ratio of noise (a SYNTHETIC capture reads +130 dB where the
@@ -166,7 +173,10 @@ EqDbRange eqChartDbRange(const EqChartData& data) {
     };
     double lo = std::numeric_limits<double>::infinity();
     double hi = -std::numeric_limits<double>::infinity();
-    scan(true, lo, hi);
+    // The SAME predicate paintEqChart drops its mask on (eqChartHasDrawnTrusted):
+    // an axis judged on trusted bins and a curve drawn through all of them -- or
+    // the reverse -- would disagree about what the chart is showing.
+    if (eqChartHasDrawnTrusted(data)) scan(true, lo, hi);
     if (!(lo <= hi)) scan(false, lo, hi);
     if (!(lo <= hi)) return {};
     double top = std::ceil((hi + kRangePaddingDb) / 10.0) * 10.0;
@@ -225,10 +235,9 @@ void paintEqChart(juce::Graphics& g, juce::Rectangle<int> area, const EqChartDat
     // coherence floor the estimate is a ratio of noise (ten of dB of scatter,
     // clamped against the frame) and drawing it would bury the curve the
     // allocator fits. The shading above marks the region as not judged. With
-    // NO trusted bin the mask is dropped, so the chart is never blank.
-    const bool anyTrusted = std::any_of(data.trusted.begin(), data.trusted.end(),
-                                        [](std::uint8_t t) { return t != 0; });
-    const auto judged = anyTrusted ? data.trusted : std::span<const std::uint8_t>{};
+    // NO drawn trusted run (>= 2 adjacent bins, the same test the axis range
+    // uses) the mask is dropped, so the chart is never blank.
+    const auto judged = eqChartHasDrawnTrusted(data) ? data.trusted : std::span<const std::uint8_t>{};
     strokeCurve(g, curvePath(upper, data.hz, data.measuredDb, judged), trace, 1.5f, false);
     strokeCurve(g, curvePath(upper, data.hz, data.ghostDb, judged), ghost, 1.5f, true);
     paintLegend(g, upper);

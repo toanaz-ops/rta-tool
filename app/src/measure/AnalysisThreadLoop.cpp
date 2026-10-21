@@ -6,6 +6,7 @@
 #include "measure/AnalysisThread.h"
 
 #include <exception>
+#include <new>
 #include <stdexcept>
 
 namespace rta::measure {
@@ -55,6 +56,7 @@ void AnalysisThread::runBody() {
         bus_.serviceResyncAsConsumer();
         rebuildAnalysersIfEpochChanged();
         applyPendingReferenceDelay();
+        stepRebuild();
 
         // While the gate is up and not yet acknowledged the rings still hold
         // the previous session: reading them now would splice it into the
@@ -73,18 +75,57 @@ void AnalysisThread::rebuildAnalysersIfEpochChanged() {
         return;
     }
     lastEpoch_ = epoch;
+    // The ring side of this reset is runBody()'s serviceResyncAsConsumer(),
+    // gated on the bus's resync flag rather than on this epoch. The Analyser
+    // side is startRebuild(): every slot is stale from this call on, so the
+    // drain of THIS tick already refuses to feed any of them, and every
+    // position is rebuilt, since a device reconfiguration invalidates every
+    // engine.
+    startRebuild();
+}
 
+void AnalysisThread::startRebuild() {
     Analyser::Config cfg = baseConfig_;
     const double rate = bus_.sampleRate();
     if (rate > 0.0) {
         cfg.sampleRate = rate;
     }
-    // The ring side of this reset is runBody()'s serviceResyncAsConsumer(),
-    // gated on the bus's resync flag rather than on this epoch. The fresh
-    // Analysers below are the analysis-side drain; every position is rebuilt
-    // together, since a device reconfiguration invalidates every engine.
-    for (auto& analyser : analysers_) {
-        analyser = std::make_unique<Analyser>(cfg);
+    rebuild_.begin(cfg);
+}
+
+void AnalysisThread::stepRebuild() {
+    if (!rebuild_.pending()) {
+        return;
+    }
+    try {
+        rebuild_.step(analysers_, [this](const Analyser::Config& cfg) {
+            if (failRebuildsForTest_.load(std::memory_order_relaxed) > 0) {
+                failRebuildsForTest_.fetch_sub(1, std::memory_order_relaxed);
+                throw std::bad_alloc();
+            }
+            return std::make_unique<Analyser>(cfg);
+        });
+    } catch (const std::bad_alloc&) {
+        // ~53 MB per Analyser: the one allocation here that can realistically
+        // fail. The slot stays stale (never fed, never published), so the
+        // operator sees a frozen display -- the fault slot says why, once per
+        // sweep, and the next tick retries.
+        if (!rebuildFaultRecorded_) {
+            rebuildFaultRecorded_ = true;
+            recordFault(rta::platform::Fault::Kind::Recovering,
+                        "analyser rebuild failed: out of memory (retrying)");
+        }
+        return;
+    }
+    if (!rebuild_.pending()) {
+        if (rebuildFaultRecorded_) {
+            // Recovered: replace the recoverable fault with None (the sequence
+            // moves, so the panel repaints and drops the text).
+            rebuildFaultRecorded_ = false;
+            recordFault(rta::platform::Fault::Kind::None, "");
+        }
+        appliedReferenceDelay_.store(rebuild_.config().referenceDelaySamples,
+                                     std::memory_order_release);
     }
 }
 

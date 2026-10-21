@@ -65,7 +65,8 @@ DevicePanel::~DevicePanel() { stopTimer(); }
 
 rta::platform::Fault DevicePanel::currentFault() const {
     return selectFault(audioIo_.lastFault(),
-                       analysisFault_ ? analysisFault_() : rta::platform::Fault{});
+                       analysisFault_ ? analysisFault_() : rta::platform::Fault{},
+                       audioIo_.bus().resyncAckTimeouts());
 }
 
 void DevicePanel::timerCallback() {

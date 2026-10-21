@@ -91,6 +91,7 @@ add_executable(rtatool_main_component_tests
     # MainComponentEq's perform* halves (T6).
     test_main_component_panes_eq.cpp
     test_main_component_panes_eq_widgets.cpp
+    test_main_component_eq_chart_mask.cpp
     test_main_component_eq_export.cpp
     # L7-EQ UI wave B: VERIFY / ADOPT through the real pane and MainComponent,
     # and the LOCATE / CAL mutual-exclusion guards in both directions.

@@ -20,6 +20,7 @@ struct Fault {
         OpenFailed,     ///< The device failed to open.
         DeviceError,    ///< JUCE reported an error while running.
         DeviceStopped,  ///< The device stopped unexpectedly (e.g. unplugged).
+        Recovering,     ///< Analysis is degraded but retrying; cleared (Kind::None) on recovery.
     };
 
     Kind kind = Kind::None;

@@ -5,6 +5,9 @@
 
 #include "rta/platform/Fault.h"
 
+#include <cstdint>
+#include <string>
+
 namespace rta::view {
 
 /// What the device panel's single fault slot shows when TWO sources can fault:
@@ -21,20 +24,35 @@ namespace rta::view {
 /// shows when the device is healthy. The analysis fault is prefixed so the
 /// operator can tell the two apart.
 ///
-/// `sequence` is the SUM of both sources' sequences. Each only ever
-/// increments, so the sum differs from the last one painted exactly when either
-/// source recorded something new -- the same compare `DevicePanel` already did
-/// against one source, extended to two without a second member.
+/// `sequence` is the SUM of the sources' sequences. Each only ever increments,
+/// so the sum differs from the last one painted exactly when any source
+/// recorded something new -- the same compare `DevicePanel` already did against
+/// one source, extended without a second member.
+///
+/// A THIRD source, the capture bus's `resyncAckTimeouts()` (monotonic, never
+/// reset): the consumer drained its rings after waiting 500 ms for the audio
+/// callback to acknowledge the gate and got no answer, so the first block after
+/// a device change may start misaligned between channels. Nothing read that
+/// counter before this. It shows only when neither fault above is active -- a
+/// dead device or a dead analysis thread explains it better -- and its count is
+/// part of the sequence either way, so a new timeout repaints the slot.
 [[nodiscard]] inline rta::platform::Fault selectFault(const rta::platform::Fault& audio,
-                                                      const rta::platform::Fault& analysis) {
+                                                      const rta::platform::Fault& analysis,
+                                                      std::uint64_t resyncAckTimeouts = 0) {
     rta::platform::Fault out;
-    out.sequence = audio.sequence + analysis.sequence;
+    out.sequence = audio.sequence + analysis.sequence + static_cast<std::uint32_t>(resyncAckTimeouts);
     if (audio.kind != rta::platform::Fault::Kind::None) {
         out.kind = audio.kind;
         out.message = audio.message;
     } else if (analysis.kind != rta::platform::Fault::Kind::None) {
         out.kind = analysis.kind;
-        out.message = "ANALYSIS STOPPED: " + analysis.message;
+        out.message = (analysis.kind == rta::platform::Fault::Kind::Recovering ? "ANALYSIS RECOVERING: "
+                                                                              : "ANALYSIS STOPPED: ") +
+                      analysis.message;
+    } else if (resyncAckTimeouts > 0) {
+        out.kind = rta::platform::Fault::Kind::DeviceError;
+        out.message = "CAPTURE RESYNC UNACKNOWLEDGED x" + std::to_string(resyncAckTimeouts) +
+                      ": channels may start misaligned after the last device change";
     }
     return out;
 }

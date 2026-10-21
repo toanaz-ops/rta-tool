@@ -6,6 +6,7 @@
 
 #include "measure/AnalysisPublish.h"
 #include "measure/Analyser.h"
+#include "measure/AnalyserRebuild.h"
 #include "measure/AnalysisThreadSplState.h"
 #include "measure/AtomicSharedPtr.h"
 #include "measure/AverageGroup.h"
@@ -73,7 +74,7 @@ public:
     /// Starts the thread immediately; there is no separate `start()`.
     AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::Config& config);
 
-    /// Trap T-1: `stopThread(2000)` here, in this class's OWN destructor --
+    /// Trap T-1: `stopThreadNoKill` (ThreadStop.h) here, in this class's OWN destructor --
     /// not only relying on the owner's member-declaration order. A thread
     /// still inside `run()` when `bus_` (owned by a sibling member) is
     /// destroyed out from under it is a crash that happens only at
@@ -257,6 +258,8 @@ public:
     /// Makes the next `runBody()` tick throw, so a test can drive `run()`'s
     /// catch, `lastFault()` and its readers without a real bad_alloc.
     void throwOnNextTickForTest() noexcept { throwNextTick_.store(true, std::memory_order_release); }
+    /// The next `count` Analyser builds throw std::bad_alloc (rebuild-fault test).
+    void failRebuildsForTest(int count) noexcept { failRebuildsForTest_.store(count); }
 
     /// The bus's resync state (CaptureBus.h): a capture armed before a change
     /// of `resyncSequence()` is shifted by the resync and must be abandoned.
@@ -278,6 +281,8 @@ private:
     void runBody();
 
     void rebuildAnalysersIfEpochChanged();
+    void startRebuild();
+    void stepRebuild();
     void applyPendingReferenceDelay();
     void drain();
     /// Peeks `refChannel`'s ring and every route in `plan.routes` naming it
@@ -311,21 +316,17 @@ private:
 
     rta::platform::CaptureBus& bus_;
     Analyser::Config baseConfig_;
-    /// Built once, at `kMaxTransferFunctions`, and never resized -- see that
-    /// constant's own comment for why. `analysers_[0]` also serves the plain
-    /// single-channel RTA path (drainRole, publishIfDue) when no route
-    /// exists at all, exactly as the single `analyser_` this replaces did;
-    /// B3's `AverageGroup` is what gives every OTHER index its own published
-    /// output, and is out of scope here.
+    /// Built once at `kMaxTransferFunctions`, never resized (see that constant).
+    /// `analysers_[0]` also serves the plain single-channel RTA path when no
+    /// route exists. A slot may only be fed or published while
+    /// `rebuild_.isFresh(slot)` -- see AnalyserRebuild.h.
     std::vector<std::unique_ptr<Analyser>> analysers_;
+    AnalyserRebuild rebuild_{static_cast<std::size_t>(kMaxTransferFunctions)};
+    bool rebuildFaultRecorded_ = false;  // one fault per sweep, not one per retry
+    std::atomic<int> failRebuildsForTest_{0};
     std::uint64_t lastEpoch_ = 0;
 
-    /// One hop's worth of scratch PER CHANNEL, allocated once here rather
-    /// than per drain call (T-4: the analysis thread may allocate, but there
-    /// is no reason to here). Indexed by channel number directly -- simpler
-    /// than tracking which channels are "in use" this hop, and
-    /// `kMaxChannels` vectors of `hopSize` floats is a few hundred KB, paid
-    /// once at construction, never during a live drain.
+    /// One hop of scratch PER CHANNEL, allocated once, indexed by channel number.
     std::array<std::vector<float>, static_cast<std::size_t>(rta::platform::kMaxChannels)>
         channelScratch_;
 
