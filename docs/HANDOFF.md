@@ -5,6 +5,18 @@
 
 ---
 
+# 2026-10-21 (tối) — **H7 wave A2 (`app/generator-a`): GEN / − / + trên rail, an toàn và loại trừ lẫn nhau xong. Chờ wave B1.**
+
+*Plan: `docs/plans/2026-10-21-h7-generator-output-plan.md` (T1–T5). Chưa có T6+ (signal/tần số, OUT, FOLLOW GEN).*
+
+- **Mới:** `measure/GeneratorModel.*` (ceiling −12 ép trong `makeSource`, floor −60, default −30, step 1 dB), `measure/GeneratorRunner.*` (Idle/Playing/Swapping/Stopping, không bao giờ tự re-arm, timeout 500 ms), `MainComponentGenerator.*` (GEN/STOP, −, +, readout, poll 100 Hz khi chờ callback), `MainComponentGeneratorWiring.cpp`.
+- **Loại trừ:** `generator_.active()` vào `outputBusy()` và env của VERIFY, KHÔNG vào `captureBusy()`. SWEEP/LOCATE/CAL/VERIFY từ chối nêu tên GEN; ALIGN nêu GEN trong câu chung (không đụng `AlignRunner.cpp`). Rời SYNTHETIC huỷ GEN.
+- **Thử tay (SYNTHETIC):** bật SYNTHETIC; bấm GEN: readout `GEN: playing pink -30.0 dBFS RMS on out 1`, nút thành STOP; `+` đến `-12.0 ... (ceiling)`, `−` đến `-60.0`; khi GEN chạy bấm SWEEP/LOCATE/CAL START: từ chối nêu GEN; STOP rồi SWEEP chạy; tắt SYNTHETIC: GEN dừng, lý do `input mode changed`, bật lại vẫn dừng.
+- **Biết trước:** lần bấm GEN đầu tiên fade-in là g(n)² (master và gate output cùng tăng, như `test_output_engine.cpp`); từ lần thứ hai gate đã Running nên là g(n) thuần. Rail ở 1280x800 đã chật: device panel còn ~27 px (cuộn trong viewport).
+- **Tiếp theo:** wave B1 (`app/generator-b`): T6–T9 + T13.
+
+---
+
 # 2026-10-21 (muộn) — **Vòng sửa audit Fable xong phần HIGH/MEDIUM: #76, #78, #80 đã merge. Main = `dfbfb62`. Còn lại: nợ perf và hạng mục cần chủ dự án.**
 
 *Entry này thay phần "Audit Fable" của entry H6 bên dưới: #78 không còn "đang mở" và finding analyser rebuild không còn "chưa có PR".*

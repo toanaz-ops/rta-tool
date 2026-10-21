@@ -53,7 +53,6 @@ public:
     [[nodiscard]] rta::measure::GeneratorRunner& runnerForTest() noexcept { return runner_; }
     [[nodiscard]] juce::String readoutForTest() const { return readout_.getText(); }
     [[nodiscard]] juce::String genButtonTextForTest() const { return genButton_.getButtonText(); }
-    [[nodiscard]] const juce::Component& genButtonForTest() const noexcept { return genButton_; }
     [[nodiscard]] bool fastPollRunningForTest() const noexcept { return isTimerRunning(); }
 
 private:
