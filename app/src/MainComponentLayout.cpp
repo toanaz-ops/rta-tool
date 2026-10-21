@@ -124,7 +124,7 @@ void MainComponent::resized() {
     // in the main content area -- not the rail, which is already full.
     auto paneSelectorRow = area.removeFromTop(az::ui::buttonCellHeight);
     area.removeFromTop(az::ui::gap * 2);
-    layoutPaneSelectorRow(paneSelectorRow);
+    paneSelector_.layout(paneSelectorRow);
 
     workspace_->setBounds(area);
 }

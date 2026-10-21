@@ -157,7 +157,7 @@ void MainComponent::storeClicked() {
     // paneRtaButton_/paneTransferButton_ cannot silently diverge from the
     // group a stored trace lands in (T7's own mutant).
     const juce::String paneLabel =
-        pane == rta::view::PaneView::Transfer ? paneTransferButton_.getButtonText() : paneRtaButton_.getButtonText();
+        pane == rta::view::PaneView::Transfer ? paneSelector_.transferLabel() : paneSelector_.rtaLabel();
     const juce::String name = paneLabel + " @ " + juce::Time::getCurrentTime().formatted("%H:%M:%S");
 
     const auto id = library_.add(std::move(*trace), name.toStdString(), paneLabel.toStdString());

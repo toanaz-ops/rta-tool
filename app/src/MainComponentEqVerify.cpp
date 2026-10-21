@@ -17,6 +17,8 @@
 
 #include "measure/EqVerifyRunner.h"
 
+/// L7-EQ UI wave B: hands `eq_` the device, the live snapshot and the
+/// LOCATE/CAL flags VERIFY needs (MainComponentEqVerify.cpp).
 void MainComponent::wireEqVerify() {
     rta::measure::EqVerifyHost host;
     host.environment = [this] {
