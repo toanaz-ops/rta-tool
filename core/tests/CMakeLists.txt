@@ -30,6 +30,7 @@ add_executable(rta_core_tests
     test_window.cpp
     test_ringbuffer.cpp
     test_fft.cpp
+    test_fft_equivalence.cpp
     test_bands.cpp
     test_spectrum.cpp
     test_bandweights.cpp

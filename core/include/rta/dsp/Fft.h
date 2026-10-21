@@ -39,7 +39,12 @@ private:
 
     std::size_t size_;
     std::vector<std::size_t> reversed_;              ///< bit-reversal permutation
-    std::vector<std::complex<float>> twiddles_;      ///< e^(-2*pi*i*k/N), k < N/2
+    /// Per-stage twiddle tables, concatenated. The stage with butterfly span
+    /// `len` (half = len/2) owns `half` entries starting at offset `half - 1`,
+    /// holding e^(-2*pi*i*j/len) for j < half -- the same doubles the old
+    /// single N/2 table held at index j*(N/len), but contiguous. N - 1 entries
+    /// in total, so twice the old table's N/2.
+    std::vector<std::complex<float>> stageTwiddles_;
 };
 
 }  // namespace rta::dsp
