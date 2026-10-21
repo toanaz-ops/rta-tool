@@ -17,6 +17,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(RTA_BUILD_TESTS "Build rta_core unit tests" ON)
+option(RTA_BUILD_BENCH "Build wall-clock benchmarks (not run by ctest)" OFF)
 option(RTA_BUILD_APP   "Build the JUCE application shell" OFF)
 option(RTA_ENABLE_ASIO "Enable ASIO support (Windows only)" OFF)
 
@@ -166,6 +167,9 @@ endif()
 # app       composition root
 
 add_subdirectory(core)
+if(RTA_BUILD_BENCH)
+    add_subdirectory(core/bench)
+endif()
 
 # platform/types is JUCE-free on purpose, so it builds and is tested on CI
 # even when RTA_BUILD_APP is OFF. See
