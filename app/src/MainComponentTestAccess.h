@@ -103,6 +103,15 @@ struct MainComponentTestAccess {
         c.audioIo_.bus().prepare(sampleRate, numChannels);
     }
 
+    // An active bus with no audio callback acknowledging its resync gate: the
+    // consumer's wait is set to zero, so the next prepare() ends in a drain on
+    // the TIMEOUT path and CaptureBus::resyncAckTimeouts() rises by one.
+    static void forceResyncAckTimeoutForTest(MainComponent& c) {
+        c.audioIo_.bus().setResyncAckTimeout(std::chrono::milliseconds(0));
+        c.audioIo_.bus().setActive(true);
+        c.audioIo_.bus().prepare(48000.0, 2);
+    }
+
     // Session persistence test seam: app/tests_juce/test_main_component_session.cpp
     // (and its fix-round split, test_main_component_session_fixround.cpp).
     // Every name below ends in `ForTest` and is referenced by that exact

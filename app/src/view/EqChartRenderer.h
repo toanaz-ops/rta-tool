@@ -40,6 +40,13 @@ struct EqDbRange {
 };
 [[nodiscard]] EqDbRange eqChartDbRange(const EqChartData& data);
 
+/// True when at least one trusted bin is actually STROKED: a trusted run of two
+/// or more adjacent bins (a run of one is a lone `startNewSubPath`, no line).
+/// The single predicate behind both `eqChartDbRange` (trusted-only axis) and
+/// `paintEqChart` (mask the curves to trusted bins); when it is false the axis
+/// takes every bin and the mask is dropped, so the two always agree.
+[[nodiscard]] bool eqChartHasDrawnTrusted(const EqChartData& data);
+
 /// The correction strip's half-range: the smallest multiple of 10 dB (at
 /// least 10) that holds max|correction|.
 [[nodiscard]] double eqStripHalfRangeDb(std::span<const double> correctionDb);

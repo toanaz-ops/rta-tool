@@ -33,3 +33,22 @@ TEST_CASE("the device panel shows an analysis-thread fault", "[main_component_fa
     const std::string shown = MainComponentTestAccess::devicePanelTypedForTest(component).faultLineTextForTest();
     CHECK(shown == "ANALYSIS STOPPED: injected analysis fault");
 }
+
+// LOW from the same audit's follow-up: CaptureBus::resyncAckTimeouts() had no
+// reader. A drain that went ahead on the timeout may leave channels misaligned
+// for the first block after a device change, and nothing said so.
+TEST_CASE("the device panel shows an unacknowledged capture resync", "[main_component_fault_slot]") {
+    MainComponent component;
+    auto& panel = MainComponentTestAccess::devicePanelTypedForTest(component);
+    CHECK(panel.faultLineTextForTest().empty());
+
+    MainComponentTestAccess::forceResyncAckTimeoutForTest(component);
+
+    const auto deadline = juce::Time::getMillisecondCounter() + 2000u;
+    while (panel.faultLineTextForTest().empty() && juce::Time::getMillisecondCounter() < deadline) {
+        juce::Thread::sleep(5);
+    }
+    const std::string shown = panel.faultLineTextForTest();
+    INFO(shown);
+    CHECK(shown.rfind("CAPTURE RESYNC UNACKNOWLEDGED x", 0) == 0);
+}

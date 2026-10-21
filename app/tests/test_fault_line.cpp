@@ -49,3 +49,23 @@ TEST_CASE("the sequence moves whenever EITHER source records something", "[fault
                       fault(Fault::Kind::DeviceError, "x", 1)).sequence != base);
     CHECK(selectFault(fault(Fault::Kind::DeviceStopped, "y", 4), Fault{}).sequence != base);
 }
+
+TEST_CASE("an unacknowledged capture resync is shown when nothing else is faulted", "[fault_line]") {
+    const Fault out = selectFault(Fault{}, Fault{}, 2);
+    CHECK(out.kind == Fault::Kind::DeviceError);
+    CHECK(out.message.rfind("CAPTURE RESYNC UNACKNOWLEDGED x2", 0) == 0);
+    CHECK(selectFault(Fault{}, Fault{}, 0).message.empty());
+}
+
+TEST_CASE("a real fault outranks the resync note, and the sequence still moves with it",
+          "[fault_line]") {
+    const Fault device = fault(Fault::Kind::DeviceStopped, "unplugged", 1);
+    const Fault out = selectFault(device, Fault{}, 3);
+    CHECK(out.message == "unplugged");
+    CHECK(selectFault(Fault{}, fault(Fault::Kind::DeviceError, "bad_alloc", 1), 3).message ==
+          "ANALYSIS STOPPED: bad_alloc");
+    // DevicePanel repaints only when this differs from the last one painted: a
+    // fourth timeout under an existing fault must still be a new sequence.
+    CHECK(selectFault(device, Fault{}, 4).sequence != out.sequence);
+    CHECK(selectFault(Fault{}, Fault{}, 1).sequence != selectFault(Fault{}, Fault{}, 0).sequence);
+}

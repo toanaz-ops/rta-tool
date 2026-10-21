@@ -4,6 +4,7 @@
 #include "measure/SyntheticInput.h"
 
 #include "measure/Levels.h"
+#include "measure/ThreadStop.h"
 
 #include <algorithm>
 #include <cmath>
@@ -88,7 +89,9 @@ SyntheticInput::~SyntheticInput() {
     bus_.setActive(false);
     // Trap T-1: belt and braces even though the owner's member-declaration
     // order also guarantees this thread stops before bus_ is torn down.
-    stopThread(2000);
+    // Never force-killed (ThreadStop.h): runBody() does one block of work per
+    // iteration and wait(waitMs_) is woken by the notify() in the join.
+    stopThreadNoKill(*this);
 }
 
 void SyntheticInput::run() {

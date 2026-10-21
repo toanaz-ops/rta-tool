@@ -5,7 +5,9 @@
 #include "measure/AnalysisThread.h"
 
 #include "measure/PairedDrain.h"
+#include "measure/ThreadStop.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace rta::measure {
@@ -37,6 +39,17 @@ AnalysisThread::AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::C
     for (auto& scratch : channelScratch_) {
         scratch.assign(config.hopSize, 0.0f);
     }
+    // The set above was built from `config`. When the bus was already prepared
+    // at that very rate there is nothing for the first tick's epoch check to
+    // rebuild: skipping it avoids a second, identical ~110 ms build (and, with
+    // the one-slot-per-tick sweep, ~100-200 ms during which the first hops would
+    // be consumed unanalysed). Epoch is read BEFORE the rate, so a prepare()
+    // landing between the two reads leaves the epoch behind and still rebuilds.
+    const std::uint64_t epochAtStart = bus_.epoch();
+    const double busRate = bus_.sampleRate();
+    if (busRate <= 0.0 || busRate == config.sampleRate) {
+        lastEpoch_ = epochAtStart;
+    }
     // Attached before the thread starts: from here a prepare() raises the
     // producer gate and this thread lowers it (CaptureBus.h, "Resync").
     bus_.attachConsumer();
@@ -46,7 +59,9 @@ AnalysisThread::AnalysisThread(rta::platform::CaptureBus& bus, const Analyser::C
 AnalysisThread::~AnalysisThread() {
     // Trap T-1: belt and braces even though the owner's member-declaration
     // order also guarantees this thread stops before bus_ is torn down.
-    stopThread(2000);
+    // Never force-killed: see ThreadStop.h for why, and for the bound that
+    // makes an unbounded join safe.
+    stopThreadNoKill(*this);
     bus_.detachConsumer();
 }
 
@@ -102,20 +117,12 @@ void AnalysisThread::applyPendingReferenceDelay() {
     }
     baseConfig_.referenceDelaySamples = pendingReferenceDelay_.load(std::memory_order_relaxed);
 
-    // Same rebuild shape as rebuildAnalysersIfEpochChanged: every position
-    // together, sample rate re-read from the bus (record sec.1.6/sec.8 --
-    // an Apply is an engine rebuild, and the coherence gate re-fill that
-    // follows -- ~16 frames of nullopt before it reopens -- is the accepted
-    // cost, not a defect).
-    Analyser::Config cfg = baseConfig_;
-    const double rate = bus_.sampleRate();
-    if (rate > 0.0) {
-        cfg.sampleRate = rate;
-    }
-    for (auto& analyser : analysers_) {
-        analyser = std::make_unique<Analyser>(cfg);
-    }
-    appliedReferenceDelay_.store(baseConfig_.referenceDelaySamples, std::memory_order_release);
+    // An Apply is an engine rebuild (record sec.1.6/sec.8 -- the coherence
+    // gate re-fill that follows, ~16 frames of nullopt, is the accepted cost,
+    // not a defect). It now proceeds one Analyser per tick (AnalyserRebuild.h);
+    // `appliedReferenceDelay_` is stored when the LAST slot lands, because
+    // callers treat it as "samples pushed from now on reach the new engine".
+    startRebuild();
 }
 
 void AnalysisThread::drain() {
@@ -183,6 +190,9 @@ void AnalysisThread::drainPaired(int refChannel, const RoutingPlan& plan) {
         std::span<const std::size_t>(available.data(), availableCount), hop);
 
     for (std::size_t i = 0; i < hops; ++i) {
+        // The stop check sits at the top of a whole hop, never between a peek
+        // and its discard, so an exit request cannot split a group.
+        if (threadShouldExit()) return;
         // Peek every ring in this group BEFORE discarding any of them: a
         // short read on a later one after an earlier one was already
         // discarded would drop a hop from only part of the group, the
@@ -232,8 +242,14 @@ void AnalysisThread::drainPaired(int refChannel, const RoutingPlan& plan) {
             if (routeIndex >= static_cast<std::size_t>(kMaxTransferFunctions)) continue;
             const auto& measurementScratch =
                 channelScratch_[static_cast<std::size_t>(route.measurementChannel)];
-            analysers_[routeIndex]->pushPair(refScratch, measurementScratch);
-            routeHopCounts_[routeIndex].fetch_add(1, std::memory_order_relaxed);
+            // A slot not yet rebuilt after a device change / Apply holds an
+            // Analyser of the PREVIOUS configuration: the hop is consumed (the
+            // ring must keep draining, the SPL tap above already ran) but never
+            // pushed into it. See AnalyserRebuild.h.
+            if (rebuild_.isFresh(routeIndex)) {
+                analysers_[routeIndex]->pushPair(refScratch, measurementScratch);
+                routeHopCounts_[routeIndex].fetch_add(1, std::memory_order_relaxed);
+            }
 
             // L7-DELAY task F2: feed the SAME hops just pushed to the
             // Analyser into the raw-capture accumulator, when this route is
@@ -279,12 +295,24 @@ void AnalysisThread::drainRole(rta::platform::ChannelRole role, bool isReference
     // pushMeasurement()/pushReference() always see a frame-aligned chunk
     // rather than whatever fraction of a hop happened to have arrived by
     // this poll. A short remainder is left in the ring for next time.
-    while (ring->peek(scratch) == hop) {
+    if (hop == 0) {
+        return;
+    }
+    // Bounded by what is in the ring NOW, not by `peek() == hop`: a producer
+    // that keeps pace with this loop would otherwise hold it past any stop
+    // request. Whatever arrives meanwhile is picked up next tick.
+    const std::size_t hops = ring->availableToRead() / hop;
+    for (std::size_t i = 0; i < hops; ++i) {
+        if (threadShouldExit() || ring->peek(scratch) != hop) {
+            return;
+        }
         ring->discard(hop);
-        if (isReference) {
-            analysers_[0]->pushReference(scratch);
-        } else {
-            analysers_[0]->pushMeasurement(scratch);
+        if (rebuild_.isFresh(0)) {
+            if (isReference) {
+                analysers_[0]->pushReference(scratch);
+            } else {
+                analysers_[0]->pushMeasurement(scratch);
+            }
         }
         // Research §C4's actual requirement -- "a session with no reference
         // still logs" -- is met EXACTLY here: this channel drains on its own.
@@ -298,6 +326,19 @@ void AnalysisThread::drainRole(rta::platform::ChannelRole role, bool isReference
 void AnalysisThread::publishIfDue() {
     const std::uint32_t now = juce::Time::getMillisecondCounter();
     if (lastPublishMs_ != 0 && (now - lastPublishMs_) < kMinPublishIntervalMs) {
+        return;
+    }
+    const RoutingPlan plan = planRouting(bus_.config(), bus_.numChannels());
+
+    // No snapshot while any slot a snapshot reads is stale: a publish would
+    // combine Analysers built for two different configurations (the position
+    // average checks the bin grid) or show the previous one's curve. The last
+    // published snapshot stays `latest()` meanwhile -- what the stalled thread
+    // showed before this sweep existed. A snapshot reads slot 0 and one slot
+    // per route.
+    const std::size_t readSlots = std::clamp<std::size_t>(
+        plan.routes.size(), 1, static_cast<std::size_t>(kMaxTransferFunctions));
+    if (rebuild_.freshCount() < readSlots) {
         return;
     }
     lastPublishMs_ = now;
@@ -315,8 +356,6 @@ void AnalysisThread::publishIfDue() {
     // N-scaling snapshot gather, and this function's fixed base-Snapshot
     // copy -- are measured and explained beside the function they belong
     // to, above publishAverageGroup in measure/AnalysisPublish.h.
-    const RoutingPlan plan = planRouting(bus_.config(), bus_.numChannels());
-
     // W0-D: the SPL half. The per-metric window spans are a LOCAL here so
     // nothing allocates during a publish -- see fillSplPublishInput.
     SplPublishInput splInput;

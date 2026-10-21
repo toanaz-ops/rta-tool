@@ -119,9 +119,9 @@ unmeasured real-hardware try are recorded in the QA queue, not as a partial.
 | (c) projection, H6 landed | (b) + the unit H6 flips | 13 + H6 (row 4) = 14 | 14 / 19 = 73.7 % | **14 / 19 = 73.7 %** (H5 measured, no longer projected) |
 
 Arithmetic: 13 / 19 = 0.6842, 9 / 19 = 0.4737, 14 / 19 = 0.7368; (a) does not
-move because H5 is an `app/` lane. **Next lane: H6 RT60-UI** (`app/rt60-ui`; its
+move because H5 is an `app/` lane. ~~**Next lane: H6 RT60-UI** (`app/rt60-ui`; its
 plan `docs/plans/2026-10-20-rt60-ui-lane-plan.md` lands with H6's first PR). H6
-flips row 4 and is the last unit in (c).
+flips row 4 and is the last unit in (c).~~ **H6 DONE (2026-10-21; #74, #77, closeout #79); no lane is open.**
 
 **After H6 wave A (PR #74 `17f3010`, with #72 and #73 both counted; wave B #77 `7b3375f` and the closeout move no count):** row 4 flips
 to BUILT with no partial flag (wave B adds ensemble, EDC plot and third octaves;
