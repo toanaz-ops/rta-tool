@@ -250,6 +250,16 @@ struct MainComponentTestAccess {
         return c.calibrationStartButton_;
     }
     [[nodiscard]] static bool captureBusyForTest(const MainComponent& c) { return c.captureBusy(); }
+    // H7 (app/tests_juce/test_main_component_generator*.cpp).
+    [[nodiscard]] static MainComponentGenerator& generatorForTest(MainComponent& c) { return c.generator_; }
+    [[nodiscard]] static bool outputBusyForTest(const MainComponent& c) { return c.outputBusy(); }
+    static void calibrationEndClickedForTest(MainComponent& c) { c.calibrationEndClicked(); }
+    [[nodiscard]] static juce::String calibrationReadoutForTest(const MainComponent& c) {
+        return c.calibrationReadout_.getText();
+    }
+    [[nodiscard]] static rta::platform::OutputRole outputRoleForTest(const MainComponent& c, int channel) {
+        return c.audioIo_.output().role(channel);
+    }
     [[nodiscard]] static bool outputSourceQuiescentForTest(const MainComponent& c) {
         return c.audioIo_.output().sourceIsQuiescent();
     }

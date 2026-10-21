@@ -35,6 +35,12 @@ void MainComponent::setSyntheticMode(bool enabled) {
     // a source that no longer runs, and locateClicked() refuses while either
     // flag is set -- LOCATE stayed dead until a device restart.
     cancelLocate();
+    // H7: an operator generator never survives an input-mode change. Leaving
+    // SYNTHETIC bumps no output epoch (only entering does), so the runner's
+    // epoch check alone would let GEN keep playing into the live device: this
+    // is the explicit cancel the plan calls for (design item 5). It stays
+    // Idle on re-entry; only a GEN press starts it again.
+    generator_.cancel("input mode changed");
 
     if (enabled) {
         // CaptureBus::prepare() -- called from SyntheticInput's own

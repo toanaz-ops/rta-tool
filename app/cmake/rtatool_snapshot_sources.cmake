@@ -170,6 +170,13 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/MainComponentSweep.cpp
     src/measure/SweepIrPipeline.cpp
     src/measure/SweepIrWorker.cpp
+    # --- H7 generator wave A2: the rail controller and what it reaches (see
+    # rtatool_sources.cmake; this target names every source one by one).
+    src/MainComponentGenerator.cpp
+    src/MainComponentGeneratorWiring.cpp
+    src/measure/GeneratorRunner.cpp
+    src/measure/GeneratorModel.cpp
+    # ---
     # --- ALIGN-UI lane wave A (docs/plans/2026-10-20-align-ui-lane-plan.md) -----
     # The ALIGN pane and everything it reaches. AlignmentWizard.cpp /
     # AlignmentWizardSignals.cpp were built and unit-tested in lane L7-ALIGN

@@ -76,6 +76,13 @@ void MainComponent::resized() {
     sweep_.layout(rail.removeFromTop(az::ui::buttonCellHeight));
     rail.removeFromTop(az::ui::gap * 2);
 
+    // H7 generator (T3): GEN / - / + on one row, its readout on the next.
+    auto generatorButtons = rail.removeFromTop(az::ui::buttonCellHeight);
+    rail.removeFromTop(az::ui::gap);
+    auto generatorReadout = rail.removeFromTop(az::ui::buttonCellHeight);
+    generator_.layout(generatorButtons, generatorReadout);
+    rail.removeFromTop(az::ui::gap * 2);
+
     // L6a Wave 3: one more fixed row, same shape as the Locate row above --
     // CAL START, CAL END, and the readout sharing what's left.
     auto calibrationRow = rail.removeFromTop(az::ui::buttonCellHeight);

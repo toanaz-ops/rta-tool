@@ -115,6 +115,13 @@ TEST_CASE("VERIFY refuses while LOCATE or CAL owns the output or the capture") {
     requireRefused(rig, VerifyBlock::CaptureBusy, "LOCATE or CAL");
 }
 
+TEST_CASE("VERIFY refuses by name while the operator generator holds the output") {
+    Rig rig;
+    rig.env.generatorPlaying = true;  // H7: GEN joins VERIFY's env, but not captureBusy
+    requireRefused(rig, VerifyBlock::GeneratorPlaying, "GEN");
+    CHECK(rig.runner.blocker().text.find("STOP") != std::string::npos);  // and says the way out
+}
+
 TEST_CASE("VERIFY refuses with no TRANSFER measurement published: no snapshot, and no transfer block") {
     Rig none;
     none.nullSnapshot = true;
@@ -195,7 +202,7 @@ TEST_CASE("every VerifyBlock reads as a distinct, non-empty sentence except None
                                   VerifyBlock::Synthetic,         VerifyBlock::DeviceNotRunning,
                                   VerifyBlock::CaptureBusy,       VerifyBlock::NoTransfer,
                                   VerifyBlock::GridMismatch,      VerifyBlock::ExponentialAveraging,
-                                  VerifyBlock::EngineNotQuiescent };
+                                  VerifyBlock::EngineNotQuiescent, VerifyBlock::GeneratorPlaying };
     CHECK(rta::measure::verifyBlockText(VerifyBlock::None).empty());
     for (std::size_t i = 0; i < std::size(kinds); ++i) {
         CHECK_FALSE(rta::measure::verifyBlockText(kinds[i]).empty());

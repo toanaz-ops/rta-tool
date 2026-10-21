@@ -100,6 +100,9 @@ add_executable(rtatool_main_component_tests
     # XOVER axis guard (T7).
     test_main_component_sweep.cpp
     test_main_component_panes_xover_axis.cpp
+    # H7 wave A2 (T3/T4): the rail's GEN / - / + controller and its mutual
+    # exclusion with every measurement, against a real MainComponent.
+    test_main_component_generator.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 

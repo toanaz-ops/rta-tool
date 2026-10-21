@@ -30,7 +30,9 @@ void MainComponent::locateClicked() {
     // the rest is the one-Locate-at-a-time silence the deleted DelayLocator
     // class had (see pollLocatePipeline's own comment below).
     if (outputBusy()) {
-        if (eq_.verifyBusy()) {
+        if (generator_.active()) {
+            delayReadout_.setText("delay: refused -- GEN is playing; press STOP", juce::dontSendNotification);
+        } else if (eq_.verifyBusy()) {
             delayReadout_.setText("delay: refused -- VERIFY is running on the output", juce::dontSendNotification);
         }
         return;
