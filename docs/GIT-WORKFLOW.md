@@ -196,9 +196,16 @@ The PR replaces the local merge, not the verifier. The owner set this loop on
    conversation. Always run `gh pr checks N` first and merge with
    `gh pr merge N --merge --match-head-commit <sha>`.
 
-### PRs touching MainComponent run sequentially (owner decision, 2026-09-27)
+### PRs touching MainComponent run sequentially (owner decision, 2026-09-27; narrowed 2026-10-21)
 
-A PR touching `app/src/MainComponent*`, `app/cmake/*.cmake`,
+**Narrowed by the owner 2026-10-21 (H7 plan review):** the set is now
+`app/src/MainComponent.h` and `app/src/MainComponent.cpp` only, plus the shared
+lists below. Sibling files (`MainComponentSweep.*`, `MainComponentRt60.*`, a new
+`MainComponentX.*`) no longer serialise PRs by themselves. Accepted cost: a
+higher chance of conflicts in a sibling file two lanes both edit -- such a PR
+still merges `origin/main` and shows `MERGEABLE` before its next review round.
+
+A PR touching `app/src/MainComponent.h/.cpp`, `app/cmake/*.cmake`,
 `app/tests_juce/CMakeLists.txt` / `main_component_tests.cmake`, or
 `tools/snapshot.cpp` does not review in parallel with another PR touching the
 same set. If two such PRs are already open, the moment one merges, the other
