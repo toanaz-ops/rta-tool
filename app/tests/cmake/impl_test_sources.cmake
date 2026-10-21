@@ -52,6 +52,9 @@ set(RTA_IMPL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.cpp
     # EqVerifyRunner.cpp: L7-EQ UI wave B tasks T7/T8 -- test_eq_verify_runner*.cpp.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerifyRunner.cpp
+    # GeneratorModel.cpp / GeneratorRunner.cpp: H7 tasks T1/T2 -- test_generator_*.cpp.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/GeneratorModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/GeneratorRunner.cpp
     # EqPaneModel.cpp / EqTraceGrid.cpp / EqFirDesign.cpp: L7-EQ UI wave A tasks T2/T3 (plan
     # docs/plans/2026-09-29-eq-ui-lane-plan.md), JUCE-free, linked by
     # test_eq_pane_model.cpp / test_eq_fir_design.cpp.
