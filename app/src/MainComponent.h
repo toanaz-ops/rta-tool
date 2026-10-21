@@ -14,6 +14,7 @@
 #include "api/ApiSettings.h"
 #include "MainComponentAlign.h"
 #include "MainComponentEq.h"
+#include "MainComponentPaneSelector.h"
 #include "MainComponentRail.h"
 #include "MainComponentRt60.h"
 #include "MainComponentSession.h"
@@ -56,14 +57,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
-    /// Switches the analysis chain between `audioIo_`'s live device and a
-    /// deterministic `SyntheticInput` feed into the SAME bus (plan §0 item
-    /// 4: the whole chain must be drivable with no hardware at all). Exposed
-    /// as a plain method, not only reachable through the switch's own click
-    /// handler, so the offscreen snapshot harness (tools/snapshot.cpp) can
-    /// drive the exact seam a user's click uses rather than a second,
-    /// divergent path. Idempotent: switching to the mode already active does
-    /// nothing.
+    // Rationale: MainComponentSynthetic.cpp, above setSyntheticMode().
     void setSyntheticMode(bool enabled);
 
     [[nodiscard]] bool isSyntheticMode() const noexcept { return syntheticInput_ != nullptr; }
@@ -95,165 +89,48 @@ private:
     }
     [[nodiscard]] bool outputBusy() const noexcept { return captureBusy() || eq_.verifyBusy(); }
 
-    void wirePaneSelectorButtons();  // MainComponentPanes.cpp: 400-line cap
-    void layoutPaneSelectorRow(juce::Rectangle<int> row);
-    // MainComponentPanes.cpp: session Open's own rebuild (multi-pane aware).
-    // Returns the first pane resolution that fell back, so Open's readout
-    // can report it (PR #43 verifier MEDIUM F2).
-    rta::view::PaneResolution restoreWorkspaceFromSession(std::vector<rta::trace::PaneSpec> panes);
+    rta::view::PaneResolution restoreWorkspaceFromSession(std::vector<rta::trace::PaneSpec> panes);  // rationale: MainComponentPanes.cpp
 
-    /// L7-DELAY task F2 (record docs/dsp/2026-09-06-l7-auto-delay.md
-    /// sec.11.2-11.4). LOCATE: pink noise, strict solo on output channel 0
-    /// (record sec.3, DEL-R4 -- a Locate is a measurement action), armSource;
-    /// the settle wait and the capture itself run on `analysisThread_`
-    /// (armLocateCapture) and are polled from `pollLocatePipeline()`, not
-    /// blocked on here. APPLY: rebuilds every live Analyser with the found
-    /// delay (record sec.1.6, sec.8 -- an explicit rebuild, never a live
-    /// nudge), enabled only once a suggestion reads `Accepted`.
+    // Rationale: MainComponentDelay.cpp, above each definition.
     void locateClicked();
     void applyClicked();
-
-    /// Every `timerCallback()` tick: advances the Locate state machine (settle
-    /// -> arm -> read the capture -> suggestDelay -> disarm), never blocking.
     void pollLocatePipeline();
-
-    /// Drops a LOCATE waiting for settle or capture and disarms its source
-    /// (called where the input mode changes). No-op when idle.
     void cancelLocate();
     void updateDelayReadout();
 
-    /// L6a Wave 3 (record §8): the calibration flow's UI half, defined in
-    /// MainComponentCalibration.cpp. Reuses AnalysisThread's raw-capture
-    /// accumulator rather than a second bus reader -- route 0's measurement
-    /// channel, raw, is what a calibrator on that mic delivers.
+    // Rationale: MainComponentCalibration.cpp, above each definition.
     void calibrationStartClicked();
     void calibrationEndClicked();
     void pollCalibrationPipeline();
     void updateCalibrationReadout();
-
-    /// Task W2-E2b part A (record §8, §10 C4: "a weighting change starts a
-    /// new log"; by the same reasoning, so does a calibration change).
-    /// Called from `pollCalibrationPipeline()` right after a START check
-    /// completes: stops any log already running and starts a fresh one whose
-    /// `SplConfig::referenceOffsetDb`/`calibrated` carry the new offset --
-    /// never applied to blocks the OLD, uncalibrated log already wrote. A
-    /// no-op if nothing was logging yet (calibrating with no active
-    /// measurement session has nothing to restart into).
     void restartSplLoggingForCalibration();
-
-    /// Task W2-E2b part A. Called from `pollCalibrationPipeline()` right
-    /// after an END check completes: writes the calibration record (start/end
-    /// readings, drift, verdict, the block-index range the pair brackets --
-    /// SplCalibrationRecord.h) into `currentSplSessionDir_`, and — when the
-    /// drift exceeded ISO 1996-2:2017 cl. 5.2's 0.5 dB — marks this session's
-    /// calibration invalid on `analysisThread_` so the live `SplBlockView`
-    /// publishes it (record §15 A2). Runs on the message thread, never the
-    /// analysis thread (task brief's own requirement). A no-op if
-    /// `currentSplSessionDir_` is empty.
     void writeCalibrationRecordAndUpdateInvalidFlag();
 
-    /// L6a task W2-E2a (record §10, §13 Q7), defined in MainComponentSpl.cpp:
-    /// the composition root's own SPL wiring. Polled from `timerCallback()`
-    /// -- the same shape `refreshChannelNamesFromDevice()` already uses --
-    /// because neither a real device opening/closing nor `setSyntheticMode`
-    /// posts an event this class can subscribe to; edge-detects on
-    /// `splLoggingActive_` and calls `enableSplLogging`/`disableSplLogging`
-    /// only on the transition, never every tick.
+    // Rationale: MainComponentSpl.cpp, above each definition.
     void pollSplLogging();
-
-    /// The half of `pollSplLogging()`'s EnableFresh action that is common to
-    /// both an off-to-on edge and an epoch change while already active:
-    /// reads the current Measurement-role channels, mints a fresh UTC
-    /// session folder and calls `enableSplLogging`. Never called with the
-    /// previous session still open -- the caller disables first when one
-    /// was running (station-4 fix round, PR #31, verifier finding 1).
-    ///
-    /// `epoch` (station-4 fix round, round 3, LOW finding 3) is suffixed
-    /// onto the folder name: the UTC timestamp alone has 1-second
-    /// resolution, so two EnableFresh actions inside the same second (a
-    /// rapid device bounce) would otherwise both resolve to the SAME folder,
-    /// and the second one's createDirectory() + fresh log files would
-    /// truncate the first session's still-unread ones. `epoch` only ever
-    /// increases (CaptureBus::prepare()'s own fetch_add), so it makes the
-    /// name unique by construction with no clock precision to lose.
     void startFreshSplLog(std::uint64_t epoch);
-
-    /// The general form `startFreshSplLog(epoch)` calls with `SplConfig{}`
-    /// (uncalibrated defaults) -- task W2-E2b part A's own seam, so a
-    /// calibration-triggered restart (`restartSplLoggingForCalibration`) and
-    /// a device/epoch-triggered one (`startFreshSplLog`) share every line
-    /// except which config and calibrator level they pass down. Records the
-    /// new folder into `currentSplSessionDir_` and the channel list into
-    /// `currentSplLoggedChannels_` -- both read back by
-    /// `writeCalibrationRecordAndUpdateInvalidFlag()` and
-    /// `exportReportClicked()`.
     void startFreshSplLogWithConfig(const rta::measure::SplConfig& config,
                                     std::optional<double> calibratorLevelDb, std::uint64_t epoch);
-
-    /// Task W2-E2b part B (plan Wave 4a-A / W2-E2b): reachable from a
-    /// toolbar button. Builds a `ReportPayload` from `currentSplSessionDir_`
-    /// (SplReportPayloadBuilder.h) -- reading Ln/dose/alarm state from the
-    /// most recently published live `Snapshot::spl`, since neither is in the
-    /// log -- renders it (SplReport.h, already shipped) and writes
-    /// `report.html` into that same folder. Message-thread file I/O, a
-    /// one-off user action, never the analysis thread. A no-op if nothing has
-    /// logged a block yet.
     void exportReportClicked();
-
     void storeClicked();  // MainComponentStore.cpp (station-3 T5): freezes the pane's Snapshot into library_
     /// STORE's conversion, shared with VERIFY's after-measurement (MainComponentStore.cpp).
     [[nodiscard]] std::optional<rta::trace::Trace> freezeSnapshot(const rta::measure::Snapshot& snapshot,
                                                                   rta::view::PaneView pane);
-    /// L7-EQ UI wave B: hands `eq_` the device, the live snapshot and the
-    /// LOCATE/CAL flags VERIFY needs (MainComponentEqVerify.cpp).
-    void wireEqVerify();
+    void wireEqVerify();  // rationale: MainComponentEqVerify.cpp
     void wireAlign();  // MainComponentAlign.cpp: device, snapshot and busy flags for MEASURE/SUM
     void wireRt60();   // MainComponentRt60.cpp: the SWEEP half's IR store, readout and a tagged press
 
-    /// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
-    /// into `channelRoleTable_` only when it actually changed -- called from
-    /// the poll timer while in LIVE mode (a device can be opened, closed or
-    /// swapped from `devicePanel_` at any time, entirely outside this
-    /// class's own control flow) and once, directly, when leaving SYNTHETIC
-    /// mode.
+    // Rationale: MainComponent.cpp, above each definition.
     void refreshChannelNamesFromDevice();
-    /// The half of the above that does not touch the device: pushes `names`
-    /// into the rail when they differ from `lastChannelNames_`. Own function
-    /// so a test can drive the real push without a sound card.
     void applyChannelNames(std::vector<std::string> names);
-    /// The plan `refreshMembershipFromSnapshot` zips against a Snapshot's
-    /// `positions` -- the same `planRouting(config, bus channel count)` the
-    /// analysis thread itself builds.
     [[nodiscard]] rta::measure::RoutingPlan currentRoutingPlan() const;
-
-    /// Station-4 fix F3 (record §6): pushes the AVG column from the latest
-    /// published Snapshot's `positions`. Called from BOTH `timerCallback()`
-    /// (2 Hz, live/interactive use) AND `resized()` -- NOT the timer alone,
-    /// because `juce::Timer` fires through the message loop, and
-    /// tools/snapshot.cpp's offscreen render drives this class through a
-    /// blocking `juce::Thread::sleep()` with no message loop pumped at all,
-    /// the same reason `renderComponent()` there has to call `resized()`
-    /// explicitly (that file's own comment on trap T-6). Without this second
-    /// call site, main-live.png would show every row's ROLE (set eagerly by
-    /// `setSyntheticMode()`) but every row's AVG stuck at its
-    /// construction-time "--", never having had a chance to run.
     void refreshMembershipFromSnapshot();
 
     // --- Trap T-1: declaration order is load-bearing. See the class comment.
     rta::platform::AudioIo audioIo_;
     rta::measure::AnalysisThread analysisThread_;
     std::unique_ptr<rta::measure::SyntheticInput> syntheticInput_;
-    /// Lane L-API Task J, and trap T-1's third case. `apiServer_` holds
-    /// `analysisThread_` as a `SnapshotSource&`, so it is declared AFTER it
-    /// and is therefore destroyed BEFORE it -- the server stops and joins
-    /// while the source it reads is still alive. Reversing the two is a
-    /// shutdown crash nobody sees in development.
-    ///
-    /// A `unique_ptr` rather than a by-value member for one reason: the API
-    /// is off by default (record sec.8), and a null pointer is the honest
-    /// spelling of "the operator did not ask for this". `ApiServer` itself
-    /// also starts nothing when disabled, so both halves say it.
-    std::unique_ptr<rta::api::ApiServer> apiServer_;
+    std::unique_ptr<rta::api::ApiServer> apiServer_;  // rationale: MainComponent.cpp, above the constructor
     // -------------------------------------------------------------------
 
     juce::TextButton modeSwitch_{"SYNTHETIC"};
@@ -304,14 +181,6 @@ private:
     // --- L6a task W2-E2b part B: export the report from a live session -----
     juce::TextButton exportReportButton_{"EXPORT REPORT"};
     juce::Label exportReportReadout_;
-    /// D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4 item 14): the export try/catch's
-    /// "EXPORT FAILED" branch (MainComponentSpl.cpp) had no test -- nothing
-    /// in this tree can make `buildReportPayload`/`utf8Path` throw through
-    /// the public API. When true, `exportReportClicked()` throws before
-    /// doing any work, so a test can prove the catch branch runs without
-    /// needing a real filesystem failure. Always false outside
-    /// `MainComponentTestAccess::forceExportThrowForTest` -- inert in every
-    /// shipped build.
     bool forceExportThrowForTest_ = false;
     // ----------------------------------------------------------------------
     // STORE (station-3): freezes the live measurement into TraceLibrary.
@@ -324,13 +193,7 @@ private:
     MainComponentRail rail_;
 
     // Pane selector: a radio group. Not persisted (SPL-R11) -- starts at Rta.
-    juce::TextButton paneRtaButton_{"RTA"};
-    juce::TextButton paneTransferButton_{"TRANSFER"};
-    juce::TextButton paneSplButton_{"SPL"};
-    juce::TextButton paneXoverButton_{"XOVER"};  // ALIGN-R8 reversal: G18 live pane
-    juce::TextButton paneEqButton_{"EQ"};        // L7-EQ UI lane: the auto-EQ pane
-    juce::TextButton paneAlignButton_{"ALIGN"};  // ALIGN-UI lane: the alignment wizard pane
-    juce::TextButton paneRt60Button_{"RT60"};    // RT60-UI lane: the reverberation-time table
+    MainComponentPaneSelector paneSelector_;
     rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
 
     // --- library_ before workspace_ is load-bearing too. See the class

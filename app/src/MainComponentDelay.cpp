@@ -12,6 +12,14 @@
 #include "rta/gen/Noise.h"
 #include "rta/gen/Prng.h"
 
+/// L7-DELAY task F2 (record docs/dsp/2026-09-06-l7-auto-delay.md
+/// sec.11.2-11.4). LOCATE: pink noise, strict solo on output channel 0
+/// (record sec.3, DEL-R4 -- a Locate is a measurement action), armSource;
+/// the settle wait and the capture itself run on `analysisThread_`
+/// (armLocateCapture) and are polled from `pollLocatePipeline()`, not
+/// blocked on here. APPLY: rebuilds every live Analyser with the found
+/// delay (record sec.1.6, sec.8 -- an explicit rebuild, never a live
+/// nudge), enabled only once a suggestion reads `Accepted`.
 void MainComponent::locateClicked() {
     // L7-EQ VERIFY plays its own pink noise through the same output engine.
     // This handler ignores setSource's return value and disarms at the end of
@@ -41,6 +49,8 @@ void MainComponent::locateClicked() {
     delayReadout_.setText("delay: locating...", juce::dontSendNotification);
 }
 
+/// Drops a LOCATE waiting for settle or capture and disarms its source
+/// (called where the input mode changes). No-op when idle.
 void MainComponent::cancelLocate() {
     if (!locateWaitingForSettle_ && !locateCaptureArmed_) {
         return;
@@ -52,6 +62,8 @@ void MainComponent::cancelLocate() {
     updateDelayReadout();
 }
 
+/// Every `timerCallback()` tick: advances the Locate state machine (settle
+/// -> arm -> read the capture -> suggestDelay -> disarm), never blocking.
 void MainComponent::pollLocatePipeline() {
     if (locateWaitingForSettle_) {
         // record sec.11: the first 10 ms are not stationary -- 480 samples

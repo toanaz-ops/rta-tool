@@ -86,6 +86,10 @@ constexpr std::int64_t kCalibrationCaptureTimeoutMs = 5000;
 
 }  // namespace
 
+/// L6a Wave 3 (record §8): the calibration flow's UI half, defined in
+/// MainComponentCalibration.cpp. Reuses AnalysisThread's raw-capture
+/// accumulator rather than a second bus reader -- route 0's measurement
+/// channel, raw, is what a calibrator on that mic delivers.
 void MainComponent::calibrationStartClicked() {
     if (outputBusy()) {  // VERIFY's pink noise would sit under the calibrator's tone
         if (eq_.verifyBusy()) {
@@ -219,6 +223,14 @@ void MainComponent::updateCalibrationReadout() {
         juce::dontSendNotification);
 }
 
+/// Task W2-E2b part A (record §8, §10 C4: "a weighting change starts a
+/// new log"; by the same reasoning, so does a calibration change).
+/// Called from `pollCalibrationPipeline()` right after a START check
+/// completes: stops any log already running and starts a fresh one whose
+/// `SplConfig::referenceOffsetDb`/`calibrated` carry the new offset --
+/// never applied to blocks the OLD, uncalibrated log already wrote. A
+/// no-op if nothing was logging yet (calibrating with no active
+/// measurement session has nothing to restart into).
 void MainComponent::restartSplLoggingForCalibration() {
     // Calibrating with nothing logging yet has no live session to restart --
     // SPL-R11's no-preferences-store simplicity means the offset just
@@ -255,6 +267,15 @@ void MainComponent::restartSplLoggingForCalibration() {
     analysisThread_.setCalibrationInvalid(calibrationStartChannel_, false);
 }
 
+/// Task W2-E2b part A. Called from `pollCalibrationPipeline()` right
+/// after an END check completes: writes the calibration record (start/end
+/// readings, drift, verdict, the block-index range the pair brackets --
+/// SplCalibrationRecord.h) into `currentSplSessionDir_`, and — when the
+/// drift exceeded ISO 1996-2:2017 cl. 5.2's 0.5 dB — marks this session's
+/// calibration invalid on `analysisThread_` so the live `SplBlockView`
+/// publishes it (record §15 A2). Runs on the message thread, never the
+/// analysis thread (task brief's own requirement). A no-op if
+/// `currentSplSessionDir_` is empty.
 void MainComponent::writeCalibrationRecordAndUpdateInvalidFlag() {
     if (currentSplSessionDir_.empty()) return;  // nothing logging -- nowhere to write the record
 

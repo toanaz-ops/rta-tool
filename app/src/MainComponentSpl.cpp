@@ -87,6 +87,21 @@
 #include <stdexcept>
 #include <string>
 
+/// The half of `pollSplLogging()`'s EnableFresh action that is common to
+/// both an off-to-on edge and an epoch change while already active:
+/// reads the current Measurement-role channels, mints a fresh UTC
+/// session folder and calls `enableSplLogging`. Never called with the
+/// previous session still open -- the caller disables first when one
+/// was running (station-4 fix round, PR #31, verifier finding 1).
+///
+/// `epoch` (station-4 fix round, round 3, LOW finding 3) is suffixed
+/// onto the folder name: the UTC timestamp alone has 1-second
+/// resolution, so two EnableFresh actions inside the same second (a
+/// rapid device bounce) would otherwise both resolve to the SAME folder,
+/// and the second one's createDirectory() + fresh log files would
+/// truncate the first session's still-unread ones. `epoch` only ever
+/// increases (CaptureBus::prepare()'s own fetch_add), so it makes the
+/// name unique by construction with no clock precision to lose.
 void MainComponent::startFreshSplLog(std::uint64_t epoch) {
     // SplConfig{} defaults, no preferences store (SPL-R11) -- the task
     // brief's own instruction. This path is the device/epoch-triggered
@@ -96,6 +111,15 @@ void MainComponent::startFreshSplLog(std::uint64_t epoch) {
     startFreshSplLogWithConfig(rta::measure::SplConfig{}, std::nullopt, epoch);
 }
 
+/// The general form `startFreshSplLog(epoch)` calls with `SplConfig{}`
+/// (uncalibrated defaults) -- task W2-E2b part A's own seam, so a
+/// calibration-triggered restart (`restartSplLoggingForCalibration`) and
+/// a device/epoch-triggered one (`startFreshSplLog`) share every line
+/// except which config and calibrator level they pass down. Records the
+/// new folder into `currentSplSessionDir_` and the channel list into
+/// `currentSplLoggedChannels_` -- both read back by
+/// `writeCalibrationRecordAndUpdateInvalidFlag()` and
+/// `exportReportClicked()`.
 void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& config,
                                                std::optional<double> calibratorLevelDb,
                                                std::uint64_t epoch) {
@@ -159,6 +183,22 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
     analysisThread_.enableSplLogging(config, channels, currentSplSessionDir_, calibratorLevelDb);
 }
 
+/// Task W2-E2b part B (plan Wave 4a-A / W2-E2b): reachable from a
+/// toolbar button. Builds a `ReportPayload` from `currentSplSessionDir_`
+/// (SplReportPayloadBuilder.h) -- reading Ln/dose/alarm state from the
+/// most recently published live `Snapshot::spl`, since neither is in the
+/// log -- renders it (SplReport.h, already shipped) and writes
+/// `report.html` into that same folder. Message-thread file I/O, a
+/// one-off user action, never the analysis thread. A no-op if nothing has
+/// logged a block yet.
+/// D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4 item 14): the export try/catch's
+/// "EXPORT FAILED" branch (MainComponentSpl.cpp) had no test -- nothing
+/// in this tree can make `buildReportPayload`/`utf8Path` throw through
+/// the public API. When true, `exportReportClicked()` throws before
+/// doing any work, so a test can prove the catch branch runs without
+/// needing a real filesystem failure. Always false outside
+/// `MainComponentTestAccess::forceExportThrowForTest` -- inert in every
+/// shipped build.
 void MainComponent::exportReportClicked() {
     // D7 test seam: bypasses the "no session" guard below so a test needs no
     // real SPL session set up to reach the catch branch -- see
@@ -232,6 +272,13 @@ void MainComponent::exportReportClicked() {
     }
 }
 
+/// L6a task W2-E2a (record §10, §13 Q7), defined in MainComponentSpl.cpp:
+/// the composition root's own SPL wiring. Polled from `timerCallback()`
+/// -- the same shape `refreshChannelNamesFromDevice()` already uses --
+/// because neither a real device opening/closing nor `setSyntheticMode`
+/// posts an event this class can subscribe to; edge-detects on
+/// `splLoggingActive_` and calls `enableSplLogging`/`disableSplLogging`
+/// only on the transition, never every tick.
 void MainComponent::pollSplLogging() {
     const bool active = isSyntheticMode() || audioIo_.isRunning();
     const std::uint64_t currentEpoch = audioIo_.bus().epoch();

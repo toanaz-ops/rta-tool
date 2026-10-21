@@ -17,6 +17,14 @@ const std::vector<std::string> kSyntheticChannelNames{"Synthetic L", "Synthetic 
 
 }  // namespace
 
+/// Switches the analysis chain between `audioIo_`'s live device and a
+/// deterministic `SyntheticInput` feed into the SAME bus (plan §0 item
+/// 4: the whole chain must be drivable with no hardware at all). Exposed
+/// as a plain method, not only reachable through the switch's own click
+/// handler, so the offscreen snapshot harness (tools/snapshot.cpp) can
+/// drive the exact seam a user's click uses rather than a second,
+/// divergent path. Idempotent: switching to the mode already active does
+/// nothing.
 void MainComponent::setSyntheticMode(bool enabled) {
     if (enabled == isSyntheticMode()) {
         return;

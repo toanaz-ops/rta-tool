@@ -60,6 +60,16 @@
 // out (fix round, PR #26: a test needs to call the REAL production closure,
 // and this function needs none of MainComponent's own heavy dependencies).
 
+/// Lane L-API Task J, and trap T-1's third case. `apiServer_` holds
+/// `analysisThread_` as a `SnapshotSource&`, so it is declared AFTER it
+/// and is therefore destroyed BEFORE it -- the server stops and joins
+/// while the source it reads is still alive. Reversing the two is a
+/// shutdown crash nobody sees in development.
+///
+/// A `unique_ptr` rather than a by-value member for one reason: the API
+/// is off by default (record sec.8), and a null pointer is the honest
+/// spelling of "the operator did not ask for this". `ApiServer` itself
+/// also starts nothing when disabled, so both halves say it.
 MainComponent::MainComponent()
     : analysisThread_(audioIo_.bus(), rta::measure::Analyser::Config{}),
       // No device open yet, so no input channels to show a row for: the
@@ -181,7 +191,7 @@ MainComponent::MainComponent()
     rail_.attachTo(*this);
 
     // Owner decision 2026-09-26: the pane selector (MainComponentPanes.cpp).
-    wirePaneSelectorButtons();
+    paneSelector_.attach(*this, [this](rta::view::PaneSelectorButton button) { selectPaneView(button); });
 
     addAndMakeVisible(*workspace_);
     // The seam this whole task exists for (docs/HANDOFF.md): a library was
@@ -270,10 +280,19 @@ void MainComponent::timerCallback() {
     refreshChannelNamesFromDevice();
 }
 
+/// Re-reads `audioIo_.currentState().inputChannelNames` and pushes it
+/// into `channelRoleTable_` only when it actually changed -- called from
+/// the poll timer while in LIVE mode (a device can be opened, closed or
+/// swapped from `devicePanel_` at any time, entirely outside this
+/// class's own control flow) and once, directly, when leaving SYNTHETIC
+/// mode.
 void MainComponent::refreshChannelNamesFromDevice() {
     applyChannelNames(audioIo_.currentState().inputChannelNames);
 }
 
+/// The half of the above that does not touch the device: pushes `names`
+/// into the rail when they differ from `lastChannelNames_`. Own function
+/// so a test can drive the real push without a sound card.
 void MainComponent::applyChannelNames(std::vector<std::string> names) {
     if (names != lastChannelNames_) {
         // A device that reports a NON-ZERO channel count leaves no row for a
@@ -302,6 +321,17 @@ void MainComponent::applyChannelNames(std::vector<std::string> names) {
     }
 }
 
+/// Station-4 fix F3 (record §6): pushes the AVG column from the latest
+/// published Snapshot's `positions`. Called from BOTH `timerCallback()`
+/// (2 Hz, live/interactive use) AND `resized()` -- NOT the timer alone,
+/// because `juce::Timer` fires through the message loop, and
+/// tools/snapshot.cpp's offscreen render drives this class through a
+/// blocking `juce::Thread::sleep()` with no message loop pumped at all,
+/// the same reason `renderComponent()` there has to call `resized()`
+/// explicitly (that file's own comment on trap T-6). Without this second
+/// call site, main-live.png would show every row's ROLE (set eagerly by
+/// `setSyntheticMode()`) but every row's AVG stuck at its
+/// construction-time "--", never having had a chance to run.
 void MainComponent::refreshMembershipFromSnapshot() {
     // The AVG column reflects the live AverageGroup membership from the
     // most recently PUBLISHED Snapshot, read through the same
@@ -316,6 +346,9 @@ void MainComponent::refreshMembershipFromSnapshot() {
     }
 }
 
+/// The plan `refreshMembershipFromSnapshot` zips against a Snapshot's
+/// `positions` -- the same `planRouting(config, bus channel count)` the
+/// analysis thread itself builds.
 rta::measure::RoutingPlan MainComponent::currentRoutingPlan() const {
     // The channel COUNT must be the bus's, exactly as AnalysisThread's own
     // planRouting calls use (AnalysisThread.cpp): `snapshot->positions[i]`
