@@ -160,6 +160,7 @@ public:
     /// ever stores), but it is what a consumer that must take ownership of a
     /// one-shot result exactly once would need, and leaving it out would
     /// invite the next caller to reach around this type for it.
+    /// Test-only: no production caller (owner decision 2026-10-21, audit row "Dead/test-only core API"). Kept as an oracle/fixture; do not build product features on it without an operator path (CLAUDE.md rule 5).
     [[nodiscard]] Ptr exchange(Ptr desired,
                                std::memory_order order = std::memory_order_seq_cst) noexcept {
 #if RTA_ATOMIC_SHARED_PTR_IS_STD
