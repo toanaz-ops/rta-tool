@@ -33,6 +33,15 @@ TEST_CASE("an analysis-thread fault is shown, and labelled as such", "[fault_lin
     CHECK(out.message == "ANALYSIS STOPPED: bad_alloc");
 }
 
+TEST_CASE("a recoverable analysis fault is not labelled STOPPED, and clearing it repaints", "[fault_line]") {
+    const Fault out = selectFault(Fault{}, fault(Fault::Kind::Recovering, "out of memory (retrying)", 1));
+    CHECK(out.message == "ANALYSIS RECOVERING: out of memory (retrying)");
+    const Fault cleared = selectFault(Fault{}, fault(Fault::Kind::None, "", 2));
+    CHECK(cleared.kind == Fault::Kind::None);
+    CHECK(cleared.message.empty());
+    CHECK(cleared.sequence != out.sequence);
+}
+
 TEST_CASE("a device fault wins over an analysis fault", "[fault_line]") {
     const Fault out = selectFault(fault(Fault::Kind::OpenFailed, "no such device", 2),
                                   fault(Fault::Kind::DeviceError, "bad_alloc", 1));

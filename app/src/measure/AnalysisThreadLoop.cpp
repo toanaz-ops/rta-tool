@@ -91,7 +91,6 @@ void AnalysisThread::startRebuild() {
         cfg.sampleRate = rate;
     }
     rebuild_.begin(cfg);
-    rebuildFaultRecorded_ = false;
 }
 
 void AnalysisThread::stepRebuild() {
@@ -113,12 +112,18 @@ void AnalysisThread::stepRebuild() {
         // sweep, and the next tick retries.
         if (!rebuildFaultRecorded_) {
             rebuildFaultRecorded_ = true;
-            recordFault(rta::platform::Fault::Kind::DeviceError,
+            recordFault(rta::platform::Fault::Kind::Recovering,
                         "analyser rebuild failed: out of memory (retrying)");
         }
         return;
     }
     if (!rebuild_.pending()) {
+        if (rebuildFaultRecorded_) {
+            // Recovered: replace the recoverable fault with None (the sequence
+            // moves, so the panel repaints and drops the text).
+            rebuildFaultRecorded_ = false;
+            recordFault(rta::platform::Fault::Kind::None, "");
+        }
         appliedReferenceDelay_.store(rebuild_.config().referenceDelaySamples,
                                      std::memory_order_release);
     }

@@ -46,7 +46,9 @@ namespace rta::view {
         out.message = audio.message;
     } else if (analysis.kind != rta::platform::Fault::Kind::None) {
         out.kind = analysis.kind;
-        out.message = "ANALYSIS STOPPED: " + analysis.message;
+        out.message = (analysis.kind == rta::platform::Fault::Kind::Recovering ? "ANALYSIS RECOVERING: "
+                                                                              : "ANALYSIS STOPPED: ") +
+                      analysis.message;
     } else if (resyncAckTimeouts > 0) {
         out.kind = rta::platform::Fault::Kind::DeviceError;
         out.message = "CAPTURE RESYNC UNACKNOWLEDGED x" + std::to_string(resyncAckTimeouts) +

@@ -30,6 +30,7 @@ using rta::measure::AnalysisThread;
 using rta::measure::SyntheticInput;
 using rta::platform::CaptureBus;
 using rta::platform::ChannelRole;
+using rta::platform::Fault;
 
 namespace {
 
@@ -107,7 +108,9 @@ TEST_CASE("a stale slot is never fed or published, a failed build faults once, t
         },
         3000));
     CHECK(waitUntil([&] { return thread.latest() != snapshotWhileStale; }, 2000));
-    CHECK(thread.lastFault().sequence == fault.sequence);
+    // The recoverable fault is cleared (sequence moves once more) when the sweep lands.
+    CHECK(waitUntil([&] { return thread.lastFault().kind == Fault::Kind::None; }, 2000));
+    CHECK(thread.lastFault().sequence == fault.sequence + 1);
 }
 
 TEST_CASE("an APPLY at 192 kHz with SYNTHETIC running drops nothing and stalls the drain for one slot",

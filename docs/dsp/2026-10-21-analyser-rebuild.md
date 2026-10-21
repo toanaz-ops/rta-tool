@@ -122,8 +122,10 @@ slot stale; `step()` replaces the next one. Argued against:
 3. **A failed build never leaves a null slot and never marks a slot fresh.**
    The replacement is built into a temporary first. `std::bad_alloc` (the only
    realistic failure of a ~53 MB build) is caught in `stepRebuild`, recorded ONCE
-   per sweep through `recordFault` (the slot the device panel already reads;
-   `selectFault` prefixes it "ANALYSIS STOPPED:"), and retried on the next tick. It
+   per fault episode through `recordFault` as `Fault::Kind::Recovering` (the slot the
+   device panel already reads; `selectFault` prefixes it "ANALYSIS RECOVERING:", not
+   the terminal "ANALYSIS STOPPED:"), retried on the next tick, and replaced by
+   `Kind::None` (sequence moves, panel repaints) when the sweep completes. It
    used to fall through to `run()`'s catch, which also records a fault but ends the
    thread and measurement with it, even for a transient shortage.
 4. **Per-iteration work is bounded** (section 6): one slot, or one hop.

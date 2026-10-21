@@ -5,6 +5,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstdio>
+
 namespace rta::measure {
 
 /// How long a thread gets to answer a stop request before the overrun is logged.
@@ -41,6 +43,10 @@ inline juce::uint32 stopThreadNoKill(juce::Thread& thread, int overrunMs = kThre
         juce::Logger::writeToLog("!! thread '" + thread.getThreadName() + "' has not exited in " +
                                  juce::String(overrunMs) +
                                  " ms; joining without a force-kill");
+        // Logger has no sink unless the app installs one (OutputDebugString only):
+        // stderr is what a human running the exe or ctest actually sees.
+        std::fprintf(stderr, "!! thread '%s' has not exited in %d ms; joining without a force-kill\n",
+                     thread.getThreadName().toRawUTF8(), overrunMs);
         thread.waitForThreadToExit(-1);
     }
     // Already exited: only releases the handle. `-1` and not a timeout because
