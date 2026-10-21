@@ -25,8 +25,8 @@ Two consequences, one obvious and one quiet:
    anything that genuinely evaluates spherical harmonics. The shim is a door
    propped open, not a repair.
 
-Related: **pyrato is NOT installed** in the venv, although `CLAUDE.md:30` names
-it as one of the golden-generator dependencies. Only `acoustics 0.2.6` is
+Related: **pyrato is NOT installed** in the venv, although `CLAUDE.md` used to name
+it as one of the golden-generator dependencies (reworded 2026-10-21). Only `acoustics 0.2.6` is
 present. Any decision record that makes pyrato a reference implementation must
 first install and version-pin it — as of 2026-08-30 a record citing "our pyrato"
 cites nothing.
