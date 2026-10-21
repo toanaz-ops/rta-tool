@@ -18,7 +18,9 @@
 
 #include "rta/dsp/Window.h"
 
+#include <algorithm>
 #include <cmath>
+#include <span>
 #include <numeric>
 #include <stdexcept>
 #include <vector>
@@ -128,4 +130,15 @@ TEST_CASE("apply() multiplies sample-wise and tolerates aliasing", "[window]") {
 
 TEST_CASE("Zero-length window is rejected", "[window]") {
     CHECK_THROWS_AS(Window(WindowType::Hann, 0), std::invalid_argument);
+}
+
+TEST_CASE("apply() rejects a size mismatch instead of truncating", "[window]") {
+    const Window w(WindowType::Hann, 64);
+    std::vector<float> in(64, 1.0f), shortOut(63, 0.0f), longIn(65, 1.0f), out(64, 0.0f);
+    CHECK_THROWS_AS(w.apply(in, shortOut), std::invalid_argument);
+    CHECK_THROWS_AS(w.apply(longIn, out), std::invalid_argument);
+    CHECK_THROWS_AS(w.apply(std::span<const float>{}, std::span<float>{}), std::invalid_argument);
+    // Nothing was written by a refused call.
+    CHECK(std::all_of(out.begin(), out.end(), [](float v) { return v == 0.0f; }));
+    CHECK(std::all_of(shortOut.begin(), shortOut.end(), [](float v) { return v == 0.0f; }));
 }

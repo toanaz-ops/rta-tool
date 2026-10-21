@@ -39,7 +39,15 @@ public:
     /// response is an APPROXIMATION of this function; the size of that
     /// approximation is published in
     /// docs/dsp/2026-08-27-weighting-and-meters.md.
-    [[nodiscard]] static double analyticDb(double frequencyHz, WeightingType type) noexcept;
+    ///
+    /// Domain: finite `frequencyHz > 0`. The A and C brackets vanish at 0 Hz,
+    /// so the true value there is -inf dB; a silent -inf (or NaN) poisons any
+    /// plot or sum built on it, so core's convention applies -- an entry
+    /// point rejects input outside its domain instead of returning a
+    /// sentinel. IEC 61672-1 Table 3 starts at 10 Hz; 0 < f < 10 Hz is
+    /// evaluated by the same closed form.
+    /// @throws std::invalid_argument if frequencyHz is not finite and > 0.
+    [[nodiscard]] static double analyticDb(double frequencyHz, WeightingType type);
 
     [[nodiscard]] WeightingType type() const noexcept { return type_; }
     [[nodiscard]] double sampleRate() const noexcept { return sampleRate_; }
@@ -48,7 +56,11 @@ public:
     /// the audio path; for tests, plots and the published error table.
     /// `20*log10|H(e^{jw})|`, computed from BiquadCascade::attenuationDb
     /// (which is -20*log10|H|, positive = down), so this is the negation.
-    [[nodiscard]] double responseDb(double frequencyHz) const noexcept;
+    /// Domain: finite `frequencyHz > 0` (at 0 Hz the A/C cascades have a
+    /// double zero at z = 1, so the answer is -inf). Same rule as
+    /// `analyticDb`.
+    /// @throws std::invalid_argument if frequencyHz is not finite and > 0.
+    [[nodiscard]] double responseDb(double frequencyHz) const;
 
     [[nodiscard]] const BiquadCascade& cascade() const noexcept { return cascade_; }
 

@@ -3,6 +3,7 @@
 
 #include "rta/dsp/RingBuffer.h"
 
+#include <algorithm>
 #include <atomic>
 #include <numeric>
 #include <stdexcept>
@@ -148,4 +149,44 @@ TEST_CASE("Concurrent producer and consumer keep the stream intact", "[ringbuffe
 
     CHECK_FALSE(mismatch.load());
     CHECK(produced.load() == kTotal);
+}
+
+// Equivalence of the two-segment memcpy write/peek against the element loop it
+// replaced. The expectation is the logical FIFO content (src in order,
+// whatever the physical layout), checked over every capacity, starting phase
+// (so every wrap point is crossed), write size, peek offset and peek size.
+// The element-loop version of write/peek satisfies exactly this contract.
+TEST_CASE("memcpy write/peek matches the FIFO contract at every wrap", "[ringbuffer]") {
+    for (const std::size_t cap : {1u, 2u, 4u, 8u, 16u}) {
+        for (std::size_t phase = 0; phase < cap; ++phase) {
+            for (std::size_t n = 0; n <= cap; ++n) {
+                RingBuffer<float> rb(cap);
+                // Advance both indices by `phase` so the data wraps at a chosen point.
+                std::vector<float> filler(phase, -1.0f);
+                if (phase > 0) {
+                    REQUIRE(rb.write(filler));
+                    REQUIRE(rb.discard(phase) == phase);
+                }
+
+                std::vector<float> src(n);
+                std::iota(src.begin(), src.end(), 100.0f);
+                REQUIRE(rb.write(src));
+
+                for (std::size_t offset = 0; offset <= n + 1; ++offset) {
+                    for (std::size_t want = 0; want <= cap + 1; ++want) {
+                        std::vector<float> dst(want, -7.0f);
+                        const std::size_t got = rb.peek(dst, offset);
+                        const std::size_t expected = offset >= n ? 0 : std::min(want, n - offset);
+                        INFO("cap=" << cap << " phase=" << phase << " n=" << n
+                                    << " offset=" << offset << " want=" << want);
+                        REQUIRE(got == expected);
+                        for (std::size_t i = 0; i < want; ++i) {
+                            const float e = i < expected ? src[offset + i] : -7.0f;
+                            REQUIRE(dst[i] == e);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

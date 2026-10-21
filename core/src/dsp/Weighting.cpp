@@ -135,7 +135,16 @@ Weighting::Weighting(WeightingType type, double sampleRate)
     }
 }
 
-double Weighting::analyticDb(double frequencyHz, WeightingType type) noexcept {
+namespace {
+void requirePositiveFinite(double frequencyHz, const char* who) {
+    if (!(frequencyHz > 0.0) || !std::isfinite(frequencyHz)) {
+        throw std::invalid_argument(std::string(who) + ": frequencyHz must be finite and > 0");
+    }
+}
+}  // namespace
+
+double Weighting::analyticDb(double frequencyHz, WeightingType type) {
+    requirePositiveFinite(frequencyHz, "Weighting::analyticDb");
     switch (type) {
         case WeightingType::A: return 20.0 * std::log10(analogGainA() * bracketA(frequencyHz));
         case WeightingType::C: return 20.0 * std::log10(analogGainC() * bracketC(frequencyHz));
@@ -144,7 +153,8 @@ double Weighting::analyticDb(double frequencyHz, WeightingType type) noexcept {
     return 0.0;
 }
 
-double Weighting::responseDb(double frequencyHz) const noexcept {
+double Weighting::responseDb(double frequencyHz) const {
+    requirePositiveFinite(frequencyHz, "Weighting::responseDb");
     const double omega = kTwoPi * frequencyHz / sampleRate_;  // 2*pi*f/fs, rad/sample
     return -cascade_.attenuationDb(omega);
 }

@@ -106,8 +106,6 @@ Analyser::Analyser(const Config& config)
     // and is built unconditionally regardless of mtwEnabled (Analyser.h's own
     // comment on mtw_).
     , mtw_(toMtwConfig(config)) {}
-    // latest_ default-constructs to an empty AtomicSharedPtr, i.e. latest()
-    // returns nullptr until the first publish().
 
 void Analyser::pushMeasurement(std::span<const float> samples) {
     measurementEngine_.process(samples);
@@ -216,19 +214,13 @@ SnapshotPtr Analyser::publish(std::uint64_t droppedSamples) {
     }
 
     SnapshotPtr result(snapshot);
-    // Trap T-5 / decision record: one struct, published by an atomic
-    // pointer swap. Writer = analysis thread (this call), reader = message
-    // thread via latest() -- neither side is the audio callback.
-    latest_.store(result, std::memory_order_release);
+    // Trap T-5: the caller (AnalysisThread) publishes this pointer by atomic
+    // swap; Analyser itself holds no copy.
     return result;
 }
 
 std::uint64_t Analyser::framesAnalysed() const noexcept {
     return measurementEngine_.frameCount();
-}
-
-SnapshotPtr Analyser::latest() const {
-    return latest_.load(std::memory_order_acquire);
 }
 
 }  // namespace rta::measure

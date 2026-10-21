@@ -3,9 +3,7 @@
 // See docs/plans/2026-08-27-audioio-rta-impl-plan.md §1.3, §3.4.
 #pragma once
 
-#include "measure/AtomicSharedPtr.h"
 #include "measure/Snapshot.h"
-#include "measure/SnapshotSource.h"
 
 #include "rta/dsp/BandWeights.h"
 #include "rta/dsp/DualFftEngine.h"
@@ -58,11 +56,12 @@ struct CaptureConfig {
 ///
 /// Not thread-safe on the write side: `pushMeasurement`, `pushReference`,
 /// `reset` and `publish` must all be called from the same thread (the
-/// analysis thread, once one exists). `latest()` is the one method safe to
-/// call from another thread (the message thread), because it only touches
-/// the atomic snapshot pointer -- trap T-5: writer = analysis thread,
-/// reader = message thread, nothing else.
-class Analyser final : public SnapshotSource {
+/// analysis thread, once one exists). `publish()` RETURNS the snapshot; the
+/// cross-thread hand-off (trap T-5: writer = analysis thread, reader =
+/// message thread) lives in `AnalysisThread::latest()`, the only production
+/// reader. This class keeps no copy of its own -- a second atomic pointer
+/// stored on every publish and read by nothing was audit item LOW (2026-10-21).
+class Analyser final {
 public:
     struct Config {
         std::size_t fftSize = 4096;
@@ -159,10 +158,6 @@ public:
 
     [[nodiscard]] std::uint64_t framesAnalysed() const noexcept;
 
-    /// The most recently published snapshot, or `nullptr` before the first
-    /// `publish()`. Safe to call from any thread (see class comment).
-    [[nodiscard]] SnapshotPtr latest() const override;
-
     /// The RAW dual-FFT result this position's engine currently holds --
     /// `std::nullopt` under the exact same condition `publish()`'s own
     /// `transfer` field is (no reference pushed yet, or no frame analysed
@@ -170,8 +165,7 @@ public:
     /// needs and `Snapshot::transfer` cannot give it: `TransferBlock` is
     /// already converted to degrees and has thrown away `h` (the complex
     /// value) and `binWidthHz`/`sampleRate`, which the combine's own grid
-    /// check requires. Not thread-safe across calls the way `latest()` is --
-    /// call only from the same thread that calls `pushPair`/`publish`
+    /// check requires. Not thread-safe -- call only from the same thread that calls `pushPair`/`publish`
     /// (the analysis thread), exactly like `pushMeasurement` etc.
     [[nodiscard]] std::optional<rta::dsp::TransferSnapshot> transferSnapshot() const {
         if (!dualEngaged_ || dual_.frameCount() == 0) return std::nullopt;
@@ -237,17 +231,6 @@ private:
     bool mtwEngaged_ = false;
 
     std::uint64_t sequence_ = 0;
-    /// AtomicSharedPtr rather than a bare std::atomic over the shared_ptr:
-    /// Apple's libc++ ships no C++20 specialisation for that and rejects it
-    /// at compile time. Same swap, same memory orders, and no lock of OURS
-    /// either way -- but do not read that as lock-free: on Apple libc++ the
-    /// fallback is lock-based inside the standard library, and on MSVC 14.51
-    /// the C++20 specialisation measures as not lock-free either. What makes
-    /// it safe is that neither side of this pointer is the audio callback
-    /// (writer: the analysis thread's publish(); reader: latest()).
-    /// See measure/AtomicSharedPtr.h, and the ctest guard
-    /// `no_std_atomic_over_shared_ptr` that keeps the substitution honest.
-    AtomicSharedPtr<const Snapshot> latest_;
 };
 
 }  // namespace rta::measure

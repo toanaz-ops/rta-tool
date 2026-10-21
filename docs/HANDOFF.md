@@ -5,6 +5,25 @@
 
 ---
 
+# 2026-10-21 (muộn) — **Vòng sửa audit Fable xong phần HIGH/MEDIUM: #76, #78, #80 đã merge. Main = `dfbfb62`. Còn lại: nợ perf và hạng mục cần chủ dự án.**
+
+*Entry này thay phần "Audit Fable" của entry H6 bên dưới: #78 không còn "đang mở" và finding analyser rebuild không còn "chưa có PR".*
+
+| PR | merge | what |
+|---|---|---|
+| #76 | `df3d444` | decay (core): truncation của Lundeby đọc đường hồi quy chứ không đọc một sample; bound cho clarity pre-ring; `lastUsable` |
+| #78 | `63bd500` | `CaptureBus` resync gate + consumer drain có ack, SPL Gap cho frame mất do resync, sweep/locate abort khi resync, fault slot + detach on fault, `pairedHopCount` |
+| #80 | `dfbfb62` | analyser rebuild MỘT slot mỗi tick (hết đỉnh 424 MB), dừng thread không kill, trạng thái `recovering` của fault |
+
+Cũng đã sửa trong các PR trên: Polarity, LS-centring, các chỗ doc-drift. LOW batch `core/audit-low-batch` (PR mở): `Weighting::responseDb/analyticDb` ném `invalid_argument` khi f không hữu hạn hoặc <= 0 (trước đây -inf), `Window::apply` ném khi lệch kích thước (trước đây cắt im lặng ở Release), `RingBuffer::write/peek` hai đoạn memcpy, bỏ `Analyser::latest_` (không code production nào đọc; `AnalysisThread::latest()` vẫn là đường publish duy nhất), CLAUDE.md không còn nói pyrato.
+
+**Còn lại từ audit (DEFER, không làm trong LOW batch):**
+
+- Perf (M): FFT scalar (`RealFft`), lưới `crossoverBandFit`.
+- Cần chủ dự án / cần operator path: API core chết hoặc chỉ test dùng; nhánh config chỉ có một giá trị trong production. Quyết định theo gu chủ dự án, không sửa mù.
+
+---
+
 # 2026-10-21 — **Lane order của plan review #2 xong: H4, H5, H6 đều BUILT và operator-reachable. Main = `7b3375f` (+ #78 đang mở); PR closeout H6 + LOW batch đang mở.**
 
 *H6 `app/rt60-ui` xong: pane RT60 (SWEEP riêng với TAIL, bảng T30 / T20 / EDT theo octave hoặc third-octave, ensemble qua nhiều sweep, EDC chart). Không còn lane nào đang mở trong thứ tự EQ-UI → SWEEP → ALIGN-UI → RT60 UI. Việc còn lại là nợ LOW, #78, và các lane NEW-LANE chưa xếp lịch.*

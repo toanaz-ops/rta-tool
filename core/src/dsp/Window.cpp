@@ -2,7 +2,6 @@
 #include "rta/dsp/Window.h"
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -100,9 +99,13 @@ double Window::equivalentNoiseBandwidth() const noexcept {
 }
 
 void Window::apply(std::span<const float> in, std::span<float> out) const {
-    assert(in.size() == size() && out.size() == size());
-    const std::size_t n = std::min({in.size(), out.size(), coefficients_.size()});
-    for (std::size_t i = 0; i < n; ++i) {
+    // A mismatch is a caller bug that, in Release, used to truncate silently
+    // (assert compiled out, min() clamped): a short output looked like a
+    // valid windowed frame. Same rejection as core's other entry points.
+    if (in.size() != size() || out.size() != size()) {
+        throw std::invalid_argument("Window::apply: in and out must both have size() samples");
+    }
+    for (std::size_t i = 0; i < coefficients_.size(); ++i) {
         out[i] = in[i] * coefficients_[i];
     }
 }

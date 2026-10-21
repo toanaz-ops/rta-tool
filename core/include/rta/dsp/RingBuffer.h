@@ -2,12 +2,14 @@
 // Part of RTA Tool -- rta_core. No JUCE, no Qt, no audio-device API.
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstring>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace rta::dsp {
@@ -38,6 +40,9 @@ namespace rta::dsp {
 /// wrap.
 template <typename T>
 class RingBuffer {
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "RingBuffer copies with memcpy: T must be trivially copyable");
+
 public:
     /// @param minCapacity  minimum number of elements; rounded up to a power of
     ///                     two so that index masking is a single AND.
@@ -71,8 +76,14 @@ public:
         if (src.size() > capacity() - (write - read)) {
             return false;
         }
-        for (std::size_t i = 0; i < src.size(); ++i) {
-            storage_[(write + i) & mask_] = src[i];
+        // Two contiguous segments (up to the physical end, then from the
+        // start) instead of an element loop with a mask per element. No
+        // allocation, no branch on data.
+        const std::size_t start = write & mask_;
+        const std::size_t first = std::min(src.size(), capacity() - start);
+        if (first > 0) std::memcpy(storage_.data() + start, src.data(), first * sizeof(T));
+        if (src.size() > first) {
+            std::memcpy(storage_.data(), src.data() + first, (src.size() - first) * sizeof(T));
         }
         writeIndex_.store(write + src.size(), std::memory_order_release);
         return true;
@@ -89,8 +100,11 @@ public:
             return 0;
         }
         const std::size_t count = std::min(dst.size(), available - offset);
-        for (std::size_t i = 0; i < count; ++i) {
-            dst[i] = storage_[(read + offset + i) & mask_];
+        const std::size_t start = (read + offset) & mask_;
+        const std::size_t first = std::min(count, capacity() - start);
+        if (first > 0) std::memcpy(dst.data(), storage_.data() + start, first * sizeof(T));
+        if (count > first) {
+            std::memcpy(dst.data() + first, storage_.data(), (count - first) * sizeof(T));
         }
         return count;
     }

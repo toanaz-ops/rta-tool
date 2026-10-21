@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
 #include <string>
@@ -313,4 +314,22 @@ TEST_CASE("Weighting design matches scipy's bilinear design", "[weighting][golde
 
         CHECK_THAT(leqDb, WithinAbs(golden.row("leq_db")[0], 1e-4));
     }
+}
+
+// Domain guard (audit LOW, 2026-10-21): at 0 Hz the A/C response is -inf and
+// the old code returned it silently. The expectation is the documented domain
+// (finite f > 0), not a number the code printed.
+TEST_CASE("Weighting rejects frequencies outside f > 0", "[weighting]") {
+    const Weighting a(WeightingType::A, 48000.0);
+    const double bad[] = {0.0, -1.0, std::numeric_limits<double>::infinity(),
+                          std::numeric_limits<double>::quiet_NaN()};
+    for (const double f : bad) {
+        INFO("f = " << f);
+        CHECK_THROWS_AS(a.responseDb(f), std::invalid_argument);
+        CHECK_THROWS_AS(Weighting::analyticDb(f, WeightingType::A), std::invalid_argument);
+        CHECK_THROWS_AS(Weighting::analyticDb(f, WeightingType::Z), std::invalid_argument);
+    }
+    // The first legal point is finite (IEC 61672-1 Table 3 starts at 10 Hz).
+    CHECK(std::isfinite(a.responseDb(10.0)));
+    CHECK(std::isfinite(Weighting::analyticDb(10.0, WeightingType::C)));
 }
