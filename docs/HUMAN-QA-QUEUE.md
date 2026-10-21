@@ -8,6 +8,18 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 
 ---
 
+## Quyết định chủ nhân — 2026-10-21 (7 câu của Fable review, `docs/proposals/2026-10-21-fable-options.md` §6)
+
+- [x] **1. Phiên phần cứng:** chưa xác định ngày. Agent tiếp tục lane không cần phần cứng; mọi tính năng mới giữ nhãn "unmeasured". Dựng lại `build-asio/` + phiếu QA gộp làm khi có ngày.
+- [x] **2. H7 = generator/output control + tách `MainComponent.h`** là lane kế tiếp (sau FFT perf #82).
+- [x] **3. Core API chỉ test dùng + config một giá trị (Hv, exponential averaging):** dán nhãn test-only (không xoá, không lộ ra operator lúc này).
+- [x] **4. Mua IEC 60268-16 / ISO 2969 / SMPTE ST 202:** hoãn cả hai. Ghi chú giá tra 2026-10-21: IEC 60268-16:2020 CHF 405 (IEC Webstore, mua một lần, vĩnh viễn cho edition đó); bản UNE-EN ~£124 + VAT; ISO 2969 và SMPTE ST 202 chưa thấy giá.
+- [x] **5. MTW storage schema v4:** giữ UNSCHEDULED.
+- [x] **6. `git pull` checkout chính + archive HANDOFF:** đồng ý. Checkout chính đã fast-forward lên `ea539fc`; HANDOFF giữ 3 entry mới, phần cũ ở `docs/handoff-archive/`.
+- [x] **7. Trang marketing:** giữ mọi mục "superior" ở tag planned cho tới khi có số so với incumbent.
+
+---
+
 ## Chặn việc ngay bây giờ
 
 - [x] **ĐÃ ĐÓNG 2026-09-18 — CI chạy lại VÀ matrix ba OS ĐÃ XANH.**
