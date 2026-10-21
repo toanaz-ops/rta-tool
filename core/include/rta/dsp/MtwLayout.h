@@ -85,12 +85,14 @@ struct MtwBand {
 ///
 /// The parameter is kept anyway so a caller cannot silently start assuming
 /// band-dependence; task 1 case 8 asserts the equality bit-for-bit.
+/// Test-only: no production caller (owner decision 2026-10-21, audit row "Dead/test-only core API"). Kept as an oracle/fixture; do not build product features on it without an operator path (CLAUDE.md rule 5).
 [[nodiscard]] double mtwAlpha(const MtwConfig& config, std::size_t band) noexcept;
 
 /// `fifoDepth * hop_k / fs` for the given band (ascending-frequency index).
 /// This is the ONE place seconds are derived in this header, and they are
 /// derived FROM frames, never specified independently -- see MtwConfig's
 /// averaging comment.
+/// Test-only: no production caller (owner decision 2026-10-21, audit row "Dead/test-only core API"). Kept as an oracle/fixture; do not build product features on it without an operator path (CLAUDE.md rule 5).
 [[nodiscard]] double mtwIntegrationSeconds(const MtwConfig& config, std::size_t band);
 
 /// Throws std::invalid_argument if the table cannot be built or exceeds the

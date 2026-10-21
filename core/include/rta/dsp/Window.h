@@ -67,14 +67,17 @@ public:
     [[nodiscard]] double sumSquares() const noexcept { return sumSquares_; }
 
     /// Mean window value, sum(w)/N. Also called coherent gain. 1.0 for rectangular.
+    /// Test-only: no production caller (owner decision 2026-10-21, audit row "Dead/test-only core API"). Kept as an oracle/fixture; do not build product features on it without an operator path (CLAUDE.md rule 5).
     [[nodiscard]] double coherentGain() const noexcept;
 
     /// Multiply a magnitude spectrum by this to recover the true amplitude of a
     /// **sinusoidal** component: `N / sum(w)`.
+    /// Test-only: no production caller (owner decision 2026-10-21, audit row "Dead/test-only core API"). Kept as an oracle/fixture; do not build product features on it without an operator path (CLAUDE.md rule 5).
     [[nodiscard]] double amplitudeCorrection() const noexcept;
 
     /// Multiply a magnitude spectrum by this to preserve the total power of
     /// **random / broadband** content: `sqrt(N / sum(w^2))`.
+    /// Test-only: no production caller (owner decision 2026-10-21, audit row "Dead/test-only core API"). Kept as an oracle/fixture; do not build product features on it without an operator path (CLAUDE.md rule 5).
     [[nodiscard]] double energyCorrection() const noexcept;
 
     /// Equivalent Noise Bandwidth, expressed in FFT bins:

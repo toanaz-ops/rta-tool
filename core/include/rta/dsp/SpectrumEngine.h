@@ -18,6 +18,7 @@ enum class Averaging {
     /// Equal weight to every frame since the last reset. This is what
     /// scipy.signal.welch does, and what you want for a settled measurement of
     /// something that is not changing.
+    /// Config branch the product never sets (owner decision 2026-10-21, audit row "Config branches with exactly one production value"): production uses `Exponential` (Analyser.h default; app/src never sets `Linear`); this value is reachable only from tests until a lane gives it an operator path (CLAUDE.md rule 5).
     Linear,
     /// One-pole smoothing towards each new frame. Never settles, always
     /// current -- the mode an engineer actually watches while moving a fader.

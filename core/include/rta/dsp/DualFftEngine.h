@@ -18,7 +18,8 @@ namespace rta::dsp {
 /// function must not do -- it would take minutes to forget a moved microphone.
 enum class TransferAveraging {
     Fifo,         ///< running sum over the last `fifoDepth` frames, exact drop-off
-    Exponential,  ///< one-pole, the coefficient SpectrumEngine already uses
+    Exponential,  ///< one-pole, the coefficient SpectrumEngine already uses.
+                  ///< Config branch the product never sets (owner decision 2026-10-21, audit row "Config branches with exactly one production value"): production uses `Fifo` (the default; app/src never sets `transferAveraging`); this value is reachable only from tests until a lane gives it an operator path (CLAUDE.md rule 5).
 };
 
 /// Two ring buffers, one delay compensation, three running accumulators

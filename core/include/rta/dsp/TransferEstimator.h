@@ -20,7 +20,9 @@ enum class Estimator {
          ///< the live-sound case: an electrical reference tap, and a mic in a
          ///< room full of uncorrelated energy.
     H2,  ///< Syy/conj(Sxy). Unbiased when the noise is on the REFERENCE.
+         ///< Config branch the product never sets (owner decision 2026-10-21, audit row "Config branches with exactly one production value"): production uses `H1` (Analyser.h default); this value is reachable only from tests until a lane gives it an operator path (CLAUDE.md rule 5).
     Hv,  ///< Total least squares; splits the difference between the two.
+         ///< Config branch the product never sets (owner decision 2026-10-21, audit row "Config branches with exactly one production value"): production uses `H1` (Analyser.h default); this value is reachable only from tests until a lane gives it an operator path (CLAUDE.md rule 5).
 };
 
 /// H1 = Sxy/Sxx. `{0,0}` when `sxx <= 0`: a reference bin with no energy
