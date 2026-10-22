@@ -80,6 +80,15 @@ TEST_CASE("generator model: pink and white hit their RMS level within 0.2 dB ove
     }
 }
 
+TEST_CASE("generator model: a sine at an unusable sample rate builds without undefined behaviour") {
+    // std::clamp(hz, 1, 0.45 * fs) is undefined for fs <= 2.2 (hi < lo).
+    GeneratorSettings s;
+    s.signal = GeneratorSignal::Sine;
+    for (const double fs : {0.0, -48000.0, 1.0}) {
+        CHECK_NOTHROW(makeSource(s, fs, 1));
+    }
+}
+
 TEST_CASE("generator model: clamp and step") {
     CHECK(clampGeneratorLevelDb(0.0) == kGeneratorCeilingDb);
     CHECK(clampGeneratorLevelDb(-12.0) == -12.0);

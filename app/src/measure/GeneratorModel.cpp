@@ -36,7 +36,9 @@ rta::platform::SourceVariant makeSource(const GeneratorSettings& settings, doubl
             return rta::gen::WhiteNoise(rta::gen::Pcg32(seed, 1), level);
         case GeneratorSignal::Sine: {
             // Keep the tone below Nyquist whatever was asked for.
-            const double hz = std::clamp(settings.frequencyHz, 1.0, 0.45 * sampleRate);
+            // std::clamp is undefined when hi < lo, which a zero or negative
+            // sample rate would make it: floor the upper bound at the lower.
+            const double hz = std::clamp(settings.frequencyHz, 1.0, std::max(1.0, 0.45 * sampleRate));
             return rta::gen::Oscillator(sampleRate, hz, level);
         }
         case GeneratorSignal::Pink:

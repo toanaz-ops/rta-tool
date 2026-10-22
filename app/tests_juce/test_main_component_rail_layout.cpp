@@ -227,3 +227,44 @@ TEST_CASE("channel names: a transient zero-channel report keeps the roles",
     MainComponentTestAccess::applyChannelNamesForTest(component, inputNames(16));
     CHECK(config.role(11) == ChannelRole::Measurement);
 }
+
+// PR #88 fix round 1 (verifier MEDIUM): the generator's rows once took the
+// rail's last pixels, leaving the device panel an 11 px strip at 1280x800 --
+// the device combo, START/STOP and the fault line were all scrolled out of
+// sight. The rail test above asserted only that CONTENT exceeds the viewport,
+// which an 11 px viewport satisfies. This pins a MINIMUM visible height.
+TEST_CASE("rail: the device panel's controls are fully visible and GEN stays on screen",
+          "[main_component_rail]") {
+    // DevicePanel::resized()'s own closed form, from Metrics.h: pad, caption,
+    // three field rows with their gaps, the START/STOP switch row, and the
+    // fault line. The viewport must show at least this much with no scrolling.
+    constexpr int kDevicePanelVisibleBottom =
+        az::ui::gap * 2 + az::ui::captionHeight + 3 * (az::ui::fieldHeight + az::ui::gap) + az::ui::gap +
+        az::ui::buttonCellHeight + az::ui::gap * 2 + az::ui::fieldHeight;
+    static_assert(kDevicePanelVisibleBottom == 260);
+
+    const juce::Point<int> sizes[] = {{1280, 800}, {1300, 820}};
+    for (const auto size : sizes) {
+        CAPTURE(size.x, size.y);
+        MainComponent component;
+        component.setSize(size.x, size.y);
+        component.resized();
+
+        const auto& viewport = MainComponentTestAccess::railViewportForTest(component);
+        CHECK(viewport.getHeight() >= kDevicePanelVisibleBottom);
+        CHECK(viewport.getBottom() <= component.getHeight());
+
+        // GEN / STOP and its readout: inside the window, in the masthead,
+        // clear of the wordmark -- visible in every pane.
+        auto& generator = MainComponentTestAccess::generatorForTest(component);
+        const auto gen = generator.genButtonForTest().getBounds();
+        const auto readout = generator.readoutComponentForTest().getBounds();
+        CHECK(gen.getWidth() > 0);
+        CHECK(gen.getHeight() >= 30);
+        CHECK(gen.getY() >= 0);
+        CHECK(gen.getBottom() <= az::ui::transportHeight);  // above the rail and the workspace
+        CHECK(gen.getX() >= 300);                            // right of "RTA TOOL  REAL-TIME ANALYSER"
+        CHECK(readout.getWidth() >= 300);                    // the longest readout fits unclipped
+        CHECK(readout.getRight() <= component.getWidth());
+    }
+}

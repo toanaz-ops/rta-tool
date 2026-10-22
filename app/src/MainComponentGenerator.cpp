@@ -39,15 +39,16 @@ void MainComponentGenerator::attachTo(juce::Component& parent) {
     parent.addAndMakeVisible(readout_);
 }
 
-void MainComponentGenerator::layout(juce::Rectangle<int> buttons, juce::Rectangle<int> readout) {
-    const int wide = (buttons.getWidth() - az::ui::gap * 2) / 2;  // GEN gets half, - and + a quarter each
-    const int narrow = (buttons.getWidth() - az::ui::gap * 2 - wide) / 2;
-    genButton_.setBounds(buttons.removeFromLeft(wide));
-    buttons.removeFromLeft(az::ui::gap);
-    minusButton_.setBounds(buttons.removeFromLeft(narrow));
-    buttons.removeFromLeft(az::ui::gap);
-    plusButton_.setBounds(buttons.removeFromLeft(narrow));
-    readout_.setBounds(readout);
+void MainComponentGenerator::layout(juce::Rectangle<int> strip) {
+    constexpr int kGenWidth = 84;   // "STOP" / "GEN" with its hint line
+    constexpr int kStepWidth = 40;  // "-" / "+"
+    genButton_.setBounds(strip.removeFromLeft(kGenWidth));
+    strip.removeFromLeft(az::ui::gap);
+    minusButton_.setBounds(strip.removeFromLeft(kStepWidth));
+    strip.removeFromLeft(az::ui::gap);
+    plusButton_.setBounds(strip.removeFromLeft(kStepWidth));
+    strip.removeFromLeft(az::ui::gap);
+    readout_.setBounds(strip);
 }
 
 void MainComponentGenerator::genClicked() {

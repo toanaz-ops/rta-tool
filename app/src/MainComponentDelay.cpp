@@ -41,7 +41,14 @@ void MainComponent::locateClicked() {
     // back should not correlate against each other's excitation by
     // coincidence, however small the chance.
     rta::gen::Pcg32 rng(static_cast<std::uint64_t>(juce::Time::currentTimeMillis()), 1);
-    audioIo_.output().setSource(rta::gen::PinkNoise(rng, -12.0));
+    // setSource's bool is the refusal (output-path record sec.6). Ignoring it
+    // armed whatever source was still installed -- after a GEN stop that timed
+    // out on a stopped device, GEN's own -30 dBFS pink -- as if it were LOCATE's.
+    if (!audioIo_.output().setSource(rta::gen::PinkNoise(rng, -12.0))) {
+        delayReadout_.setText("delay: refused -- the output is still playing a source",
+                              juce::dontSendNotification);
+        return;
+    }
     rta::measure::soloOutput(audioIo_.output(), /*outputChannel=*/0);
     audioIo_.output().armSource();
 

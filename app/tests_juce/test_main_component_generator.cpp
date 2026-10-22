@@ -181,6 +181,25 @@ TEST_CASE("generator: a running SWEEP refuses GEN by name; after STOP the SWEEP 
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 30000));
 }
 
+// PR #88 fix round 1 (verifier LOW): LOCATE ignored setSource's return, so after
+// a GEN stop that timed out on a stopped device (source still installed, not
+// quiescent) it armed GEN's own pink as if it were LOCATE's. It must refuse.
+TEST_CASE("generator: LOCATE honours setSource's refusal instead of arming a foreign source", kTag) {
+    MainComponent c;
+    startSynthetic(c);
+    auto& engine = Access::outputEngineForTest(c);
+    REQUIRE(engine.setSource(rta::gen::Oscillator(48000.0, 1000.0, -30.0)));  // somebody else's source
+    engine.armSource();
+    REQUIRE_FALSE(Access::outputBusyForTest(c));  // no client flag: only setSource can refuse
+
+    Access::locateClickedForTest(c);
+
+    CHECK_FALSE(Access::locateActiveForTest(c));
+    CHECK(Access::delayReadoutForTest(c) == "delay: refused -- the output is still playing a source");
+    CHECK(rta::platform::OutputRole::Routed != Access::outputRoleForTest(c, 1));  // routing untouched
+    engine.disarmSource();
+}
+
 TEST_CASE("generator: leaving SYNTHETIC stops GEN with a reason and it stays stopped on re-entry", kTag) {
     MainComponent c;
     startSynthetic(c);

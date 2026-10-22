@@ -34,8 +34,8 @@ public:
     ~MainComponentGenerator() override;
 
     void attachTo(juce::Component& parent);
-    /// Two stacked rows: GEN / - / + on `buttons`, the readout on `readout`.
-    void layout(juce::Rectangle<int> buttons, juce::Rectangle<int> readout);
+    /// One strip (the masthead's right side): GEN, -, + and the readout.
+    void layout(juce::Rectangle<int> strip);
 
     /// The three handlers; public so the offscreen harness can call them.
     void genClicked();
@@ -53,6 +53,8 @@ public:
     [[nodiscard]] rta::measure::GeneratorRunner& runnerForTest() noexcept { return runner_; }
     [[nodiscard]] juce::String readoutForTest() const { return readout_.getText(); }
     [[nodiscard]] juce::String genButtonTextForTest() const { return genButton_.getButtonText(); }
+    [[nodiscard]] const juce::Component& genButtonForTest() const noexcept { return genButton_; }
+    [[nodiscard]] const juce::Component& readoutComponentForTest() const noexcept { return readout_; }
     [[nodiscard]] bool fastPollRunningForTest() const noexcept { return isTimerRunning(); }
 
 private:

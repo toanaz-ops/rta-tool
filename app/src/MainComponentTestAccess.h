@@ -254,6 +254,12 @@ struct MainComponentTestAccess {
     [[nodiscard]] static MainComponentGenerator& generatorForTest(MainComponent& c) { return c.generator_; }
     [[nodiscard]] static bool outputBusyForTest(const MainComponent& c) { return c.outputBusy(); }
     static void calibrationEndClickedForTest(MainComponent& c) { c.calibrationEndClicked(); }
+    // The engine the loopback renders, so a test can prove an aborted run left
+    // the output disarmed (render a few blocks by hand and ask it), or install
+    // a foreign source ahead of a press.
+    [[nodiscard]] static rta::platform::OutputEngine& outputEngineForTest(MainComponent& c) {
+        return c.audioIo_.output();
+    }
     [[nodiscard]] static juce::String calibrationReadoutForTest(const MainComponent& c) {
         return c.calibrationReadout_.getText();
     }
@@ -288,11 +294,6 @@ struct MainComponentTestAccess {
         while (c.audioIo_.bus().resyncPending() && juce::Time::getMillisecondCounter() < deadline) {
             juce::Thread::sleep(2);
         }
-    }
-    // The engine the loopback renders, so a test can prove an aborted run left
-    // the output disarmed: render a few blocks by hand and ask it.
-    [[nodiscard]] static rta::platform::OutputEngine& outputEngineForTest(MainComponent& c) {
-        return c.audioIo_.output();
     }
 
     // RT60-UI wave A (T5): app/tests_juce/test_main_component_rt60.cpp and
