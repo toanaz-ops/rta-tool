@@ -171,13 +171,13 @@ TEST_CASE("generator B: OUT lists one entry per device output and the last tick 
     CHECK_FALSE(rows[1].second);
 
     genOf(c).outputToggled(0);  // would leave nothing ticked
-    CHECK(genOf(c).settings().outputs == std::vector<int>{0});
+    CHECK(genOf(c).settingsForTest().outputs == std::vector<int>{0});
     genOf(c).outputToggled(1);
-    CHECK(genOf(c).settings().outputs == std::vector<int>{0, 1});
+    CHECK(genOf(c).settingsForTest().outputs == std::vector<int>{0, 1});
     genOf(c).outputToggled(0);
-    CHECK(genOf(c).settings().outputs == std::vector<int>{1});
+    CHECK(genOf(c).settingsForTest().outputs == std::vector<int>{1});
     genOf(c).outputToggled(1);  // the last tick stays
-    CHECK(genOf(c).settings().outputs == std::vector<int>{1});
+    CHECK(genOf(c).settingsForTest().outputs == std::vector<int>{1});
     CHECK(genOf(c).readoutForTest().contains("out 2"));
 }
 

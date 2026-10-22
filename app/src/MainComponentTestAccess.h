@@ -256,7 +256,7 @@ struct MainComponentTestAccess {
     // T13: pins GEN's level SETTING (not playing) so a fixture settled at -12 dBFS keeps its level
     // while measurements follow GEN; and the one answer a measurement asks for, plus the LOCATE hint.
     static void pinGeneratorLevelForTest(MainComponent& c, double levelDb) {
-        auto next = c.generator_.settings();
+        auto next = c.generator_.settingsForTest();
         next.levelDb = levelDb;
         static_cast<void>(c.generator_.runnerForTest().apply(std::move(next)));
     }

@@ -57,11 +57,11 @@ void genOnly(MainComponent& c, int channel) {
     genOf(c).outputToggled(channel);
     for (int ch = 0; ch < 8; ++ch) {
         if (ch != channel) {
-            auto outs = genOf(c).settings().outputs;
+            auto outs = genOf(c).settingsForTest().outputs;
             if (std::find(outs.begin(), outs.end(), ch) != outs.end()) genOf(c).outputToggled(ch);
         }
     }
-    REQUIRE(genOf(c).settings().outputs == std::vector<int>{channel});
+    REQUIRE(genOf(c).settingsForTest().outputs == std::vector<int>{channel});
 }
 
 struct Levels {
@@ -122,7 +122,7 @@ TEST_CASE("T13 LOCATE: a stepped GEN level is followed, and the -12 ceiling stil
     MainComponent loud;
     quietLive(loud);
     Access::pinGeneratorLevelForTest(loud, 0.0);  // a request above the ceiling
-    CHECK(genOf(loud).settings().levelDb == -12.0);
+    CHECK(genOf(loud).settingsForTest().levelDb == -12.0);
     Access::locateClickedForTest(loud);
     CHECK(std::abs(renderRms(loud).out0Db - (-12.0)) <= 0.5);
 }
@@ -203,7 +203,7 @@ TEST_CASE("T13 SWEEP: a quiet sweep either works or refuses -- and the readout n
     MainComponent c;
     startSynthetic(c);
     for (int i = 0; i < 30; ++i) genOf(c).stepClicked(-1);  // -60.0, the floor
-    REQUIRE(genOf(c).settings().levelDb == -60.0);
+    REQUIRE(genOf(c).settingsForTest().levelDb == -60.0);
     sweepOf(c).clicked();
     REQUIRE(sweepOf(c).busy());
     CHECK(sweepOf(c).armedLevelDbForTest() == -60.0);

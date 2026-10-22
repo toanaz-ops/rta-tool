@@ -59,7 +59,7 @@ public:
 
     /// The generator holds, or is still releasing, the output.
     [[nodiscard]] bool active() const noexcept { return runner_.active(); }
-    [[nodiscard]] const rta::measure::GeneratorSettings& settings() const noexcept { return runner_.settings(); }
+    [[nodiscard]] const rta::measure::GeneratorSettings& settingsForTest() const noexcept { return runner_.settings(); }
 
     /// T13: the level and outputs a measurement uses right now, in the current
     /// measurement mode. `numOutputs` is the device's output count (0 = unknown).
