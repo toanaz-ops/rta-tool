@@ -154,7 +154,7 @@ void MainComponent::storeClicked() {
 
     // T7: the group is the SAME juce::String the pane selector button itself
     // shows -- never a second "RTA"/"TRANSFER" literal -- so a rename of
-    // paneRtaButton_/paneTransferButton_ cannot silently diverge from the
+    // MainComponentPaneSelector's RTA/TRANSFER buttons cannot silently diverge from the
     // group a stored trace lands in (T7's own mutant).
     const juce::String paneLabel =
         pane == rta::view::PaneView::Transfer ? paneSelector_.transferLabel() : paneSelector_.rtaLabel();

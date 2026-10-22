@@ -76,8 +76,8 @@ void MainComponentPaneSelector::syncTo(rta::view::PaneView view) {
     transferButton_.setToggleState(view == PaneView::Transfer, juce::dontSendNotification);
     splButton_.setToggleState(view == PaneView::Spl, juce::dontSendNotification);
     // PR #45 fix round 3 (verifier, PR #43 reconciliation checklist item 3):
-    // this line was missing here, unlike selectPaneView() above which
-    // already syncs all four -- opening a saved XOVER session left every
+    // this line was missing here, unlike MainComponent::selectPaneView
+    // (MainComponentPanes.cpp), which calls syncTo for every button -- opening a saved XOVER session left every
     // selector button unlit even though the xover pane itself was showing.
     xoverButton_.setToggleState(view == PaneView::Xover, juce::dontSendNotification);
     eqButton_.setToggleState(view == PaneView::Eq, juce::dontSendNotification);

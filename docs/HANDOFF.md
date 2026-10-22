@@ -5,6 +5,42 @@
 
 ---
 
+# 2026-10-22 — **H7 generator / output control ĐÃ ĐÓNG (wave C closeout). Chủ nhân tạm dừng RTA sau H7 (2026-10-22): không mở H8 khi chưa có chủ nhân.**
+
+*Plan: `docs/plans/2026-10-21-h7-generator-output-plan.md`. Record: `docs/dsp/2026-09-06-l7-output-path.md` §14 (mọi câu có file:line). Main lúc viết: `c71bb98`; PR closeout này là `docs/h7-closeout`.*
+
+| PR | merge | what |
+|---|---|---|
+| #87 | `d89c2e2` | A1: tách `MainComponent.h`, rút pane selector (không đổi hành vi) |
+| #88 | `360ac73` | A2: GEN / - / + trên masthead, ceiling -12, loại trừ lẫn nhau |
+| #91 | `8011394` | B1: SIGNAL / FREQ / OUT, FOLLOW GEN cho LOCATE, VERIFY, SWEEP, ALIGN |
+| #94 | `c71bb98` | B2: OWN level + nút MEAS |
+| #90, #92, #93 | `dbb8c23`, `d587230`, `b13ce7f` | sửa flake (align IR T11 load, SyntheticInput join trước khi deactivate bus, in readout SWEEP khi fail) |
+
+**Trạng thái:** hàng 1 và 13 của `MASTER-EXECUTION-PLAN.md` thành BUILT; (b-strict) **12 / 19 = 63.2 %** (rows 1, 2, 3, 4, 7, 10, 13, 14, 15, 16, 17, 18); (a) 15/19 và (b) 14/19 không đổi vì hai hàng đã nằm trong đó. Z16 và Z31 trong `HUMAN-QA-QUEUE.md` đóng. PR closeout chỉ sửa docs và comment C++, không chạy test (không đổi hành vi); ON build + 0 warning ghi trong thân PR.
+
+**Người thử được gì — không cần phần cứng (`build/app/rtatool_artefacts/Release/RTA Tool.exe`, bật SYNTHETIC):**
+
+1. **GEN:** bấm **GEN** -> readout `GEN: playing pink -30.0 dBFS RMS on out 1`, nút thành STOP. **+** tới `-12.0 ... (ceiling)` rồi không lên nữa; **-** tới `-60.0` rồi không xuống nữa; mỗi bước 1.0 dB có một khoảng lặng ngắn (~41 ms, đo ở `app/tests/test_generator_runner.cpp:124`). SIGNAL chọn PINK / WHITE / SINE, FREQ (chỉ SINE) chọn 20 Hz - 20 kHz, OUT tick/bỏ tick output (không bỏ được tick cuối).
+2. **FOLLOW GEN (mặc định):** nút `FOLLOW GEN`. LOCATE / VERIFY / SWEEP / ALIGN phát ở mức GEN đang đặt (không cần GEN đang chạy), hint của nút nêu mức; khi GEN đang CHẠY thì chúng từ chối và gọi tên GEN.
+3. **OWN:** bấm nút `FOLLOW GEN` -> thành `OWN -12.0` và hiện hai nút bước (-12.0 là mặc định; cùng dải -60..-12, bước 1 dB); phép đo dùng mức OWN và output do chính nó chọn (out 1; ALIGN solo main/sub; RT60 theo pane). Bấm MEAS hay bước OWN khi LOCATE/SWEEP/VERIFY/ALIGN đang chạy -> `MEAS: not while <X> runs (applies to the next press)`; trong CAL thì được.
+4. Mở lại app: luôn pink, -30.0, out 1, dừng, FOLLOW GEN (không lưu, D3).
+
+Hàng phần cứng loopback có số: `docs/reports/hardware-qa-2026-10.md` §6a (G1-G6). Bản `build-asio/` chưa có GEN; dựng lại từ `origin/main` trước khi chạy phiếu.
+
+**Việc còn mở — CHƯA bắt đầu vì chủ nhân tạm dừng phase mới sau H7:**
+
+- **M1** `app/src/measure/SweepIrPipeline.cpp` `findPeak` là argmax toàn cục trên cả capture đã deconvolve, nên nhiễu venue ở pre-roll hoặc đuôi có thể thắng một đỉnh sub bị low-pass. Hướng sửa: cửa sổ tìm kiếm, hoặc đỉnh ETC kèm kiểm tra noise floor.
+- **N1** Trên SYNTHETIC out 2, SWEEP từ chối khi mức dưới -12; suy ra do SNR (chưa đo). Text từ chối có thể nêu low SNR.
+- **N2** `AudioIo::stop()` deactivate bus trước `removeAudioCallback` nên một block của device có thể bị bỏ. Cố ý; ghi trong record §14.8.
+- **N3** Test thứ tự destructor dựa vào cửa sổ ngủ 100 ms (có thể flaky trên máy tải nặng).
+- **Flake của sweep trên CI:** #93 đã thêm chẩn đoán (in readout SWEEP khi fail), **nguyên nhân chưa biết**. Lần đỏ tiếp theo sẽ có readout trong log; đọc nó trước khi đoán.
+- Đã biết, không làm: K4 (câu busy của ALIGN) đã nêu GEN sẵn ở `app/src/measure/AlignRunnerText.cpp:56-58`, không cần sửa.
+
+**Bẫy:** `docs/dsp/2026-09-06-l7-output-path.md` §14 viết theo code đã ship ở `c71bb98`; đổi số dòng của file được trích thì phải rà lại §14 từng câu. Chưa có handoff cho phase kế: chủ nhân chưa chọn H8.
+
+---
+
 # 2026-10-21 (tối) — **H7 wave A2 (`app/generator-a`): GEN / − / + trên rail, an toàn và loại trừ lẫn nhau xong. Chờ wave B1.**
 
 *Plan: `docs/plans/2026-10-21-h7-generator-output-plan.md` (T1–T5). Chưa có T6+ (signal/tần số, OUT, FOLLOW GEN).*

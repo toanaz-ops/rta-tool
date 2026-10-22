@@ -108,6 +108,23 @@ Nối: out 1 → loa trong phòng; REF loop in 2; mic in 1 đặt **≥ khoảng
 
 ---
 
+## 6a. H7 — GEN (loopback, no mic)
+
+Cần dây loopback một output → một input của interface (như REF). Tắt `SYNTHETIC`. Không cần mic hay calibrator.
+
+**Nguồn của con số:** đổi mức là toán thuần. Biên độ của mức L dBFS là 10^(L/20) full scale, nên -30.0 dBFS RMS ứng với RMS = 10^(-30/20) = 0.03162 FS, và mỗi bước 1.0 dB là một hệ số 10^(1/20) = 1.1220 (`app/src/measure/GeneratorModel.h:30-32`; noise tính theo RMS, sine theo peak, `GeneratorModel.h:44`). Sine đỉnh -30.0 dBFS có RMS thấp hơn đỉnh 20·log10(√2) = 3.01 dB, tức -33.0 dBFS RMS. Ngưỡng ±1.0 dB cho mức tuyệt đối (gain loopback của interface không chính xác 0 dB) và ±0.2 dB cho hiệu mức là **đề xuất của phiên closeout**, không phải số của chuẩn nào; hiệu mức loại trừ gain của interface nên chặt hơn.
+
+| # | Làm gì | Kỳ vọng (có số) | Thấy gì thật | Đạt? |
+|---|---|---|---|---|
+| G1 | GEN: PINK, -30.0, out 1, bấm GEN. Đọc mức RMS của input nối loopback bằng một đồng hồ mức dBFS (đồng hồ của interface hoặc DAW). | Readout `GEN: playing pink -30.0 dBFS RMS on out 1`; đồng hồ ≈ **-30.0 dBFS RMS ± 1.0 dB** (RMS 0.03162 FS). | | |
+| G2 | Bấm `-` sáu lần (còn -36.0), đọc lại. | Readout -36.0; mức đọc giảm **6.0 dB ± 0.2 dB** so với G1 (6 × 1.0 dB, tức hệ số 0.5012). | | |
+| G3 | Bấm `+` cho tới khi dừng. | Readout dừng ở **-12.0 dBFS (ceiling)**; thêm một lần bấm không đổi; mức đọc cao hơn G1 đúng **18.0 dB ± 0.2 dB**. | | |
+| G4 | SINE, FREQ 1000 Hz, mức -30.0, đọc RMS. | Readout `sine 1000 Hz -30.0 dBFS peak`; RMS ≈ **-33.0 dBFS ± 1.0 dB** (peak -30.0 trừ 3.01 dB), thấp hơn G1 khoảng 3 dB nếu pink cùng -30.0 RMS. | | |
+| G5 | Khi GEN đang chạy, bấm LOCATE, SWEEP, CAL START. | Cả ba từ chối, readout nêu `GEN is playing; press STOP`. | | |
+| G6 | STOP; FOLLOW GEN ở -30.0; chạy SWEEP (SYNTHETIC tắt, REF trên route 1). | Readout/hint nêu `-30.0 dBFS peak, out 1`; capture ghi được hoặc bị từ chối kèm lý do nêu mức (nhỏ hơn -12 thì SNR thấp hơn trước). Ghi lại cái nào xảy ra. | | |
+
+---
+
 ## 7. Kết quả dựng `build-asio/`
 
 Dựng 2026-10-22 14:16 từ `d89c2e2`:
@@ -120,7 +137,7 @@ Dựng 2026-10-22 14:16 từ `d89c2e2`:
 | Exe | `build-asio/app/rtatool_artefacts/Release/RTA Tool.exe`, 12.001.792 byte |
 | ASIO vào binary | chuỗi `ASIOAudioIODeviceType` có trong exe (2 lần khớp) |
 
-Bản này **chưa có H7 GEN** (PR #88 chưa merge). Nếu phiên phần cứng diễn ra sau khi H7 merge, dựng lại bằng đúng lệnh trên để có GEN cho M3/M7.
+Bản này **chưa có H7 GEN** (dựng từ `d89c2e2`, trước PR #88). H7 đã merge (2026-10-22): dựng lại bằng đúng lệnh trên từ `origin/main` mới để có GEN cho M3/M7 và hàng G (§6a).
 
 ## 8. Sau phiên
 

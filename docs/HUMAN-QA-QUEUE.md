@@ -11,7 +11,7 @@ ngày + phiên nào nhận, rồi chuyển nội dung vào record/HANDOFF — fi
 ## Quyết định chủ nhân — 2026-10-21 (7 câu của Fable review, `docs/proposals/2026-10-21-fable-options.md` §6)
 
 - [x] **1. Phiên phần cứng:** chưa xác định ngày. Agent tiếp tục lane không cần phần cứng; mọi tính năng mới giữ nhãn "unmeasured". Dựng lại `build-asio/` + phiếu QA gộp làm khi có ngày.
-- [x] **2. H7 = generator/output control + tách `MainComponent.h`** là lane kế tiếp (sau FFT perf #82). Plan: `docs/plans/2026-10-21-h7-generator-output-plan.md`. Quyết định thêm khi duyệt plan: D1 làm cả hai chế độ mức đo (FOLLOW GEN mặc định, làm trước; OWN −12 sau), D2 mức −30/−60/−12 bước 1 dB, D3 không lưu, thu hẹp luật PR tuần tự xuống `MainComponent.h/.cpp`.
+- [x] **2. H7 = generator/output control + tách `MainComponent.h`** là lane kế tiếp (sau FFT perf #82). Plan: `docs/plans/2026-10-21-h7-generator-output-plan.md`. Quyết định thêm khi duyệt plan: D1 làm cả hai chế độ mức đo (FOLLOW GEN mặc định, làm trước; OWN −12 sau), D2 mức −30/−60/−12 bước 1 dB, D3 không lưu, thu hẹp luật PR tuần tự xuống `MainComponent.h/.cpp`. **ĐÃ XONG 2026-10-22:** H7 đóng bằng PR #87, #88, #91, #94 (+ sửa flake #90, #92, #93) và PR closeout; cách thử ở mục "H7 GEN" cuối phần H6 bên dưới, bảng QA phần cứng có hàng G trong `docs/reports/hardware-qa-2026-10.md` §6a. Chủ nhân tạm dừng RTA sau H7 (2026-10-22): không mở H8 khi chưa có chủ nhân.
 - [x] **3. Core API chỉ test dùng + config một giá trị (Hv, exponential averaging):** dán nhãn test-only (không xoá, không lộ ra operator lúc này). Đã làm: PR #85 (`3e9dc89`) — 9 mục gắn dòng doc test-only; `RingBuffer::read` bỏ khỏi danh sách vì đã có caller production (`SplLogPipeline.cpp:113`).
 - [x] **4. Mua IEC 60268-16 / ISO 2969 / SMPTE ST 202:** hoãn cả hai. Ghi chú giá tra 2026-10-21: IEC 60268-16:2020 CHF 405 (IEC Webstore, mua một lần, vĩnh viễn cho edition đó); bản UNE-EN ~£124 + VAT; ISO 2969 và SMPTE ST 202 chưa thấy giá.
 - [x] **5. MTW storage schema v4:** giữ UNSCHEDULED.
@@ -809,7 +809,7 @@ phát hiện, không mục nào chặn gì đã ship.*
 
 - [x] **ĐÃ TRẢ LỜI 2026-09-26 (chủ nhân: làm ngay) — ĐÃ ĐÓNG bởi PR #37 (nhánh `app/pane-selector`, merge 4cd5866) — bộ chọn pane RTA /
   TRANSFER / SPL đã ship.** Ba nút radio-group phía trên workspace
-  (`MainComponentPanes.cpp`, `wirePaneSelectorButtons`/`selectPaneView`), đi
+  (`MainComponentPanes.cpp`, `selectPaneView`; từ PR sau đó các nút nằm trong `MainComponentPaneSelector::attach`), đi
   qua đúng `resolvePaneView`/`makePaneFactory`/`WorkspaceView` mà session
   loader sẽ dùng — không đổi `SessionCodec` schema, không persist lựa chọn
   (SPL-R11), mặc định vẫn mở ở `rta`. **Cách thử**: build `rtatool`, bấm
@@ -1047,7 +1047,7 @@ the fixing PR is named). Nothing in this table is a HIGH or MEDIUM.
 | Z13 | PR #59 builder LOW: the comment on the "nothing to freeze on this pane" branch calls it unreachable; it is reachable in the first fixed-FFT frame after start. The refusal is stated, so behaviour is right | `app/src/MainComponentStore.cpp:160-163` (comment), refusal `:164` | ~~**FIX-next-batch** — hot file; batch with H4's `MainComponentStore.cpp` edit~~ **FIXED, closeout PR `4d4fab8`:** the comment now says the branch is reachable (first fixed-FFT frame) and names `snapshot_xover.cpp` |
 | Z14 | Operator-path gap: a multi-pane workspace can be produced only by OPEN; the selector always builds ONE pane | `app/src/MainComponentPanes.cpp:44-47` (each button calls `selectPaneView`, one pane) | **NEW-LANE** — multi-pane selector |
 | Z15 | Operator-path gap: L-API is CORE ONLY — `ApiSettings` is built with `enabled=false` and no config file, environment variable or UI reads it; enabling it means editing that line and rebuilding | `app/src/MainComponent.cpp:190` (the master plan's snapshot cites `:189`; the comment block above it is `:184-189`) | **NEW-LANE** — L-API enable switch |
-| Z16 | Operator-path gap: no generator or output control beyond LOCATE; VERIFY also plays fixed pink noise (-12 dBFS, output 1). The operator cannot pick a signal, a level or an output channel | `app/src/MainComponentDelay.cpp:35-37` (LOCATE), `app/src/measure/EqVerifyRunner.cpp:148` (VERIFY) | **NEW-LANE** — generator/output control |
+| Z16 | ~~Operator-path gap: no generator or output control beyond LOCATE; VERIFY also plays fixed pink noise (-12 dBFS, output 1). The operator cannot pick a signal, a level or an output channel~~ | `app/src/MainComponentDelay.cpp:35-37` (LOCATE), `app/src/measure/EqVerifyRunner.cpp:148` (VERIFY) | **CLOSED by H7 (2026-10-22)** — GEN strip (`MainComponentGenerator.cpp`), record `docs/dsp/2026-09-06-l7-output-path.md` §14 |
 | Z17 | PR #60 L1: an isolated trusted bin sets the y-range but `curvePath` draws a 1-bin run as nothing (one `startNewSubPath`, no `lineTo`), so the axis follows an invisible point (a 120 dB axis in the synthetic STORE specimen) | `app/src/view/EqChartRenderer.cpp:144-161` (`scan`), `:46-63` (`curvePath`) | ~~**FIX-next-batch**~~ **FIXED, closeout PR `4d4fab8`:** `drawnTrusted` in `EqChartRenderer.cpp` makes the range follow runs of two or more trusted bins; mutant (drop the neighbour test) RED at `test_main_component_panes_eq.cpp:354` |
 | Z18 | Note: after the core even-N `FirDesign` fix, the EQ picker returns to plan D9's even sizes 1024/4096/6144/8192; FIR record §4, the memory note and its index line must lose their "until the core fix lands" clause | `docs/dsp/2026-09-06-l7-fir-export.md`, `memory/a-size-class-no-test-uses-is-an-unverified-size-class.md`, `memory/MEMORY.md` | **STALE** — done by #62 + #63 (#63's body lists the four files) |
 | Z19 | Seen again on #60's base: `test_main_component_store.cpp:120` "STORE press landed nothing" (2 reds under load) | line 120 sits in the STORE helper that #59 fixed | **STALE** — #59; no red seen on main since. Re-open if it returns |
@@ -1062,7 +1062,7 @@ the fixing PR is named). Nothing in this table is a HIGH or MEDIUM.
 | Z28 | PR #64 (e): the Settling state has no timeout | `EqVerifyRunner.cpp:186-192` (no `stalled()` check, unlike Waiting and Measuring) | **DEFER** — bounded in practice by the device-stopped abort (`:165`); needs the real-hardware try (human-try row B) first |
 | Z29 | PR #64 (f): `EqVerifyRunner.h` is 170 lines, the plan text says 167 | `app/src/measure/EqVerifyRunner.h` (170 lines), `docs/plans/2026-09-29-eq-ui-lane-plan.md:193` | ~~**FIX-next-batch** — one number in the plan~~ **FIXED, closeout PR (docs commit):** plan T7 row gives 165 + 296 lines at `origin/main` `7b3375f` (172 + 300 once Z24 landed) |
 | Z30 | Pre-existing flake: `rtatool_snapshot` exits 1 intermittently, "fewer than two STORE presses landed in the library" (main 1 in 4, #64 head 3 in 6); likely the same first-frame-no-transfer race #59 fixed in tests | `tools/snapshot_xover.cpp:117` (the failure); no wait for a transfer block before the STORE presses | ~~**FIX-next-batch** — give `snapshot_xover` the wait #59 gave the test helper~~ **FIXED, closeout PR `4d4fab8`:** `snapshot_xover.cpp` waits for `hasReference && transfer && mtw` (15 s bound), as #59 did for the test helper |
-| Z31 | Stale doc: `docs/HANDOFF.md:37` said no generator control exists beyond LOCATE; VERIFY now plays pink noise too, and there is still no operator generator control | was `docs/HANDOFF.md:37`, now `:115` after this PR's new top entry | **STALE** — struck through and reworded in this PR |
+| Z31 | Stale doc: `docs/HANDOFF.md:37` said no generator control exists beyond LOCATE; VERIFY now plays pink noise too, and there is still no operator generator control (closed by H7, 2026-10-22: GEN strip) | was `docs/HANDOFF.md:37`, now `:115` after this PR's new top entry | **STALE** — struck through and reworded in this PR |
 
 **Count by disposition (31 rows):** FIX-next-batch 9, DEFER 6,
 NEW-LANE 5, KNOWN-LIMIT 2, STALE 9. **Status 2026-10-21:** all nine FIX rows are
@@ -1248,6 +1248,40 @@ check") has no disposition recorded and was not re-verified here; read PR #72's
 thread before closing it. L10 is cosmetic.
 
 <!-- Lane-end LOW triage — 2026-09-29, closeout of EQ-UI (H3) -->
+
+### H7 GEN — try it and lane notes (2026-10-22, closeout of H7)
+
+Source: PRs #87 (`A1`), #88 (`A2`), #91 (`B1`), #94 (`B2`), flake fixes #90,
+#92, #93, and the closeout PR. Record: `docs/dsp/2026-09-06-l7-output-path.md`
+§14. Nothing here is a HIGH or MEDIUM.
+
+**Human-try row — GEN, no hardware (a person at `rtatool.exe`, about 2 min):**
+
+1. Run `build/app/rtatool_artefacts/Release/RTA Tool.exe`, turn **SYNTHETIC** on.
+   The masthead has a strip: **GEN**, **-**, **+**, SIGNAL (PINK / WHITE / SINE),
+   FREQ, **OUT**, **FOLLOW GEN**, then a readout.
+2. Press **GEN**. The readout says `GEN: playing pink -30.0 dBFS RMS on out 1`
+   and the button reads STOP. Press **+** until it says `-12.0 ... (ceiling)`;
+   one more press changes nothing. Press **-** down to `-60.0`; one more press
+   changes nothing. Each press is a 1.0 dB step with a brief dip (about 41 ms).
+3. Pick SINE, then FREQ 1000 Hz: `GEN: playing sine 1000 Hz -30.0 dBFS peak ...`.
+   FREQ is greyed out for PINK / WHITE.
+4. With GEN playing, press **SWEEP**, **LOCATE** or **CAL START**: each refuses
+   and names GEN (`... GEN is playing; press STOP`).
+5. Press STOP, then LOCATE. In FOLLOW GEN the LOCATE readout and the button's
+   hint name the generator's level (for example `pink noise -30.0 dBFS RMS`).
+6. Press **FOLLOW GEN**: it becomes `OWN -12.0` and two steppers appear. Press
+   LOCATE: it plays at the OWN level on out 1. Press **GEN** while LOCATE or SWEEP
+   runs: GEN refuses naming it. Press **MEAS** (the OWN / FOLLOW GEN button) while
+   SWEEP runs: `MEAS: not while SWEEP runs (applies to the next press)`.
+7. Close and reopen the app: pink, -30.0, out 1, stopped, FOLLOW GEN again
+   (nothing persists, owner decision D3).
+
+**Lane notes (not started; the owner paused RTA after H7):** M1 (SweepIrPipeline
+`findPeak` is a global argmax), N1 (the SYNTHETIC out 2 SWEEP refusal below -12
+could name low SNR), N2 (`AudioIo::stop()` can drop one device block, deliberate),
+N3 (destructor-order test relies on a 100 ms sleep window). Detail:
+`docs/HANDOFF.md`, entry 2026-10-22.
 
 ## Từ phiên EP06 (2026-08-30)
 

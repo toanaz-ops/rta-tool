@@ -194,7 +194,7 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
 /// D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4 item 14): the export try/catch's
 /// "EXPORT FAILED" branch (MainComponentSpl.cpp) had no test -- nothing
 /// in this tree can make `buildReportPayload`/`utf8Path` throw through
-/// the public API. When true, `exportReportClicked()` throws before
+/// the public API. When `forceExportThrowForTest_` is true, `exportReportClicked()` throws before
 /// doing any work, so a test can prove the catch branch runs without
 /// needing a real filesystem failure. Always false outside
 /// `MainComponentTestAccess::forceExportThrowForTest` -- inert in every
@@ -202,7 +202,7 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
 void MainComponent::exportReportClicked() {
     // D7 test seam: bypasses the "no session" guard below so a test needs no
     // real SPL session set up to reach the catch branch -- see
-    // `forceExportThrowForTest_`'s own comment (MainComponent.h).
+    // `forceExportThrowForTest_`'s own comment (above `exportReportClicked`).
     if (!forceExportThrowForTest_ &&
         (currentSplSessionDir_.empty() || currentSplLoggedChannels_.empty())) {
         exportReportReadout_.setText("export: no SPL session logged yet", juce::dontSendNotification);

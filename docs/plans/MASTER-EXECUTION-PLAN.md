@@ -19,7 +19,7 @@ line.
 
 | # | unit | engine (core+tests) | operator path today | status | evidence |
 |---|---|---|---|---|---|
-| 1 | P1 RTA / SPL / generator | done | device START/STOP `view/DevicePanel.cpp:53`; SYNTHETIC toggle `MainComponent.cpp:97`; RTA and SPL pane buttons `MainComponentPanes.cpp:41,43`. **Generator gap:** the only output control is LOCATE's one-shot pink noise (`MainComponent.cpp:101`); no continuous generator / signal-type / level control exists | BUILT (partial) | report 002; T12 hardware steps **M2/M7 still pending a human** (`docs/reports/T12-hardware-run.md`) |
+| 1 | P1 RTA / SPL / generator | done | device START/STOP `view/DevicePanel.cpp:53`; SYNTHETIC toggle `MainComponent.cpp:97`; RTA and SPL pane buttons `MainComponentPanes.cpp:41,43`. ~~**Generator gap:** the only output control is LOCATE's one-shot pink noise; no continuous generator / signal-type / level control exists~~ **updated after H7 (#87, #88, #91, #94):** the masthead GEN strip (`MainComponentGenerator.cpp`, wired `MainComponent.cpp:129,193`) starts a continuous pink / white / sine, with level and output pickers | BUILT | report 002; H7 plan `docs/plans/2026-10-21-h7-generator-output-plan.md`; T12 hardware steps **M2/M7 still pending a human** (`docs/reports/T12-hardware-run.md`) |
 | 2 | P2 dual-FFT (TRANSFER) | done | TRANSFER pane button `MainComponentPanes.cpp:42`; roles by the routing matrix (`view/RoutingMatrix.cpp:124`). **Gap:** TF slots 1..7 have no operator path — `RoutingMatrix::setActiveTransferFunction` (`RoutingMatrix.h:84`) has zero callers, so every assigned channel gets `tfIndex` 0 | BUILT | report 003 |
 | 3 | P3 MTW | done | MTW / FIXED toggle `view/TransferSourceToggle.cpp:18-19` inside the TRANSFER pane | BUILT | report 005 |
 | 4 | L4a + L4b sweep/IR core | done | ~~none — grep for `rt60`, `schroeder`, `lundeby`, `deconvol` in `app/src` (outside `dev/`) is empty~~ **updated after #69:** the IR producer half is operator-reachable: SWEEP button `MainComponentSweep.cpp:44` (`onClick` → `clicked()`; `sweep_.poll()` at `MainComponent.cpp:242`) → `SweepIrWorker` → `analyseSweepCapture` (`rta::ir::deconvolve`) → `TraceLibrary` + `IrStore`. ~~**Still none for the RT60 half** (L4b: `schroeder` / `lundeby` have no `app/src` caller)~~ **updated after H6 wave A:** the RT60 half is operator-reachable: RT60 pane button `MainComponentPanes.cpp:53` → pane SWEEP (`view/Rt60PaneView.cpp:77`, output + TAIL choice) → `MainComponentRt60::select` (`MainComponentRt60.cpp:60`) → `analyseRt60` (`measure/Rt60Analysis.cpp`: `bandFilterZeroPhase`, `energyDecayCurve`, `decayTimes` at `:63-66`) → table of T30 / T20 / EDT per octave 63 Hz to 8 kHz, with the reason beside every refused figure | BUILT (both waves: wave B added the ensemble median + IQR, the EDC plot with the fit spans and the OCTAVE / THIRD toggle, `view/Rt60Chart.cpp`, `view/Rt60PaneTable.cpp`, `measure/Rt60Worker.cpp`) — was CORE ONLY; after #69 IR producer BUILT, RT60 half still CORE ONLY | `docs/dsp/2026-08-30-sweep-ir-l4a.md`; H4 SWEEP DONE (PRs #67, #68, #69); **H6 RT60-UI DONE 2026-10-21: wave A PR #74 `17f3010`, wave B PR #77 `7b3375f`, audit fix #76 `df3d444` (core decay truncation + clarity); closed out by the `app/rt60-ui-closeout` PR.** H6 numbers and decisions: `docs/plans/2026-10-20-rt60-ui-lane-plan.md` and the amendment at the end of `docs/dsp/2026-08-30-ir-decay-l4b.md` |
@@ -31,7 +31,7 @@ line.
 | 10 | L6a SPL-pro | done | SPL pane `MainComponentPanes.cpp:43`; CAL START `MainComponent.cpp:118`, CAL END `:123`; EXPORT REPORT `:134`; logging starts itself from `pollSplLogging` (`MainComponentSpl.cpp`) | BUILT | report 009; Wave 4b (web viewer) cut 2026-09-25 |
 | 11 | L6b multichannel | done | routing matrix (roles, AVG column) `view/RoutingMatrix.cpp`; rows follow the device channel count (PR #58). **Gap:** TF slots 1..7 unreachable (row 2); `CaptureSequencer` has no caller (deferred) | BUILT (partial) | report 006; PR #58 |
 | 12 | L-API remote API | done | **none.** `MainComponent.cpp:189` builds `ApiSettings` with `enabled=false`; no config file, environment variable or UI reads it — enabling it means editing that line and rebuilding | CORE ONLY | report 008; PR #16, #18 |
-| 13 | L7-OUT output engine | done | LOCATE only (`MainComponent.cpp:101` → `MainComponentDelay.cpp:15`: pink noise, output channel 1, one-shot). No output / generator control an operator can choose | BUILT (partial) | report 007 |
+| 13 | L7-OUT output engine | done | LOCATE only (`MainComponent.cpp:101` → `MainComponentDelay.cpp:15`: pink noise, output channel 1, one-shot). ~~No output / generator control an operator can choose~~ **updated after H7:** GEN strip OUT menu (`MainComponentGenerator::outputToggled`) picks the outputs; LOCATE / VERIFY / SWEEP follow them in FOLLOW GEN (`measurementDrive`, `app/src/measure/MeasurementDrive.cpp:9`) | BUILT | report 007; H7 PRs #87, #88, #91, #94 |
 | 14 | L7-FIR FIR design/export | done | ~~none today; EXPORT FIR TXT/WAV arrive with EQ-UI~~ **updated after #64:** EQ pane button `MainComponentPanes.cpp:47` → EXPORT FIR TXT / EXPORT FIR WAV `view/EqPaneView.cpp:65,66` → `exportFirTextClicked` `MainComponentEq.cpp:71` / `exportFirWavClicked` `:80` (FIR PHASE and FIR LENGTH must be answered first, `canExportFir`; tap counts even again after #62/#63) | BUILT (was IN PROGRESS at `34fd38e`) | H3 `app/eq-ui`, PR #60 (wave A) + #62 + #63; plan `docs/plans/2026-09-29-eq-ui-lane-plan.md` |
 | 15 | L7-DELAY | done | LOCATE `MainComponent.cpp:101` → APPLY `:105` (`MainComponentDelay.cpp:15,112`) | BUILT | report 007 |
 | 16 | L7-EQ | done | ~~none today: `EqSession` has no caller outside `measure/`~~ **updated after #64:** EQ pane button `MainComponentPanes.cpp:47` (declared `MainComponent.h:314`); pane built by `PaneFactory.cpp:27-30`; AUTO EQ `view/EqPaneView.cpp:59` → `EqPaneModel::runAutoEq` `measure/EqPaneModel.cpp:135`; SUGGEST `EqPaneView.cpp:60` → `EqPaneModel::suggest` `:148`; VERIFY `EqPaneView.cpp:68` → `EqVerifyRunner::press` `measure/EqVerifyRunner.cpp:120`; ADOPT `EqPaneView.cpp:72` → `EqVerifyRunner::adopt` `:275`; `wireEqVerify()` called at `MainComponent.cpp:157`. **Not verified on hardware:** VERIFY needs a live device (speaker on output 1, mic, loopback REF); SYNTHETIC refuses it by design | BUILT (was IN PROGRESS at `34fd38e`) | H3 `app/eq-ui`, PR #60 (wave A), #64 (wave B); ctest proves the runner, a human try of VERIFY is pending (`docs/HUMAN-QA-QUEUE.md`) |
@@ -136,13 +136,26 @@ none is needed for the table an operator reads).
 Arithmetic: 13 + 1 (row 4) = 14, 14 / 19 = 0.7368; 9 + 1 = 10, 10 / 19 = 0.5263;
 (a) does not move because H6 is an `app/` lane. (c) is now measured: 14 / 19.
 
+**After H7 (PRs #87 `A1`, #88 `A2`, #91 `B1`, #94 `B2`; flake fixes #90, #92, #93 move no count):** rows 1 and 13 flip from
+BUILT (partial) to BUILT; the generator gap that carried both flags is closed.
+
+| | formula | list counted | value after H6 | value after H7 |
+|---|---|---|---|---|
+| (a) engine built | engine done / 19 | unchanged: 15 rows | 15 / 19 = 78.9 % | **15 / 19 = 78.9 %** |
+| (b) operator-reachable (BUILT + partial) | / 19 | unchanged: 14 rows | 14 / 19 = 73.7 % | **14 / 19 = 73.7 %** |
+| (b-strict) BUILT, no partial flag | / 19 | rows 1, 2, 3, 4, 7, 10, 13, 14, 15, 16, 17, 18 = 12 | 10 / 19 = 52.6 % | **12 / 19 = 63.2 %** |
+
+Arithmetic: 10 + 2 (rows 1, 13) = 12, 12 / 19 = 0.6316; (a) and (b) do not
+move because both rows were already counted in them. Still partial: rows 9 and 11.
+
+
 **Gaps found while verifying (none appears in an earlier status table):**
 1. `RoutingMatrix::setActiveTransferFunction` has zero callers — TF slots 1..7
    are unreachable, so multichannel can average positions into one TF but
    cannot address a second one. No lane schedules the fix.
 2. L-API's on/off switch is a source edit; "BUILT and MERGED" (2026-09-18)
    was true of the engine, and the operator path is none.
-3. No generator control exists beyond LOCATE and, from H3 (#64), VERIFY. **updated after #64:** both play fixed pink noise on output 1 for their own job; the operator still cannot choose a signal, level or output channel.
+3. No generator control exists beyond LOCATE and, from H3 (#64), VERIFY. **updated after #64:** both play fixed pink noise on output 1 for their own job; the operator still cannot choose a signal, level or output channel. **Closed by H7 (2026-10-22):** the GEN strip chooses signal, level and outputs; see the H7 table below.
 
 **Not verified by this pass:** the M2/M7 hardware steps of P1 (a person with
 an interface and a mic), and whether a multi-pane workspace can be produced by
