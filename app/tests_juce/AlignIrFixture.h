@@ -97,6 +97,14 @@ bool tickUntil(MainComponent& c, Predicate&& done, int timeoutMs) {
 inline rta::measure::SyntheticInput::Config fixtureConfig() {
     rta::measure::SyntheticInput::Config config;
     config.sampleRate = kFs;
+    // The feed plays pink noise whenever the output is idle, so the pre-roll and tail of a
+    // sweep capture carry it on the measurement channel. A sub's low-passed IR peaks at
+    // 0.0024 (normalised), and that noise correlated with the inverse filter to 0.0025 in
+    // 7 of 8 loaded runs: the peak search took the noise, read a delay of -99 000 samples
+    // and refused a sound sweep ("arrival does not fit"). Which noise lands in the capture
+    // depends on thread timing, so the margin moved run to run. The idle level is not what
+    // these cases measure (MEASURE excites through the loopback), so it sits 60 dB down.
+    config.amplitude = 1.0e-4;
     config.measurementDelaySamples = 4;
     config.measurementFilter = rta::measure::lr4HighPass(100.0, kFs);
     config.secondOutputDelaySamples = 100;
@@ -148,11 +156,31 @@ inline void sweepThrough(MainComponent& c, juce::Button& button) {
     // still playing a source"); under load the ramp (paced by the wall clock) outlasts the
     // finished sweep, so wait for the engine itself to report quiescence.
     REQUIRE(tickUntil(c, [&] { return button.isEnabled() && Access::outputSourceQuiescentForTest(c); }, 20000));
+    const auto t0 = juce::Time::getMillisecondCounter();
+    const auto rendered0 = Access::outputEngineForTest(c).renderedSamples();
     button.onClick();
     INFO("sweep readout: " << sweepOf(c).readoutForTest());
     REQUIRE(sweepOf(c).busy());
-    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, sweepBudgetMs()));
+    const bool finished = tickUntil(c, [&] { return !sweepOf(c).busy(); }, sweepBudgetMs());
+    WARN("DIAG sweep wall " << (juce::Time::getMillisecondCounter() - t0) << " ms, rendered "
+         << (Access::outputEngineForTest(c).renderedSamples() - rendered0) << " samples, nominal "
+         << 1000.0 * (1.0 + gSweepSeconds + gTailSeconds) << " ms, bus drops ch0/ch1 "
+         << Access::busDropsForTest(c, 0) << "/" << Access::busDropsForTest(c, 1) << ", readout: " << sweepOf(c).readoutForTest());
+    REQUIRE(finished);
     UNSCOPED_INFO("sweep finished: " << sweepOf(c).readoutForTest());
+}
+
+/// MEASURE through the pane's own button, to the end of the run. Logs the wall time and the
+/// runner's status so a run that ended in an abort says WHY instead of only "step() != Computed".
+inline void measureThrough(MainComponent& c) {
+    auto& pane = alignPane(c);
+    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
+    const auto t0 = juce::Time::getMillisecondCounter();
+    pane.measureButtonForTest().onClick();
+    const bool finished = tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs());
+    WARN("DIAG measure wall " << (juce::Time::getMillisecondCounter() - t0) << " ms, step "
+         << static_cast<int>(runnerOf(c).step()) << ", status: " << runnerOf(c).status());
+    REQUIRE(finished);
 }
 
 /// The readout's delay is the fit candidate the cycle integer chose. Its VALUE

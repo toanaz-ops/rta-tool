@@ -126,12 +126,8 @@ public:
     /// always distinct per measurement channel, which is what `analysers_`
     /// is actually indexed by (see `drainPaired`'s own comment).
     ///
-    /// An `std::atomic` counter this class owns and increments itself (task
-    /// B2/T11), NOT `Analyser::framesAnalysed()` -- that is a plain,
-    /// unsynchronised counter written only by this thread, and reading it
-    /// from another thread with no atomic between them would be a data race
-    /// even though a stale value would look harmless. Safe from any thread
-    /// for the same reason `latest()` is.
+    /// An atomic this class owns (task B2/T11), NOT `Analyser::framesAnalysed()`,
+    /// a plain counter only this thread may touch. Safe from any thread.
     [[nodiscard]] std::uint64_t routeHopCount(int routeIndex) const noexcept;
 
     /// L7-DELAY task F2 (record sec.11.2). Arms the raw-capture accumulator
@@ -265,6 +261,9 @@ public:
     /// of `resyncSequence()` is shifted by the resync and must be abandoned.
     [[nodiscard]] std::uint64_t resyncSequence() const noexcept { return bus_.resyncSequence(); }
     [[nodiscard]] bool resyncPending() const noexcept { return bus_.resyncPending(); }
+    /// Frames the bus refused (ring full) on any channel since it was built. A raw
+    /// capture armed before a rise of this lost samples from its timeline.
+    [[nodiscard]] std::uint64_t droppedFrames() const noexcept { return bus_.totalDrops(); }
 
     /// Message-thread call: END check's drift > cl. 5.2's 0.5 dB, cleared by
     /// a fresh `enableSplLogging` -- read by `fillSplPublishInput` (§15 A2).

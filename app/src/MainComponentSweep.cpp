@@ -114,6 +114,7 @@ bool MainComponentSweep::startOn(int outputChannel, Requester requester, std::op
     armedRequester_ = requester;
     armedEpoch_ = output_.outputEpoch();
     armedResync_ = analysis_.resyncSequence();
+    armedDrops_ = analysis_.droppedFrames();
     armedSynthetic_ = host_.synthetic();
     armedAtMs_ = nowMs_();
     // Click-time metadata, as STORE reads it at click time: the capture belongs
@@ -154,6 +155,17 @@ void MainComponentSweep::poll() {
     // no sign of it. It does not move the output epoch, so it needs this check.
     if (analysis_.resyncSequence() != armedResync_) {
         abort("the input resynced (channel or device change) during the capture");
+        return;
+    }
+
+    // A refused ring write is a hole in the capture's timeline: everything after it
+    // is early by the hole's length, the IR origin moves with no sign of it, and the
+    // analysis would accept the result or refuse it for the wrong reason. It happens
+    // when the analysis thread is starved (a loaded machine) for longer than the ring
+    // holds. Say so and let the operator repeat the sweep.
+    if (const auto lost = analysis_.droppedFrames(); lost != armedDrops_) {
+        abort("the input dropped " + juce::String(static_cast<juce::int64>(lost - armedDrops_)) +
+              " frames during the capture (the machine could not keep up) -- try again");
         return;
     }
 

@@ -4,6 +4,7 @@
 #include "measure/SyntheticInput.h"
 
 #include "measure/Levels.h"
+#include "measure/SyntheticPacing.h"
 #include "measure/ThreadStop.h"
 
 #include <algorithm>
@@ -115,7 +116,44 @@ void SyntheticInput::runBody() {
     const double noiseRms =
         config_.amplitude * std::pow(10.0, config_.measurementNoiseDb / 20.0);
 
+    // Deadline pacing (SyntheticPacing.h), on the monotonic hi-res counter.
+    const double blockMs = config_.sampleRate > 0.0
+                               ? 1000.0 * static_cast<double>(block_.size()) / config_.sampleRate
+                               : static_cast<double>(waitMs_);
+    constexpr double kMaxLagMs = 500.0;
+    double dueMs = juce::Time::getMillisecondCounterHiRes();
+
+    // Back-pressure. A real device cannot be slowed down, a synthetic one can, and a
+    // refused ring write is silent data loss: on a loaded machine the analysis thread
+    // fell more than the ring's 1.36 s behind, every refused block shifted the capture's
+    // timeline, and a sweep analysed it anyway (measured: 39424 frames dropped in one
+    // sweep, then "arrival does not fit"). So hold the NEXT block until its ring has
+    // room. Bounded: a bus nobody drains (no consumer attached) must not stall the feed
+    // for ever, so after one timeout it pushes and drops as before until room returns.
+    const std::size_t blockSamples = block_.size();
+    const auto ringsHaveRoom = [&] {
+        for (int ch = 0; ch < kChannels; ++ch) {
+            if (bus_.config().role(ch) == rta::platform::ChannelRole::Unused) continue;
+            const auto* ring = bus_.ring(ch);
+            if (ring != nullptr && ring->availableToWrite() < blockSamples) return false;
+        }
+        return true;
+    };
+    constexpr double kMaxBackPressureMs = 3000.0;
+    bool consumerStalled = false;
+
     while (!threadShouldExit()) {
+        if (ringsHaveRoom()) {
+            consumerStalled = false;
+        } else if (!consumerStalled) {
+            const double giveUpMs = juce::Time::getMillisecondCounterHiRes() + kMaxBackPressureMs;
+            while (!threadShouldExit() && !ringsHaveRoom() &&
+                   juce::Time::getMillisecondCounterHiRes() < giveUpMs) {
+                wait(1);
+            }
+            consumerStalled = !ringsHaveRoom();
+        }
+        if (threadShouldExit()) break;
         // Always render the loopback, even when it is quiescent: render() is
         // what advances `renderedSamples()` (LOCATE's settle clock) and
         // publishes the engine's Idle state (`sourceIsQuiescent()`), and the
@@ -198,7 +236,10 @@ void SyntheticInput::runBody() {
         }
         bus_.pushFromCallback(channels, kChannels, static_cast<int>(block_.size()));
 
-        wait(waitMs_);
+        const SyntheticPace pace =
+            nextSyntheticPace(dueMs, juce::Time::getMillisecondCounterHiRes(), blockMs, kMaxLagMs);
+        dueMs = pace.dueMs;
+        if (pace.waitMs > 0) wait(pace.waitMs);
     }
 }
 

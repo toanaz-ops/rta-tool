@@ -101,10 +101,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     CHECK(pane.irPanelForTest().subPickerForTest().getSelectedId() == 2);
 
     // MEASURE through the button: no coarse offset is asked for.
-    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-    pane.measureButtonForTest().onClick();
-    REQUIRE(runnerOf(c).busy());
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
+    measureThrough(c);
     INFO("status: " << runnerOf(c).status());
     CHECK(runnerOf(c).step() == WizardStep::Computed);  // not AskingCycle
     CHECK(runnerOf(c).cycleFromIr());
@@ -165,18 +162,14 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     // Unbinding one through its picker: the next MEASURE has no integer and asks.
     pane.irPanelForTest().mainPickerForTest().setSelectedId(1, juce::sendNotificationSync);
     CHECK(runnerOf(c).boundIr(Source::Main) == nullptr);
-    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-    pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
+    measureThrough(c);
     CHECK(runnerOf(c).step() == WizardStep::AskingCycle);
     CHECK_FALSE(runnerOf(c).cycleFromIr());
 
     // Re-binding it from the picker brings the integer back.
     pane.irPanelForTest().mainPickerForTest().setSelectedId(3, juce::sendNotificationSync);
     REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
-    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-    pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
+    measureThrough(c);
     REQUIRE(runnerOf(c).step() == WizardStep::Computed);
     REQUIRE(runnerOf(c).cycleSamples().has_value());
     // The crossover is estimated afresh from pink noise each run, so its lag may differ by a sample or two.
@@ -239,6 +232,26 @@ TEST_CASE("align IR (T11): a result from another output does not bind", kTag) {
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
     CHECK(runnerOf(c).boundIr(Source::Sub) != nullptr);  // its own result still binds
     CHECK(runnerOf(c).boundIrId(Source::Sub) != firstId);
+}
+
+// Found by the load flake: under load the analysis thread fell further behind than the
+// capture ring holds, the bus refused blocks, and the sweep analysed a capture with holes
+// in its timeline (a wrong arrival, or "arrival does not fit"). A refused block must now
+// abort the sweep by name and bind nothing. Deterministic: one oversize block is refused.
+TEST_CASE("align IR (T11): a frame dropped by the bus during the capture aborts the sweep", kTag) {
+    MainComponent c;
+    prepare(c);
+    auto& pane = alignPane(c);
+    auto& button = pane.irPanelForTest().sweepMainButtonForTest();
+    REQUIRE(tickUntil(c, [&] { return button.isEnabled() && Access::outputSourceQuiescentForTest(c); }, 20000));
+    button.onClick();
+    REQUIRE(sweepOf(c).busy());
+    Access::injectBusDropForTest(c);
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 20000));
+    INFO("readout: " << sweepOf(c).readoutForTest());
+    CHECK(sweepOf(c).readoutForTest().contains("sweep: aborted -- the input dropped "));
+    CHECK(runnerOf(c).boundIr(Source::Main) == nullptr);
+    CHECK(Access::libraryForTest(c).entries().empty());
 }
 
 TEST_CASE("align IR (T11): an IR measured at another sample rate is ignored, and the run says so", kTag) {
