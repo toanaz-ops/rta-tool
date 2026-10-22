@@ -295,6 +295,18 @@ struct MainComponentTestAccess {
             juce::Thread::sleep(2);
         }
     }
+    /// Refuses one oversize block on the bus (bigger than a ring, so nothing is written
+    /// and no ring index moves): the drop counter rises exactly as a starved consumer
+    /// would raise it, without racing the feed thread's own writes.
+    static void injectBusDropForTest(MainComponent& c) {
+        const std::vector<float> oversize(1u << 20, 0.0f);
+        const float* channels[2] = { oversize.data(), oversize.data() };
+        c.audioIo_.bus().pushFromCallback(channels, 2, static_cast<int>(oversize.size()));
+    }
+    /// Frames the capture bus refused (ring full) on channel `ch` since it was built.
+    [[nodiscard]] static std::uint64_t busDropsForTest(MainComponent& c, int ch) {
+        return c.audioIo_.bus().dropCount(ch);
+    }
 
     // RT60-UI wave A (T5): app/tests_juce/test_main_component_rt60.cpp and
     // tools/snapshot_rt60.cpp. The selection, the cached analysis and the

@@ -331,3 +331,26 @@ TEST_CASE("a channel-role change mid-LOCATE resyncs the input and cancels the ca
     CHECK(MainComponentTestAccess::delayReadoutForTest(component).contains("resynced"));
     CHECK_FALSE(MainComponentTestAccess::delaySuggestionForTest(component).has_value());
 }
+
+// L3 (PR #90 verify): LOCATE reads its delay off the capture's timeline, so a block the bus
+// refused (ring full, a starved consumer) must abort it by name, not shift the answer.
+TEST_CASE("LOCATE aborts by name when the bus drops frames during its capture", "[synthetic_loopback]") {
+    MainComponent component;
+    component.setSyntheticMode(true);
+    MainComponentTestAccess::locateClickedForTest(component);
+    REQUIRE(waitUntil(
+        [&] {
+            MainComponentTestAccess::timerTickForTest(component);
+            return MainComponentTestAccess::locateCaptureArmedForTest(component);
+        },
+        30000));
+    MainComponentTestAccess::injectBusDropForTest(component);
+    REQUIRE(waitUntil(
+        [&] {
+            MainComponentTestAccess::timerTickForTest(component);
+            return !MainComponentTestAccess::locateActiveForTest(component);
+        },
+        10000));
+    CHECK(MainComponentTestAccess::delayReadoutForTest(component).contains("the input dropped frames"));
+    CHECK_FALSE(MainComponentTestAccess::delaySuggestionForTest(component).has_value());
+}
