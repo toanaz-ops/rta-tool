@@ -17,6 +17,14 @@ namespace {
 // without either one clipping.
 constexpr int kRailWidth = 360;
 
+// Measurement rows are touch-target high (44), not buttonCellHeight (62): at
+// 1280x800 the rows above the device panel must leave it its natural ~260 px
+// (device combo, START/STOP, fault line) without scrolling -- pinned by
+// test_main_component_rail_layout.cpp. The mode switch keeps its full height.
+constexpr int kRowHeight = az::ui::touchTarget;
+// Masthead width kept free for "RTA TOOL  REAL-TIME ANALYSER".
+constexpr int kBrandReserve = 340;
+
 }  // namespace
 
 void MainComponent::paint(juce::Graphics& g) {
@@ -54,42 +62,51 @@ void MainComponent::resized() {
     mastheadArea_ = area.removeFromTop(az::ui::transportHeight / 2);
     area.removeFromTop(az::ui::gap * 2);
 
+    // H7 generator: GEN / - / + and its readout live in the masthead's empty
+    // right side, not the rail. STOP is therefore on screen in every pane at
+    // every window size (a show-safety control must never scroll away), and
+    // the rail keeps its height for the device panel. The left kBrandReserve
+    // px stay clear for the wordmark painted in paint().
+    auto strip = mastheadArea_.withTrimmedBottom(az::ui::spacing);  // clear of the engraved rule
+    strip.removeFromLeft(juce::jmin(kBrandReserve, strip.getWidth() / 2));
+    generator_.layout(strip);
+
     auto rail = area.removeFromLeft(kRailWidth);
     area.removeFromLeft(az::ui::gap * 2);
 
     modeSwitch_.setBounds(rail.removeFromTop(az::ui::buttonCellHeight));
-    rail.removeFromTop(az::ui::gap * 2);
+    rail.removeFromTop(az::ui::gap);
 
     // L7-DELAY task F2: one fixed row -- LOCATE, APPLY, and the readout
     // sharing what's left of the row's width.
-    auto locateRow = rail.removeFromTop(az::ui::buttonCellHeight);
+    auto locateRow = rail.removeFromTop(kRowHeight);
     const int buttonWidth = (locateRow.getWidth() - az::ui::gap * 2) / 3;
     locateButton_.setBounds(locateRow.removeFromLeft(buttonWidth));
     locateRow.removeFromLeft(az::ui::gap);
     applyButton_.setBounds(locateRow.removeFromLeft(buttonWidth));
     locateRow.removeFromLeft(az::ui::gap);
     delayReadout_.setBounds(locateRow);
-    rail.removeFromTop(az::ui::gap * 2);
+    rail.removeFromTop(az::ui::gap);
 
     // SWEEP (H4 T6, decision 1): its own row directly under LOCATE's, same
     // shape as the STORE row below.
-    sweep_.layout(rail.removeFromTop(az::ui::buttonCellHeight));
-    rail.removeFromTop(az::ui::gap * 2);
+    sweep_.layout(rail.removeFromTop(kRowHeight));
+    rail.removeFromTop(az::ui::gap);
 
     // L6a Wave 3: one more fixed row, same shape as the Locate row above --
     // CAL START, CAL END, and the readout sharing what's left.
-    auto calibrationRow = rail.removeFromTop(az::ui::buttonCellHeight);
+    auto calibrationRow = rail.removeFromTop(kRowHeight);
     const int calibrationButtonWidth = (calibrationRow.getWidth() - az::ui::gap * 2) / 3;
     calibrationStartButton_.setBounds(calibrationRow.removeFromLeft(calibrationButtonWidth));
     calibrationRow.removeFromLeft(az::ui::gap);
     calibrationEndButton_.setBounds(calibrationRow.removeFromLeft(calibrationButtonWidth));
     calibrationRow.removeFromLeft(az::ui::gap);
     calibrationReadout_.setBounds(calibrationRow);
-    rail.removeFromTop(az::ui::gap * 2);
+    rail.removeFromTop(az::ui::gap);
 
     // Task W2-E2b part B: one more fixed row -- the export button and its
     // readout sharing what's left, the same shape as the two rows above.
-    auto exportRow = rail.removeFromTop(az::ui::buttonCellHeight);
+    auto exportRow = rail.removeFromTop(kRowHeight);
     // "EXPORT REPORT" is wider text than "CAL START"/"CAL END" above it, so
     // this row's button gets a bigger share (2/5 rather than that row's 1/3)
     // -- otherwise the label truncates (measured against main-live.png).
@@ -97,22 +114,22 @@ void MainComponent::resized() {
     exportReportButton_.setBounds(exportRow.removeFromLeft(exportButtonWidth));
     exportRow.removeFromLeft(az::ui::gap);
     exportReportReadout_.setBounds(exportRow);
-    rail.removeFromTop(az::ui::gap * 2);
+    rail.removeFromTop(az::ui::gap);
 
     // station-3 STORE (T5): one more fixed row, same shape as the export row
     // above -- the button and its readout sharing what's left.
-    auto storeRow = rail.removeFromTop(az::ui::buttonCellHeight);
+    auto storeRow = rail.removeFromTop(kRowHeight);
     const int storeButtonWidth = (storeRow.getWidth() - az::ui::gap) / 4;
     storeButton_.setBounds(storeRow.removeFromLeft(storeButtonWidth));
     storeRow.removeFromLeft(az::ui::gap);
     storeReadout_.setBounds(storeRow);
-    rail.removeFromTop(az::ui::gap * 2);
+    rail.removeFromTop(az::ui::gap);
 
     // Session persistence: SAVE SESSION / OPEN SESSION share one row, the
     // readout takes the row below it -- see MainComponentSession::layout.
-    auto sessionArea = rail.removeFromTop(az::ui::buttonCellHeight * 2 + az::ui::gap);
+    auto sessionArea = rail.removeFromTop(kRowHeight * 2 + az::ui::gap);
     session_.layout(sessionArea);
-    rail.removeFromTop(az::ui::gap * 2);
+    rail.removeFromTop(az::ui::gap);
 
     // Fix round item 3 (MEDIUM F3 follow-up): device panel / routing matrix /
     // channel role table and their scroll viewport (item 4) are grouped into

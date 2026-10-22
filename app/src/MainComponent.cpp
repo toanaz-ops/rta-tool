@@ -120,7 +120,11 @@ MainComponent::MainComponent()
                      } else {
                          align_.onSwept(traceId, outputChannel);
                      }
-                 }}) {
+                 },
+                 // H7: lets SWEEP refuse BY NAME while GEN plays.
+                 [this] { return generator_.active(); }}),
+      // H7 generator: GEN / - / + and a readout; the runner asks us what the app looks like.
+      generator_(audioIo_.output(), [this] { return generatorEnvironment(); }) {
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };
@@ -184,6 +188,7 @@ MainComponent::MainComponent()
     // in app/src until now.
     session_.attachTo(*this);
     sweep_.attachTo(*this);
+    generator_.attachTo(*this);
     wireEqVerify();
     wireAlign();
     wireRt60();
@@ -270,6 +275,7 @@ void MainComponent::timerCallback() {
     pollLocatePipeline();
     pollCalibrationPipeline();
     sweep_.poll();
+    generator_.poll();  // H7: epoch / device stop; before the SYNTHETIC early return below
     eq_.pollVerify();  // L7-EQ VERIFY: before the SYNTHETIC early return below
     align_.poll();     // ALIGN-UI: ALIGN runs in SYNTHETIC too, so before the early return
     pollSplLogging();

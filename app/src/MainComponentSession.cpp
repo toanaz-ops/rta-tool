@@ -84,13 +84,13 @@ void MainComponentSession::attachTo(juce::Component& parent) {
 }
 
 void MainComponentSession::layout(juce::Rectangle<int> area) {
-    auto buttonRow = area.removeFromTop(az::ui::buttonCellHeight);
+    auto buttonRow = area.removeFromTop(az::ui::touchTarget);
     const int buttonWidth = (buttonRow.getWidth() - az::ui::gap) / 2;
     saveButton_.setBounds(buttonRow.removeFromLeft(buttonWidth));
     buttonRow.removeFromLeft(az::ui::gap);
     openButton_.setBounds(buttonRow);
     area.removeFromTop(az::ui::gap);
-    readout_.setBounds(area.removeFromTop(az::ui::buttonCellHeight));
+    readout_.setBounds(area.removeFromTop(az::ui::touchTarget));
 }
 
 void MainComponentSession::saveClicked() {
