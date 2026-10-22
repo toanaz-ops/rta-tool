@@ -87,12 +87,14 @@ SyntheticInput::SyntheticInput(rta::platform::CaptureBus& bus, const Config& con
 }
 
 SyntheticInput::~SyntheticInput() {
-    bus_.setActive(false);
-    // Trap T-1: belt and braces even though the owner's member-declaration
-    // order also guarantees this thread stops before bus_ is torn down.
+    // Join FIRST, deactivate after. The thread renders a block (which advances the
+    // loopback's renderedSamples()) and then pushes it; pushFromCallback() drops a block
+    // on an inactive bus. Deactivating before the join let a block already rendered land
+    // on an inactive bus: rendered > pushed by one block, a rare CI flake under load.
     // Never force-killed (ThreadStop.h): runBody() does one block of work per
     // iteration and wait(waitMs_) is woken by the notify() in the join.
     stopThreadNoKill(*this);
+    bus_.setActive(false);
 }
 
 void SyntheticInput::run() {
@@ -239,6 +241,7 @@ void SyntheticInput::runBody() {
                 channels[ch] = measurementBlock_.data();
             }
         }
+        if (config_.betweenRenderAndPushForTest) config_.betweenRenderAndPushForTest();
         bus_.pushFromCallback(channels, kChannels, static_cast<int>(block_.size()));
 
         const SyntheticPace pace =
