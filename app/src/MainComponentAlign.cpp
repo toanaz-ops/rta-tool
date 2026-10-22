@@ -27,6 +27,7 @@ void MainComponent::wireAlign() {
     host.freeze = [this](const rta::measure::Snapshot& snapshot) {
         return freezeSnapshot(snapshot, rta::view::PaneView::Transfer);
     };
+    host.drive = [this] { return measurementDrive(); };  // H7 T13: level only; main/sub stay the answers'
     host.nowMs = [] { return juce::Time::getMillisecondCounterHiRes(); };
     host.timeLabel = [] { return juce::Time::getCurrentTime().formatted("%H:%M:%S").toStdString(); };
     align_.attach(audioIo_.output(), library_, std::move(host));

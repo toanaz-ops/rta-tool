@@ -52,6 +52,9 @@ TEST_CASE("align with the shipped SYNTHETIC defaults: what the readout says (beh
           "[main_component_align_defaults]") {
     MainComponent c;
     c.setSyntheticMode(true);  // NOT restartSyntheticForTest: the shipped paths
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     Access::waitForResyncForTest(c);  // the resync gate is a startup window, not under test
     c.selectPaneView(rta::view::PaneSelectorButton::Align);
     auto* pane = dynamic_cast<rta::view::AlignPaneView*>(const_cast<juce::Component*>(&Access::pane(c)));

@@ -2,6 +2,7 @@
 // The words AlignRunner says: block, refusal and source names. Split out of
 // AlignRunner.cpp to keep it under the 400-line cap; no state lives here.
 #include "measure/AlignRunnerText.h"
+#include "measure/AlignRunnerState.h"
 
 namespace rta::measure {
 namespace detail {
@@ -36,6 +37,11 @@ const char* fitRefusalName(rta::dsp::CrossoverRefusal refusal) {
 }
 
 }  // namespace detail
+
+std::string AlignRunner::driveHint() const {
+    if (!impl_->host.drive) return {};
+    return " -- plays at " + measurementLevelText(impl_->host.drive().levelDb, LevelConvention::Rms);
+}
 
 std::string alignBlockText(AlignBlock kind) {
     switch (kind) {

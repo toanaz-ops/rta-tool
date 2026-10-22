@@ -29,6 +29,10 @@ struct AlignRunnerState {
     AlignAnswers runAnswers;  ///< `answers` as of the last press
     std::unique_ptr<AlignmentWizard> wizard;
 
+    /// H7 T13: what the last press played, "-30.0 dBFS RMS" ("" with no drive).
+    /// Every status after the arm and every stored trace name carries it.
+    std::string runLevelText;
+
     std::string status = "ALIGN: not run yet";
     AlignBlock refusal = AlignBlock::None;
     AlignOutcome outcome = AlignOutcome::None;
@@ -86,10 +90,18 @@ struct AlignRunnerState {
         const bool high = wizard->step() == WizardStep::MeasuringHigh;
         return (high == (runAnswers.highPass == Source::Main)) ? Source::Main : Source::Sub;
     }
+    [[nodiscard]] double levelDb() const { return host.drive ? host.drive().levelDb : kAlignLevelDbFs; }
+    void noteRunLevel() {
+        runLevelText = host.drive ? measurementLevelText(levelDb(), LevelConvention::Rms) : std::string();
+    }
+    [[nodiscard]] std::string runNote() const { return runLevelText.empty() ? std::string() : " @ " + runLevelText; }
+    void sayRun(std::string text) { say(std::move(text) + runNote()); }
     [[nodiscard]] rta::platform::SourceVariant pinkSource() const {
         const auto seed = static_cast<std::uint64_t>(host.nowMs());
-        return rta::gen::PinkNoise(rta::gen::Pcg32(seed, 1), kAlignLevelDbFs);
+        return rta::gen::PinkNoise(rta::gen::Pcg32(seed, 1), levelDb());
     }
+    /// " (-30.0 dBFS RMS)" appended to a stored trace's name, "" with no drive.
+    [[nodiscard]] std::string traceTag() const { return runLevelText.empty() ? std::string() : " (" + runLevelText + ")"; }
     void afterSubmit(const AlignAnswers& asked);
     void trySubmit(double now);
     /// Hands the bound IRs to `fresh` by source; returns "" or a sentence the

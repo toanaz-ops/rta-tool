@@ -102,6 +102,8 @@ set(RTA_BASE_TEST_SOURCES
     # state machine against a real OutputEngine rendered by hand. JUCE-free.
     test_generator_model.cpp
     test_generator_runner.cpp
+    test_measurement_drive.cpp
+    test_measurement_drive_levels.cpp
     # test_crossover_topology.cpp: lane L7-ALIGN task D (record docs/dsp/
     # 2026-09-06-l7-alignment-wizard.md Sec.3, Sec.10.2) -- the topology to
     # expected-offset lookup, JUCE-free like OutputPolicy, so it lives here.

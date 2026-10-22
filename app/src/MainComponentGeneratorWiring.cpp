@@ -16,6 +16,21 @@ rta::measure::GeneratorEnvironment MainComponent::generatorEnvironment() const {
     return env;
 }
 
+rta::measure::MeasurementDrive MainComponent::measurementDrive() const {
+    return generator_.measurementDrive(generatorEnvironment().numOutputs);
+}
+
+void MainComponent::refreshMeasurementHints() {
+    // H7 T8: a button that plays a source says at what level it would play it
+    // NOW, in the current measurement mode -- not the -12 it used to be.
+    const rta::measure::MeasurementDrive drive = measurementDrive();
+    const auto rms = rta::measure::measurementLevelText(drive.levelDb, rta::measure::LevelConvention::Rms);
+    const auto peak = rta::measure::measurementLevelText(drive.levelDb, rta::measure::LevelConvention::Peak);
+    const std::string outs = rta::measure::outputsText(drive.outputs.empty() ? std::vector<int>{0} : drive.outputs);
+    locateButton_.getProperties().set(az::ui::hintProperty, juce::String("pink noise " + rms + ", " + outs + ", one-shot"));
+    sweep_.setLevelHint(juce::String("log sweep 20 Hz-20 kHz " + peak + ", " + outs + ", needs REF on route 1"));
+}
+
 std::string MainComponent::outputHolderName() const {
     // Never names GEN: this answers "who ELSE has the output" for GEN's own
     // start, which must refuse by that name (a GEN press while GEN plays is

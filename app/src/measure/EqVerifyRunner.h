@@ -21,6 +21,7 @@
 #include "measure/Analyser.h"
 #include "measure/EqPaneModel.h"
 #include "measure/EqVerify.h"
+#include "measure/MeasurementDrive.h"
 #include "measure/Snapshot.h"
 #include "trace/Trace.h"
 #include "trace/TraceLibrary.h"
@@ -74,6 +75,9 @@ struct EqVerifyHost {
     std::function<std::optional<rta::trace::Trace>(const Snapshot&)> freeze;
     std::function<double()> nowMs;           ///< monotonic, milliseconds
     std::function<std::string()> timeLabel;  ///< "HH:MM:SS" for the trace's name
+    /// H7 T13: the level and outputs this press plays. Optional: absent, the
+    /// D14 choices above (-12 dBFS RMS, output 1) and the pre-H7 wording.
+    std::function<MeasurementDrive()> drive;
 };
 
 enum class VerifyBlock {
@@ -134,6 +138,9 @@ public:
     [[nodiscard]] VerifyState stateForTest() const noexcept;
     /// ADOPT is enabled at Done only.
     [[nodiscard]] bool canAdopt() const noexcept;
+    /// " -- plays at -30.0 dBFS RMS" for the VERIFY button's hint: the level
+    /// the NEXT press would use in the current measurement mode ("" with no drive).
+    [[nodiscard]] std::string driveHint() const;
     bool adopt();
 
     // Read-back for the tests only (each name is referenced whole-word from
@@ -168,6 +175,7 @@ private:
     std::string pressedMeasurementId_;
     std::vector<CommittedFilter> pressedFilters_;
     std::string afterTraceId_;
+    std::string driveText_;  ///< "-30.0 dBFS RMS, out 1": what the last press played ("" with no drive)
 };
 
 /// The operator-facing sentence for each block kind (the fixed part; the

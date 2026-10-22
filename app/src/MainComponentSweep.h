@@ -25,6 +25,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "measure/AnalysisThread.h"
+#include "measure/MeasurementDrive.h"
 #include "measure/SweepIrWorker.h"
 #include "rta/platform/OutputEngine.h"
 #include "trace/IrStore.h"
@@ -63,6 +64,10 @@ public:
         /// H7: the operator generator is playing. Optional; checked before
         /// `outputBusy` so the refusal names GEN rather than a measurement.
         std::function<bool()> generatorActive;
+        /// H7 T13: the level (and, for the rail button, the outputs) this press
+        /// plays at. Optional: absent, the request's own -12 dBFS peak and the
+        /// press's own output, as before H7.
+        std::function<rta::measure::MeasurementDrive()> drive;
     };
 
     /// Declare AFTER the three references (trap T-1): `worker_` joins in its
@@ -74,7 +79,8 @@ public:
     void layout(juce::Rectangle<int> row);
 
     /// The button's handler; public so the offscreen harness can call it.
-    /// Plays on output 1 and stores `SWEEP @ HH:MM:SS`, as it always has.
+    /// Plays on the generator's outputs (out 1 with no `Host::drive`) at its
+    /// level, and stores `SWEEP @ HH:MM:SS (<level>, <outputs>)`.
     void clicked();
     /// ALIGN-UI T10: the same press on a NAMED 0-based output, stored as
     /// `SWEEP out<N> @ HH:MM:SS` and reported through `Host::swept`. Returns
@@ -88,6 +94,8 @@ public:
     [[nodiscard]] juce::String readoutText() const { return readout_.getText(); }
     /// IRs kept for ALIGN's pickers (`IrStore::find`).
     [[nodiscard]] const rta::trace::IrStore& irStore() const noexcept { return irStore_; }
+    /// H7 T8: the button's hint, kept current with the level a press would use.
+    void setLevelHint(const juce::String& hint);
     /// Called from MainComponent's 2 Hz timer.
     void poll();
 
@@ -99,6 +107,8 @@ public:
     [[nodiscard]] const rta::trace::IrStore& irStoreForTest() const noexcept { return irStore_; }
     [[nodiscard]] const juce::Component& buttonForTest() const noexcept { return button_; }
     [[nodiscard]] const juce::Component& readoutComponentForTest() const noexcept { return readout_; }
+    /// The level (dBFS peak) the running (or last) press built its sweep at (H7 T13).
+    [[nodiscard]] double armedLevelDbForTest() const noexcept { return armedRequest_.sweep.levelDbFsPeak; }
     /// The tail the running (or last) press was armed with, for the override case.
     [[nodiscard]] double armedTailSecondsForTest() const noexcept { return armedRequest_.tailSeconds; }
     /// A shorter sweep and tail so a case runs in seconds, not 14 s.
@@ -147,6 +157,7 @@ private:
     bool armedSynthetic_ = false;
     std::string armedDeviceName_;
     std::string armedChannelRoles_;
+    std::string armedDriveText_;  ///< "-30.0 dBFS peak, out 1": what this press played, for every readout
     double armedAtMs_ = 0.0;
     double timeoutMs_ = 0.0;
     std::shared_ptr<const rta::measure::LocateCapture> lastHandled_;

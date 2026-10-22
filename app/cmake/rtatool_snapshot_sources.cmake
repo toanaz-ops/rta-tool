@@ -176,6 +176,7 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/MainComponentGeneratorWiring.cpp
     src/measure/GeneratorRunner.cpp
     src/measure/GeneratorModel.cpp
+    src/measure/MeasurementDrive.cpp
     # ---
     # --- ALIGN-UI lane wave A (docs/plans/2026-10-20-align-ui-lane-plan.md) -----
     # The ALIGN pane and everything it reaches. AlignmentWizard.cpp /

@@ -92,9 +92,12 @@ private:
     [[nodiscard]] bool outputBusy() const noexcept {
         return captureBusy() || eq_.verifyBusy() || generator_.active();
     }
-    // MainComponentGeneratorWiring.cpp: what GEN may ask the app, and who else holds the output.
+    // MainComponentGeneratorWiring.cpp: what GEN may ask the app, who else holds the output, and
+    // T13's one answer to "what level and outputs does a measurement use?" (+ the hints that name it).
     [[nodiscard]] rta::measure::GeneratorEnvironment generatorEnvironment() const;
     [[nodiscard]] std::string outputHolderName() const;
+    [[nodiscard]] rta::measure::MeasurementDrive measurementDrive() const;
+    void refreshMeasurementHints();
 
     rta::view::PaneResolution restoreWorkspaceFromSession(std::vector<rta::trace::PaneSpec> panes);  // rationale: MainComponentPanes.cpp
 
@@ -152,6 +155,7 @@ private:
     std::uint64_t locateResync_ = 0;  // AnalysisThread::resyncSequence() when the capture was armed
     std::shared_ptr<const rta::measure::LocateCapture> lastHandledCapture_;
     std::optional<rta::dsp::DelaySuggestion> delaySuggestion_;
+    std::string locateDriveText_;  // H7 T13: "-30.0 dBFS RMS, out 1", what the last LOCATE played
     // ------------------------------------------------------------------------
 
     // --- L6a Wave 3: the calibration flow --------------------------------

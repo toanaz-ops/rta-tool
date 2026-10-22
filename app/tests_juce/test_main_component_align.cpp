@@ -96,6 +96,9 @@ rta::measure::SyntheticInput::Config fixtureConfig() {
 /// answered through the combos the operator uses.
 void prepare(MainComponent& c) {
     c.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     Access::restartSyntheticForTest(c, fixtureConfig());
     c.selectPaneView(rta::view::PaneSelectorButton::Align);
     auto& pane = alignPane(c);
@@ -217,6 +220,9 @@ TEST_CASE("align: MEASURE, the coarse offset and SUM through the real pane (the 
 TEST_CASE("align: LOCATE, CAL, SWEEP and APPLY are refused while ALIGN runs", kTag) {
     MainComponent c;
     c.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     // APPLY needs an accepted LOCATE suggestion first; this is the real one.
     Access::locateClickedForTest(c);
     REQUIRE(tickUntil(c, [&] { return Access::delaySuggestionForTest(c).has_value(); }, 30000));

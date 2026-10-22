@@ -101,6 +101,9 @@ TEST_CASE("align IR (T11): a box with extra filtering is resolved right or asked
 TEST_CASE("align IR (T11): on the shipped defaults the run asks, without a seed and with a 100 Hz one", kTag) {
     MainComponent c;
     c.setSyntheticMode(true);  // the shipped defaults: no restartSyntheticForTest
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     Access::waitForResyncForTest(c);  // a sweep right after prepare() would lose its head to the gate
     setSweepDurations(c, 10.0, 3.0);
     c.selectPaneView(rta::view::PaneSelectorButton::Align);

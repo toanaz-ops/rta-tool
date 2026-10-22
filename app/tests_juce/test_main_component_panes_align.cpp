@@ -35,6 +35,9 @@ TEST_CASE("align pane: the selector builds an AlignPaneView and returns to RTA",
 TEST_CASE("align pane: answers written through the combos reach the runner and outlive the pane", kTag) {
     MainComponent c;
     c.setSyntheticMode(true);  // two outputs to pick from
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     c.selectPaneView(rta::view::PaneSelectorButton::Align);
     auto* pane = alignPaneOf(c);
     REQUIRE(pane != nullptr);
@@ -61,6 +64,9 @@ TEST_CASE("align pane: answers written through the combos reach the runner and o
 TEST_CASE("align pane: every question starts unanswered and MEASURE says why it is disabled", kTag) {
     MainComponent c;
     c.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     c.selectPaneView(rta::view::PaneSelectorButton::Align);
     auto* pane = alignPaneOf(c);
     REQUIRE(pane != nullptr);

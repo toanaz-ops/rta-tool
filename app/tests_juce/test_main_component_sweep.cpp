@@ -43,6 +43,9 @@ MainComponentSweep& sweepOf(MainComponent& c) { return MainComponentTestAccess::
 
 void startSynthetic(MainComponent& c) {
     c.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     MainComponentTestAccess::waitForResyncForTest(c);  // the gate window is not under test
     sweepOf(c).setDurationsForTest(2.0, 0.5);
 }
@@ -103,11 +106,15 @@ TEST_CASE("sweep: one press adds one SWEEP trace and reads out its delay", kTag)
     CHECK(readout.contains(" ms) "));
     CHECK(readout.contains(" loop "));
     CHECK_FALSE(readout.contains("CLIPPED"));  // no clipping warning at -12 dBFS
-    CHECK(readout.endsWith(" IRs 1/8"));       // the store count is in the visible text
     // Both separators are U+00B7 (UTF-8 C2 B7) -- a mis-encoded literal shows a stray A-circumflex first.
     const juce::String middleDot = juce::String(juce::CharPointer_UTF8("\xc2\xb7"));
     CHECK(readout.contains(" ms) " + middleDot + " loop "));
     CHECK(readout.contains(" dB " + middleDot + " IRs 1/8"));
+    // H7 T13: the readout used to END on the store count (this fixture asserted endsWith(" IRs 1/8"));
+    // it now closes with what the sweep played, so the same contract reads: the store count is
+    // followed by exactly the level suffix and nothing else, GEN pinned at -12 by this fixture.
+    CHECK(readout.contains(" IRs 1/8 " + middleDot + " SWEEP @ -12.0 dBFS peak, out 1"));
+    CHECK(readout.endsWith(" SWEEP @ -12.0 dBFS peak, out 1"));
     const long reported = readout.fromFirstOccurrenceOf("IR ", false, false).getIntValue();
     const long expected = expectedSyntheticDelaySamples();
     INFO("reported " << reported << " expected " << expected);

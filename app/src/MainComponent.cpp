@@ -122,7 +122,9 @@ MainComponent::MainComponent()
                      }
                  },
                  // H7: lets SWEEP refuse BY NAME while GEN plays.
-                 [this] { return generator_.active(); }}),
+                 [this] { return generator_.active(); },
+                 // H7 T13: the level (and, for the rail button, the outputs) a press plays.
+                 [this] { return measurementDrive(); }}),
       // H7 generator: GEN / - / + and a readout; the runner asks us what the app looks like.
       generator_(audioIo_.output(), [this] { return generatorEnvironment(); }) {
     modeSwitch_.setClickingTogglesState(true);
@@ -276,6 +278,7 @@ void MainComponent::timerCallback() {
     pollCalibrationPipeline();
     sweep_.poll();
     generator_.poll();  // H7: epoch / device stop; before the SYNTHETIC early return below
+    refreshMeasurementHints();
     eq_.pollVerify();  // L7-EQ VERIFY: before the SYNTHETIC early return below
     align_.poll();     // ALIGN-UI: ALIGN runs in SYNTHETIC too, so before the early return
     pollSplLogging();

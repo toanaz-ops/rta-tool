@@ -137,6 +137,8 @@ set(RTATOOL_SOURCES
     src/MainComponentGeneratorWiring.cpp
     src/measure/GeneratorRunner.cpp
     src/measure/GeneratorModel.cpp
+    # MeasurementDrive.cpp: H7 T13 -- the one answer to "what level / outputs does a measurement use?".
+    src/measure/MeasurementDrive.cpp
     # ---
     # --- ALIGN-UI lane wave A (docs/plans/2026-10-20-align-ui-lane-plan.md) -----
     # The ALIGN pane and everything it reaches. AlignmentWizard.cpp /

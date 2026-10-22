@@ -27,6 +27,7 @@
 #include "measure/CrossoverTopology.h"
 #include "measure/Snapshot.h"
 #include "measure/SweepIrOutcome.h"
+#include "measure/MeasurementDrive.h"
 #include "trace/Trace.h"
 #include "trace/TraceLibrary.h"
 
@@ -89,6 +90,10 @@ struct AlignHost {
     std::function<std::optional<rta::trace::Trace>(const Snapshot&)> freeze;
     std::function<double()> nowMs;           ///< monotonic, milliseconds
     std::function<std::string()> timeLabel;  ///< "HH:MM:SS" for a trace's name
+    /// H7 T13: the level every step plays at (its outputs stay the answers'
+    /// main/sub, in both modes). Optional: absent, `kAlignLevelDbFs` and the
+    /// pre-H7 wording.
+    std::function<MeasurementDrive()> drive;
 };
 
 enum class AlignBlock {
@@ -159,6 +164,9 @@ public:
 
     /// Why MEASURE cannot start right now (kind None: it can).
     [[nodiscard]] AlignBlocker blocker() const;
+    /// " -- plays at -30.0 dBFS RMS" for the MEASURE / SUM hints: the level the
+    /// NEXT press would use ("" with no drive). AlignRunnerText.cpp.
+    [[nodiscard]] std::string driveHint() const;
     /// MEASURE. Builds a fresh wizard, replays the answers and arms. false,
     /// with the reason in `status()` and `lastRefusalForTest()`, when blocked.
     bool press();

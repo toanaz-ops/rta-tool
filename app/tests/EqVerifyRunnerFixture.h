@@ -21,6 +21,7 @@
 #include "measure/Analyser.h"
 #include "measure/EqPaneModel.h"
 #include "measure/EqVerifyRunner.h"
+#include "measure/MeasurementDrive.h"
 #include "measure/Snapshot.h"
 #include "trace/TraceLibrary.h"
 
@@ -77,9 +78,12 @@ struct Rig {
     int freezes = 0;
     std::vector<float> coherence;
     std::vector<rta::eq::FilterSpec> planned;  ///< the filters AUTO EQ committed
+    /// H7 T13: what the host's `drive` answers when the rig was built with one.
+    rta::measure::MeasurementDrive driveValue;
 
     /// `pick`: bind the bump measurement. `autoEq`: commit filters against it.
-    explicit Rig(bool pick = true, bool autoEq = true) {
+    explicit Rig(bool pick = true, bool autoEq = true,
+                 std::optional<rta::measure::MeasurementDrive> drive = std::nullopt) {
         const auto fixture = eqfixture::makeLinearFixture(kBins);
         coherence = fixture.coherence;
         library.add(eqfixture::makeBumpTrace("bump", kFft, true), "TRANSFER @ 12:00:00", "TRANSFER");
@@ -108,6 +112,10 @@ struct Rig {
         };
         host.nowMs = [this] { return nowMs; };
         host.timeLabel = [] { return std::string("12:34:56"); };
+        if (drive.has_value()) {
+            driveValue = *drive;
+            host.drive = [this] { return driveValue; };
+        }
         runner.attach(engine, library, std::move(host));
     }
 

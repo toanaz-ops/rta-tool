@@ -83,6 +83,11 @@ const std::optional<VerifyReport>& EqVerifyRunner::reportForTest() const noexcep
     return verify_ ? verify_->report() : kNone;
 }
 
+std::string EqVerifyRunner::driveHint() const {
+    if (!host_.drive) return {};
+    return " -- plays at " + measurementLevelText(host_.drive().levelDb, LevelConvention::Rms);
+}
+
 VerifyBlocker EqVerifyRunner::blocker() const {
     const auto block = [](VerifyBlock kind, std::string extra = {}) {
         std::string text = verifyBlockText(kind);
@@ -130,6 +135,17 @@ bool EqVerifyRunner::press() {
     config.tolerance.corridorHalfWidthDb = kEqVerifyCorridorDb;
     config.tolerance.sigmaMultiple = kEqVerifySigmaMultiple;
     config.excitationDbFsRms = kEqVerifyLevelDbFs;
+    // H7 T13: follow the generator's level and ticked outputs when the host
+    // supplies a drive. An empty output list keeps VERIFY's own output 1.
+    std::string driveText;
+    if (host_.drive) {
+        const MeasurementDrive drive = host_.drive();
+        config.excitationDbFsRms = drive.levelDb;
+        config.outputs = drive.outputs;
+        driveText = measurementDriveText(drive.levelDb, LevelConvention::Rms,
+                                         drive.outputs.empty() ? std::vector<int>{kEqVerifyOutputChannel}
+                                                               : drive.outputs);
+    }
 
     auto fresh = std::make_unique<EqVerify>(*engine_, config);
     fresh->arm();
@@ -142,11 +158,13 @@ bool EqVerifyRunner::press() {
     refusal_ = VerifyBlock::None;
     outcome_ = VerifyOutcome::None;
     afterTraceId_.clear();
+    driveText_ = std::move(driveText);
     armedAtMs_ = host_.nowMs();
     pressedMeasurementId_ = model_.measurement().id;
     pressedFilters_.assign(model_.session().committed().begin(), model_.session().committed().end());
-    model_.setStatus("VERIFY: pink noise playing on output " + std::to_string(kEqVerifyOutputChannel + 1) +
-                     ", waiting for the excitation to settle");
+    const std::string where = driveText_.empty() ? "on output " + std::to_string(kEqVerifyOutputChannel + 1)
+                                                 : "@ " + driveText_;
+    model_.setStatus("VERIFY: pink noise playing " + where + ", waiting for the excitation to settle");
     return true;
 }
 
@@ -187,7 +205,8 @@ void EqVerifyRunner::poll() {
         verify_->poll();
         if (verify_->state() == VerifyState::Done) {
             outcome_ = VerifyOutcome::Done;
-            model_.setStatus(renderVerifySummary(*verify_->report()));
+            model_.setStatus(renderVerifySummary(*verify_->report()) +
+                             (driveText_.empty() ? std::string() : " @ " + driveText_));
         }
     }
 }
@@ -265,7 +284,8 @@ void EqVerifyRunner::trySubmit(double now) {
 
     if (host_.freeze) {
         if (auto trace = host_.freeze(*snapshot)) {
-            const std::string name = "VERIFY @ " + (host_.timeLabel ? host_.timeLabel() : std::string("--"));
+            const std::string name = "VERIFY @ " + (host_.timeLabel ? host_.timeLabel() : std::string("--")) +
+                                     (driveText_.empty() ? std::string() : " (" + driveText_ + ")");
             afterTraceId_ = library_->add(std::move(*trace), name, kEqVerifyGroup);
         }
     }

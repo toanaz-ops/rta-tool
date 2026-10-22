@@ -11,6 +11,9 @@
 #include "rta/platform/ChannelConfig.h"
 #include "rta/platform/OutputEngine.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace rta::measure {
 
 /// Owner ruling (record sec.13.2): a SEQUENCE (auto-step, G20) defaults to
@@ -34,6 +37,16 @@ inline void muteAll(rta::platform::OutputEngine& engine) noexcept {
 inline void soloOutput(rta::platform::OutputEngine& engine, int outputChannel) noexcept {
     for (int ch = 0; ch < rta::platform::kMaxChannels; ++ch) {
         engine.routeOutput(ch, ch == outputChannel);
+    }
+}
+
+/// Exactly the listed outputs on, every other off (H7 FOLLOW GEN: LOCATE,
+/// VERIFY and the rail SWEEP play on the generator's ticked outputs). One
+/// listed output is `soloOutput`; several is the additive set the generator
+/// itself routes.
+inline void routeOutputSet(rta::platform::OutputEngine& engine, const std::vector<int>& outputs) noexcept {
+    for (int ch = 0; ch < rta::platform::kMaxChannels; ++ch) {
+        engine.routeOutput(ch, std::find(outputs.begin(), outputs.end(), ch) != outputs.end());
     }
 }
 

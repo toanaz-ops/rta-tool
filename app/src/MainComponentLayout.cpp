@@ -24,6 +24,9 @@ constexpr int kRailWidth = 360;
 constexpr int kRowHeight = az::ui::touchTarget;
 // Masthead width kept free for "RTA TOOL  REAL-TIME ANALYSER".
 constexpr int kBrandReserve = 340;
+// The masthead carries the generator's controls (GEN / STOP above all), so it
+// is tall enough for a touch-target-high strip above the engraved rule.
+constexpr int kMastheadHeight = az::ui::touchTarget + az::ui::spacing;
 
 }  // namespace
 
@@ -59,7 +62,7 @@ void MainComponent::resized() {
 
     auto area = getLocalBounds().reduced(az::ui::gap * 2);
 
-    mastheadArea_ = area.removeFromTop(az::ui::transportHeight / 2);
+    mastheadArea_ = area.removeFromTop(kMastheadHeight);
     area.removeFromTop(az::ui::gap * 2);
 
     // H7 generator: GEN / - / + and its readout live in the masthead's empty

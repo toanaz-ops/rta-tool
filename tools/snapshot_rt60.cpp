@@ -53,6 +53,8 @@ void renderRt60Specimen (const juce::File& outDir, int& failures)
     constexpr double kFs = 48000.0;
     MainComponent component;
     component.setSyntheticMode (true);
+    // H7 T13: measurements follow GEN's level (-30.0 by default); the specimen was settled at -12.
+    Access::pinGeneratorLevelForTest (component, -12.0);
 
     rta::measure::SyntheticInput::Config config;
     config.sampleRate = kFs;
