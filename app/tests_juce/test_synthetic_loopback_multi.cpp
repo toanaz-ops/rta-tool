@@ -30,7 +30,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -223,4 +225,39 @@ TEST_CASE("both outputs routed: the reference is output 0's block and the measur
     }
     REQUIRE(any0);
     REQUIRE(any1);
+}
+
+TEST_CASE("a block rendered when the destructor starts is still pushed: rendered == pushed",
+          "[synthetic_loopback_multi]") {
+    // Parks the feed thread between render() and the push, starts the destructor, and
+    // gives it time to run its first statements. The destructor used to deactivate the
+    // bus BEFORE joining, so the parked block was pushed into an inactive bus and dropped
+    // (rendered 4096 vs pushed 3584 in CI run 39777629530).
+    CaptureBus bus(rta::platform::kFixedRingCapacitySamples);
+    REQUIRE(bus.config().setRole(0, ChannelRole::Measurement));
+    REQUIRE(bus.config().setRole(1, ChannelRole::Reference));
+    OutputEngine engine;
+
+    std::atomic<int> calls{0};
+    std::atomic<bool> parked{false};
+    std::atomic<bool> destroying{false};
+    SyntheticInput::Config config;
+    config.loopback = &engine;
+    config.betweenRenderAndPushForTest = [&] {
+        if (calls.fetch_add(1) != 5) return;
+        parked = true;
+        waitUntil([&] { return destroying.load(); }, 10000);
+        juce::Thread::sleep(100);  // the destructor is now past any statement before its join
+    };
+    auto input = std::make_unique<SyntheticInput>(bus, config);
+
+    REQUIRE(waitUntil([&] { return parked.load(); }, 10000));
+    destroying = true;
+    input.reset();
+
+    // Every loop iteration renders one block and calls the hook once, so the hook's call
+    // count is the number of blocks rendered; each one must be on the bus.
+    const std::uint64_t rendered = static_cast<std::uint64_t>(calls.load()) * kBlock;
+    REQUIRE(rendered >= 6u * kBlock);
+    REQUIRE(bus.ring(1)->availableToRead() == rendered);
 }

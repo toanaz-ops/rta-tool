@@ -12,6 +12,7 @@
 #include <juce_core/juce_core.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -115,6 +116,11 @@ public:
         /// `OutputEngine`, reach the synthetic measurement path instead of a
         /// device that is stopped); otherwise pink / sine as before.
         rta::platform::OutputEngine* loopback = nullptr;
+
+        /// Test hook, empty in production: runs on the feed thread after a block is rendered
+        /// and before it is pushed, so a test can park the thread inside that window and
+        /// prove the destructor does not drop the block (render advanced, push still owed).
+        std::function<void()> betweenRenderAndPushForTest;
     };
 
     /// Calls `bus.prepare()` and `bus.setActive(true)` here, on the message
