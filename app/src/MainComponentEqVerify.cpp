@@ -34,6 +34,7 @@ void MainComponent::wireEqVerify() {
     host.freeze = [this](const rta::measure::Snapshot& snapshot) {
         return freezeSnapshot(snapshot, rta::view::PaneView::Transfer);
     };
+    host.drive = [this] { return measurementDrive(); };  // H7 T13
     host.nowMs = [] { return juce::Time::getMillisecondCounterHiRes(); };
     host.timeLabel = [] { return juce::Time::getCurrentTime().formatted("%H:%M:%S").toStdString(); };
     eq_.attachVerify(audioIo_.output(), library_, std::move(host));

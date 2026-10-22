@@ -55,6 +55,9 @@ bool tickUntil(MainComponent& c, Predicate&& done, int timeoutMs) {
 
 void startRoom(MainComponent& c, std::uint32_t seed) {
     c.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     rta::measure::SyntheticInput::Config config;
     config.sampleRate = kFs;
     config.measurementDelaySamples = 4;

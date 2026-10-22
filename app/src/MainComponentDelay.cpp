@@ -21,9 +21,9 @@
 /// delay (record sec.1.6, sec.8 -- an explicit rebuild, never a live
 /// nudge), enabled only once a suggestion reads `Accepted`.
 void MainComponent::locateClicked() {
-    // L7-EQ VERIFY plays its own pink noise through the same output engine.
-    // This handler ignores setSource's return value and disarms at the end of
-    // its capture, so an overlap would silently kill VERIFY's excitation.
+    // L7-EQ VERIFY plays its own pink noise through the same output engine and
+    // LOCATE disarms at the end of its capture, so an overlap would silently
+    // kill VERIFY's excitation (H7: setSource's refusal below is honoured too).
     // L6a Wave 3: calibrationCaptureArmed_ and SWEEP share the SAME
     // accumulator (MainComponentCalibration.cpp's own comment) -- refuse
     // rather than stomp on an in-flight capture. Only VERIFY gets a message;
@@ -41,21 +41,27 @@ void MainComponent::locateClicked() {
     // back should not correlate against each other's excitation by
     // coincidence, however small the chance.
     rta::gen::Pcg32 rng(static_cast<std::uint64_t>(juce::Time::currentTimeMillis()), 1);
+    // H7 T13: the level is the generator's setting in FOLLOW GEN (dBFS RMS, the
+    // noise's own convention) and the outputs are its ticked ones; OWN keeps
+    // -12 dBFS and out 1 (`measurementDrive` answers for both).
+    const rta::measure::MeasurementDrive drive = measurementDrive();
+    const std::vector<int> outputs = drive.outputs.empty() ? std::vector<int>{0} : drive.outputs;
+    locateDriveText_ = rta::measure::measurementDriveText(drive.levelDb, rta::measure::LevelConvention::Rms, outputs);
     // setSource's bool is the refusal (output-path record sec.6). Ignoring it
     // armed whatever source was still installed -- after a GEN stop that timed
     // out on a stopped device, GEN's own -30 dBFS pink -- as if it were LOCATE's.
-    if (!audioIo_.output().setSource(rta::gen::PinkNoise(rng, -12.0))) {
+    if (!audioIo_.output().setSource(rta::gen::PinkNoise(rng, drive.levelDb))) {
         delayReadout_.setText("delay: refused -- the output is still playing a source",
                               juce::dontSendNotification);
         return;
     }
-    rta::measure::soloOutput(audioIo_.output(), /*outputChannel=*/0);
+    rta::measure::routeOutputSet(audioIo_.output(), outputs);
     audioIo_.output().armSource();
 
     locateWaitingForSettle_ = true;
     delaySuggestion_.reset();
     applyButton_.setEnabled(false);
-    delayReadout_.setText("delay: locating...", juce::dontSendNotification);
+    delayReadout_.setText("delay: locating @ " + juce::String(locateDriveText_) + "...", juce::dontSendNotification);
 }
 
 /// Drops a LOCATE waiting for settle or capture and disarms its source
@@ -164,9 +170,10 @@ void MainComponent::updateDelayReadout() {
         case rta::dsp::DelayVerdict::WindowEmpty: verdictWord = "no signal found"; break;
     }
 
+    // H7 T13: a quiet drive shows as a quiet reading, never an unexplained one.
     delayReadout_.setText(juce::String(suggestion.best.delaySamples) + " samples (" +
                                juce::String(ms, 1) + " ms) -- " + trustWord + " trust, " +
-                               verdictWord,
+                               verdictWord + " @ " + juce::String(locateDriveText_),
                            juce::dontSendNotification);
     applyButton_.setEnabled(suggestion.verdict == rta::dsp::DelayVerdict::Accepted);
 }

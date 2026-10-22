@@ -59,6 +59,8 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
     constexpr double kFs = 48000.0;
     MainComponent component;
     component.setSyntheticMode (true);
+    // H7 T13: measurements follow GEN's level (-30.0 by default); the specimen was settled at -12.
+    MainComponentTestAccess::pinGeneratorLevelForTest (component, -12.0);
     // A sweep refuses to arm while the input is mid-resync (PR #78); the
     // fixture path below waits inside restartSyntheticForTest, this one must too.
     Access::waitForResyncForTest (component);

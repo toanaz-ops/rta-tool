@@ -181,6 +181,8 @@ target_sources(rtatool_snapshot PRIVATE
     ${CMAKE_SOURCE_DIR}/tools/snapshot_align.cpp
     # snapshot_rt60.cpp: RT60-UI wave A's main-live-rt60.png, same reason.
     ${CMAKE_SOURCE_DIR}/tools/snapshot_rt60.cpp
+    # snapshot_generator.cpp: H7 wave B1's main-live-gen.png, same reason.
+    ${CMAKE_SOURCE_DIR}/tools/snapshot_generator.cpp
 )
 
 target_include_directories(rtatool_snapshot PRIVATE

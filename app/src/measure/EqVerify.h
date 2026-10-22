@@ -111,6 +111,9 @@ class EqVerify {
 public:
     struct Config {
         int outputChannel = 0;
+        /// H7 T13: the outputs to play on when the caller follows the
+        /// generator's selection. Empty: STRICT solo on `outputChannel`.
+        std::vector<int> outputs;
         double sampleRate = 48000.0;
         VerifyTolerance tolerance{};
         /// The excitation is pink noise by record sec.8; its level and seed

@@ -253,6 +253,19 @@ struct MainComponentTestAccess {
     // H7 (app/tests_juce/test_main_component_generator*.cpp).
     [[nodiscard]] static MainComponentGenerator& generatorForTest(MainComponent& c) { return c.generator_; }
     [[nodiscard]] static bool outputBusyForTest(const MainComponent& c) { return c.outputBusy(); }
+    // T13: pins GEN's level SETTING (not playing) so a fixture settled at -12 dBFS keeps its level
+    // while measurements follow GEN; and the one answer a measurement asks for, plus the LOCATE hint.
+    static void pinGeneratorLevelForTest(MainComponent& c, double levelDb) {
+        auto next = c.generator_.settingsForTest();
+        next.levelDb = levelDb;
+        static_cast<void>(c.generator_.runnerForTest().apply(std::move(next)));
+    }
+    [[nodiscard]] static rta::measure::MeasurementDrive measurementDriveForTest(const MainComponent& c) {
+        return c.measurementDrive();
+    }
+    [[nodiscard]] static juce::String locateHintForTest(const MainComponent& c) {
+        return c.locateButton_.getProperties().getWithDefault(az::ui::hintProperty, juce::String()).toString();
+    }
     static void calibrationEndClickedForTest(MainComponent& c) { c.calibrationEndClicked(); }
     // The engine the loopback renders, so a test can prove an aborted run left
     // the output disarmed (render a few blocks by hand and ask it), or install

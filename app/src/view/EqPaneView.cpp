@@ -76,7 +76,7 @@ EqPaneView::EqPaneView(EqPaneBinding binding) : binding_(std::move(binding)), mo
 
     autoEqButton_.getProperties().set(az::ui::hintProperty, "one shot: place, then solve the gains");
     suggestButton_.getProperties().set(az::ui::hintProperty, "top 3 one-step candidates");
-    verifyButton_.getProperties().set(az::ui::hintProperty, "LIVE only: pink noise -12 dBFS on output 1, re-measure, compare with the prediction");
+    refreshHints();
     adoptButton_.getProperties().set(az::ui::hintProperty, "after VERIFY: mark the predicted filters applied and bind the new measurement");
     peakToggle_.getProperties().set(az::ui::hintProperty, "scale the taps so the largest is 0 dBFS; the text header states the trim");
 
@@ -105,7 +105,19 @@ void EqPaneView::setLibrary(const rta::trace::TraceLibrary* library) {
     refreshFromModel();
 }
 
+void EqPaneView::refreshHints() {
+    const juce::String level = binding_.verify != nullptr ? juce::String(binding_.verify->driveHint()) : juce::String();
+    if (level == lastHintLevel_ && verifyButton_.getProperties().contains(az::ui::hintProperty)) return;
+    lastHintLevel_ = level;
+    verifyButton_.getProperties().set(
+        az::ui::hintProperty,
+        level.isEmpty() ? juce::String("LIVE only: pink noise -12 dBFS on output 1, re-measure, compare with the prediction")
+                        : "LIVE only: pink noise on the generator's outputs, re-measure, compare with the prediction" + level);
+    verifyButton_.repaint();
+}
+
 void EqPaneView::timerCallback() {
+    refreshHints();
     const std::uint64_t revision = library_ != nullptr ? library_->revision() : 0;
     if (shouldRepaint(gate_, 0, revision)) {
         if (library_ != nullptr) model_.syncLibrary(*library_);

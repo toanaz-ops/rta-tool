@@ -131,6 +131,7 @@ bool AlignRunner::press() {
     config.sampleRate = d.engine->sampleRate();
     config.matchedPairAgreement = kAlignMatchedPairAgreement;
 
+    d.noteRunLevel();
     // A FRESH wizard per press: arm() refuses unless Answering, and the runner
     // keeps the answers, so a second MEASURE replays them.
     auto fresh = std::make_unique<AlignmentWizard>(*d.engine, d.pinkSource(), config);
@@ -165,7 +166,7 @@ bool AlignRunner::press() {
     const Source first = d.measuredSource();
     d.say(std::string("ALIGN: pink noise on ") + sourceLabel(first) + " (OUT " +
           std::to_string((first == Source::Main ? a.mainOutput : a.subOutput) + 1) +
-          ") only, waiting for the excitation to settle" + irNote);
+          ") only, waiting for the excitation to settle" + d.runNote() + irNote);
     return true;
 }
 
@@ -196,6 +197,7 @@ bool AlignRunner::pressSum() {
     }
     // The slot may have been taken by another feature since MEASURE: arming
     // whatever it holds would measure the wrong signal without saying so.
+    d.noteRunLevel();
     if (!d.engine->setSource(d.pinkSource())) {
         d.say("SUM refused: " + alignBlockText(AlignBlock::EngineNotQuiescent));
         return false;
@@ -210,7 +212,7 @@ bool AlignRunner::pressSum() {
     d.pressedSynthetic = env.synthetic;
     d.outcome = AlignOutcome::None;
     d.markStepStart();
-    d.say("SUM: pink noise on MAIN and SUB together, waiting for the excitation to settle");
+    d.sayRun("SUM: pink noise on MAIN and SUB together, waiting for the excitation to settle");
     return true;
 }
 
@@ -300,14 +302,14 @@ void AlignRunnerState::trySubmit(double now) {
     const std::string label = host.timeLabel ? host.timeLabel() : std::string("--");
     const WizardStep before = wizard->step();
     if (before == WizardStep::MeasuringSum) {
-        library->add(*trace, "ALIGN SUM @ " + label, kAlignGroup);
+        library->add(*trace, "ALIGN SUM @ " + label + traceTag(), kAlignGroup);
         wizard->submitMeasuredSum(std::move(*trace));
         outcome = AlignOutcome::SumMeasured;
-        say("SUM: measured sum stored as ALIGN SUM; compare it with the predicted sum");
+        sayRun("SUM: measured sum stored as ALIGN SUM; compare it with the predicted sum");
         return;
     }
     const Source who = measuredSource();
-    library->add(*trace, std::string("ALIGN ") + sourceLabel(who) + " @ " + label, kAlignGroup);
+    library->add(*trace, std::string("ALIGN ") + sourceLabel(who) + " @ " + label + traceTag(), kAlignGroup);
     // The LOW step's submit runs the fit and the polarity table on this thread.
     // Timed so the PR can say whether it needs a worker (EQ risk-2 precedent).
     const auto computeStart = std::chrono::steady_clock::now();
@@ -330,8 +332,8 @@ void AlignRunnerState::afterSubmit(const AlignAnswers& asked) {
     if (now == WizardStep::MeasuringLow) {
         markStepStart();
         const Source next = measuredSource();
-        say(std::string("ALIGN: captured; now pink noise on ") + sourceLabel(next) + " (OUT " +
-            std::to_string((next == Source::Main ? asked.mainOutput : asked.subOutput) + 1) + ") only");
+        sayRun(std::string("ALIGN: captured; now pink noise on ") + sourceLabel(next) + " (OUT " +
+               std::to_string((next == Source::Main ? asked.mainOutput : asked.subOutput) + 1) + ") only");
         return;
     }
     if (!wizard->verdict().has_value() || now == WizardStep::Answering) {
@@ -343,7 +345,7 @@ void AlignRunnerState::afterSubmit(const AlignAnswers& asked) {
     const Verdict& v = *wizard->verdict();
     if (v.fitRefusal != rta::dsp::CrossoverRefusal::None) {
         outcome = AlignOutcome::FitRefused;
-        say(std::string("ALIGN: the fit refused (") + fitRefusalName(v.fitRefusal) + ") -- no suggestion");
+        sayRun(std::string("ALIGN: the fit refused (") + fitRefusalName(v.fitRefusal) + ") -- no suggestion");
         return;
     }
     outcome = AlignOutcome::Measured;
@@ -355,17 +357,17 @@ void AlignRunnerState::afterSubmit(const AlignAnswers& asked) {
                           "ALIGN: fit done -- seed and measured crossing disagree (%.0f Hz vs %.0f Hz), so the "
                           "IRs did not choose; type the coarse offset in ms (both IR hints are shown)",
                           s.seedHz, s.crossingHz);
-            say(text);
+            sayRun(text);
             return;
         }
-        say(wizard->irCycleHintSamples().has_value()
-                ? "ALIGN: fit done -- the bound IRs fit no candidate clearly (see the hint); type the coarse offset in ms"
-                : "ALIGN: fit done -- type the coarse offset in ms to choose among the candidates");
+        sayRun(wizard->irCycleHintSamples().has_value()
+                   ? "ALIGN: fit done -- the bound IRs fit no candidate clearly (see the hint); type the coarse offset in ms"
+                   : "ALIGN: fit done -- type the coarse offset in ms to choose among the candidates");
         return;
     }
     cycleFromIr = wizard->cycleOffsetFromIr();
-    say(cycleFromIr ? "ALIGN: fit done -- the bound IRs chose the cycle (type an offset to override)"
-                    : "ALIGN: fit done");
+    sayRun(cycleFromIr ? "ALIGN: fit done -- the bound IRs chose the cycle (type an offset to override)"
+                       : "ALIGN: fit done");
 }
 
 }  // namespace rta::measure

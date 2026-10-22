@@ -23,6 +23,7 @@
 
 #include "measure/AlignRunner.h"
 #include "measure/Analyser.h"
+#include "measure/MeasurementDrive.h"
 #include "measure/Snapshot.h"
 #include "trace/CaptureConverter.h"
 #include "trace/TraceLibrary.h"
@@ -107,13 +108,15 @@ struct Rig {
     int freezes = 0;
     /// Replaces the real conversion (refusal rows: a trace the wizard cannot use).
     std::function<std::optional<rta::trace::Trace>(const Snapshot&)> freezeOverride;
+    /// H7 T13: what the host's `drive` answers when the rig was built with one.
+    rta::measure::MeasurementDrive driveValue;
 
     std::uint64_t totalRendered = 0;
     int signature = 0;
     int previousSignature = 0;
     std::uint64_t changedAt = 0;
 
-    Rig() {
+    explicit Rig(std::optional<rta::measure::MeasurementDrive> drive = std::nullopt) {
         engine.prepare(kFs, kChannels);
         rta::measure::AlignHost host;
         host.environment = [this] { return env; };
@@ -134,6 +137,10 @@ struct Rig {
         };
         host.nowMs = [this] { return nowMs; };
         host.timeLabel = [] { return std::string("12:34:56"); };
+        if (drive.has_value()) {
+            driveValue = *drive;
+            host.drive = [this] { return driveValue; };
+        }
         runner.attach(engine, library, std::move(host));
     }
 

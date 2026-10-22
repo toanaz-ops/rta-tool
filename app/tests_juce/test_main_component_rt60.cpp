@@ -64,6 +64,9 @@ bool tickUntil(MainComponent& c, Predicate&& done, int timeoutMs) {
 // delay (4) is SYNTHETIC's own; no band-pass, so the comb IS the whole path.
 void startRoom(MainComponent& c, double t60 = 0.80) {
     c.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     rta::measure::SyntheticInput::Config config;
     config.sampleRate = kFs;
     config.measurementDelaySamples = 4;

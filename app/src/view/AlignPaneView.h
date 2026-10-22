@@ -82,6 +82,8 @@ private:
     /// Everything that follows the runner: enable states, labels, the chart
     /// cache. One function, so the widgets can never disagree with the runner.
     void refresh();
+    /// H7 T8: MEASURE and SUM name the level the next press would play at.
+    void refreshHints();
     void rebuildOutputCombos();
     void rebuildSurface();
     void answersChanged();
@@ -93,6 +95,7 @@ private:
     std::uint64_t lastRevision_ = ~std::uint64_t{ 0 };
     int lastOutputCount_ = -1;
     juce::String lastBlockerText_;
+    juce::String lastHintLevel_;
     bool lastQuiescent_ = true;  ///< the engine state SUM's enabled flag was last computed from
 
     CrossoverSurface surface_;

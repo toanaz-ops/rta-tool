@@ -177,6 +177,9 @@ TEST_CASE("rt60 pane: SWEEP needs an output: none without a device, out 1 and ou
     CHECK_FALSE(pane->sweepButtonForTest().isEnabled());
 
     c.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     c.selectPaneView(rta::view::PaneSelectorButton::Rta);
     c.selectPaneView(rta::view::PaneSelectorButton::Rt60);
     pane = rt60PaneOf(c);

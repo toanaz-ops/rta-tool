@@ -103,6 +103,8 @@ private:
     /// or running. Polled by the timer: the device and the live snapshot
     /// change without the model's revision moving.
     [[nodiscard]] juce::String verifyReason() const;
+    /// H7 T8: VERIFY names the level the next press would play at.
+    void refreshHints();
 
     EqPaneBinding binding_;
     rta::measure::EqPaneModel& model_;
@@ -110,6 +112,7 @@ private:
     GateState gate_;
     std::uint64_t lastModelRevision_ = ~std::uint64_t{ 0 };
     juce::String lastVerifyReason_;
+    juce::String lastHintLevel_;
 
     std::vector<std::string> measurementIds_;  ///< combo item id i+1 names [i]
     std::vector<std::string> targetIds_;       ///< combo item id i+2 names [i]; id 1 is FLAT

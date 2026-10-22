@@ -145,7 +145,11 @@ void EqVerify::arm() {
         refusal_ = VerifyRefusal::EngineNotQuiescent;
         return;
     }
-    soloOutput(engine_, config_.outputChannel);
+    if (config_.outputs.empty()) {
+        soloOutput(engine_, config_.outputChannel);
+    } else {
+        routeOutputSet(engine_, config_.outputs);
+    }
     engine_.armSource();
     state_ = VerifyState::Waiting;
 }

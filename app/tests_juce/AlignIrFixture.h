@@ -140,6 +140,9 @@ inline long expectedSubArrival() { return expectedArrival(rta::measure::lr4LowPa
 inline void prepare(MainComponent& c, rta::measure::SyntheticInput::Config config = fixtureConfig(),
                     int topologyId = 2) {
     c.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(c, -12.0);
     Access::restartSyntheticForTest(c, config);
     setSweepDurations(c, 2.0, 0.5);
     c.selectPaneView(rta::view::PaneSelectorButton::Align);

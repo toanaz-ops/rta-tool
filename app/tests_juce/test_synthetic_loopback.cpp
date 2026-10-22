@@ -214,6 +214,9 @@ TEST_CASE("constructing with a loopback prepares the engine at the synthetic rat
 TEST_CASE("SYNTHETIC + LOCATE reaches the closed-form synthetic delay", "[synthetic_loopback]") {
     MainComponent component;
     component.setSyntheticMode(true);
+    // H7 T13: measurements follow GEN's level by default (-30.0); this fixture was settled at the
+    // record's -12 dBFS, so it pins GEN there and keeps testing what it tested.
+    MainComponentTestAccess::pinGeneratorLevelForTest(component, -12.0);
     MainComponentTestAccess::locateClickedForTest(component);
 
     // The 2 Hz timer is not pumped offscreen; drive the poll by hand. Bounded:

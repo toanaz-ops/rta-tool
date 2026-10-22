@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -37,12 +38,13 @@ MainComponentSweep::MainComponentSweep(rta::measure::AnalysisThread& analysis,
       library_(library),
       host_(std::move(host)),
       nowMs_([] { return juce::Time::getMillisecondCounterHiRes(); }) {
-    button_.getProperties().set(az::ui::hintProperty,
-                                "log sweep 20 Hz-20 kHz, out 1, needs REF on route 1");
+    setLevelHint("log sweep 20 Hz-20 kHz, out 1, needs REF on route 1");  // MainComponent refreshes it with the level
     button_.onClick = [this] { clicked(); };
     readout_.setText("sweep: not run yet", juce::dontSendNotification);
     readout_.setJustificationType(juce::Justification::centredLeft);
 }
+
+void MainComponentSweep::setLevelHint(const juce::String& hint) { button_.getProperties().set(az::ui::hintProperty, hint); }
 
 void MainComponentSweep::attachTo(juce::Component& parent) {
     parent.addAndMakeVisible(button_);
@@ -98,6 +100,19 @@ bool MainComponentSweep::startOn(int outputChannel, Requester requester, std::op
     // Per press: the RT60 pane's TAIL choice. `request_` keeps the rail's 3 s.
     if (tailSeconds.has_value()) armedRequest_.tailSeconds = *tailSeconds;
     armedRequest_.sweep.sampleRate = fs;
+    // H7 T13: the level this press plays at -- the generator's setting in
+    // FOLLOW GEN, as dBFS PEAK (a sweep's own convention). The rail button
+    // also takes the generator's outputs; ALIGN's and RT60's named presses keep
+    // the output they asked for, in both modes.
+    rta::measure::MeasurementDrive drive;
+    if (host_.drive) {
+        drive = host_.drive();
+        armedRequest_.sweep.levelDbFsPeak = drive.levelDb;
+    }
+    const std::vector<int> outputs =
+        (named || drive.outputs.empty()) ? std::vector<int>{outputChannel} : drive.outputs;
+    armedDriveText_ = rta::measure::measurementDriveText(armedRequest_.sweep.levelDbFsPeak,
+                                                         rta::measure::LevelConvention::Peak, outputs);
     rta::gen::Sweep sweep(armedRequest_.sweep);
     const auto captureSamples = static_cast<std::size_t>(
         std::ceil((kPreRollSeconds + sweep.durationSec() + armedRequest_.tailSeconds) * fs));
@@ -111,7 +126,7 @@ bool MainComponentSweep::startOn(int outputChannel, Requester requester, std::op
         say("sweep: refused -- the output is still playing a source");
         return false;
     }
-    rta::measure::soloOutput(output_, outputChannel);  // that output only (decision 10; out 1 for the button)
+    rta::measure::routeOutputSet(output_, outputs);  // exactly these outputs (decision 10: one, unless GEN ticked more)
     analysis_.armLocateCapture(/*routeIndex=*/0, captureSamples);
 
     armedOutput_ = outputChannel;
@@ -128,7 +143,7 @@ bool MainComponentSweep::startOn(int outputChannel, Requester requester, std::op
     armedChannelRoles_ = host_.channelRoles();
     timeoutMs_ = 1000.0 * static_cast<double>(captureSamples) / fs + timeoutSlackMs_;
     state_ = State::PreRoll;
-    say("sweep: arming...");
+    say("sweep: arming @ " + armedDriveText_ + "...");
     return true;
 }
 
@@ -184,7 +199,7 @@ void MainComponentSweep::poll() {
         if (nowMs_() - armedAtMs_ < kSettleMs) return;
         output_.armSource();
         state_ = State::Playing;
-        say("sweep: playing...");
+        say("sweep: playing @ " + armedDriveText_ + "...");
         return;
     }
 
@@ -207,14 +222,14 @@ void MainComponentSweep::startAnalysis() {
                   armedRequest_);
     lastHandled_.reset();  // the worker owns its copy; do not hold the capture's ~5 MB
     state_ = State::Analysing;
-    say("sweep: analysing...");
+    say("sweep: analysing @ " + armedDriveText_ + "...");
 }
 
 void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepIrOutcome>& owner) {
     const auto& outcome = *owner;
     state_ = State::Idle;
     if (outcome.status != rta::measure::SweepIrStatus::Ok) {
-        say("sweep: refused -- " + juce::String(outcome.message));
+        say("sweep: refused -- " + juce::String(outcome.message) + " @ " + armedDriveText_);
         return;
     }
     auto trace = rta::trace::traceFromSweepIr(outcome, armedDeviceName_, armedChannelRoles_);
@@ -226,7 +241,8 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
     // are told apart by which loudspeaker they were of.
     const bool named = armedRequester_ != Requester::Rail;
     const juce::String outputTag = named ? " out" + juce::String(armedOutput_ + 1) : juce::String();
-    const juce::String name = "SWEEP" + outputTag + " @ " + juce::Time::getCurrentTime().formatted("%H:%M:%S");
+    const juce::String name = "SWEEP" + outputTag + " @ " + juce::Time::getCurrentTime().formatted("%H:%M:%S") +
+                              " (" + armedDriveText_ + ")";
     const auto id = library_.add(std::move(*trace), name.toStdString(), "SWEEP");
     if (id.empty()) {
         say("sweep: failed (duplicate capture id)");
@@ -246,6 +262,8 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
     // looks, and say when this one pushed the oldest out.
     text += " " + juce::String(juce::CharPointer_UTF8("\xc2\xb7")) + " IRs " + juce::String(irStore_.size()) + "/" +
             juce::String(rta::trace::IrStore::kCapacity) + (evicts ? " (oldest dropped)" : "");
+    // H7 T13: what the sweep played, after the store tally the readout used to end on.
+    text += " " + juce::String(juce::CharPointer_UTF8("\xc2\xb7")) + " SWEEP @ " + armedDriveText_;
     if (outcome.measurementClipped) text += " -- CLIPPED, harmonics at negative time";
     say(text);
 }

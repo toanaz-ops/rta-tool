@@ -65,10 +65,7 @@ AlignPaneView::AlignPaneView(AlignPaneBinding binding)
         addAndMakeVisible(*combo);
     }
 
-    measureButton_.getProperties().set(az::ui::hintProperty,
-                                       "pink noise on the high-pass side only, then the low-pass side only");
-    sumButton_.getProperties().set(az::ui::hintProperty,
-                                   "both outputs together: set the delay in the rack first, then measure the sum");
+    refreshHints();
     measureButton_.onClick = [this] {
         binding_.runner->press();
         refresh();
@@ -106,7 +103,20 @@ AlignPaneView::~AlignPaneView() { stopTimer(); }
 
 void AlignPaneView::setLibrary(const rta::trace::TraceLibrary*) {}
 
+void AlignPaneView::refreshHints() {
+    const juce::String level = binding_.runner != nullptr ? fromUtf8(binding_.runner->driveHint()) : juce::String();
+    if (level == lastHintLevel_ && measureButton_.getProperties().contains(az::ui::hintProperty)) return;
+    lastHintLevel_ = level;
+    measureButton_.getProperties().set(az::ui::hintProperty,
+                                       "pink noise on the high-pass side only, then the low-pass side only" + level);
+    sumButton_.getProperties().set(az::ui::hintProperty,
+                                   "both outputs together: set the delay in the rack first, then measure the sum" + level);
+    measureButton_.repaint();
+    sumButton_.repaint();
+}
+
 void AlignPaneView::timerCallback() {
+    refreshHints();
     // A sweep finishing (or auto-binding its IR) is not a runner state change.
     irPanel_.refresh();
     const auto irInfo = irPanel_.infoText();
