@@ -160,6 +160,7 @@ TEST_CASE("sweep: LOCATE and CAL during a SWEEP are refused, and the sweep still
     // Not disturbed: the refused clicks neither re-armed the capture nor
     // swapped the source, so the sweep completes with its own trace.
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
     CHECK(sweepOf(c).readoutForTest().startsWith("IR "));
     CHECK(MainComponentTestAccess::libraryForTest(c).entries().size() == 1);
 }
@@ -289,6 +290,7 @@ TEST_CASE("sweep: the stored trace keeps the click-time device and roles when SY
     c.setSyntheticMode(false);  // roles reset to Unused, device name no longer "SYNTHETIC"
     REQUIRE(rta::trace::channelRolesSummary(MainComponentTestAccess::channelConfigForTest(c)) != rolesAtClick);
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
 
     auto& library = MainComponentTestAccess::libraryForTest(c);
     REQUIRE(library.entries().size() == 1);
@@ -318,6 +320,7 @@ TEST_CASE("sweep: the 9th IR says the oldest was dropped", kTag) {
     sweepOf(c).fillIrStoreForTest(8);
     sweepOf(c).clicked();
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
     const juce::String readout = sweepOf(c).readoutForTest();
     INFO(readout);
     CHECK(readout.contains(" IRs 8/8 (oldest dropped)"));
@@ -340,6 +343,7 @@ TEST_CASE("sweep: a channel-role change mid-capture resyncs the input and aborts
 
     REQUIRE(MainComponentTestAccess::channelConfigForTest(c).setRole(2, rta::platform::ChannelRole::Measurement));
     REQUIRE(tickUntil(c, [&] { return sweepOf(c).stateForTest() == State::Idle; }, 3000));
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
 
     CHECK(sweepOf(c).readoutForTest().contains("resynced"));
     CHECK(MainComponentTestAccess::libraryForTest(c).entries().empty());
