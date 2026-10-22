@@ -72,6 +72,7 @@ add_executable(rtatool_main_component_tests
     # ALIGN-UI wave A: the second loopback output (T0), and the ALIGN pane
     # against a real MainComponent (T5 selector, T6 acceptance).
     test_synthetic_loopback_multi.cpp
+    test_synthetic_pacing.cpp
     test_main_component_align.cpp
     test_main_component_align_defaults.cpp
     test_main_component_align_ir.cpp

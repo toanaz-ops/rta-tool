@@ -10,8 +10,10 @@
 #include "measure/SyntheticCrossover.h"
 #include "view/AlignPaneView.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <string>
 #include <utility>
 
 namespace rta::tools
@@ -94,7 +96,16 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
         // Wave B: SWEEP MAIN then SWEEP SUB through the pane's own buttons. Each
         // sweep binds its IR to the side that asked, so MEASURE needs no typed offset.
         auto& sweep = Access::sweepForTest (component);
-        sweep.setDurationsForTest (useFixture ? 2.0 : 10.0, useFixture ? 0.5 : 3.0);  // the shipped band-pass needs the long sweep
+        const double sweepSeconds = useFixture ? 2.0 : 10.0;
+        const double tailSeconds = useFixture ? 0.5 : 3.0;
+        sweep.setDurationsForTest (sweepSeconds, tailSeconds);  // the shipped band-pass needs the long sweep
+        // The loopback is paced by the wall clock and the analysis shares the cores, so
+        // the waits below are a function of the sweep asked for (same derivation as
+        // app/tests_juce/AlignIrFixture.h): kSlack x (pre-roll + sweep + tail), floored at
+        // the former 60 s. The sweep's own capture timeout gets the same stretch.
+        constexpr double kBudgetSlack = 6.0;
+        sweep.setTimeoutSlackForTest (5000.0 * kBudgetSlack);
+        const int sweepBudgetMs = std::max (60000, static_cast<int> (1000.0 * kBudgetSlack * (sweepSeconds + tailSeconds + 1.0)));
         for (auto* button : { &pane->irPanelForTest().sweepMainButtonForTest(),
                               &pane->irPanelForTest().sweepSubButtonForTest() })
         {
@@ -104,7 +115,7 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
                 return;
             }
             button->onClick();
-            if (! pumpUntil (component, *pane, [&] { return ! sweep.busy(); }, 60000))
+            if (! pumpUntil (component, *pane, [&] { return ! sweep.busy(); }, sweepBudgetMs))
             {
                 fail ("a sweep did not finish", fileName, failures);
                 return;
@@ -112,6 +123,9 @@ void renderOne (const juce::File& outDir, const char* fileName, bool useFixture,
         }
         if (runner.boundIr (rta::measure::Source::Main) == nullptr || runner.boundIr (rta::measure::Source::Sub) == nullptr)
         {
+            // Name the sweep's own verdict: a refusal or abort says why, a bare "did not bind" does not.
+            const std::string why = sweep.readoutForTest().toStdString();
+            std::printf ("sweep readout: %s\n", why.c_str());
             fail ("a sweep did not bind its IR", fileName, failures);
             return;
         }

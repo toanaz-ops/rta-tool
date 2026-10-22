@@ -104,6 +104,7 @@ void MainComponent::pollLocatePipeline() {
         constexpr std::size_t kCaptureLength = 8192;
         analysisThread_.armLocateCapture(/*routeIndex=*/0, kCaptureLength);
         locateResync_ = analysisThread_.resyncSequence();
+        locateDrops_ = analysisThread_.droppedFrames();
         locateWaitingForSettle_ = false;
         locateCaptureArmed_ = true;
     }
@@ -119,7 +120,16 @@ void MainComponent::pollLocatePipeline() {
                               juce::dontSendNotification);
         return;
     }
+    // Frames the bus refused (ring full) leave a hole in the capture's timeline, and the
+    // delay is read off that timeline. Capture pointer first, count after (acquire order),
+    // so a drop in the last hop cannot be missed; the same abort as the SWEEP's.
     const auto capture = analysisThread_.locateCapture();
+    if (const auto lost = analysisThread_.droppedFrames(); lost != locateDrops_) {
+        cancelLocate();
+        delayReadout_.setText("delay: aborted -- the input dropped frames during the capture, try again",
+                              juce::dontSendNotification);
+        return;
+    }
     if (capture == nullptr || capture == lastHandledCapture_) {
         return;
     }

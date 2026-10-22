@@ -33,9 +33,7 @@ TEST_CASE("align IR (T11): an LR-8 pair resolves to the right cycle from the IRs
     REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
     REQUIRE(runnerOf(c).boundIr(Source::Sub) != nullptr);
     const long raw = runnerOf(c).boundIr(Source::Sub)->arrivalSamples - runnerOf(c).boundIr(Source::Main)->arrivalSamples;
-    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-    pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
+    measureThrough(c);
     WARN("LR-8: raw arrival difference " << raw << ", used " << (runnerOf(c).cycleSamples() ? *runnerOf(c).cycleSamples() : -99999)
                                          << ", readout: " << pane.readoutForTest().replace("\n", " | "));
     CHECK(runnerOf(c).step() == WizardStep::Computed);
@@ -68,9 +66,7 @@ TEST_CASE("align IR (T11): a box with extra filtering is resolved right or asked
         INFO("sweep readout: " << sweepOf(c).readoutForTest());
         REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
         REQUIRE(runnerOf(c).boundIr(Source::Sub) != nullptr);
-        REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-        pane.measureButtonForTest().onClick();
-        REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
+        measureThrough(c);
         const double pureMs = 1000.0 * static_cast<double>(subDelay - 4) / kFs;
         WARN("probe sub delay " << subDelay << ": step " << static_cast<int>(runnerOf(c).step()) << ", hint "
              << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999) << " samples, pure " << pureMs
@@ -117,9 +113,7 @@ TEST_CASE("align IR (T11): on the shipped defaults the run asks, without a seed 
     REQUIRE(runnerOf(c).boundIr(Source::Main) != nullptr);
     REQUIRE(runnerOf(c).boundIr(Source::Sub) != nullptr);
 
-    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-    pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
+    measureThrough(c);
     WARN("no seed: step " << static_cast<int>(runnerOf(c).step()) << ", crossover " << runnerOf(c).verdict()->crossoverHz
          << " Hz, hint " << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999));
     CHECK(runnerOf(c).step() == WizardStep::AskingCycle);
@@ -127,9 +121,7 @@ TEST_CASE("align IR (T11): on the shipped defaults the run asks, without a seed 
     CHECK(pane.readoutForTest().contains("IRs suggest about"));
 
     pane.seedComboForTest().setSelectedId(4, juce::sendNotificationSync);  // SEED 100 HZ
-    REQUIRE(tickUntil(c, [&] { return pane.measureButtonForTest().isEnabled(); }, 20000));
-    pane.measureButtonForTest().onClick();
-    REQUIRE(tickUntil(c, [&] { return !runnerOf(c).busy(); }, measureBudgetMs()));
+    measureThrough(c);
     WARN("seed 100: step " << static_cast<int>(runnerOf(c).step()) << ", crossover " << runnerOf(c).verdict()->crossoverHz
          << " Hz, hint " << (runnerOf(c).irHintSamples() ? *runnerOf(c).irHintSamples() : -99999)
          << ", readout: " << pane.readoutForTest().replace("\n", " | "));
