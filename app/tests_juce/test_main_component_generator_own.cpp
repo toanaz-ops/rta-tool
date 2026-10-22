@@ -72,7 +72,7 @@ void quietLive(MainComponent& c) { Access::outputEngineForTest(c).prepare(48000.
 
 void ownMode(MainComponent& c) {
     genOf(c).measurementModeClicked();
-    REQUIRE(genOf(c).measurementMode() == MeasurementLevelMode::Own);
+    REQUIRE(genOf(c).measurementModeForTest() == MeasurementLevelMode::Own);
 }
 
 void stepOwn(MainComponent& c, int steps) {
@@ -83,7 +83,7 @@ void stepOwn(MainComponent& c, int steps) {
 
 TEST_CASE("T14: every launch starts in FOLLOW GEN, OWN at -12, nothing persisted (D3)", kTag) {
     MainComponent c;
-    CHECK(genOf(c).measurementMode() == MeasurementLevelMode::FollowGen);
+    CHECK(genOf(c).measurementModeForTest() == MeasurementLevelMode::FollowGen);
     CHECK(genOf(c).measButtonTextForTest() == "FOLLOW GEN");
     CHECK(genOf(c).ownLevelDbForTest() == -12.0);
     CHECK_FALSE(genOf(c).ownMinusButtonForTest().isVisible());
@@ -92,7 +92,7 @@ TEST_CASE("T14: every launch starts in FOLLOW GEN, OWN at -12, nothing persisted
     ownMode(c);
     stepOwn(c, -20);
     MainComponent fresh;
-    CHECK(genOf(fresh).measurementMode() == MeasurementLevelMode::FollowGen);
+    CHECK(genOf(fresh).measurementModeForTest() == MeasurementLevelMode::FollowGen);
     CHECK(genOf(fresh).ownLevelDbForTest() == -12.0);
 }
 
@@ -213,17 +213,82 @@ TEST_CASE("T14: a toggle while a measurement runs is refused; the run keeps its 
     REQUIRE(sweepOf(c).busy());
     CHECK(sweepOf(c).armedLevelDbForTest() == -30.0);  // FOLLOW GEN default
     genOf(c).measurementModeClicked();                 // refused: SWEEP holds the output
-    CHECK(genOf(c).measurementMode() == MeasurementLevelMode::FollowGen);
+    CHECK(genOf(c).measurementModeForTest() == MeasurementLevelMode::FollowGen);
+    // The refusal outlives the 2 Hz poll (the old code reset the readout on the first tick).
+    for (int i = 0; i < 4; ++i) Access::timerTickForTest(c);
+    REQUIRE(sweepOf(c).busy());
     CHECK(genOf(c).readoutForTest() == "MEAS: not while SWEEP runs (applies to the next press)");
     CHECK(sweepOf(c).armedLevelDbForTest() == -30.0);
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 40000));
 
     genOf(c).measurementModeClicked();  // idle: accepted
-    CHECK(genOf(c).measurementMode() == MeasurementLevelMode::Own);
+    CHECK(genOf(c).measurementModeForTest() == MeasurementLevelMode::Own);
     sweepOf(c).clicked();
     REQUIRE(sweepOf(c).busy());
     CHECK(sweepOf(c).armedLevelDbForTest() == -12.0);
     genOf(c).ownStepClicked(-1);  // the OWN stepper is refused while it runs, too
     CHECK(genOf(c).ownLevelDbForTest() == -12.0);
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 40000));
+}
+
+TEST_CASE("T14: a MEAS refusal clears at the operator's next GEN or MEAS action, and when the holder lets go", kTag) {
+    MainComponent c;
+    startSynthetic(c);
+    sweepOf(c).clicked();
+    REQUIRE(sweepOf(c).busy());
+    genOf(c).ownStepClicked(-1);  // refused
+    CHECK(genOf(c).readoutForTest().startsWith("MEAS: not while SWEEP runs"));
+    genOf(c).stepClicked(-1);  // an action on GEN: the refusal is the operator's old news
+    CHECK_FALSE(genOf(c).readoutForTest().startsWith("MEAS: not while"));
+
+    genOf(c).measurementModeClicked();  // refused again, then SWEEP finishes
+    CHECK(genOf(c).readoutForTest().startsWith("MEAS: not while SWEEP runs"));
+    REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 40000));
+    Access::timerTickForTest(c);
+    CHECK_FALSE(genOf(c).readoutForTest().startsWith("MEAS: not while"));
+}
+
+TEST_CASE("T14 rail: OWN mode keeps the strip on screen, 44 px, and the longest readout unclipped", "[main_component_rail]") {
+    // Mirrors PR #88's rail test for FOLLOW GEN. In OWN the two extra steppers narrow the readout
+    // below 300 px, so it is allowed two lines -- what is pinned is that the longest text still fits.
+    const juce::Point<int> sizes[] = {{1280, 800}, {1300, 820}};
+    for (const auto size : sizes) {
+        CAPTURE(size.x, size.y);
+        MainComponent c;
+        c.setSize(size.x, size.y);
+        c.resized();
+        ownMode(c);
+        auto& g = genOf(c);
+        const auto readout = g.readoutComponentForTest().getBounds();
+        for (const juce::Component* button : std::initializer_list<const juce::Component*>{
+                 &g.genButtonForTest(), &g.minusButtonForTest(), &g.plusButtonForTest(), &g.measButtonForTest(),
+                 &g.ownMinusButtonForTest(), &g.ownPlusButtonForTest()}) {
+            CHECK(button->isVisible());
+            CHECK(button->getHeight() >= az::ui::touchTarget);
+            CHECK(button->getX() >= 300);  // right of the wordmark
+            CHECK(button->getBottom() <= az::ui::transportHeight);
+            CHECK(button->getRight() <= readout.getX());  // nothing overlaps the readout
+        }
+        CHECK(readout.getRight() <= c.getWidth());
+        const auto* label = dynamic_cast<const juce::Label*>(&g.readoutComponentForTest());
+        REQUIRE(label != nullptr);
+        const juce::String longest = "MEAS: not while ALIGN runs (applies to the next press)";
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(label->getFont(), longest, 0.0f, 0.0f);
+        const float width = glyphs.getBoundingBox(0, -1, false).getWidth();
+        const int linesNeeded = static_cast<int>(std::ceil(width / static_cast<float>(readout.getWidth())));
+        const int linesFit = static_cast<int>(static_cast<float>(readout.getHeight()) / label->getFont().getHeight());
+        INFO("longest readout " << width << " px in " << readout.getWidth() << " x " << readout.getHeight());
+        CHECK(linesNeeded <= linesFit);
+    }
+}
+
+TEST_CASE("T14: a MEAS toggle during a CAL capture is allowed -- CAL plays nothing and reads no drive", kTag) {
+    MainComponent c;
+    startSynthetic(c);
+    Access::calibrationStartClickedForTest(c);
+    REQUIRE(Access::calibrationArmedForTest(c));
+    genOf(c).measurementModeClicked();
+    CHECK(genOf(c).measurementModeForTest() == MeasurementLevelMode::Own);
+    CHECK_FALSE(genOf(c).readoutForTest().startsWith("MEAS: not while"));
 }

@@ -72,7 +72,7 @@ public:
     /// started with, and the change applies to the NEXT press.
     void measurementModeClicked();
     void ownStepClicked(int steps);
-    [[nodiscard]] rta::measure::MeasurementLevelMode measurementMode() const noexcept { return measurementMode_; }
+    [[nodiscard]] rta::measure::MeasurementLevelMode measurementModeForTest() const noexcept { return measurementMode_; }
 
     /// One row per device output for the OUT menu: its label and whether it is ticked.
     [[nodiscard]] std::vector<std::pair<std::string, bool>> outputChoices() const;
@@ -111,11 +111,12 @@ private:
     void refresh();
     void showOutputMenu();
     /// True (and says why in the readout) when a measurement holds the output.
-    bool refuseWhileMeasuring(const char* what);
+    bool refuseWhileMeasuring();
 
     rta::measure::GeneratorRunner runner_;
     std::function<rta::measure::GeneratorEnvironment()> environment_;
     rta::measure::MeasurementLevelMode measurementMode_ = rta::measure::MeasurementLevelMode::FollowGen;
+    std::string refusalHolder_;  // who a MEAS refusal named; "" = none showing
     double ownLevelDb_ = rta::measure::kOwnMeasurementLevelDb;  // not persisted (D3)
     juce::TextButton genButton_{"GEN"};
     StepButton minusButton_{false};

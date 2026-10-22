@@ -80,17 +80,21 @@ MainComponentGenerator::MainComponentGenerator(
     refresh();
 }
 
-bool MainComponentGenerator::refuseWhileMeasuring(const char* what) {
+bool MainComponentGenerator::refuseWhileMeasuring() {
+    // Refused while a measurement that READS the drive holds the output: LOCATE, SWEEP, VERIFY and
+    // ALIGN (one MEASURE press is busy from main through sub, so a toggle cannot land between the
+    // two phases and give them different levels). CAL holds the capture but plays nothing and never
+    // asks for a drive, so a toggle during CAL changes nothing it uses and is allowed.
     const std::string holder = environment_ ? environment_().busyBy : std::string();
-    if (holder.empty()) return false;
+    if (holder.empty() || holder == "CAL") return false;
+    refusalHolder_ = holder;
     refresh();
-    readout_.setText(juce::String(what) + ": not while " + holder + " runs (applies to the next press)",
-                     juce::dontSendNotification);
     return true;
 }
 
 void MainComponentGenerator::measurementModeClicked() {
-    if (refuseWhileMeasuring("MEAS")) return;
+    refusalHolder_.clear();
+    if (refuseWhileMeasuring()) return;
     measurementMode_ = measurementMode_ == rta::measure::MeasurementLevelMode::FollowGen
                            ? rta::measure::MeasurementLevelMode::Own
                            : rta::measure::MeasurementLevelMode::FollowGen;
@@ -99,7 +103,8 @@ void MainComponentGenerator::measurementModeClicked() {
 }
 
 void MainComponentGenerator::ownStepClicked(int steps) {
-    if (refuseWhileMeasuring("MEAS")) return;
+    refusalHolder_.clear();
+    if (refuseWhileMeasuring()) return;
     ownLevelDb_ = rta::measure::stepGeneratorLevelDb(ownLevelDb_, steps);
     refresh();
 }
@@ -156,6 +161,7 @@ void MainComponentGenerator::layout(juce::Rectangle<int> strip) {
 }
 
 void MainComponentGenerator::genClicked() {
+    refusalHolder_.clear();
     if (runner_.active()) {
         runner_.stop();
     } else {
@@ -165,6 +171,7 @@ void MainComponentGenerator::genClicked() {
 }
 
 void MainComponentGenerator::stepClicked(int steps) {
+    refusalHolder_.clear();
     rta::measure::GeneratorSettings next = runner_.settings();
     next.levelDb = rta::measure::stepGeneratorLevelDb(next.levelDb, steps);
     static_cast<void>(runner_.apply(std::move(next)));
@@ -172,6 +179,7 @@ void MainComponentGenerator::stepClicked(int steps) {
 }
 
 void MainComponentGenerator::signalSelected(rta::measure::GeneratorSignal signal) {
+    refusalHolder_.clear();
     rta::measure::GeneratorSettings next = runner_.settings();
     next.signal = signal;
     static_cast<void>(runner_.apply(std::move(next)));  // while playing: one swap
@@ -179,6 +187,7 @@ void MainComponentGenerator::signalSelected(rta::measure::GeneratorSignal signal
 }
 
 void MainComponentGenerator::frequencySelected(int hz) {
+    refusalHolder_.clear();
     rta::measure::GeneratorSettings next = runner_.settings();
     next.frequencyHz = static_cast<double>(hz);
     static_cast<void>(runner_.apply(std::move(next)));
@@ -186,6 +195,7 @@ void MainComponentGenerator::frequencySelected(int hz) {
 }
 
 void MainComponentGenerator::outputToggled(int channel) {
+    refusalHolder_.clear();
     rta::measure::GeneratorSettings next = runner_.settings();
     auto& outputs = next.outputs;
     const auto found = std::find(outputs.begin(), outputs.end(), channel);
@@ -257,7 +267,14 @@ void MainComponentGenerator::refresh() {
     measButton_.setButtonText(own ? "OWN " + juce::String(ownLevelDb_, 1) : juce::String("FOLLOW GEN"));
     ownMinusButton_.setVisible(own);
     ownPlusButton_.setVisible(own);
-    const juce::String text = runner_.readout();
+    // A MEAS refusal outlives the 2 Hz poll: it stays until the operator's next action on GEN or
+    // MEAS (every handler clears it) or until the holder releases the output -- whichever is first.
+    const std::string holder = environment_ ? environment_().busyBy : std::string();
+    if (!refusalHolder_.empty() && holder != refusalHolder_) refusalHolder_.clear();
+    const juce::String text = refusalHolder_.empty()
+                                  ? juce::String(runner_.readout())
+                                  : "MEAS: not while " + juce::String(refusalHolder_) +
+                                        " runs (applies to the next press)";
     if (text != readout_.getText()) readout_.setText(text, juce::dontSendNotification);
 
     // Swapping and Stopping wait on the audio callback: poll fast until they
