@@ -15,9 +15,11 @@
 // bounds the generator (`clampGeneratorLevelDb`), so a measurement is never
 // louder than before H7.
 //
-// OWN: the record-designed -12 dBFS, and an empty output list, which every
-// caller reads as "keep the output this measurement chooses by design" (ALIGN
-// solo main/sub, RT60's pane-chosen output, LOCATE/VERIFY/SWEEP's out 1).
+// OWN (T14, owner decisions D1/D2): the measurement's OWN level -- independent
+// of the generator, default -12 dBFS, the same [-60, -12] range and 1 dB step,
+// clamped here -- and an empty output list, which every caller reads as "keep
+// the output this measurement chooses by design" (ALIGN solo main/sub, RT60's
+// pane-chosen output, LOCATE/VERIFY/SWEEP's out 1).
 #pragma once
 
 #include "measure/GeneratorModel.h"
@@ -42,9 +44,10 @@ struct MeasurementDrive {
 };
 
 /// The drive for `mode` given the generator's settings and the device's
-/// output count (`numOutputs <= 0` = unknown). The level is clamped here.
+/// output count (`numOutputs <= 0` = unknown). `ownLevelDb` is the OWN mode's
+/// level setting. The level is clamped here, in both modes.
 [[nodiscard]] MeasurementDrive measurementDrive(MeasurementLevelMode mode, const GeneratorSettings& generator,
-                                                int numOutputs);
+                                                int numOutputs, double ownLevelDb = kOwnMeasurementLevelDb);
 
 /// "-30.0 dBFS RMS" / "-30.0 dBFS peak": one decimal, the convention named.
 [[nodiscard]] std::string measurementLevelText(double levelDb, LevelConvention convention);

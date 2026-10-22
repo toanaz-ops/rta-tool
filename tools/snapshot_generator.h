@@ -17,4 +17,9 @@ namespace rta::tools
 // never appears in the spectrum.
 void renderGeneratorSpecimen (const juce::File& outDir, int& failures);
 
+// H7 wave B2: the same window with GEN stopped and the MEAS toggle in OWN at
+// -20.0 dBFS (the OWN steppers showing), after a real SWEEP press has been
+// armed in that mode -- the readout names the OWN level it plays at.
+void renderOwnSpecimen (const juce::File& outDir, int& failures);
+
 } // namespace rta::tools

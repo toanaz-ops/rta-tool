@@ -67,7 +67,45 @@ MainComponentGenerator::MainComponentGenerator(
     };
     outButton_.getProperties().set(az::ui::hintProperty, "outputs the generator plays on");
     outButton_.onClick = [this] { showOutputMenu(); };
+    measButton_.getProperties().set(
+        az::ui::hintProperty, "MEAS: the level measurements play at -- follow the generator, or their own level");
+    measButton_.onClick = [this] { measurementModeClicked(); };
+    ownMinusButton_.setButtonText("-");
+    ownPlusButton_.setButtonText("+");
+    ownMinusButton_.getProperties().set(az::ui::hintProperty, "measurement level down 1.0 dB (floor -60.0)");
+    ownMinusButton_.onClick = [this] { ownStepClicked(-1); };
+    ownPlusButton_.getProperties().set(az::ui::hintProperty, "measurement level up 1.0 dB (ceiling -12.0)");
+    ownPlusButton_.onClick = [this] { ownStepClicked(+1); };
     readout_.setJustificationType(juce::Justification::centredLeft);
+    refresh();
+}
+
+bool MainComponentGenerator::refuseWhileMeasuring() {
+    // Refused while a measurement that READS the drive holds the output: LOCATE, SWEEP, VERIFY and
+    // ALIGN (one MEASURE press is busy from main through sub, so a toggle cannot land between the
+    // two phases and give them different levels). CAL holds the capture but plays nothing and never
+    // asks for a drive, so a toggle during CAL changes nothing it uses and is allowed.
+    const std::string holder = environment_ ? environment_().busyBy : std::string();
+    if (holder.empty() || holder == "CAL") return false;
+    refusalHolder_ = holder;
+    refresh();
+    return true;
+}
+
+void MainComponentGenerator::measurementModeClicked() {
+    refusalHolder_.clear();
+    if (refuseWhileMeasuring()) return;
+    measurementMode_ = measurementMode_ == rta::measure::MeasurementLevelMode::FollowGen
+                           ? rta::measure::MeasurementLevelMode::Own
+                           : rta::measure::MeasurementLevelMode::FollowGen;
+    layout(strip_);
+    refresh();
+}
+
+void MainComponentGenerator::ownStepClicked(int steps) {
+    refusalHolder_.clear();
+    if (refuseWhileMeasuring()) return;
+    ownLevelDb_ = rta::measure::stepGeneratorLevelDb(ownLevelDb_, steps);
     refresh();
 }
 
@@ -87,17 +125,21 @@ void MainComponentGenerator::StepButton::paintButton(juce::Graphics& g, bool hig
 
 void MainComponentGenerator::attachTo(juce::Component& parent) {
     for (juce::Component* child : std::initializer_list<juce::Component*>{
-             &genButton_, &minusButton_, &plusButton_, &signalCombo_, &frequencyCombo_, &outButton_, &readout_}) {
+             &genButton_, &minusButton_, &plusButton_, &signalCombo_, &frequencyCombo_, &outButton_, &measButton_, &ownMinusButton_,
+             &ownPlusButton_, &readout_}) {
         parent.addAndMakeVisible(*child);
     }
+    refresh();  // addAndMakeVisible showed every child; the OWN steppers belong to OWN mode only
 }
 
 void MainComponentGenerator::layout(juce::Rectangle<int> strip) {
+    strip_ = strip;
     constexpr int kGenWidth = 84;     // "STOP" / "GEN"
     constexpr int kStepWidth = az::ui::touchTarget;  // "-" / "+": a finger-sized target
     constexpr int kSignalWidth = 96;  // "WHITE" and the combo's arrow
     constexpr int kFrequencyWidth = 104;  // "20000 Hz"
     constexpr int kOutWidth = 64;
+    constexpr int kMeasWidth = 112;  // "FOLLOW GEN" / "OWN -12.0": narrow, so the readout keeps its 300 px (rail test)
     const auto next = [&](int width) {
         auto cell = strip.removeFromLeft(width);
         strip.removeFromLeft(az::ui::gap);
@@ -109,10 +151,17 @@ void MainComponentGenerator::layout(juce::Rectangle<int> strip) {
     signalCombo_.setBounds(next(kSignalWidth).withSizeKeepingCentre(kSignalWidth, az::ui::fieldHeight));
     frequencyCombo_.setBounds(next(kFrequencyWidth).withSizeKeepingCentre(kFrequencyWidth, az::ui::fieldHeight));
     outButton_.setBounds(next(kOutWidth));
+    measButton_.setBounds(next(kMeasWidth));
+    // The OWN steppers exist only in OWN mode; in FOLLOW GEN the generator's own -/+ are the level.
+    if (measurementMode_ == rta::measure::MeasurementLevelMode::Own) {
+        ownMinusButton_.setBounds(next(kStepWidth));
+        ownPlusButton_.setBounds(next(kStepWidth));
+    }
     readout_.setBounds(strip);
 }
 
 void MainComponentGenerator::genClicked() {
+    refusalHolder_.clear();
     if (runner_.active()) {
         runner_.stop();
     } else {
@@ -122,6 +171,7 @@ void MainComponentGenerator::genClicked() {
 }
 
 void MainComponentGenerator::stepClicked(int steps) {
+    refusalHolder_.clear();
     rta::measure::GeneratorSettings next = runner_.settings();
     next.levelDb = rta::measure::stepGeneratorLevelDb(next.levelDb, steps);
     static_cast<void>(runner_.apply(std::move(next)));
@@ -129,6 +179,7 @@ void MainComponentGenerator::stepClicked(int steps) {
 }
 
 void MainComponentGenerator::signalSelected(rta::measure::GeneratorSignal signal) {
+    refusalHolder_.clear();
     rta::measure::GeneratorSettings next = runner_.settings();
     next.signal = signal;
     static_cast<void>(runner_.apply(std::move(next)));  // while playing: one swap
@@ -136,6 +187,7 @@ void MainComponentGenerator::signalSelected(rta::measure::GeneratorSignal signal
 }
 
 void MainComponentGenerator::frequencySelected(int hz) {
+    refusalHolder_.clear();
     rta::measure::GeneratorSettings next = runner_.settings();
     next.frequencyHz = static_cast<double>(hz);
     static_cast<void>(runner_.apply(std::move(next)));
@@ -143,6 +195,7 @@ void MainComponentGenerator::frequencySelected(int hz) {
 }
 
 void MainComponentGenerator::outputToggled(int channel) {
+    refusalHolder_.clear();
     rta::measure::GeneratorSettings next = runner_.settings();
     auto& outputs = next.outputs;
     const auto found = std::find(outputs.begin(), outputs.end(), channel);
@@ -210,7 +263,18 @@ void MainComponentGenerator::refresh() {
     });
     frequencyCombo_.setSelectedId(static_cast<int>(nearest - hz.begin()) + 1, juce::dontSendNotification);
     frequencyCombo_.setEnabled(settings.signal == rta::measure::GeneratorSignal::Sine);
-    const juce::String text = runner_.readout();
+    const bool own = measurementMode_ == rta::measure::MeasurementLevelMode::Own;
+    measButton_.setButtonText(own ? "OWN " + juce::String(ownLevelDb_, 1) : juce::String("FOLLOW GEN"));
+    ownMinusButton_.setVisible(own);
+    ownPlusButton_.setVisible(own);
+    // A MEAS refusal outlives the 2 Hz poll: it stays until the operator's next action on GEN or
+    // MEAS (every handler clears it) or until the holder releases the output -- whichever is first.
+    const std::string holder = environment_ ? environment_().busyBy : std::string();
+    if (!refusalHolder_.empty() && holder != refusalHolder_) refusalHolder_.clear();
+    const juce::String text = refusalHolder_.empty()
+                                  ? juce::String(runner_.readout())
+                                  : "MEAS: not while " + juce::String(refusalHolder_) +
+                                        " runs (applies to the next press)";
     if (text != readout_.getText()) readout_.setText(text, juce::dontSendNotification);
 
     // Swapping and Stopping wait on the audio callback: poll fast until they
