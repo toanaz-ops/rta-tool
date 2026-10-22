@@ -255,7 +255,9 @@ TEST_CASE("a block rendered when the destructor starts is still pushed: rendered
     destroying = true;
     input.reset();
 
-    const std::uint64_t rendered = engine.renderedSamples();
-    REQUIRE(rendered > 0);
+    // Every loop iteration renders one block and calls the hook once, so the hook's call
+    // count is the number of blocks rendered; each one must be on the bus.
+    const std::uint64_t rendered = static_cast<std::uint64_t>(calls.load()) * kBlock;
+    REQUIRE(rendered >= 6u * kBlock);
     REQUIRE(bus.ring(1)->availableToRead() == rendered);
 }
