@@ -107,6 +107,7 @@ add_executable(rtatool_main_component_tests
     # H7 wave B1: signal / frequency / outputs (T6, T7) and FOLLOW GEN measurement level (T13).
     test_main_component_generator_b.cpp
     test_main_component_generator_follow.cpp
+    test_main_component_generator_own.cpp
     ${RTA_MAIN_COMPONENT_TEST_SOURCES}
 )
 

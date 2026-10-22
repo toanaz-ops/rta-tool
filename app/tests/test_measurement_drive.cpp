@@ -105,3 +105,28 @@ TEST_CASE("measurement drive: noise built at the drive's level is that RMS, a sw
     CHECK(std::abs(20.0 * std::log10(static_cast<double>(peak)) - (-30.0)) <= 0.1);
     CHECK(peak <= static_cast<float>(amp(-30.0)) * 1.0001f);  // and never above it
 }
+
+TEST_CASE("measurement drive T14: OWN plays at its OWN level, independent of the generator") {
+    GeneratorSettings gen;
+    gen.levelDb = -45.0;
+    gen.outputs = {1};
+    const MeasurementDrive drive = measurementDrive(MeasurementLevelMode::Own, gen, 2, -20.0);
+    CHECK(drive.levelDb == -20.0);  // not the generator's -45, not the default -12
+    CHECK(drive.outputs.empty());
+    gen.levelDb = -12.0;
+    CHECK(measurementDrive(MeasurementLevelMode::Own, gen, 2, -20.0).levelDb == -20.0);
+}
+
+TEST_CASE("measurement drive T14: the OWN level is clamped to [-60, -12] (D2)") {
+    GeneratorSettings gen;
+    CHECK(measurementDrive(MeasurementLevelMode::Own, gen, 2, 0.0).levelDb == kGeneratorCeilingDb);
+    CHECK(measurementDrive(MeasurementLevelMode::Own, gen, 2, -100.0).levelDb == kGeneratorFloorDb);
+    CHECK(measurementDrive(MeasurementLevelMode::Own, gen, 2, std::numeric_limits<double>::quiet_NaN()).levelDb ==
+          kGeneratorFloorDb);
+}
+
+TEST_CASE("measurement drive T14: FOLLOW GEN ignores the OWN level") {
+    GeneratorSettings gen;
+    gen.levelDb = -33.0;
+    CHECK(measurementDrive(MeasurementLevelMode::FollowGen, gen, 2, -20.0).levelDb == -33.0);
+}

@@ -312,6 +312,7 @@ int main (int argc, char** argv)
     rta::tools::renderAlignSpecimen (outDir, failures);  // main-live-align.png, ALIGN-UI wave A
     rta::tools::renderRt60Specimen (outDir, failures);  // main-live-rt60.png, RT60-UI wave A
     rta::tools::renderGeneratorSpecimen (outDir, failures);  // main-live-gen.png, H7 wave B1
+    rta::tools::renderOwnSpecimen (outDir, failures);  // main-live-own.png, H7 wave B2
 
     // The three lane-L5 preview mockups (docs/specs/2026-08-28-interactive-
     // tuning-visuals.md): paint-only components fed canned synthetic data,

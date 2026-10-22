@@ -7,9 +7,12 @@
 namespace rta::measure {
 
 MeasurementDrive measurementDrive(MeasurementLevelMode mode, const GeneratorSettings& generator,
-                                  int numOutputs) {
+                                  int numOutputs, double ownLevelDb) {
     MeasurementDrive drive;
-    if (mode == MeasurementLevelMode::Own) return drive;  // -12 dBFS, own outputs
+    if (mode == MeasurementLevelMode::Own) {
+        drive.levelDb = clampGeneratorLevelDb(ownLevelDb);  // outputs stay empty: the measurement's own
+        return drive;
+    }
     drive.levelDb = clampGeneratorLevelDb(generator.levelDb);
     drive.outputs = pruneOutputs(generator.outputs, numOutputs);
     return drive;

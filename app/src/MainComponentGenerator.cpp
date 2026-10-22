@@ -67,7 +67,40 @@ MainComponentGenerator::MainComponentGenerator(
     };
     outButton_.getProperties().set(az::ui::hintProperty, "outputs the generator plays on");
     outButton_.onClick = [this] { showOutputMenu(); };
+    measButton_.getProperties().set(
+        az::ui::hintProperty, "MEAS: the level measurements play at -- follow the generator, or their own level");
+    measButton_.onClick = [this] { measurementModeClicked(); };
+    ownMinusButton_.setButtonText("-");
+    ownPlusButton_.setButtonText("+");
+    ownMinusButton_.getProperties().set(az::ui::hintProperty, "measurement level down 1.0 dB (floor -60.0)");
+    ownMinusButton_.onClick = [this] { ownStepClicked(-1); };
+    ownPlusButton_.getProperties().set(az::ui::hintProperty, "measurement level up 1.0 dB (ceiling -12.0)");
+    ownPlusButton_.onClick = [this] { ownStepClicked(+1); };
     readout_.setJustificationType(juce::Justification::centredLeft);
+    refresh();
+}
+
+bool MainComponentGenerator::refuseWhileMeasuring(const char* what) {
+    const std::string holder = environment_ ? environment_().busyBy : std::string();
+    if (holder.empty()) return false;
+    refresh();
+    readout_.setText(juce::String(what) + ": not while " + holder + " runs (applies to the next press)",
+                     juce::dontSendNotification);
+    return true;
+}
+
+void MainComponentGenerator::measurementModeClicked() {
+    if (refuseWhileMeasuring("MEAS")) return;
+    measurementMode_ = measurementMode_ == rta::measure::MeasurementLevelMode::FollowGen
+                           ? rta::measure::MeasurementLevelMode::Own
+                           : rta::measure::MeasurementLevelMode::FollowGen;
+    layout(strip_);
+    refresh();
+}
+
+void MainComponentGenerator::ownStepClicked(int steps) {
+    if (refuseWhileMeasuring("MEAS")) return;
+    ownLevelDb_ = rta::measure::stepGeneratorLevelDb(ownLevelDb_, steps);
     refresh();
 }
 
@@ -87,17 +120,21 @@ void MainComponentGenerator::StepButton::paintButton(juce::Graphics& g, bool hig
 
 void MainComponentGenerator::attachTo(juce::Component& parent) {
     for (juce::Component* child : std::initializer_list<juce::Component*>{
-             &genButton_, &minusButton_, &plusButton_, &signalCombo_, &frequencyCombo_, &outButton_, &readout_}) {
+             &genButton_, &minusButton_, &plusButton_, &signalCombo_, &frequencyCombo_, &outButton_, &measButton_, &ownMinusButton_,
+             &ownPlusButton_, &readout_}) {
         parent.addAndMakeVisible(*child);
     }
+    refresh();  // addAndMakeVisible showed every child; the OWN steppers belong to OWN mode only
 }
 
 void MainComponentGenerator::layout(juce::Rectangle<int> strip) {
+    strip_ = strip;
     constexpr int kGenWidth = 84;     // "STOP" / "GEN"
     constexpr int kStepWidth = az::ui::touchTarget;  // "-" / "+": a finger-sized target
     constexpr int kSignalWidth = 96;  // "WHITE" and the combo's arrow
     constexpr int kFrequencyWidth = 104;  // "20000 Hz"
     constexpr int kOutWidth = 64;
+    constexpr int kMeasWidth = 112;  // "FOLLOW GEN" / "OWN -12.0": narrow, so the readout keeps its 300 px (rail test)
     const auto next = [&](int width) {
         auto cell = strip.removeFromLeft(width);
         strip.removeFromLeft(az::ui::gap);
@@ -109,6 +146,12 @@ void MainComponentGenerator::layout(juce::Rectangle<int> strip) {
     signalCombo_.setBounds(next(kSignalWidth).withSizeKeepingCentre(kSignalWidth, az::ui::fieldHeight));
     frequencyCombo_.setBounds(next(kFrequencyWidth).withSizeKeepingCentre(kFrequencyWidth, az::ui::fieldHeight));
     outButton_.setBounds(next(kOutWidth));
+    measButton_.setBounds(next(kMeasWidth));
+    // The OWN steppers exist only in OWN mode; in FOLLOW GEN the generator's own -/+ are the level.
+    if (measurementMode_ == rta::measure::MeasurementLevelMode::Own) {
+        ownMinusButton_.setBounds(next(kStepWidth));
+        ownPlusButton_.setBounds(next(kStepWidth));
+    }
     readout_.setBounds(strip);
 }
 
@@ -210,6 +253,10 @@ void MainComponentGenerator::refresh() {
     });
     frequencyCombo_.setSelectedId(static_cast<int>(nearest - hz.begin()) + 1, juce::dontSendNotification);
     frequencyCombo_.setEnabled(settings.signal == rta::measure::GeneratorSignal::Sine);
+    const bool own = measurementMode_ == rta::measure::MeasurementLevelMode::Own;
+    measButton_.setButtonText(own ? "OWN " + juce::String(ownLevelDb_, 1) : juce::String("FOLLOW GEN"));
+    ownMinusButton_.setVisible(own);
+    ownPlusButton_.setVisible(own);
     const juce::String text = runner_.readout();
     if (text != readout_.getText()) readout_.setText(text, juce::dontSendNotification);
 

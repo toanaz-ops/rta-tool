@@ -64,8 +64,15 @@ public:
     /// T13: the level and outputs a measurement uses right now, in the current
     /// measurement mode. `numOutputs` is the device's output count (0 = unknown).
     [[nodiscard]] rta::measure::MeasurementDrive measurementDrive(int numOutputs) const {
-        return rta::measure::measurementDrive(measurementMode_, runner_.settings(), numOutputs);
+        return rta::measure::measurementDrive(measurementMode_, runner_.settings(), numOutputs, ownLevelDb_);
     }
+
+    /// T14: the MEAS toggle (FOLLOW GEN <-> OWN) and the OWN level steppers. All three are
+    /// refused while a measurement holds the output: a running measurement keeps the drive it
+    /// started with, and the change applies to the NEXT press.
+    void measurementModeClicked();
+    void ownStepClicked(int steps);
+    [[nodiscard]] rta::measure::MeasurementLevelMode measurementMode() const noexcept { return measurementMode_; }
 
     /// One row per device output for the OUT menu: its label and whether it is ticked.
     [[nodiscard]] std::vector<std::pair<std::string, bool>> outputChoices() const;
@@ -81,6 +88,11 @@ public:
     [[nodiscard]] bool frequencyEnabledForTest() const noexcept { return frequencyCombo_.isEnabled(); }
     [[nodiscard]] int frequencyComboCountForTest() const noexcept { return frequencyCombo_.getNumItems(); }
     [[nodiscard]] bool fastPollRunningForTest() const noexcept { return isTimerRunning(); }
+    [[nodiscard]] juce::String measButtonTextForTest() const { return measButton_.getButtonText(); }
+    [[nodiscard]] const juce::TextButton& measButtonForTest() const noexcept { return measButton_; }
+    [[nodiscard]] const juce::TextButton& ownMinusButtonForTest() const noexcept { return ownMinusButton_; }
+    [[nodiscard]] const juce::TextButton& ownPlusButtonForTest() const noexcept { return ownPlusButton_; }
+    [[nodiscard]] double ownLevelDbForTest() const noexcept { return ownLevelDb_; }
 
 private:
     /// The level step buttons. The silkscreen face sets a hyphen and a plus as
@@ -98,15 +110,22 @@ private:
     void timerCallback() override { poll(); }
     void refresh();
     void showOutputMenu();
+    /// True (and says why in the readout) when a measurement holds the output.
+    bool refuseWhileMeasuring(const char* what);
 
     rta::measure::GeneratorRunner runner_;
     std::function<rta::measure::GeneratorEnvironment()> environment_;
     rta::measure::MeasurementLevelMode measurementMode_ = rta::measure::MeasurementLevelMode::FollowGen;
+    double ownLevelDb_ = rta::measure::kOwnMeasurementLevelDb;  // not persisted (D3)
     juce::TextButton genButton_{"GEN"};
     StepButton minusButton_{false};
     StepButton plusButton_{true};
     juce::ComboBox signalCombo_;
     juce::ComboBox frequencyCombo_;
+    juce::Rectangle<int> strip_;  // the last layout, redone when MEAS adds or drops the OWN steppers
     juce::TextButton outButton_{"OUT"};
+    juce::TextButton measButton_{"FOLLOW GEN"};
+    StepButton ownMinusButton_{false};
+    StepButton ownPlusButton_{true};
     juce::Label readout_;
 };

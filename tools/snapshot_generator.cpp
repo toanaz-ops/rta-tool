@@ -86,4 +86,30 @@ void renderGeneratorSpecimen (const juce::File& outDir, int& failures)
         ++failures;
 }
 
+void renderOwnSpecimen (const juce::File& outDir, int& failures)
+{
+    constexpr const char* fileName = "main-live-own.png";
+    MainComponent component;
+    component.setSyntheticMode (true);
+    Access::waitForResyncForTest (component);
+
+    auto& gen = Access::generatorForTest (component);
+    gen.measurementModeClicked();
+    for (int i = 0; i < 8; ++i)
+        gen.ownStepClicked (-1);  // -12 -> -20
+    auto& sweep = Access::sweepForTest (component);
+    sweep.clicked();
+    const juce::String expected = "sweep: arming @ -20.0 dBFS peak";
+    if (! sweep.busy() || ! sweep.readoutForTest().startsWith (expected)
+        || gen.measButtonTextForTest() != "OWN -20.0")
+    {
+        std::printf ("FAILED: %s -- OWN mode did not arm the sweep at -20.0 (readout \"%s\", MEAS \"%s\")\n", fileName,
+                     sweep.readoutForTest().toRawUTF8(), gen.measButtonTextForTest().toRawUTF8());
+        ++failures;
+        return;
+    }
+    if (! renderComponent (component, outDir, fileName, 1280, 800))
+        ++failures;
+}
+
 } // namespace rta::tools
