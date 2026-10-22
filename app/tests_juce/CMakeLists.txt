@@ -147,6 +147,9 @@ add_executable(rtatool_view_tests
     # Wave B: EqPaneView drives the VERIFY runner (and the runner, EqVerify).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerifyRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/EqVerify.cpp
+    # H7 T13: both runners format their level/outputs suffix through it.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/MeasurementDrive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/GeneratorModel.cpp
     # ALIGN-UI wave A: PaneFactory.cpp's Align branch builds AlignPaneView,
     # whose chain is the runner, its wizard and the readout (all JUCE-free).
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/AlignPaneView.cpp

@@ -184,6 +184,31 @@ TEST_CASE("T13 SWEEP: the rail button sweeps at GEN's level, on GEN's outputs, a
     CHECK(sweepOf(c).readoutForTest().contains("@ -30.0 dBFS peak, out 2"));
 }
 
+TEST_CASE("T13 SWEEP: out 2 works at the -12 ceiling and refuses below it -- SNR, and the readout says so", kTag) {
+    // Regression lock for a measured caveat, not a DSP claim. SYNTHETIC out 2 is a 100 Hz LR4
+    // low-pass behind a fixed -30 dBFS measurement noise floor, so a 20 Hz-20 kHz sweep through
+    // it has almost no signal above the noise: probed at -12 it succeeds, at -14 and every
+    // level below it (-16 .. -30) the deconvolution peak lands on noise and the arrival
+    // is refused. Out 1 (band-pass, no low-pass) is fine at -30. So the refusal is the
+    // fixture's SNR, not the level plumbing -- and what T13 owes the operator is that it is named.
+    const auto readoutAt = [](double levelDb) {
+        MainComponent c;
+        startSynthetic(c);
+        Access::pinGeneratorLevelForTest(c, levelDb);
+        genOnly(c, 1);
+        sweepOf(c).clicked();
+        REQUIRE(sweepOf(c).busy());
+        REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 40000));
+        return sweepOf(c).readoutForTest().toStdString();
+    };
+    const std::string at12 = readoutAt(-12.0);
+    INFO("at -12: " << at12);
+    CHECK(at12.rfind("IR ", 0) == 0);
+    const std::string at30 = readoutAt(-30.0);
+    INFO("at -30: " << at30);
+    CHECK(at30.rfind("sweep: refused -- the arrival does not fit the analysis window @ -30.0 dBFS peak, out 2", 0) == 0);
+}
+
 TEST_CASE("T13 SWEEP: a finished sweep reads out and stores its level and output", kTag) {
     MainComponent c;
     startSynthetic(c);
@@ -271,4 +296,9 @@ TEST_CASE("T13 hints: LOCATE and SWEEP name the level a press would use in the c
     Access::timerTickForTest(c);
     CHECK(Access::locateHintForTest(c).contains("-20.0 dBFS RMS"));
     CHECK(sweepOf(c).buttonForTest().getProperties()[az::ui::hintProperty].toString().contains("-20.0 dBFS peak"));
+}
+
+TEST_CASE("T13 hints: the LOCATE hint is the live one from construction, before any timer tick", kTag) {
+    MainComponent c;  // no timerTickForTest: the 2 Hz timer has not fired
+    CHECK(Access::locateHintForTest(c).contains("-30.0 dBFS RMS"));
 }

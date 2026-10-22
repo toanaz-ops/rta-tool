@@ -211,6 +211,7 @@ MainComponent::MainComponent()
     // (a device opened, closed or swapped from devicePanel_) -- DevicePanel
     // and every pane in workspace_ already run their own faster timers for
     // the state that actually needs one.
+    refreshMeasurementHints();  // the hints say the live level from the first paint, not after the first tick
     startTimerHz(2);
 
     // --- lane L-API Task J: the read-only remote API ------------------------
