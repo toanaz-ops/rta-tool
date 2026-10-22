@@ -14,6 +14,7 @@
 #include "api/ApiSettings.h"
 #include "MainComponentAlign.h"
 #include "MainComponentEq.h"
+#include "MainComponentGenerator.h"
 #include "MainComponentPaneSelector.h"
 #include "MainComponentRail.h"
 #include "MainComponentRt60.h"
@@ -87,7 +88,13 @@ private:
         return locateWaitingForSettle_ || locateCaptureArmed_ || calibrationCaptureArmed_ || sweep_.busy() ||
                align_.busy();
     }
-    [[nodiscard]] bool outputBusy() const noexcept { return captureBusy() || eq_.verifyBusy(); }
+    /// H7: GEN joins `outputBusy()` (and VERIFY's env) but NOT `captureBusy()`.
+    [[nodiscard]] bool outputBusy() const noexcept {
+        return captureBusy() || eq_.verifyBusy() || generator_.active();
+    }
+    // MainComponentGeneratorWiring.cpp: what GEN may ask the app, and who else holds the output.
+    [[nodiscard]] rta::measure::GeneratorEnvironment generatorEnvironment() const;
+    [[nodiscard]] std::string outputHolderName() const;
 
     rta::view::PaneResolution restoreWorkspaceFromSession(std::vector<rta::trace::PaneSpec> panes);  // rationale: MainComponentPanes.cpp
 
@@ -217,6 +224,8 @@ private:
     // SWEEP (MainComponentSweep.h): holds references to audioIo_/analysisThread_/
     // library_, so it is declared after all three -- its worker joins first.
     MainComponentSweep sweep_;
+    // H7 generator (MainComponentGenerator.h): after sweep_ -- its host callbacks read sweep_.busy().
+    MainComponentGenerator generator_;
 
     juce::Rectangle<int> mastheadArea_;
 

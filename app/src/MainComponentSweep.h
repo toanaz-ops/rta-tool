@@ -60,6 +60,9 @@ public:
         /// trace id, played on this 0-based output, for this requester. Never
         /// fired for the plain SWEEP button.
         std::function<void(const std::string& traceId, int outputChannel, Requester requester)> swept;
+        /// H7: the operator generator is playing. Optional; checked before
+        /// `outputBusy` so the refusal names GEN rather than a measurement.
+        std::function<bool()> generatorActive;
     };
 
     /// Declare AFTER the three references (trap T-1): `worker_` joins in its

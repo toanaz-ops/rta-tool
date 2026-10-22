@@ -41,6 +41,8 @@ std::string verifyBlockText(VerifyBlock kind) {
                    "guarantees a post-excitation estimate; switch to Fifo";
         case VerifyBlock::EngineNotQuiescent:
             return "the output engine is not quiescent: another excitation is running or still ramping out";
+        case VerifyBlock::GeneratorPlaying:
+            return "GEN is playing and owns the output: press STOP first";
     }
     return "";
 }
@@ -96,6 +98,7 @@ VerifyBlocker EqVerifyRunner::blocker() const {
     const EqVerifyEnvironment env = host_.environment();
     if (env.synthetic) return block(VerifyBlock::Synthetic);
     if (!env.deviceRunning) return block(VerifyBlock::DeviceNotRunning);
+    if (env.generatorPlaying) return block(VerifyBlock::GeneratorPlaying);
     if (env.captureBusy) return block(VerifyBlock::CaptureBusy);
 
     const SnapshotPtr snapshot = host_.latest();

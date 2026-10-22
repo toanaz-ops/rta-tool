@@ -59,6 +59,10 @@ struct EqVerifyEnvironment {
     /// letting VERIFY run beside it would silently kill VERIFY's excitation
     /// (plan risk 3); CAL would measure a calibrator under VERIFY's noise.
     bool captureBusy = false;
+    /// H7: the operator generator is playing (or still ramping out). Its own
+    /// flag, not `captureBusy`: GEN never holds the shared capture, only the
+    /// output, and the refusal must name GEN so the operator knows to STOP it.
+    bool generatorPlaying = false;
 };
 
 struct EqVerifyHost {
@@ -85,6 +89,7 @@ enum class VerifyBlock {
     GridMismatch,
     ExponentialAveraging,
     EngineNotQuiescent,
+    GeneratorPlaying,  ///< H7: GEN holds the output
 };
 
 /// Why a press would be refused, before it touches the engine. `text` is what

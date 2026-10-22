@@ -250,6 +250,22 @@ struct MainComponentTestAccess {
         return c.calibrationStartButton_;
     }
     [[nodiscard]] static bool captureBusyForTest(const MainComponent& c) { return c.captureBusy(); }
+    // H7 (app/tests_juce/test_main_component_generator*.cpp).
+    [[nodiscard]] static MainComponentGenerator& generatorForTest(MainComponent& c) { return c.generator_; }
+    [[nodiscard]] static bool outputBusyForTest(const MainComponent& c) { return c.outputBusy(); }
+    static void calibrationEndClickedForTest(MainComponent& c) { c.calibrationEndClicked(); }
+    // The engine the loopback renders, so a test can prove an aborted run left
+    // the output disarmed (render a few blocks by hand and ask it), or install
+    // a foreign source ahead of a press.
+    [[nodiscard]] static rta::platform::OutputEngine& outputEngineForTest(MainComponent& c) {
+        return c.audioIo_.output();
+    }
+    [[nodiscard]] static juce::String calibrationReadoutForTest(const MainComponent& c) {
+        return c.calibrationReadout_.getText();
+    }
+    [[nodiscard]] static rta::platform::OutputRole outputRoleForTest(const MainComponent& c, int channel) {
+        return c.audioIo_.output().role(channel);
+    }
     [[nodiscard]] static bool outputSourceQuiescentForTest(const MainComponent& c) {
         return c.audioIo_.output().sourceIsQuiescent();
     }
@@ -278,11 +294,6 @@ struct MainComponentTestAccess {
         while (c.audioIo_.bus().resyncPending() && juce::Time::getMillisecondCounter() < deadline) {
             juce::Thread::sleep(2);
         }
-    }
-    // The engine the loopback renders, so a test can prove an aborted run left
-    // the output disarmed: render a few blocks by hand and ask it.
-    [[nodiscard]] static rta::platform::OutputEngine& outputEngineForTest(MainComponent& c) {
-        return c.audioIo_.output();
     }
     /// Refuses one oversize block on the bus (bigger than a ring, so nothing is written
     /// and no ring index moves): the drop counter rises exactly as a starved consumer

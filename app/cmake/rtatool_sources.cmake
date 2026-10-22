@@ -129,6 +129,15 @@ set(RTATOOL_SOURCES
     src/MainComponentSweep.cpp
     src/measure/SweepIrPipeline.cpp
     src/measure/SweepIrWorker.cpp
+    # --- H7 generator wave A2 (docs/plans/2026-10-21-h7-generator-output-plan.md) -
+    # MainComponentGenerator.cpp is the rail's GEN / - / + controller, the
+    # production caller of GeneratorRunner.cpp / GeneratorModel.cpp;
+    # MainComponentGeneratorWiring.cpp answers what the runner asks the app.
+    src/MainComponentGenerator.cpp
+    src/MainComponentGeneratorWiring.cpp
+    src/measure/GeneratorRunner.cpp
+    src/measure/GeneratorModel.cpp
+    # ---
     # --- ALIGN-UI lane wave A (docs/plans/2026-10-20-align-ui-lane-plan.md) -----
     # The ALIGN pane and everything it reaches. AlignmentWizard.cpp /
     # AlignmentWizardSignals.cpp were built and unit-tested in lane L7-ALIGN

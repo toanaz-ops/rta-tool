@@ -26,6 +26,7 @@ void MainComponent::wireEqVerify() {
         env.synthetic = isSyntheticMode();
         env.deviceRunning = audioIo_.isRunning();
         env.captureBusy = captureBusy();
+        env.generatorPlaying = generator_.active();  // H7: GEN joins VERIFY's env, not captureBusy()
         return env;
     };
     host.latest = [this] { return analysisThread_.latest(); };

@@ -48,8 +48,8 @@ std::string alignBlockText(AlignBlock kind) {
         case AlignBlock::DeviceNotRunning:
             return "the audio device is not running: open it in the device panel, or switch to SYNTHETIC";
         case AlignBlock::CaptureBusy:
-            return "LOCATE, CAL, SWEEP or VERIFY is running and owns the output or the capture: "
-                   "wait for it to finish";
+            return "GEN, LOCATE, CAL, SWEEP or VERIFY is running and owns the output or the capture: "
+                   "wait for it to finish (press STOP if it is GEN)";
         case AlignBlock::NoTransfer: return "no TRANSFER measurement is published: feed a reference channel";
         case AlignBlock::SampleRateMismatch: return "input and output sample rates differ";
         case AlignBlock::ExponentialAveraging:

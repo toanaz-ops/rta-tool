@@ -92,7 +92,9 @@ constexpr std::int64_t kCalibrationCaptureTimeoutMs = 5000;
 /// channel, raw, is what a calibrator on that mic delivers.
 void MainComponent::calibrationStartClicked() {
     if (outputBusy()) {  // VERIFY's pink noise would sit under the calibrator's tone
-        if (eq_.verifyBusy()) {
+        if (generator_.active()) {
+            calibrationReadout_.setText("calibration: refused -- GEN is playing; press STOP", juce::dontSendNotification);
+        } else if (eq_.verifyBusy()) {
             calibrationReadout_.setText("calibration: refused -- VERIFY is running", juce::dontSendNotification);
         }
         return;  // otherwise the one shared capture accumulator is busy
@@ -107,7 +109,9 @@ void MainComponent::calibrationStartClicked() {
 
 void MainComponent::calibrationEndClicked() {
     if (outputBusy()) {
-        if (eq_.verifyBusy()) {
+        if (generator_.active()) {
+            calibrationReadout_.setText("calibration: refused -- GEN is playing; press STOP", juce::dontSendNotification);
+        } else if (eq_.verifyBusy()) {
             calibrationReadout_.setText("calibration: refused -- VERIFY is running", juce::dontSendNotification);
         }
         return;

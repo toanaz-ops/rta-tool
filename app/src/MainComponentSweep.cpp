@@ -68,6 +68,10 @@ bool MainComponentSweep::startOn(int outputChannel, Requester requester, std::op
         say("sweep: already running");
         return false;
     }
+    if (host_.generatorActive && host_.generatorActive()) {
+        say("sweep: refused -- GEN is playing; press STOP");
+        return false;
+    }
     if (host_.outputBusy()) {
         say("sweep: refused -- LOCATE, CAL or VERIFY is using the output");
         return false;

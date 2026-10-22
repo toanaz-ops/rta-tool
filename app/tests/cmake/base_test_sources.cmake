@@ -98,6 +98,10 @@ set(RTA_BASE_TEST_SOURCES
     test_eq_verify_runner.cpp
     test_eq_verify_runner_flow.cpp
     test_eq_verify_adopt.cpp
+    # test_generator_*.cpp: H7 tasks T1/T2 -- the operator generator's level policy and
+    # state machine against a real OutputEngine rendered by hand. JUCE-free.
+    test_generator_model.cpp
+    test_generator_runner.cpp
     # test_crossover_topology.cpp: lane L7-ALIGN task D (record docs/dsp/
     # 2026-09-06-l7-alignment-wizard.md Sec.3, Sec.10.2) -- the topology to
     # expected-offset lookup, JUCE-free like OutputPolicy, so it lives here.
