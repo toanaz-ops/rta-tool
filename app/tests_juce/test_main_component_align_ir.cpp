@@ -58,6 +58,7 @@ TEST_CASE("align IR (T10): the plain SWEEP button still plays on output 1, keeps
     auto& library = Access::libraryForTest(c);
     sweepOf(c).clicked();
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
     REQUIRE(library.entries().size() == 1);
     CHECK(library.entries()[0].name.rfind("SWEEP @ ", 0) == 0);
     CHECK(runnerOf(c).boundIr(Source::Main) == nullptr);  // only an ALIGN button's sweep auto-binds
@@ -195,6 +196,7 @@ TEST_CASE("align IR (T11): SWEEP MAIN/SUB and MEASURE obey the same busy predica
     CHECK_FALSE(runnerOf(c).press());
     CHECK_FALSE(runnerOf(c).busy());
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
     CHECK(runnerOf(c).boundIr(Source::Main) != nullptr);  // the running sweep still bound itself
     CHECK(runnerOf(c).boundIr(Source::Sub) == nullptr);
 
@@ -230,6 +232,7 @@ TEST_CASE("align IR (T11): a result from another output does not bind", kTag) {
     Access::alignForTest(c).onSwept(firstId, 0);
     CHECK(runnerOf(c).boundIr(Source::Sub) == nullptr);
     REQUIRE(tickUntil(c, [&] { return !sweepOf(c).busy(); }, 60000));
+    INFO("sweep readout: " << sweepOf(c).readoutForTest());
     CHECK(runnerOf(c).boundIr(Source::Sub) != nullptr);  // its own result still binds
     CHECK(runnerOf(c).boundIrId(Source::Sub) != firstId);
 }
