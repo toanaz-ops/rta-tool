@@ -36,7 +36,7 @@ using rta::view::RtaView;
 namespace {
 
 /// Same one-level search test_main_component_panes.cpp's own
-/// `findButtonByText` uses -- `wirePaneSelectorButtons()` adds all four
+/// `findButtonByText` uses -- `MainComponentPaneSelector::attach()` adds all seven
 /// selector buttons directly to `MainComponent`, no intervening container.
 juce::Button* findButtonByText(juce::Component& root, const juce::String& text) {
     for (int i = 0; i < root.getNumChildComponents(); ++i) {
@@ -340,8 +340,8 @@ TEST_CASE("selectPaneView keeps all four selector buttons' toggle state in sync"
     // Same cycle shape test_main_component_panes.cpp's own "keeps the
     // selector buttons' toggle state in sync" case uses, extended to the
     // 4th button -- JUCE's radio group only ever turns SIBLINGS off as a
-    // side effect of turning one on, so a dropped `paneXoverButton_.
-    // setToggleState(...)` line only shows up the NEXT time XOVER becomes
+    // side effect of turning one on, so a dropped `xoverButton_.
+    // setToggleState(...)` (MainComponentPaneSelector::syncTo) line only shows up the NEXT time XOVER becomes
     // selected again, which needs a full cycle through all four to catch.
     MainComponent component;
     component.setSyntheticMode(true);

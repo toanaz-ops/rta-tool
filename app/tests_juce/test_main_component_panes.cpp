@@ -89,7 +89,7 @@ struct TempDir {
 };
 
 /// Finds a direct child of `root` that is a `juce::Button` with exactly this
-/// text -- `wirePaneSelectorButtons()` adds all three selector buttons
+/// text -- `MainComponentPaneSelector::attach()` adds all seven selector buttons
 /// directly to `MainComponent` (no intervening container), and every other
 /// button MainComponent owns (SYNTHETIC, LOCATE, CAL START, ...) has a
 /// distinct label, so a flat, one-level search is enough. Fix-round finding
@@ -295,7 +295,7 @@ TEST_CASE("selectPaneView actually attaches the new workspace into the component
 TEST_CASE("selectPaneView keeps the selector buttons' toggle state in sync",
          "[main_component_panes]") {
     // Fix round 2 (verifier MEDIUM F1): the comment this replaced was wrong.
-    // A grouped button's OWN "turn on" call (`paneSplButton_.setToggleState
+    // A grouped button's OWN "turn on" call (`MainComponentPaneSelector`'s `splButton_.setToggleState
     // (true, ...)`) already turns every SIBLING in the same radioGroupId off
     // as a side effect, UNCONDITIONALLY -- `turnOffOtherButtonsInGroup` runs
     // before the notification check (juce_Button.cpp:174-184), regardless of
@@ -345,7 +345,7 @@ TEST_CASE("selectPaneView keeps the selector buttons' toggle state in sync",
 TEST_CASE("re-clicking the already-selected button leaves it lit and the pane unchanged",
          "[main_component_panes]") {
     // Fix round 2 (verifier LOW F2): deleting setRadioGroupId (:26) stayed
-    // green. Without it, paneSplButton_'s clickTogglesState-only behaviour
+    // green. Without it, `splButton_`'s clickTogglesState-only behaviour
     // is a plain invert -- clicking it a second time (as a stray double
     // click, or simply an operator confirming the pane they are already on)
     // would turn it OFF while the pane it names is still on screen, with

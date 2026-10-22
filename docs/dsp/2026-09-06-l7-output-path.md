@@ -479,8 +479,12 @@ For L7-DELAY, L7-EQ, L7-ALIGN and G20, without re-deriving it:
 - Where output routing and the member→output map persist (schema 4 of
   `SessionCodec`, under L6b §9's "loads unbound rather than rebinding" rule).
 - Headroom and clipping policy for the summed drive — `Noise.h:92-98` places
-  it in `app/`, and nothing here changes that.
+  it in `app/`, and nothing here changes that. *(The generator's half is
+  resolved in §14.1; the summed-drive question for several ticked outputs is
+  not.)*
 - The UI for the generator panel and the routing matrix's output half.
+  *(The generator panel is resolved in §14; the routing matrix's output half
+  is not.)*
 
 ## 13. Open questions for a human
 
@@ -497,6 +501,143 @@ For L7-DELAY, L7-EQ, L7-ALIGN and G20, without re-deriving it:
    record), or refuse the reconfiguration while armed?** Dropping matches
    `CaptureBus::prepare` draining rings; refusing would be the first place a
    device-panel action is blocked by generator state.
+
+## 14. H7: the operator generator as an output client (amendment, written against `origin/main` `c71bb98`)
+
+Plan: `docs/plans/2026-10-21-h7-generator-output-plan.md`; PRs #87, #88, #91,
+#94. Every sentence below names the line it describes. Nothing here changes
+§1-§13; it records what the app does with them.
+
+### 14.1 The generator is one more client of the §4 slot, and its level is clamped in `makeSource`
+
+- `GeneratorRunner` drives the engine only through `setSource`, `armSource`,
+  `disarmSource` and `routeOutput`; there is no level knob on the engine
+  (§4 stands). A level change is therefore a swap
+  (`app/src/measure/GeneratorRunner.cpp:105-109`, installed at `:136-141`).
+- The level range is **[-60.0, -12.0] dBFS** with a **1.0 dB step**
+  (`app/src/measure/GeneratorModel.h:30-32`). The clamp is applied inside
+  `makeSource` (`GeneratorModel.cpp:33`, "every caller passes through this
+  line") and by `clampGeneratorLevelDb` (`:21-24`), so no caller reaches the
+  engine louder than -12 dBFS. NaN reads as the floor (`:22`). The -12 ceiling
+  is the §12 headroom policy for the generator: it keeps pink's crest factor
+  out of clipping (`core/include/rta/gen/Noise.h`, `kDefaultNoiseLevelDbFsRms`).
+- Level convention: noise is dBFS RMS, a sine is dBFS peak
+  (`GeneratorModel.h:44`); a sweep is dBFS peak (`MeasurementDrive.h:37-38`).
+- `GeneratorRunner::start()` refuses while another client holds the output
+  (`GeneratorRunner.cpp:51-54`), when no device runs in LIVE (`:55-60`), and
+  when `setSource` returns false (`:66-69`, checked before routing or arming,
+  per §6).
+
+### 14.2 Drop, never resume (resolves §13.3 for the generator)
+
+- A device restart (epoch change) or a stopped LIVE device sends the runner to
+  Idle with a reason (`GeneratorRunner.cpp:126-134`); `goIdle` disarms and
+  nothing but `start()` arms again (`:41-46`). Only the operator's GEN press
+  restarts it.
+- Swapping and Stopping give up after 500 ms when no callback drains the gate
+  (`GeneratorRunner.h:58`; `GeneratorRunner.cpp:144-146`, `:154-159`).
+
+### 14.3 Measured step hole: a level step is audible as a dip
+
+- A 1 dB step is a swap, not a ramp between two levels: the master gate falls
+  (10 ms), the new source is installed once quiescent, then rises (10 ms).
+  `app/tests/test_generator_runner.cpp:124-153` measures it: the hole is at
+  most 960 samples plus one block (2 ramps + a block + a poll, about 41 ms at
+  48 kHz, per `GeneratorRunner.h:16`), and the test requires at least 16
+  exact-zero samples inside it (`:152`). The operator hears a short dip on
+  every `-` / `+` press while GEN plays and on every SIGNAL change; a FREQ change swaps
+  only for a sine (`GeneratorRunner.cpp:98`), and the FREQ combo is disabled for
+  pink and white (`MainComponentGenerator.cpp:265`).
+  A live parameter change without a swap stays undecided (§12, first bullet).
+- Output ticks do not swap: they re-route live (`GeneratorRunner.cpp:102-104`).
+
+### 14.4 Two measurement-level modes; FOLLOW GEN is the default
+
+One function answers "what level and which outputs does a measurement play?":
+`measurementDrive` (`app/src/measure/MeasurementDrive.cpp:9-19`). LOCATE,
+VERIFY, SWEEP (rail, ALIGN and RT60 presses) and ALIGN all call it through
+`MainComponent::measurementDrive` (`MainComponentGeneratorWiring.cpp:19-21`;
+call sites `MainComponentSweep.cpp:109`, `MainComponentEqVerify.cpp:37`,
+`MainComponentAlign.cpp:30`, `MainComponentDelay.cpp:47`).
+
+- **FOLLOW GEN** (`MeasurementLevelMode::FollowGen`): the generator's level
+  *setting* (clamped, `MeasurementDrive.cpp:16`) and its ticked outputs, pruned
+  to the device (`:17`). The generator need not be playing. The measurement
+  keeps its own convention: LOCATE plays pink as RMS
+  (`MainComponentDelay.cpp:53`), SWEEP plays peak (`MainComponentSweep.cpp:110`).
+- **OWN** (`MeasurementLevelMode::Own`): a separate level, default -12.0 dBFS
+  (`MeasurementDrive.h:35`), clamped to the same [-60, -12] range
+  (`MeasurementDrive.cpp:13`) and stepped 1 dB by `ownStepClicked`
+  (`MainComponentGenerator.cpp:105-110`). The output list stays empty
+  (`MeasurementDrive.cpp:13-14` returns before outputs are set), which every
+  caller reads as "keep the output this measurement chooses by design": out 1
+  for LOCATE / VERIFY / SWEEP, solo main or sub for ALIGN, the pane's output
+  for RT60 (`MeasurementDrive.h:18-22`).
+- In FOLLOW GEN, ALIGN and RT60 still choose their output by design; only the
+  level follows (`MainComponentAlign.cpp:30`; `MainComponentSweep.cpp:113`: a
+  named output wins over `drive.outputs`).
+- A quiet FOLLOW GEN level lowers every measurement's SNR. That is not hidden:
+  the button hints name the level a press would play
+  (`MainComponentGeneratorWiring.cpp:23-32`), and LOCATE's readout carries the
+  level and outputs it played (`MainComponentDelay.cpp:49`).
+- The mode is toggled by the MEAS button (`MainComponentGenerator.cpp:95-103`),
+  labelled `FOLLOW GEN` or `OWN <level>` (`:267`); the OWN steppers are visible
+  only in OWN (`:268-269`).
+
+### 14.5 Exclusion rules as shipped
+
+- **Measurements refuse while GEN plays.** `generator_.active()` is part of
+  `outputBusy()` (`MainComponent.h:92-94`) and not of `captureBusy()`
+  (`:87-90`), because GEN never holds the capture accumulator. Refusal texts
+  name GEN: LOCATE `MainComponentDelay.cpp:33-34`, SWEEP
+  `MainComponentSweep.cpp:73-75`, CAL `MainComponentCalibration.cpp:95-96` and
+  `:112-113`, VERIFY `EqVerifyRunner.cpp:45` and `:106`, ALIGN's shared busy
+  sentence `AlignRunnerText.cpp:56-58`. "While playing" is the test: GEN
+  stopped but configured does not block a measurement (§14.4).
+- **GEN refuses while a measurement holds the output.** `outputHolderName()`
+  never names GEN and names LOCATE, CAL, SWEEP, ALIGN or VERIFY
+  (`MainComponentGeneratorWiring.cpp:34-44`); it reaches the runner as `busyBy`
+  (`:15`) and `start()` refuses (`GeneratorRunner.cpp:51-54`).
+- **MEAS and the OWN steppers refuse while a measurement that reads the drive
+  holds the output** (`MainComponentGenerator.cpp:83-93`). The refusal text is
+  `MEAS: not while <holder> runs (applies to the next press)` (`:276-277`); the
+  holder is remembered in `refusalHolder_` (`:90`, declared
+  `MainComponentGenerator.h:119`), and the message stays until the operator's
+  next GEN or MEAS action (every handler clears it, e.g. `:96`, `:106`) or the
+  holder releases the output (`:272-273`). A running measurement keeps the drive
+  it started with; the change applies to the next press
+  (`MainComponentGenerator.h:70-72`). ALIGN counts because one MEASURE press is
+  busy from main through sub, so a toggle cannot land between the two phases
+  (`MainComponentGenerator.cpp:84-86`).
+- **CAL is allowed.** CAL holds the capture but plays nothing and never asks for
+  a drive (`MainComponentGenerator.cpp:86-89`, the `holder == "CAL"`
+  exception), so a MEAS toggle during CAL changes nothing CAL uses.
+
+### 14.6 LOCATE honours `setSource`'s refusal
+
+`MainComponentDelay.cpp:50-57`: LOCATE installs its pink with `setSource` and
+treats `false` as a refusal ("the output is still playing a source") before
+routing or arming. Ignoring the bool had armed whatever source was still
+installed after a GEN stop that timed out on a stopped device, which was GEN's
+own -30 dBFS pink played as if it were LOCATE's (§6 applied; comment at
+`:50-52`).
+
+### 14.7 No persistence
+
+Nothing about the generator or the measurement mode is saved. Every launch is
+pink, -30.0 dBFS, out 1 (`GeneratorSettings` defaults,
+`GeneratorModel.h:43-46`), stopped, measurement mode FOLLOW GEN
+(`MainComponentGenerator.h:118`), OWN level -12.0 (`:120`, "not persisted").
+Owner decision D3, 2026-10-21. The §12 bullet on persisting output routing is
+unchanged.
+
+### 14.8 What this amendment does not decide
+
+- One device block can be dropped at shutdown: `AudioIo::stop()` deactivates
+  the bus before removing the callback. Deliberate (follow-up N2,
+  `docs/HANDOFF.md`).
+- Headroom of several ticked outputs summed downstream: each output carries
+  the same clamped source (§12, "decorrelated per-output noise").
 
 ## Sources
 

@@ -264,7 +264,7 @@ TEST_CASE("STORE names and groups follow the pane label, distinctly per click",
     // its backing vector and invalidate any reference taken before it.
     const auto first = library.entries().back();
     CHECK_FALSE(first.name.empty());
-    CHECK(first.group == "RTA");  // paneRtaButton_'s own text (T7's own mutant target)
+    CHECK(first.group == "RTA");  // MainComponentPaneSelector's RTA button text (T7's own mutant target)
 
     // T7: two clicks at least one second apart produce two distinct names.
     juce::Thread::sleep(1100);

@@ -42,3 +42,7 @@
   synthetic IR → deconvolution SNR > 60 dB.
 - Statistical: −3.01 dB/oct ±0.2; 1/3-octave flatness ±0.5 dB; crest ranges;
   cross-channel correlation ≈ 0.
+
+## Operator generator (H7)
+
+The operator-facing generator (GEN strip: pink / white / sine, level -60.0 to -12.0 dBFS in 1.0 dB steps, outputs) and the measurement-level modes (FOLLOW GEN, OWN) are recorded, with file:line, in `docs/dsp/2026-09-06-l7-output-path.md` section 14. The level conventions above are unchanged: noise by RMS, sine and sweep by peak.
