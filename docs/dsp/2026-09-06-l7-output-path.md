@@ -545,7 +545,9 @@ Plan: `docs/plans/2026-10-21-h7-generator-output-plan.md`; PRs #87, #88, #91,
   most 960 samples plus one block (2 ramps + a block + a poll, about 41 ms at
   48 kHz, per `GeneratorRunner.h:16`), and the test requires at least 16
   exact-zero samples inside it (`:152`). The operator hears a short dip on
-  every `-` / `+` press while GEN plays and on every SIGNAL or FREQ change.
+  every `-` / `+` press while GEN plays and on every SIGNAL change; a FREQ change swaps
+  only for a sine (`GeneratorRunner.cpp:98`), and the FREQ combo is disabled for
+  pink and white (`MainComponentGenerator.cpp:265`).
   A live parameter change without a swap stays undecided (§12, first bullet).
 - Output ticks do not swap: they re-route live (`GeneratorRunner.cpp:102-104`).
 

@@ -1067,7 +1067,7 @@ the fixing PR is named). Nothing in this table is a HIGH or MEDIUM.
 **Count by disposition (31 rows):** FIX-next-batch 9, DEFER 6,
 NEW-LANE 5, KNOWN-LIMIT 2, STALE 9. **Status 2026-10-21:** all nine FIX rows are
 done (Z25 in #69, the other eight in the H6 closeout PR, ticked above); DEFER 6,
-NEW-LANE 5 and KNOWN-LIMIT 2 are unchanged and remain the open set.
+NEW-LANE 5 and KNOWN-LIMIT 2 were unchanged and remained the open set. **Status 2026-10-22:** Z16 closed by H7, so NEW-LANE is **4 open** (Z2, Z10, Z14, Z15; counted from the rows above, Z6 is KNOWN-LIMIT); DEFER 6 and KNOWN-LIMIT 2 are unchanged.
 
 ### H4 SWEEP — try it and lane LOWs (2026-10-20, closeout of H4)
 
@@ -1257,7 +1257,18 @@ Source: PRs #87 (`A1`), #88 (`A2`), #91 (`B1`), #94 (`B2`), flake fixes #90,
 
 **Human-try row — GEN, no hardware (a person at `rtatool.exe`, about 2 min):**
 
-1. Run `build/app/rtatool_artefacts/Release/RTA Tool.exe`, turn **SYNTHETIC** on.
+1. Run `D:\DEV CAVE EP3\PRJ010-RTA-TOOL\build-asio\app\rtatool_artefacts\Release\RTA Tool.exe` (rebuilt from main after the closeout PR merges), turn **SYNTHETIC** on.
+   To rebuild, in the main checkout, as two separate commands:
+
+   ```bash
+   git pull
+   ```
+
+   ```bash
+   cmake --build build-asio --config Release --target rtatool --parallel
+   ```
+
+   Check the build has H7: the GEN strip must show a **FOLLOW GEN** button; if it does not, the exe predates H7.
    The masthead has a strip: **GEN**, **-**, **+**, SIGNAL (PINK / WHITE / SINE),
    FREQ, **OUT**, **FOLLOW GEN**, then a readout.
 2. Press **GEN**. The readout says `GEN: playing pink -30.0 dBFS RMS on out 1`

@@ -19,7 +19,20 @@
 
 **Trạng thái:** hàng 1 và 13 của `MASTER-EXECUTION-PLAN.md` thành BUILT; (b-strict) **12 / 19 = 63.2 %** (rows 1, 2, 3, 4, 7, 10, 13, 14, 15, 16, 17, 18); (a) 15/19 và (b) 14/19 không đổi vì hai hàng đã nằm trong đó. Z16 và Z31 trong `HUMAN-QA-QUEUE.md` đóng. PR closeout chỉ sửa docs và comment C++, không chạy test (không đổi hành vi); ON build + 0 warning ghi trong thân PR.
 
-**Người thử được gì — không cần phần cứng (`build/app/rtatool_artefacts/Release/RTA Tool.exe`, bật SYNTHETIC):**
+**Người thử được gì — không cần phần cứng (`D:\DEV CAVE EP3\PRJ010-RTA-TOOL\build-asio\app\rtatool_artefacts\Release\RTA Tool.exe`, bật SYNTHETIC; coordinator dựng lại từ main sau khi PR closeout merge):**
+
+Dựng lại nếu exe cũ (chạy trong checkout chính `D:\DEV CAVE EP3\PRJ010-RTA-TOOL`, hai lệnh riêng):
+
+```bash
+git pull
+```
+
+```bash
+cmake --build build-asio --config Release --target rtatool --parallel
+```
+
+**Kiểm tra bản dựng có H7:** thanh GEN trên masthead phải có nút **FOLLOW GEN**; không có nút đó nghĩa là exe cũ (trước H7), dựng lại.
+
 
 1. **GEN:** bấm **GEN** -> readout `GEN: playing pink -30.0 dBFS RMS on out 1`, nút thành STOP. **+** tới `-12.0 ... (ceiling)` rồi không lên nữa; **-** tới `-60.0` rồi không xuống nữa; mỗi bước 1.0 dB có một khoảng lặng ngắn (~41 ms, đo ở `app/tests/test_generator_runner.cpp:124`). SIGNAL chọn PINK / WHITE / SINE, FREQ (chỉ SINE) chọn 20 Hz - 20 kHz, OUT tick/bỏ tick output (không bỏ được tick cuối).
 2. **FOLLOW GEN (mặc định):** nút `FOLLOW GEN`. LOCATE / VERIFY / SWEEP / ALIGN phát ở mức GEN đang đặt (không cần GEN đang chạy), hint của nút nêu mức; khi GEN đang CHẠY thì chúng từ chối và gọi tên GEN.
