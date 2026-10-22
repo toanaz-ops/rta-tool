@@ -139,19 +139,24 @@ void SyntheticInput::runBody() {
         }
         return true;
     };
+    // A raised resync gate is "room" too: the consumer acknowledges the gate through the
+    // producer's next pushFromCallback (CaptureBus.h, "Resync"), which writes nothing while
+    // the gate is up. A feed held off the bus by a full ring would never acknowledge, the
+    // consumer would drain on its 500 ms timeout and count an unacknowledged resync.
+    const auto mayPush = [&] { return ringsHaveRoom() || bus_.resyncPending(); };
     constexpr double kMaxBackPressureMs = 3000.0;
     bool consumerStalled = false;
 
     while (!threadShouldExit()) {
-        if (ringsHaveRoom()) {
+        if (mayPush()) {
             consumerStalled = false;
         } else if (!consumerStalled) {
             const double giveUpMs = juce::Time::getMillisecondCounterHiRes() + kMaxBackPressureMs;
-            while (!threadShouldExit() && !ringsHaveRoom() &&
+            while (!threadShouldExit() && !mayPush() &&
                    juce::Time::getMillisecondCounterHiRes() < giveUpMs) {
                 wait(1);
             }
-            consumerStalled = !ringsHaveRoom();
+            consumerStalled = !mayPush();
         }
         if (threadShouldExit()) break;
         // Always render the loopback, even when it is quiescent: render() is

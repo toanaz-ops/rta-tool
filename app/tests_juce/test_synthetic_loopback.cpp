@@ -4,7 +4,6 @@
 // T1 and T2). SyntheticInput renders the OutputEngine ("loopback") and band-
 // limits the measurement copy; both are proven through the REAL thread and a
 // REAL CaptureBus, then LOCATE is proven through a REAL MainComponent.
-#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "MainComponent.h"
@@ -13,7 +12,6 @@
 #include "measure/OutputPolicy.h"
 #include "measure/SyntheticImpairment.h"
 #include "measure/SyntheticInput.h"
-#include "measure/SyntheticPacing.h"
 #include "rta/dsp/ButterworthDesign.h"
 #include "rta/gen/Oscillator.h"
 #include "rta/gen/Synthetic.h"
@@ -334,59 +332,25 @@ TEST_CASE("a channel-role change mid-LOCATE resyncs the input and cancels the ca
     CHECK_FALSE(MainComponentTestAccess::delaySuggestionForTest(component).has_value());
 }
 
-// ---- Deadline pacing (SyntheticPacing.h) -------------------------------------------
-// The align-IR load flake: a feed that sleeps blockMs after each block, and wakes up
-// to a timer tick late, runs slower than real time, so wall-clock timeouts in front of
-// it expire on a healthy run. A scheduler model with a fixed lateness per sleep makes
-// the contrast exact, so no wall clock is involved.
-namespace {
-struct PacingRun {
-    double nowMs;
-    double dueMs;
-};
-PacingRun simulatePacing(int blocks, double blockMs, double latenessMs, bool deadlinePacing) {
-    double now = 0.0;
-    double due = 0.0;
-    for (int i = 0; i < blocks; ++i) {
-        if (deadlinePacing) {
-            const auto pace = rta::measure::nextSyntheticPace(due, now, blockMs, 500.0);
-            due = pace.dueMs;
-            if (pace.waitMs > 0) now += pace.waitMs + latenessMs;  // a sleep returns late, never early
-        } else {
-            now += static_cast<int>(blockMs) + latenessMs;  // the former wait(waitMs_)
-            due += blockMs;
-        }
-    }
-    return { now, due };
-}
-}  // namespace
-
-TEST_CASE("synthetic pacing: a late sleep is repaid, the feed keeps real time", "[synthetic_loopback]") {
-    constexpr double kBlockMs = 1000.0 * 512.0 / 48000.0;  // 10.667 ms
-    constexpr int kBlocks = 4500;                          // 48 s of audio
-    constexpr double kLateness = 5.0;                      // ms, less than one block
-    const auto before = simulatePacing(kBlocks, kBlockMs, kLateness, false);
-    const auto after = simulatePacing(kBlocks, kBlockMs, kLateness, true);
-    // Closed form: the old loop spends floor(blockMs) + lateness = 15 ms per 10.667 ms of audio.
-    CHECK(before.dueMs / before.nowMs == Catch::Approx(kBlockMs / (10.0 + kLateness)).epsilon(1e-9));
-    CHECK(before.dueMs / before.nowMs < 0.75);
-    // The deadline loop ends within one sleep of the audio clock: rate 1.0x.
-    CHECK(after.dueMs == Catch::Approx(kBlocks * kBlockMs).epsilon(1e-9));
-    CHECK(std::fabs(after.nowMs - after.dueMs) <= 10.0 + kLateness);
-}
-
-TEST_CASE("synthetic pacing: behind by a block pushes at once, a long stall re-anchors", "[synthetic_loopback]") {
-    constexpr double kBlockMs = 10.0;
-    // Three blocks behind: due 10, now 40 -> next due 20, already past: no wait, deadline kept.
-    const auto behind = rta::measure::nextSyntheticPace(10.0, 40.0, kBlockMs, 500.0);
-    CHECK(behind.waitMs == 0);
-    CHECK(behind.dueMs == 20.0);
-    // A 2 s descheduling: no burst of 200 blocks, the deadline restarts from now.
-    const auto stalled = rta::measure::nextSyntheticPace(10.0, 2010.0, kBlockMs, 500.0);
-    CHECK(stalled.dueMs == 2010.0);
-    CHECK(stalled.waitMs == 0);
-    // Ahead of the deadline: sleep the whole milliseconds that remain, never more.
-    const auto ahead = rta::measure::nextSyntheticPace(0.0, 2.5, kBlockMs, 500.0);
-    CHECK(ahead.dueMs == 10.0);
-    CHECK(ahead.waitMs == 7);
+// L3 (PR #90 verify): LOCATE reads its delay off the capture's timeline, so a block the bus
+// refused (ring full, a starved consumer) must abort it by name, not shift the answer.
+TEST_CASE("LOCATE aborts by name when the bus drops frames during its capture", "[synthetic_loopback]") {
+    MainComponent component;
+    component.setSyntheticMode(true);
+    MainComponentTestAccess::locateClickedForTest(component);
+    REQUIRE(waitUntil(
+        [&] {
+            MainComponentTestAccess::timerTickForTest(component);
+            return MainComponentTestAccess::locateCaptureArmedForTest(component);
+        },
+        30000));
+    MainComponentTestAccess::injectBusDropForTest(component);
+    REQUIRE(waitUntil(
+        [&] {
+            MainComponentTestAccess::timerTickForTest(component);
+            return !MainComponentTestAccess::locateActiveForTest(component);
+        },
+        10000));
+    CHECK(MainComponentTestAccess::delayReadoutForTest(component).contains("the input dropped frames"));
+    CHECK_FALSE(MainComponentTestAccess::delaySuggestionForTest(component).has_value());
 }

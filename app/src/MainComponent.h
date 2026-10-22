@@ -150,6 +150,7 @@ private:
     bool locateWaitingForSettle_ = false;
     bool locateCaptureArmed_ = false;
     std::uint64_t locateResync_ = 0;  // AnalysisThread::resyncSequence() when the capture was armed
+    std::uint64_t locateDrops_ = 0;   // AnalysisThread::droppedFrames() when the capture was armed
     std::shared_ptr<const rta::measure::LocateCapture> lastHandledCapture_;
     std::optional<rta::dsp::DelaySuggestion> delaySuggestion_;
     // ------------------------------------------------------------------------

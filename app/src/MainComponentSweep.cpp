@@ -167,6 +167,9 @@ void MainComponentSweep::poll() {
     // analysis would accept the result or refuse it for the wrong reason. It happens
     // when the analysis thread is starved (a loaded machine) for longer than the ring
     // holds. Say so and let the operator repeat the sweep.
+    // The capture pointer is read (acquire) BEFORE the count: a drop in the capture's last
+    // hop happened before that pointer was published, so it is visible to the read below.
+    const auto capture = analysis_.locateCapture();
     if (const auto lost = analysis_.droppedFrames(); lost != armedDrops_) {
         abort("the input dropped " + juce::String(static_cast<juce::int64>(lost - armedDrops_)) +
               " frames during the capture (the machine could not keep up) -- try again");
@@ -186,7 +189,6 @@ void MainComponentSweep::poll() {
     }
 
     // Playing: only this poll consumes a capture, tracked by its own pointer.
-    const auto capture = analysis_.locateCapture();
     if (capture != nullptr && capture != lastHandled_) {
         lastHandled_ = capture;
         startAnalysis();
