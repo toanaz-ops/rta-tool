@@ -75,6 +75,7 @@ add_executable(rta_core_tests
     test_relative_polarity.cpp
     test_relative_polarity_guard.cpp
     test_ir_spectrum.cpp
+    test_ir_gate.cpp
     # test_block.cpp: lane L6a task W0-A (record docs/dsp/2026-09-16-spl-pro-
     # l6a.md §2, §3, §8) -- the SPL block, its sample-count clock, and the
     # energy sum every longer window is recomputed from.
