@@ -76,7 +76,7 @@ public:
         // 1366x768 screen gets a window that fits it, and a floor below which
         // the masthead and rail would lose controls (WindowSizing.h).
         const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
-        const auto area = display != nullptr ? display->userArea : juce::Rectangle<int> (0, 0, 1366, 728);
+        const auto area = display != nullptr ? display->userBounds.toNearestInt() : juce::Rectangle<int> (0, 0, 1366, 728);
         const auto sizing = rta::app::windowSizingFor (area.getWidth(), area.getHeight());
         setResizeLimits (sizing.minWidth, sizing.minHeight, 32768, 32768);
         centreWithSize (sizing.width, sizing.height);
