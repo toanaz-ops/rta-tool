@@ -8,10 +8,6 @@ on:
       - 'docs/**'
       - 'memory/**'
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'memory/**'
 
 # A superseded push on a PR ref cancels that PR's own in-flight run, so an
 # old commit never races a new one for the check mark. A push to `main` is
