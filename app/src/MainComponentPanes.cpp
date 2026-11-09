@@ -5,7 +5,7 @@
 // running app could ever reach the `spl` or `transfer` panes, even though
 // both are built and tested (docs/HUMAN-QA-QUEUE.md "Muc moi mo khi dong
 // lane L6a"; docs/reports/009-spl-pro.md). This file is the selector's UI
-// half: the RTA/TRANSFER/SPL radio group, its layout, and the rebuild that
+// half: the selector buttons, their layout, and the rebuild that
 // puts the chosen pane on screen. HW-176 (owner card, 2026-11-09) adds `+ PANE`
 // (arm: the next view press APPENDS) and `- PANE` (drop the last pane); the
 // rules are pure and live in view/PaneSelectorDecision.h. Member-function definitions, declared in
@@ -37,10 +37,14 @@ std::string layoutSummary(const std::vector<rta::trace::PaneSpec>& panes) {
 
 }  // namespace
 
-// The ONE build path (HW-176 T1). selectPaneView, `- PANE` and session Open
-// used to carry two copies of build/setLibrary/syncTo/storeButton_; a fix to
-// one (the XOVER-unlit bug of PR #45, the STORE-enable omission of T6) kept
-// missing the other.
+// The one path that REPLACES the workspace (HW-176 T1): a plain view press and
+// session Open. They used to carry two copies of build/setLibrary/syncTo/
+// storeButton_; a fix to one (the XOVER-unlit bug of PR #45, the STORE-enable
+// omission of T6) kept missing the other. It rebuilds every pane, so per-pane
+// state (a TRANSFER source toggle, XOVER picks) resets -- as it always did.
+// `+ PANE` / `- PANE` do NOT come through here: they change one pane through
+// WorkspaceView::appendPane / removeLastPane and leave the rest alone. The
+// constructor's initial workspace is built in MainComponent's init list.
 //
 // WorkspaceView's factory is consumed once, synchronously, in its own
 // constructor (that class's header comment) -- there is no in-place add or
@@ -67,6 +71,14 @@ void MainComponent::rebuildWorkspace(std::vector<rta::trace::PaneSpec> panes) {
     // The new workspace has no bounds yet (WorkspaceView's constructor lays
     // out nothing -- resized() does): position it now rather than waiting for
     // the next resize event.
+    resized();
+}
+
+// What follows an append or a remove: the first pane (and so currentPaneView_)
+// is unchanged, the arm is spent, and the controls re-derive from the layout.
+void MainComponent::finishPaneEdit() {
+    paneAddArmed_ = false;
+    refreshPaneControls();
     resized();
 }
 
@@ -106,6 +118,13 @@ void MainComponent::selectPaneView(rta::view::PaneSelectorButton button) {
         refreshPaneControls();
         return;
     }
+    if (paneAddArmed_) {
+        // Append ONE pane; the existing components keep their state. The
+        // decision helper already checked the cap, appendPane re-checks it.
+        workspace_->appendPane(edit.panes.back());
+        finishPaneEdit();
+        return;
+    }
     rebuildWorkspace(edit.panes);
 }
 
@@ -129,7 +148,8 @@ void MainComponent::removeLastPane() {
         paneReadout_.setText(edit.refusal, juce::dontSendNotification);
         return;
     }
-    rebuildWorkspace(edit.panes);
+    workspace_->removeLastPane();
+    finishPaneEdit();
 }
 
 // MainComponentPanes.cpp: session Open's own rebuild (multi-pane aware).

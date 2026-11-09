@@ -132,6 +132,7 @@ private:
     void rebuildWorkspace(std::vector<rta::trace::PaneSpec> panes);
     [[nodiscard]] std::vector<rta::view::PaneView> currentPaneViews() const;
     void refreshPaneControls();
+    void finishPaneEdit();  // after WorkspaceView::appendPane / removeLastPane
     void storeClicked();  // MainComponentStore.cpp (station-3 T5): freezes the pane's Snapshot into library_
     /// STORE's conversion, shared with VERIFY's after-measurement (MainComponentStore.cpp).
     [[nodiscard]] std::optional<rta::trace::Trace> freezeSnapshot(const rta::measure::Snapshot& snapshot,
@@ -218,7 +219,7 @@ private:
     // MainComponentRail.h. RoutingMatrix rows follow the device's channel count.
     MainComponentRail rail_;
 
-    // Pane selector: a radio group. Not persisted (SPL-R11) -- starts at Rta.
+    // Pane selector: seven view buttons plus + PANE / - PANE. Not persisted (SPL-R11) -- starts at Rta.
     MainComponentPaneSelector paneSelector_;
     rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
 

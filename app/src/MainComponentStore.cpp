@@ -45,8 +45,8 @@ namespace {
 // multi-pane layout can show TRANSFER more than once, and the old
 // first-match-wins scan left every pane after the first silently unreported
 // in the STORE readout. Empty when the current workspace has no TRANSFER
-// pane at all -- storeClicked() only calls this once it already knows
-// `pane == PaneView::Transfer`, but an empty result is still handled rather
+// pane at all -- storeClicked() only calls this once a TRANSFER trace has
+// landed (`transferLanded`), but an empty result is still handled rather
 // than assumed unreachable.
 std::vector<const rta::view::TransferView*> findTransferViews(const juce::Component& workspace) {
     std::vector<const rta::view::TransferView*> views;

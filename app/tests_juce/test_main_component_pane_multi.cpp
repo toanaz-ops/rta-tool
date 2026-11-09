@@ -9,6 +9,8 @@
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
 #include "trace/Workspace.h"
+#include "view/CrossoverPaneView.h"
+#include "view/TransferView.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -157,4 +159,70 @@ TEST_CASE("STORE is enabled when any pane is RTA or TRANSFER, not only the first
     MainComponentTestAccess::restoreWorkspaceForTest(
         c, {rta::trace::PaneSpec{"xover"}, rta::trace::PaneSpec{"spl"}});
     CHECK_FALSE(MainComponentTestAccess::storeButtonEnabledForTest(c));
+}
+
+// Review finding (PR #105, MEDIUM): `+ PANE` / `- PANE` used to rebuild every
+// pane from its spec, so a pane the operator KEPT lost its per-pane state. The
+// kept panes must be the SAME component objects afterwards.
+namespace {
+rta::view::TransferView& transferAt(MainComponent& c, int index) {
+    return dynamic_cast<rta::view::TransferView&>(
+        const_cast<juce::Component&>(MainComponentTestAccess::paneAtForTest(c, index)));
+}
+}  // namespace
+
+TEST_CASE("+ PANE keeps the existing TRANSFER pane: same object, source still FIXED",
+         "[main_component_pane_multi]") {
+    using rta::view::TransferPane;
+    using rta::view::TransferSource;
+    MainComponent c;
+    findButton(c, "TRANSFER")->onClick();
+    const juce::Component* before = &MainComponentTestAccess::paneAtForTest(c, 0);
+    transferAt(c, 0).setSource(TransferPane::Magnitude, TransferSource::Fixed);
+
+    findButton(c, "+ PANE")->onClick();
+    findButton(c, "RTA")->onClick();
+
+    REQUIRE(viewsOnScreen(c) == Views{"transfer", "rta"});
+    CHECK(&MainComponentTestAccess::paneAtForTest(c, 0) == before);
+    CHECK(transferAt(c, 0).source(TransferPane::Magnitude) == TransferSource::Fixed);
+    CHECK(transferAt(c, 0).source(TransferPane::Phase) == TransferSource::Mtw);  // untouched default
+}
+
+TEST_CASE("- PANE destroys only the last pane: pane 1 survives with its state",
+         "[main_component_pane_multi]") {
+    using rta::view::TransferPane;
+    using rta::view::TransferSource;
+    MainComponent c;
+    findButton(c, "TRANSFER")->onClick();
+    findButton(c, "+ PANE")->onClick();
+    findButton(c, "SPL")->onClick();
+    REQUIRE(viewsOnScreen(c) == Views{"transfer", "spl"});
+    const juce::Component* first = &MainComponentTestAccess::paneAtForTest(c, 0);
+    transferAt(c, 0).setSource(TransferPane::Coherence, TransferSource::Fixed);
+
+    findButton(c, "- PANE")->onClick();
+
+    REQUIRE(viewsOnScreen(c) == Views{"transfer"});
+    CHECK(&MainComponentTestAccess::paneAtForTest(c, 0) == first);
+    CHECK(transferAt(c, 0).source(TransferPane::Coherence) == TransferSource::Fixed);
+}
+
+TEST_CASE("an XOVER pane's topology pick survives + PANE", "[main_component_pane_multi]") {
+    MainComponent c;
+    findButton(c, "XOVER")->onClick();
+    auto& xover = dynamic_cast<rta::view::CrossoverPaneView&>(
+        const_cast<juce::Component&>(MainComponentTestAccess::paneAtForTest(c, 0)));
+    xover.topologyComboForTest().setSelectedId(2, juce::sendNotificationSync);
+    REQUIRE(xover.topologyComboForTest().getSelectedId() == 2);
+
+    findButton(c, "+ PANE")->onClick();
+    findButton(c, "RTA")->onClick();
+
+    REQUIRE(viewsOnScreen(c) == Views{"xover", "rta"});
+    const auto& after = dynamic_cast<const rta::view::CrossoverPaneView&>(
+        MainComponentTestAccess::paneAtForTest(c, 0));
+    CHECK(&after == &xover);
+    // Same object, so reading through `xover` is reading the surviving pane.
+    CHECK(xover.topologyComboForTest().getSelectedId() == 2);
 }

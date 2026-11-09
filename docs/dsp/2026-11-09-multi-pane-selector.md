@@ -55,16 +55,31 @@ screen now collapses it to that single view. The old code compared against the
 first pane only and so ignored the press when the first pane already matched
 (`[rta, transfer]` + RTA did nothing).
 
-## One build path
+## Replace versus edit: what survives
 
-`selectPaneView`, `- PANE` and session Open used to carry two copies of the
-build, `setLibrary`, `syncTo` and `storeButton_` code, and each earlier fix
-(PR #45's unlit XOVER button, STORE task T6's enable state) kept missing the
-other copy. `MainComponent::rebuildWorkspace(specs)` is now the only place that
-builds a `WorkspaceView`; `refreshPaneControls()` is the only place that derives
-the lit set, the two edit buttons' enable state, `storeButton_` and the readout
-from the live workspace. `WorkspaceView` has no add or remove (its factory is
-consumed in its constructor), so every edit is a rebuild from `paneSpecs()`.
+Two kinds of change, deliberately different:
+
+- **Replace** (a plain view press, session Open): `MainComponent::rebuildWorkspace(specs)`
+  builds a whole new `WorkspaceView`. Every pane is a new component, so per-pane
+  state resets (a TRANSFER pane's MAG/PHASE/COH source toggles go back to MTW,
+  XOVER picks and topology are cleared). This is unchanged from before HW-176.
+  Selector press and session Open used to carry two copies of the build,
+  `setLibrary`, `syncTo` and `storeButton_` code, and each earlier fix (PR #45's
+  unlit XOVER button, STORE task T6's enable state) kept missing the other copy;
+  `rebuildWorkspace` is now the one place that REPLACES the workspace. (The
+  constructor still builds the initial one-pane workspace in
+  `MainComponent`'s init list; nothing else builds a `WorkspaceView`.)
+- **Edit** (`+ PANE` then a view, `- PANE`): `WorkspaceView::appendPane(spec)`
+  builds ONE new pane through the factory the workspace now keeps, and
+  `removeLastPane()` destroys only the last. Every other pane is the same
+  component object afterwards, so a TRANSFER pane flipped to FIXED stays on
+  FIXED and an XOVER pane keeps its picks. An earlier cut of this lane routed
+  edits through `rebuildWorkspace` and lost exactly that state (review finding,
+  PR #105). Weights become equal after either.
+
+`refreshPaneControls()` is the only place that derives the lit set, the two edit
+buttons' enable state, `storeButton_` and the readout from the live workspace;
+both paths end in it.
 
 `currentPaneView_` still means the first pane; `storeClicked` and many tests read
 it. Which panes are showing is `currentPaneViews()`, read off the live workspace.

@@ -41,11 +41,22 @@ public:
     /// built, so an empty vector -- a session saved before workspaces
     /// existed, or a brand-new one -- yields exactly one default `rta` pane,
     /// the same fallback every other reader of a `PaneSpec` list gets.
-    /// `factory` is consumed synchronously, once per pane, inside this
-    /// constructor; it is not stored, because nothing in this task rebuilds
-    /// the pane set after construction.
+    /// `factory` is consumed once per pane inside this constructor AND kept,
+    /// so `appendPane` (HW-176) can build one more pane later without
+    /// touching the ones already showing.
     WorkspaceView(std::vector<rta::trace::PaneSpec> panes, PaneFactory factory);
     ~WorkspaceView() override;
+
+    /// HW-176: builds ONE more pane through the stored factory and adds it
+    /// after the existing ones, leaving every existing child component
+    /// untouched -- same objects, so a TRANSFER pane the operator flipped to
+    /// FIXED stays on FIXED and an XOVER pane keeps its picks. Weights become
+    /// equal. Refused (returns false, nothing changes) at `kMaxPanes`.
+    bool appendPane(const rta::trace::PaneSpec& spec);
+
+    /// HW-176: destroys ONLY the last pane; the others survive untouched.
+    /// Weights become equal. Refused (returns false) with one pane left.
+    bool removeLastPane();
 
     /// Forwarded to every child that implements `LibraryConsumer`; a child
     /// that does not is left alone. Nullable, the same contract every
@@ -101,6 +112,9 @@ private:
     std::vector<PaneView> views_;
 
     const rta::trace::TraceLibrary* library_ = nullptr;
+    PaneFactory factory_;
+
+    void equaliseWeights();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WorkspaceView)
 };

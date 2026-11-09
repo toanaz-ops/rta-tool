@@ -80,8 +80,8 @@ enum class PaneSelectorButton { Rta, Transfer, Spl, Xover, Eq, Align, Rt60 };
 // the arm clears. `- PANE` drops the last pane. Everything below is pure so the
 // rules are provable on all three CI operating systems with no JUCE.
 //
-// Why not shift-click on the view buttons: invisible, the radio group lights
-// only one button, "remove" collides with duplicates (which TRANSFER?), and a
+// Why not shift-click on the view buttons: invisible, the radio group the
+// selector had then lit only one button (it is gone now, HW-176), "remove" collides with duplicates (which TRANSFER?), and a
 // programmatic click carries no modifier keys. See
 // docs/dsp/2026-11-09-multi-pane-selector.md.
 
