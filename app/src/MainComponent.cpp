@@ -52,6 +52,7 @@
 // the honest spelling of "the operator did not ask for this".
 #include "MainComponent.h"
 
+#include "api/ApiSettingsFromEnv.h"
 #include "trace/CaptureConverter.h"
 #include "trace/Workspace.h"
 
@@ -219,15 +220,15 @@ MainComponent::MainComponent()
     // shutdown runs in the only order that is safe: the server stops and
     // joins, then the `SnapshotSource` it held a reference to dies.
     //
-    // The settings are a plain struct built right here, with no preferences
-    // store behind them -- record sec.15 R5: none exists anywhere in `app/`,
-    // and this lane does not build one to hold nine fields. `enabled` is
-    // false, so on a shipped build nothing binds, no thread starts and
-    // NOTHING OBSERVABLE CHANGES for an operator who did not ask for the
-    // API, which is the whole point of the default. To try it, flip the one
-    // line below and follow Task J's manual check in
+    // No preferences store exists in `app/` (record sec.15 R5), so the
+    // operator's switch is the environment (H8 lane b): RTA_API_ENABLED=1
+    // before launch. Unset = disabled, so nothing binds, no thread starts
+    // and NOTHING OBSERVABLE CHANGES for an operator who did not ask for the
+    // API. Bind stays 127.0.0.1 whatever the environment says; see
+    // api/ApiSettingsFromEnv.h and Task J's manual check in
     // docs/plans/2026-09-17-remote-api-impl-plan.md.
-    rta::api::ApiSettings apiSettings;   // enabled=false, 127.0.0.1, port 4736
+    const rta::api::ApiSettings apiSettings = rta::api::apiSettingsFromEnvironment(
+        [](const char* name) { return juce::SystemStats::getEnvironmentVariable(name, {}).toStdString(); });
     apiServer_ = std::make_unique<rta::api::ApiServer>(analysisThread_, apiSettings);
 }
 

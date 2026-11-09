@@ -12,6 +12,8 @@ set(RTA_API_TEST_SOURCES
     # (record sec.15 R15) -- so the whole surface is proven on three OSes.
     test_api_json.cpp
     test_api_policy.cpp
+    # H8 lane b: the RTA_API_ENABLED switch (ApiSettingsFromEnv.h), default OFF.
+    test_api_settings_env.cpp
     test_api_limits.cpp
     test_api_serialise.cpp
     test_api_serialise_spatial.cpp
