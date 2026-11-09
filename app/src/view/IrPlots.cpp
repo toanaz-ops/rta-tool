@@ -107,7 +107,8 @@ void IrEtcPlot::paint(juce::Graphics& g) {
         g.drawVerticalLine(static_cast<int>(xOfMs(t)), plot.getY(), plot.getBottom());
         g.setColour(axisText);
         char label[24];
-        std::snprintf(label, sizeof label, "%.0f", t);
+        // The tick loop reaches the arrival as a hair below zero; print it as 0, not "-0".
+        std::snprintf(label, sizeof label, "%.0f", std::abs(t) < 1.0e-9 ? 0.0 : t);
         g.drawText(label, static_cast<int>(xOfMs(t)) - 20, static_cast<int>(plot.getBottom()) + 2, 40, 14,
                    juce::Justification::centred, false);
     }

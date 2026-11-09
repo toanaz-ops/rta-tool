@@ -119,8 +119,4 @@ GateResult gateSpectrum(std::span<const float> samples, std::size_t originIndex,
     return out;
 }
 
-GateResult gateSpectrum(const Deconvolution& source, const GateSpec& spec) {
-    return gateSpectrum(source.samples, source.originIndex, source.sampleRate, spec);
-}
-
 }  // namespace rta::ir

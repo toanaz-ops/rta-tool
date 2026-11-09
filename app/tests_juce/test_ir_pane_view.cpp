@@ -124,6 +124,8 @@ TEST_CASE("ir pane: an IR in memory is listed, picking it gates it, and the defa
 
     rig.pane->irComboForTest().setSelectedId(1, juce::sendNotificationSync);
     CHECK(Access::irForTest(rig.c).selectedIdForTest() == rig.traceId);
+    REQUIRE(Access::irForTest(rig.c).analysisForTest() != nullptr);
+    CHECK(Access::irForTest(rig.c).analysisForTest()->ok);
     // 1 / (11 ms - 1.375 ms) = 103.9 Hz, printed rounded up.
     CHECK(rig.pane->readoutForTest() == juce::String(juce::CharPointer_UTF8("GATE -1.0..10.0 ms \xc2\xb7 valid above 104 Hz")));
     CHECK(rig.pane->storeButtonForTest().isEnabled());

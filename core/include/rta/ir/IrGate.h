@@ -93,6 +93,11 @@ struct GateResult {
 [[nodiscard]] GateResult gateSpectrum(std::span<const float> samples, std::size_t originIndex,
                                       double sampleRate, const GateSpec& spec);
 
-[[nodiscard]] GateResult gateSpectrum(const Deconvolution& source, const GateSpec& spec);
+/// Inline convenience for a caller that holds a `Deconvolution` (the tests do; the
+/// app holds a `SweepIr` and calls the span overload, so this one is deliberately
+/// not a linked symbol nothing in the product reaches).
+[[nodiscard]] inline GateResult gateSpectrum(const Deconvolution& source, const GateSpec& spec) {
+    return gateSpectrum(source.samples, source.originIndex, source.sampleRate, spec);
+}
 
 }  // namespace rta::ir
