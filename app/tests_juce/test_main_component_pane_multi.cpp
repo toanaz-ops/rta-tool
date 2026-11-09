@@ -189,7 +189,7 @@ TEST_CASE("+ PANE keeps the existing TRANSFER pane: same object, source still FI
     CHECK(transferAt(c, 0).source(TransferPane::Phase) == TransferSource::Mtw);  // untouched default
 }
 
-TEST_CASE("- PANE destroys only the last pane: pane 1 survives with its state",
+TEST_CASE("removing the last pane with - PANE keeps pane 1 and its state",
          "[main_component_pane_multi]") {
     using rta::view::TransferPane;
     using rta::view::TransferSource;
