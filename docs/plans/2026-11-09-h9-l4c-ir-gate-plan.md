@@ -26,4 +26,4 @@ sentences. Out: G22 offline WAV (own lane), G24 min/excess-phase display
 - Every new `.cpp` in every source list, including `app/tests_juce/CMakeLists.txt`.
 - Lane closes when `tools/orphan_check.py --base 2321e51` exits 0 and both PRs
   are merged with 6/6 CI.
-- Row 5 becomes BUILT (partial: G22 and the G24 display deferred).
+- Row 5 becomes BUILT (partial: G22 and the G24 display deferred). *(2026-11-10: the G24 display shipped in H10, `docs/plans/2026-11-10-h10-g24-excess-phase-display-plan.md`; G22 remains.)*

@@ -136,6 +136,7 @@ Một loa trên chân, mic cùng độ cao h, cách d. Phản xạ sàn đi đư
 | H3 | `STORE GATED`, mở TRANSFER, so trace gated với trace SWEEP gốc. | Trace gốc có gợn lược cách nhau ≈ 1/3.6 ms = **278 Hz**; trên 286 Hz trace gated không còn gợn đó (nhìn bằng mắt; ghi biên độ gợn còn lại nếu có). | | |
 | H4 | Kéo marker đầu về 0.0 ms. | `GATE refused -- ... direct sound ... -0.5 ms`; `STORE GATED` tắt. | | |
 | H5 | ALIGN với một sub thật (SWEEP SUB). | Dòng `findPolarity, low-pass side: refused -- Measured band does not reach high enough (high edge N Hz)...`, N là high edge đo được. Ghi N. | | |
+| H6 | Gate như H2 (-1.0..3.0 ms), bấm `EXCESS`, đợi ~0.5 s. | Readout có `tau0` (ghi số); excess phase trong dải tin cậy gần 0° nếu loa tại đó là minimum phase (ghi độ lệch lớn nhất, độ). Không có ngưỡng chuẩn -- đây là quan sát, không phải pass/fail. | | |
 
 ---
 

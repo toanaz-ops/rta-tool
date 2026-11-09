@@ -5,6 +5,21 @@
 
 ---
 
+# 2026-11-10 — **H10: hiển thị G24 (min/excess phase) trên response đã gate; flake `test_spl_resync_gap` đã sửa. Chưa đo trên phần cứng.**
+
+*Plan: `docs/plans/2026-11-10-h10-g24-excess-phase-display-plan.md`. Record: `docs/dsp/2026-11-09-l4c-ir-gate.md` §7. Trunk-based, commit thẳng main.*
+
+| commit | what |
+|---|---|
+| `77115cb` | flake `app/tests_juce/test_spl_resync_gap.cpp`: chờ block đóng SAU khi resync xong (lỗi chỉ ở test; production đúng). 8/100 lần đỏ trước sửa -> 0/200, và 0/100 khi máy tải nặng |
+| `38afb9f`..`14ca7c7` | H10: pane IR có `MAG / PHASE / EXCESS`. PHASE vẽ phase đo + minimum phase; EXCESS vẽ excess phase và excess group delay (đều đã bỏ tau0) trên dải tin cậy max(fMin, mép thấp của sweep)..mép cao của sweep; readout có `tau0 X.XX ms`. Một lần tính mất ~530 ms (đo trên máy này) nên chạy trên worker (`ExcessPhaseJob.h`), chỉ khi gate đã thả chuột, không bao giờ theo từng lần kéo. Fable: 1 MEDIUM (bỏ qua mép thấp của sweep) + 4 LOW, đã sửa |
+
+**Người thử được gì (exe `build-asio\app\rtatool_artefacts\Release\RTA Tool.exe`, SYNTHETIC):** SWEEP -> `IR` -> bấm `PHASE`: hai đường (đo, minimum); bấm `EXCESS`: excess phase + group delay, readout có `tau0`. Kéo marker: đồ thị không tính lại cho tới khi thả chuột (~0.5 s sau thì có kết quả). Gate quá ngắn/không đủ bin tin cậy -> chữ `too few trusted bins for excess phase`.
+
+**Còn mở:** G22 (WAV offline) — lane riêng, cần research trước. LOW cũ: EQ target picker nhận trace GATED; trace GATED trùng màu SWEEP nguồn; NoSignal nhánh sớm in "0.0 dB". `IrPlots.cpp` 399/400 dòng — sửa lần sau phải tách file.
+
+---
+
 # 2026-11-09 (tối) — **H9 / L4c ĐÃ ĐÓNG: IR gate (G25) + câu từ chối polarity. Chưa đo trên phần cứng (HW-175).**
 
 *Plan: `docs/plans/2026-11-09-h9-l4c-ir-gate-plan.md`. Record: `docs/dsp/2026-11-09-l4c-ir-gate.md` (§6 viết theo code đã ship). Repo chuyển trunk-based từ 39f34a4.*
