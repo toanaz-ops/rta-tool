@@ -157,8 +157,12 @@ void CrossoverPaneView::refreshFromLibrary() {
         const auto* highTrace = library_->trace(hpId_);
         const auto* lowTrace = library_->trace(lpId_);
         if (highTrace != nullptr && lowTrace != nullptr) {
-            auto highVirtual = rta::trace::VirtualTrace::fromTrace(*highTrace);
-            auto lowVirtual = rta::trace::VirtualTrace::fromTrace(*lowTrace);
+            // Z2 (docs/dsp/2026-11-09-xover-applied-delay.md): each trace is
+            // brought back to the physical timeline by its OWN applied delay,
+            // so a capture stored after APPLY sums correctly with one stored
+            // before it.
+            auto highVirtual = rta::trace::VirtualTrace::fromTraceRestoringAppliedDelay(*highTrace);
+            auto lowVirtual = rta::trace::VirtualTrace::fromTraceRestoringAppliedDelay(*lowTrace);
             if (highVirtual.has_value() && lowVirtual.has_value()) {
                 // MEDIUM B (PR #45 fix round 2): the inversion picker's real
                 // answer, never a hardcoded one -- see this file's header

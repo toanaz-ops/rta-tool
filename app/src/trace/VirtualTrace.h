@@ -111,6 +111,27 @@ public:
     /// stand-in.
     [[nodiscard]] static std::optional<VirtualTrace> fromTrace(const Trace& trace);
 
+    /// `fromTrace`, then the source is rotated ONCE, at construction, back to
+    /// the physical timeline: H_true = H_stored * e^{-j 2 pi f D / fs}, with D =
+    /// `trace.meta().appliedDelaySamples` and fs that same trace's own
+    /// `meta.sampleRate`. Needed because applying D discards D samples of the
+    /// measurement stream, so the stored phase carries e^{+j w D}
+    /// (core/tests/test_dualfft_applied_delay_sign.cpp pins this against the
+    /// real engine); two captures stored under different D therefore sit on
+    /// different timelines until each is brought back, ABSOLUTELY and one at a
+    /// time -- not as a difference applied to one side.
+    ///
+    /// OPT-IN, and `fromTrace` stays unrotated, because ALIGN
+    /// (AlignmentWizard.cpp) hands the same D_B - D_A to `crossoverBandFit`,
+    /// which owns that correction; a rotating `fromTrace` would make ALIGN
+    /// correct twice. D == 0 skips the rotation, so the result is bit-identical
+    /// to `fromTrace`. The rotation lives here and not in `render()`/`sumOf`
+    /// because `setChain` (CrossoverSurface::setPendingOps) overwrites the
+    /// chain: a rotation held there would vanish the moment the operator
+    /// proposes a delay.
+    [[nodiscard]] static std::optional<VirtualTrace>
+    fromTraceRestoringAppliedDelay(const Trace& trace);
+
     /// The live path: h is already complex, so nothing is converted on the way
     /// IN. Refuses an empty snapshot or a non-positive binWidthHz.
     [[nodiscard]] static std::optional<VirtualTrace>
