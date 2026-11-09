@@ -28,9 +28,8 @@ constexpr double kMinIrAfterArrivalSeconds = 0.1;
 // the figure).
 constexpr double kMinPeakToRms = 20.0;
 
-// H8 M-4, PROVISIONAL (owner card HW-184; confirm or change on hardware): the
-// windowed arrival replaces the global peak only when it stands within this
-// many dB of it. A quieter interior peak (leak, early reflection, sidelobe)
+// H8 M-4, owner decision 2026-11-09 (HW-184): 12 dB. The windowed arrival
+// replaces the global peak only when it stands within this many dB of it. A quieter interior peak (leak, early reflection, sidelobe)
 // next to a much louder peak outside the window is ambiguous, and the
 // capture is refused as before H8 rather than adopted as a wrong arrival.
 constexpr double kMaxWindowedBelowGlobalDb = 12.0;

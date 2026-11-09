@@ -276,7 +276,9 @@ TEST_CASE("sweep: the SWEEP row sits under LOCATE's and overlaps nothing at 1280
     CHECK(locate.getBottom() <= button.getY());      // under LOCATE's row...
     CHECK(button.getBottom() <= cal.getY());         // ...above CAL's
     CHECK(readout.getBottom() <= cal.getY());
-    CHECK(readout.getBottom() <= rail.getY());       // and above the device rail
+    // HW-190: the rows live in the rail's scroll content (the device block is pinned above
+    // the viewport), so "inside the scroll content" replaces the old "above the device rail".
+    CHECK(readout.getBottom() <= MainComponentTestAccess::railContentForTest(c).getHeight());
     CHECK(rail.getHeight() > 0);
     CHECK(rail.getBottom() <= c.getHeight());
 }

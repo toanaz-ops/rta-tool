@@ -136,7 +136,9 @@ TEST_CASE("rail: 16 input channels scroll inside the 220 px slot and overlap not
     // The slot did not grow with the channel count...
     CHECK(matrix.getHeight() == 220);
     // ...so the rows after it stay where they were: no widget overlaps the next.
-    CHECK(panel.getBottom() <= matrix.getY());
+    // HW-190: the panel is pinned above the viewport (a different coordinate frame from the
+    // matrix, which is in the scrolled content), so it is compared with the viewport's top.
+    CHECK(panel.getBottom() <= MainComponentTestAccess::railViewportForTest(component).getY());
     CHECK(matrix.getBottom() <= roles.getY());
     // ...and 16 rows (header + 16 * kMinRowHeight) really are taller than the
     // slot, i.e. they scroll rather than being squeezed.
@@ -237,7 +239,8 @@ TEST_CASE("rail: the device panel's controls are fully visible and GEN stays on 
           "[main_component_rail]") {
     // DevicePanel::resized()'s own closed form, from Metrics.h: pad, caption,
     // three field rows with their gaps, the START/STOP switch row, and the
-    // fault line. The viewport must show at least this much with no scrolling.
+    // fault line. HW-190: the PANEL (pinned outside the viewport) must be at least this tall and
+    // lie fully inside the window; it used to be the viewport that had to show this much.
     constexpr int kDevicePanelVisibleBottom =
         az::ui::gap * 2 + az::ui::captionHeight + 3 * (az::ui::fieldHeight + az::ui::gap) + az::ui::gap +
         az::ui::buttonCellHeight + az::ui::gap * 2 + az::ui::fieldHeight;
@@ -251,7 +254,11 @@ TEST_CASE("rail: the device panel's controls are fully visible and GEN stays on 
         component.resized();
 
         const auto& viewport = MainComponentTestAccess::railViewportForTest(component);
-        CHECK(viewport.getHeight() >= kDevicePanelVisibleBottom);
+        const auto& panel = MainComponentTestAccess::devicePanelForTest(component);
+        CHECK(panel.getHeight() >= kDevicePanelVisibleBottom);
+        CHECK(panel.getBottom() <= viewport.getY());
+        CHECK(component.getLocalBounds().contains(panel.getBounds()));
+        CHECK(viewport.getHeight() > 0);
         CHECK(viewport.getBottom() <= component.getHeight());
 
         // GEN / STOP and its readout: inside the window, in the masthead,
@@ -286,8 +293,10 @@ TEST_CASE("rail: the TF slot picker offers slots 1..8 and retargets the next rol
     CHECK(picker.getSelectedId() == 1);
     CHECK(matrix.activeTransferFunction() == 0);
     CHECK(picker.isVisible());
-    // Laid out below the device panel and above the matrix it configures.
-    CHECK(picker.getY() >= panel.getBottom());
+    // Laid out in the scroll content (the device panel is pinned above the viewport, HW-190),
+    // below the button rows and above the matrix it configures.
+    CHECK(panel.getBottom() <= MainComponentTestAccess::railViewportForTest(component).getY());
+    CHECK(picker.getY() > 0);
     CHECK(picker.getBottom() <= MainComponentTestAccess::routingMatrix(component).getY());
 
     // Selecting a combo entry fires the production onChange, the same path as a click.
