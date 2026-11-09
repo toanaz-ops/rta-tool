@@ -5,6 +5,22 @@
 
 ---
 
+# 2026-11-09 (chiều) — **Thẻ chủ nhân HW-176/184/185/190 đã làm; review H8 đóng. Chưa đo trên phần cứng (HW-175 vẫn chờ chủ nhân).**
+
+| PR | what |
+|---|---|
+| #101 | L-8 seam `tfSlotForPickerId` + test; L-7 comment (không có consumer của `configEpoch`, plan tính lại mỗi tick); test bố cục 1366x768 |
+| #102 | HW-190: khối DEVICE (START/STOP) ghim đầu rail, ngoài vùng cuộn; các hàng nút (SYNTHETIC, LOCATE, SWEEP, CAL, EXPORT, STORE, SESSION) chuyển vào vùng cuộn — *quyết định bố cục của agent* (chỉ ghim DEVICE thì vùng cuộn còn 168 px < panel 300 px). HW-185: gợi ý `raise GEN` cũng hiện cho `ArrivalOutOfWindow` khi GEN < -12 dBFS. HW-184: giữ 12 dB, bỏ nhãn tạm |
+| #103 | XOVER cộng hai trace sau khi trả lại `appliedDelaySamples` của từng trace (Z2); test T0 chốt dấu từ DualFftEngine thật: H_stored = H_true·e^{+jωD} |
+| #104 | ALIGN `CrossoverBandFit` xoay ngược dấu (Z32, tiềm ẩn: chỉ sai khi hai trace lưu dưới delay khác nhau); review Fable: không HIGH/MEDIUM |
+| #105 | HW-176: `+ PANE` / `- PANE` dựng workspace 1..3 pane, pane đang giữ không bị dựng lại; STORE lưu một trace cho mỗi loại có mặt (Z14, Z6). Hàng 9 master plan -> BUILT; (b-strict) 13/19 |
+
+**Người thử được gì (exe `build-asio\app\rtatool_artefacts\Release\RTA Tool.exe`, SYNTHETIC):** (1) cửa sổ nhỏ (kéo hẹp tới tối thiểu): START luôn thấy ở đầu rail. (2) Bấm `+ PANE` rồi `TRANSFER` -> hai pane RTA + TRANSFER; `- PANE` bỏ pane cuối; bấm một nút view thường -> về một pane. (3) STORE với RTA + TRANSFER -> hai trace. (4) XOVER: STORE TRANSFER, APPLY delay, STORE lần nữa, chọn hai trace -> tổng không còn khe lược. (5) HW-183 (chọn TF slot) đã chạy bằng UI Automation: `MEAS TF3` / `REF TF3` đúng; bảng channel role trễ ~3 s (LOW) — `D:\DEV CAVE EP3\shared\reports\2026-11-09-ui-tests\rta-h8-ui-test.md`.
+
+**Còn mở:** HW-175 (buổi đo phần cứng — chủ nhân). Không còn NEW-LANE trong QA queue. Việc phần mềm chưa xếp: L4c (IR gate/min-phase/WAV, chưa có plan), MTW storage v4, `CaptureSequencer`; THD/STI và target vẫn chờ mua tiêu chuẩn. LOW: bảng channel role cập nhật theo timer.
+
+---
+
 # 2026-11-09 — **H8 mở lại (chủ nhân kích hoạt lại phát triển): TF picker, công tắc API, follow-up H7. Chưa đo trên phần cứng.**
 
 *Plan: `docs/plans/2026-11-09-h8-reactivation-plan.md`.*
@@ -21,7 +37,7 @@
 
 ---
 
-# 2026-10-22 — **H7 generator / output control ĐÃ ĐÓNG (wave C closeout). Chủ nhân tạm dừng RTA sau H7 (2026-10-22): không mở H8 khi chưa có chủ nhân.**
+# 2026-10-22 — **H7 generator / output control ĐÃ ĐÓNG (wave C closeout). Chủ nhân tạm dừng RTA sau H7 (2026-10-22); lệnh tạm dừng đã được gỡ ngày 2026-11-09.**
 
 *Plan: `docs/plans/2026-10-21-h7-generator-output-plan.md`. Record: `docs/dsp/2026-09-06-l7-output-path.md` §14 (mọi câu có file:line). Main lúc viết: `c71bb98`; PR closeout này là `docs/h7-closeout`.*
 
@@ -57,7 +73,7 @@ cmake --build build-asio --config Release --target rtatool --parallel
 
 Hàng phần cứng loopback có số: `docs/reports/hardware-qa-2026-10.md` §6a (G1-G6). Bản `build-asio/` chưa có GEN; dựng lại từ `origin/main` trước khi chạy phiếu.
 
-**Việc còn mở — CHƯA bắt đầu vì chủ nhân tạm dừng phase mới sau H7:**
+**Việc còn mở sau H7** (lúc đó chưa làm vì tạm dừng; tạm dừng gỡ 2026-11-09 — M1, N1, N3 xong ở H8 #98):
 
 - **M1** `app/src/measure/SweepIrPipeline.cpp` `findPeak` là argmax toàn cục trên cả capture đã deconvolve, nên nhiễu venue ở pre-roll hoặc đuôi có thể thắng một đỉnh sub bị low-pass. Hướng sửa: cửa sổ tìm kiếm, hoặc đỉnh ETC kèm kiểm tra noise floor.
 - **N1** Trên SYNTHETIC out 2, SWEEP từ chối khi mức dưới -12; suy ra do SNR (chưa đo). Text từ chối có thể nêu low SNR.
