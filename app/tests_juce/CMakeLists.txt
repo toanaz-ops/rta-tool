@@ -396,6 +396,5 @@ target_compile_definitions(rtatool_export_tests PRIVATE
 
 catch_discover_tests(rtatool_export_tests TEST_PREFIX "export/")
 
-# rtatool_main_component_tests: PR #43 fix round's own 400-line-cap split --
-# see main_component_tests.cmake's own header comment.
+# rtatool_main_component_tests: PR #43 400-line-cap split; see main_component_tests.cmake header.
 include(${CMAKE_CURRENT_SOURCE_DIR}/main_component_tests.cmake)
