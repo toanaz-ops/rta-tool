@@ -56,7 +56,7 @@ void MainComponent::rebuildWorkspace(std::vector<rta::trace::PaneSpec> panes) {
         panes.empty() ? rta::view::PaneView::Rta : rta::view::resolvePaneView(panes.front().view).view;
 
     workspace_ = std::make_unique<rta::view::WorkspaceView>(
-        std::move(panes), makePaneFactory(analysisThread_, eq_.binding(), align_.binding(), rt60_.binding()));
+        std::move(panes), makePaneFactory(analysisThread_, eq_.binding(), align_.binding(), rt60_.binding(), ir_.binding()));
     workspace_->setLibrary(&library_);
     addAndMakeVisible(*workspace_);
     // currentPaneView_ is still the FIRST pane's view: STORE and a dozen tests

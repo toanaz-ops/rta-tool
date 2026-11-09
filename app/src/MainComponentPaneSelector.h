@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Part of RTA Tool -- app/src. The seven pane-selector buttons (RTA, TRANSFER,
-// SPL, XOVER, EQ, ALIGN, RT60), the two pane-edit buttons (+ PANE, - PANE),
+// Part of RTA Tool -- app/src. The eight pane-selector buttons (RTA, TRANSFER,
+// SPL, XOVER, EQ, ALIGN, RT60, IR), the two pane-edit buttons (+ PANE, - PANE),
 // their layout and the toggle-state sync, split out of MainComponent.h (H7 plan T0).
 //
 // The buttons stay CHILDREN of MainComponent -- `attach()` adds them to the
@@ -22,14 +22,14 @@ public:
     using SelectFn = std::function<void(rta::view::PaneSelectorButton)>;
 
     /// Wires hints and click handlers, marks RTA lit (it matches
-    /// `MainComponent::currentPaneView_`'s own default), then adds the seven
+    /// `MainComponent::currentPaneView_`'s own default), then adds the eight
     /// view buttons and `+ PANE` / `- PANE` to `parent`. `onSelect` is called
     /// from a view click, `onToggleAdd` from `+ PANE`, `onRemoveLast` from
     /// `- PANE`.
     void attach(juce::Component& parent, SelectFn onSelect, std::function<void()> onToggleAdd,
                 std::function<void()> onRemoveLast);
 
-    /// Seven view cells then the two narrower pane-edit cells, `az::ui::gap`
+    /// Eight view cells then the two narrower pane-edit cells, `az::ui::gap`
     /// between them, filling `row`.
     void layout(juce::Rectangle<int> row);
 
@@ -54,6 +54,7 @@ private:
     juce::TextButton eqButton_{"EQ"};        // L7-EQ UI lane: the auto-EQ pane
     juce::TextButton alignButton_{"ALIGN"};  // ALIGN-UI lane: the alignment wizard pane
     juce::TextButton rt60Button_{"RT60"};    // RT60-UI lane: the reverberation-time table
+    juce::TextButton irButton_{"IR"};        // H9 / L4c: the impulse-response gate
     juce::TextButton addPaneButton_{"+ PANE"};     // arm: the next view press appends
     juce::TextButton removePaneButton_{"- PANE"};  // drops the last pane
 };

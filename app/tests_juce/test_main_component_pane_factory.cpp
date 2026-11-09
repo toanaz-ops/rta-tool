@@ -16,6 +16,7 @@
 #include "view/AlignPaneView.h"
 #include "view/CrossoverPaneView.h"
 #include "view/EqPaneView.h"
+#include "view/IrPaneView.h"
 #include "view/Rt60PaneView.h"
 #include "view/RtaView.h"
 #include "view/SplView.h"
@@ -27,6 +28,8 @@ using rta::view::AlignPaneView;
 using rta::view::CrossoverPaneView;
 using rta::view::EqPaneBinding;
 using rta::view::EqPaneView;
+using rta::view::IrPaneBinding;
+using rta::view::IrPaneView;
 using rta::view::PaneView;
 using rta::view::Rt60PaneBinding;
 using rta::view::Rt60PaneView;
@@ -40,7 +43,7 @@ TEST_CASE("makePaneFactory builds an SplView, not an RtaView, for PaneView::Spl"
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
     rta::measure::AlignRunner alignRunner;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{});
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{}, IrPaneBinding{});
 
     auto pane = factory(PaneView::Spl);
     REQUIRE(pane != nullptr);
@@ -56,7 +59,7 @@ TEST_CASE("makePaneFactory still builds Transfer and Rta panes correctly",
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
     rta::measure::AlignRunner alignRunner;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{});
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{}, IrPaneBinding{});
 
     auto transferPane = factory(PaneView::Transfer);
     REQUIRE(transferPane != nullptr);
@@ -74,7 +77,7 @@ TEST_CASE("makePaneFactory builds a CrossoverPaneView for PaneView::Xover",
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
     rta::measure::AlignRunner alignRunner;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{});
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{}, IrPaneBinding{});
 
     auto xoverPane = factory(PaneView::Xover);
     REQUIRE(xoverPane != nullptr);
@@ -91,7 +94,7 @@ TEST_CASE("makePaneFactory builds an EqPaneView, on the model it was handed, for
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
     rta::measure::AlignRunner alignRunner;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{});
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{}, IrPaneBinding{});
 
     auto first = factory(PaneView::Eq);
     REQUIRE(first != nullptr);
@@ -114,7 +117,7 @@ TEST_CASE("makePaneFactory builds an AlignPaneView, on the runner it was handed,
     StaticSnapshotSource source;
     rta::measure::EqPaneModel eqModel;
     rta::measure::AlignRunner alignRunner;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{});
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, Rt60PaneBinding{}, IrPaneBinding{});
 
     auto first = factory(PaneView::Align);
     REQUIRE(first != nullptr);
@@ -146,7 +149,7 @@ TEST_CASE("makePaneFactory builds an Rt60PaneView, on the settings it was handed
     Rt60Settings settings;
     Rt60PaneBinding binding;
     binding.settings = &settings;
-    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, binding);
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner }, binding, IrPaneBinding{});
 
     auto first = factory(PaneView::Rt60);
     REQUIRE(first != nullptr);
@@ -163,4 +166,19 @@ TEST_CASE("makePaneFactory builds an Rt60PaneView, on the settings it was handed
     auto* next = dynamic_cast<Rt60PaneView*>(second.get());
     REQUIRE(next != nullptr);
     CHECK(next->tailComboForTest().getSelectedId() == 2);  // restored, not reset to 3 s
+}
+
+TEST_CASE("makePaneFactory builds an IrPaneView for PaneView::Ir", "[main_component_pane_factory]") {
+    // H9 / L4c task A3: the eighth enumerator's own branch. Mutant: delete the Ir
+    // branch in PaneFactory.cpp -- the fall-through builds an RtaView and the
+    // first CHECK goes RED.
+    StaticSnapshotSource source;
+    rta::measure::EqPaneModel eqModel;
+    rta::measure::AlignRunner alignRunner;
+    auto factory = makePaneFactory(source, EqPaneBinding{ &eqModel, {} }, AlignPaneBinding{ &alignRunner },
+                                   Rt60PaneBinding{}, IrPaneBinding{});
+    auto built = factory(PaneView::Ir);
+    REQUIRE(built != nullptr);
+    CHECK(dynamic_cast<IrPaneView*>(built.get()) != nullptr);
+    CHECK(dynamic_cast<RtaView*>(built.get()) == nullptr);
 }

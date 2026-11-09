@@ -17,6 +17,7 @@
 #include "MainComponentGenerator.h"
 #include "MainComponentPaneSelector.h"
 #include "MainComponentRail.h"
+#include "MainComponentIr.h"
 #include "MainComponentRt60.h"
 #include "MainComponentSession.h"
 #include "MainComponentSweep.h"
@@ -140,6 +141,7 @@ private:
     void wireEqVerify();  // rationale: MainComponentEqVerify.cpp
     void wireAlign();  // MainComponentAlign.cpp: device, snapshot and busy flags for MEASURE/SUM
     void wireRt60();   // MainComponentRt60.cpp: the SWEEP half's IR store, readout and a tagged press
+    void wireIr();     // MainComponentIr.cpp: the SWEEP half's IR store, for the IR-gate pane
 
     // Rationale: MainComponent.cpp, above each definition.
     void refreshChannelNamesFromDevice();
@@ -234,6 +236,8 @@ private:
     MainComponentAlign align_;
     // Same ownership and the same reason (MainComponentRt60.h): before workspace_.
     MainComponentRt60 rt60_;
+    // Same ownership and the same reason (MainComponentIr.h): before workspace_.
+    MainComponentIr ir_;
     // A pointer: selectPaneView rebuilds it wholesale (WorkspaceView's
     // factory is consumed once, in its own constructor).
     std::unique_ptr<rta::view::WorkspaceView> workspace_;

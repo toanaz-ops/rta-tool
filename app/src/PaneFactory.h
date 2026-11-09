@@ -6,6 +6,7 @@
 #include "measure/SnapshotSource.h"
 #include "view/AlignPaneView.h"
 #include "view/EqPaneView.h"
+#include "view/IrPaneView.h"
 #include "view/Rt60PaneView.h"
 #include "view/WorkspaceView.h"
 
@@ -43,6 +44,9 @@
 /// `rt60` (RT60-UI lane, plan T3) is the RT60 pane's wiring, owned by
 /// MainComponentRt60 for the same reason: the cached analysis, the selection
 /// and the output/TAIL choices survive the pane being rebuilt.
+///
+/// `ir` (H9 / L4c, plan A3) is the IR-gate pane's wiring, owned by MainComponentIr
+/// for the same reason: the selection and the two gate markers survive a rebuild.
 [[nodiscard]] rta::view::WorkspaceView::PaneFactory makePaneFactory(
     rta::measure::SnapshotSource& source, rta::view::EqPaneBinding eq,
-    rta::view::AlignPaneBinding align, rta::view::Rt60PaneBinding rt60);
+    rta::view::AlignPaneBinding align, rta::view::Rt60PaneBinding rt60, rta::view::IrPaneBinding ir);

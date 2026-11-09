@@ -211,6 +211,12 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/view/Rt60PaneTable.cpp
     src/view/Rt60Chart.cpp
     # --- end RT60-UI lane wave A ------------------------------------------------
+    # --- H9 / L4c IR gate (docs/plans/2026-11-09-h9-l4c-ir-gate-plan.md A2/A3) ---
+    src/MainComponentIr.cpp
+    src/measure/IrGateModel.cpp
+    src/view/IrPaneView.cpp
+    src/view/IrPlots.cpp
+    # --- end H9 / L4c ---------------------------------------------------------
     # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /
     # SplReportSections.cpp: see the matching entry in rtatool's own source
     # list above -- task W2-E2b part B, needed here for the same reason.
