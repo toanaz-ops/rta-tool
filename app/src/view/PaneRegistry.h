@@ -45,7 +45,13 @@ namespace rta::view {
 /// no-version-bump shape -- an older build reading `"rt60"` falls back to `Rta`
 /// and reports it. The table is derived data (plan decision 9), so only the pane
 /// choice round-trips.
-enum class PaneView { Rta, Transfer, Spl, Xover, Eq, Align, Rt60 };
+///
+/// `Ir` added by the H9 / L4c IR-gate lane (docs/plans/2026-11-09-h9-l4c-ir-gate-plan.md
+/// A3): the impulse-response gate pane, eighth selector button. Same
+/// no-version-bump shape -- an older build reading `"ir"` falls back to `Rta` and
+/// reports it. The gate markers are view state, not session data; only the pane
+/// choice round-trips.
+enum class PaneView { Rta, Transfer, Spl, Xover, Eq, Align, Rt60, Ir };
 
 struct PaneResolution {
     PaneView view = PaneView::Rta;
@@ -65,6 +71,7 @@ struct PaneResolution {
     if (name == "eq") { out.view = PaneView::Eq; return out; }
     if (name == "align") { out.view = PaneView::Align; return out; }
     if (name == "rt60") { out.view = PaneView::Rt60; return out; }
+    if (name == "ir") { out.view = PaneView::Ir; return out; }
     out.fellBack = true;   // falls back to Rta, and says so
     return out;
 }
@@ -85,6 +92,7 @@ struct PaneResolution {
     if (view == PaneView::Eq) return "eq";
     if (view == PaneView::Align) return "align";
     if (view == PaneView::Rt60) return "rt60";
+    if (view == PaneView::Ir) return "ir";
     return "rta";
 }
 

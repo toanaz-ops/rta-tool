@@ -34,7 +34,9 @@ namespace rta::view {
 /// `Align` added by the ALIGN-UI lane (plan T4): the 6th button, same seam.
 ///
 /// `Rt60` added by the RT60-UI lane (plan T3): the 7th button, same seam.
-enum class PaneSelectorButton { Rta, Transfer, Spl, Xover, Eq, Align, Rt60 };
+///
+/// `Ir` added by the H9 / L4c IR-gate lane (plan A3): the 8th button, same seam.
+enum class PaneSelectorButton { Rta, Transfer, Spl, Xover, Eq, Align, Rt60, Ir };
 
 /// Maps a selector button to the `PaneView` the workspace should rebuild
 /// itself to show. Routed through `resolvePaneView` (`PaneRegistry.h`)
@@ -61,6 +63,7 @@ enum class PaneSelectorButton { Rta, Transfer, Spl, Xover, Eq, Align, Rt60 };
     if (button == PaneSelectorButton::Eq) return resolvePaneView("eq");
     if (button == PaneSelectorButton::Align) return resolvePaneView("align");
     if (button == PaneSelectorButton::Rt60) return resolvePaneView("rt60");
+    if (button == PaneSelectorButton::Ir) return resolvePaneView("ir");
     if (button == PaneSelectorButton::Rta) return resolvePaneView("rta");
 
     // Only reachable once a future enumerator is added to PaneSelectorButton
@@ -152,7 +155,7 @@ struct PaneEdit {
 }
 
 /// The views STORE can freeze, one entry per distinct kind, in first-seen
-/// order. SPL has no per-bin curve; XOVER/EQ/ALIGN/RT60 consume stored traces
+/// order. SPL has no per-bin curve; XOVER/EQ/ALIGN/RT60/IR consume stored traces
 /// rather than produce them (STORE research C2). Two TRANSFER panes are one
 /// kind: they read the same fixed-FFT block, so a second trace would be a
 /// byte-identical duplicate.

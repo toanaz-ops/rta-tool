@@ -52,6 +52,7 @@ add_library(rta_core STATIC
     src/ir/Decay.cpp
     src/ir/DecayEnsemble.cpp
     src/ir/DecayLundeby.cpp
+    src/ir/IrGate.cpp
     src/ir/IrSpectrum.cpp
     src/ir/Polarity.cpp
     src/ir/RelativePolarity.cpp

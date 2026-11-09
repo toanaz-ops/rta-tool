@@ -180,4 +180,6 @@ set(RTA_BASE_TEST_SOURCES
     # Wave B (T9 ensemble, T10 EDC, T11 thirds) and the worker thread.
     test_rt60_wave_b.cpp
     test_rt60_worker.cpp
+    # H9 / L4c task A2: the IR pane's numbers and words (gate readout, ETC, stored trace).
+    test_ir_gate_model.cpp
 )

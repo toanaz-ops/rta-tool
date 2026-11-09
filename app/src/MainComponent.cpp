@@ -86,7 +86,7 @@ MainComponent::MainComponent()
       // a session yet. The pane selector (`selectPaneView`) can rebuild this
       // to a different single pane; the shape it starts in is unchanged.
       workspace_(std::make_unique<rta::view::WorkspaceView>(
-          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_, eq_.binding(), align_.binding(), rt60_.binding()))),
+          std::vector<rta::trace::PaneSpec>{rta::trace::PaneSpec{}}, makePaneFactory(analysisThread_, eq_.binding(), align_.binding(), rt60_.binding(), ir_.binding()))),
       // Session persistence: Save reads EVERY pane in `workspace_` (F4,
       // docs/HUMAN-QA-QUEUE.md D11) through `WorkspaceView::paneSpecs()`,
       // via a callback rather than a stored pointer, matching
@@ -197,6 +197,7 @@ MainComponent::MainComponent()
     wireEqVerify();
     wireAlign();
     wireRt60();
+    wireIr();
 
     rail_.attachTo(*this);
 

@@ -91,6 +91,8 @@ add_executable(rtatool_main_component_tests
     test_main_component_rt60.cpp
     test_main_component_panes_rt60_b.cpp
     test_main_component_rt60_b.cpp
+    # H9 / L4c task A3: the IR-gate pane against a real MainComponent.
+    test_ir_pane_view.cpp
     # test_main_component_export.cpp: D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4
     # item 14) -- exportReportClicked()'s catch branch had no test at all.
     test_main_component_export.cpp

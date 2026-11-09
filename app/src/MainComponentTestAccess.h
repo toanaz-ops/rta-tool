@@ -334,4 +334,8 @@ struct MainComponentTestAccess {
     // tools/snapshot_rt60.cpp. The selection, the cached analysis and the
     // output/TAIL settings live in `MainComponentRt60`.
     [[nodiscard]] static MainComponentRt60& rt60ForTest(MainComponent& c) { return c.rt60_; }
+
+    // H9 / L4c (A3): app/tests_juce/test_ir_pane_view.cpp. The selection, the gate
+    // markers and the cached analysis live in `MainComponentIr`.
+    [[nodiscard]] static MainComponentIr& irForTest(MainComponent& c) { return c.ir_; }
 };
