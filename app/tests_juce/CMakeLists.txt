@@ -26,6 +26,7 @@
 add_executable(rtatool_view_tests
     test_stored_trace_layer.cpp
     test_trace_stroke.cpp
+    test_test_profile.cpp  # DEVCAVE_TEST_PROFILE isolation (app/src/TestProfile.h)
     test_transfer_view.cpp
     # Split out of test_transfer_view.cpp (task 10's final-review fix), the
     # same way test_analyser_transfer.cpp split off test_analyser.cpp: that

@@ -4,6 +4,7 @@
 #include "MainComponentSession.h"
 
 #include "JuceFsPath.h"
+#include "TestProfile.h"
 #include "trace/SessionCodec.h"
 #include "trace/SessionStore.h"
 #include "trace/Trace.h"
@@ -94,7 +95,7 @@ void MainComponentSession::layout(juce::Rectangle<int> area) {
 }
 
 void MainComponentSession::saveClicked() {
-    const auto defaultDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    const auto defaultDir = rta::app::testprofile::documentsDirectory()
                                 .getChildFile("RTA Tool")
                                 .getChildFile("sessions");
     chooser_ = std::make_unique<juce::FileChooser>("Save session to folder", defaultDir);
@@ -107,7 +108,7 @@ void MainComponentSession::saveClicked() {
 }
 
 void MainComponentSession::openClicked() {
-    const auto defaultDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    const auto defaultDir = rta::app::testprofile::documentsDirectory()
                                 .getChildFile("RTA Tool")
                                 .getChildFile("sessions");
     chooser_ = std::make_unique<juce::FileChooser>("Open session folder", defaultDir);

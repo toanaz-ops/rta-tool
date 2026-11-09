@@ -3,6 +3,7 @@
 // that fails to bind used to be silent. MainComponent.cpp is at its 400-line
 // cap, so the notice lives here.
 #include "MainComponent.h"
+#include "TestProfile.h"
 
 #include "api/ApiStatusText.h"
 
@@ -21,6 +22,6 @@ void MainComponent::parentHierarchyChanged() {
     // window, so there is nothing to retitle.
     juce::Logger::writeToLog(juce::String(text));
     if (auto* top = getTopLevelComponent(); top != nullptr && top != this) {
-        top->setName("RTA Tool -- " + juce::String(text));
+        top->setName(rta::app::testprofile::windowTitle("RTA Tool -- " + juce::String(text)));
     }
 }
