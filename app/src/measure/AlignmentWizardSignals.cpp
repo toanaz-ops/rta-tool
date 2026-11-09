@@ -29,10 +29,17 @@ std::string hz(double value) {
     return text;
 }
 
+// dB keeps one decimal (CLAUDE.md "Reading out numbers"); hertz do not use this.
+std::string db(double value) {
+    char text[32];
+    std::snprintf(text, sizeof text, "%.1f", value);
+    return text;
+}
+
 }  // namespace
 
 std::string polarityRefusalText(const rta::ir::PolarityResult& result,
-                                const rta::ir::Deconvolution& measured, PolaritySignalKind kind) {
+                                const rta::ir::Deconvolution& measured) {
     using rta::ir::Refusal;
     switch (result.refusal) {
         case Refusal::None: return "absolute sign of this box's first arrival";
@@ -40,12 +47,8 @@ std::string polarityRefusalText(const rta::ir::PolarityResult& result,
             return "Measured band does not reach low enough to decide absolute polarity (low edge "
                    + hz(result.lowEdgeHz) + " Hz). Compare relatively against another measurement of this same system.";
         case Refusal::BandTooHigh:
-            // The low-pass side is the subwoofer, and BandTooHigh is what it gets by
-            // design (Polarity.h). "Measure again full-range" would send the operator
-            // to repeat a correct measurement, so this side says it is expected.
-            if (kind == PolaritySignalKind::FindPolarityLowSide)
-                return "Expected for a low-pass section: its band does not reach high enough (high edge "
-                       + hz(result.highEdgeHz) + " Hz). Compare relatively before/after a change.";
+            // Owner's sentence on BOTH sides (HUMAN-QA-QUEUE L7 polarity): it was written
+            // for the subwoofer, which gets this refusal by design.
             return "Measured band does not reach high enough (high edge " + hz(result.highEdgeHz)
                    + " Hz). Measure again full-range, or compare relatively before/after a change.";
         case Refusal::SweepBandInsufficient: {
@@ -59,8 +62,9 @@ std::string polarityRefusalText(const rta::ir::PolarityResult& result,
             return "This sweep is only trustworthy " + range + " -- not enough to decide.";
         }
         case Refusal::NoSignal:
-            return "No usable arrival in the measurement window (confidence below "
-                   + hz(rta::ir::PolarityConfig{}.minConfidenceDb) + " dB). Measure again, louder or closer.";
+            return "Arrival confidence " + db(result.confidenceDb) + " dB is below the "
+                   + db(rta::ir::PolarityConfig{}.minConfidenceDb)
+                   + " dB needed to decide. Measure again, louder or closer.";
         case Refusal::NoNoiseEstimate:
             return "This sweep carries no harmonic spacing, so no noise floor can be estimated. Measure again with the app's own sweep.";
         case Refusal::CaptureTooShort:
@@ -90,7 +94,7 @@ void AlignmentWizard::buildPolaritySignals() {
         // -- filling it is the row record Sec.7's table forbids outright.
         signal.standing = (found.refusal == rta::ir::Refusal::None) ? SignalStanding::Advisory
                                                                    : SignalStanding::Refused;
-        signal.reason = polarityRefusalText(found, *deconvolution, kind);
+        signal.reason = polarityRefusalText(found, *deconvolution);
         signals_.push_back(std::move(signal));
     }
 

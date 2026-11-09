@@ -181,7 +181,7 @@ windowing bias observed. Do not tighten the bounds.
 | **T8** wizard arrival fix (wave B) | `AlignmentWizard.h/.cpp`, `AlignmentWizardSignals.cpp`, signals test call sites; new `app/tests/test_alignment_wizard_ir.cpp` | `AlignRunner` IR binding (T11) | SWEEP MAIN/SUB → MEASURE | origins 12345 apart, arrivals 40 (main) and 136 (sub): HP = MAIN → +96, HP = SUB → −96; H8 invariance and H7 green; record §4 amendment after the code. RED: `originIndex` difference; fixed high/low mapping |
 | **T9** arrival field + lookup | `SweepIrOutcome.h` (`SweepIr::arrivalSamples`), `SweepIrPipeline.cpp:161`, `trace/IrStore.h` (`find`) | `AlignRunner` binding; pane IR pickers | SWEEP → ALIGN IR picker | `arrivalSamples == delaySamples` on pure delay 37; `find` hit, miss, nullptr after the 9th add. RED: `find` returns the first entry |
 | **T10** SWEEP on a named output | `MainComponentSweep.h/.cpp` (`clickedOnOutput(ch)`, `swept(id, ch)` callback, name `SWEEP out<N> @`) | ALIGN pane SWEEP MAIN/SUB via `MainComponentAlign` | SWEEP MAIN, SWEEP SUB | SYNTHETIC 2 outputs: ch 1 sweep arrival == 100 + argmax of path1's `BiquadCascade` IR (same float ops), exact integer; plain SWEEP still uses out 1. RED: hard-coded `soloOutput(…, 0)` (`MainComponentSweep.cpp:91`) |
-| **T11** IR binding | `AlignRunner`, `AlignPaneView`, `MainComponentAlign` | pickers, `swept` callback | SWEEP MAIN → SWEEP SUB → MEASURE | through buttons: `Computed` with no AskingCycle; integer == sub arrival − main arrival; rho listed; sub `findPolarity` listed as refused (BandTooHigh); prints `compute()` time. RED: drop the supply |
+| **T11** IR binding | `AlignRunner`, `AlignPaneView`, `MainComponentAlign` | pickers, `swept` callback | SWEEP MAIN → SWEEP SUB → MEASURE | through buttons: `Computed` with no AskingCycle; integer == sub arrival − main arrival; rho listed; sub `findPolarity` listed as refused ("Measured band does not reach high enough (high edge ... Hz)", changed by H9 B1); prints `compute()` time. RED: drop the supply |
 | **T12** close each wave | — | — | — | `tools/orphan_check.py --base <wave start>` exit 0; `AlignmentWizard.cpp`, `AlignmentWizardSignals.cpp`, `IrStore::find`, `setPendingOps`, `setMeasuredSum` reachable from `rtatool`; every file within budget |
 | **T13** human try | — | — | see below | a human sees it |
 
@@ -259,7 +259,7 @@ New: `AlignRunner` ~160/300; `AlignReadout` ~60/160; `TransferDwell.h` ~30;
    96-sample offset plus the band-pass skirt's group delay)~~ **SEED 100 HZ is 0.79
    octave from that crossing, so it asks too, with the disagreement note and both
    integers** (it resolved to "delay MAIN by 4.56 ms" before D9). The signal
-   lines read `rho: …` and `findPolarity, low-pass side: refused (BandTooHigh)`
+   lines read `rho: …` and `findPolarity, low-pass side: refused -- Measured band does not reach high enough (high edge ...` (changed by H9 B1)
    (`main-live-align-ir.png`). Picking `NO IR (TYPE THE OFFSET)` in either
    picker and pressing MEASURE brings the offset prompt back. With the SHIPPED defaults (ch 0 the
    H4 40 Hz–16 kHz band-pass +4, ch 1 the LR4 low-pass at 100 Hz +100, decision
