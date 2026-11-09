@@ -128,22 +128,24 @@ MainComponent::MainComponent()
                  [this] { return measurementDrive(); }}),
       // H7 generator: GEN / - / + and a readout; the runner asks us what the app looks like.
       generator_(audioIo_.output(), [this] { return generatorEnvironment(); }) {
+    // HW-190: the button rows scroll with the rail (rail_.scrollContent()),
+    // below the pinned DEVICE block -- see MainComponentRail::layout.
     modeSwitch_.setClickingTogglesState(true);
     modeSwitch_.getProperties().set(az::ui::hintProperty, "no hardware needed");
     modeSwitch_.onClick = [this] { modeSwitchClicked(); };
-    addAndMakeVisible(modeSwitch_);
+    rail_.scrollContent().addAndMakeVisible(modeSwitch_);
 
     locateButton_.getProperties().set(az::ui::hintProperty, "pink noise, output ch 1, one-shot");
     locateButton_.onClick = [this] { locateClicked(); };
-    addAndMakeVisible(locateButton_);
+    rail_.scrollContent().addAndMakeVisible(locateButton_);
 
     applyButton_.setEnabled(false);
     applyButton_.onClick = [this] { applyClicked(); };
-    addAndMakeVisible(applyButton_);
+    rail_.scrollContent().addAndMakeVisible(applyButton_);
 
     delayReadout_.setText("delay: --", juce::dontSendNotification);
     delayReadout_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(delayReadout_);
+    rail_.scrollContent().addAndMakeVisible(delayReadout_);
 
     // L6a Wave 3 (record §8): the calibration flow. IEC 60942's 94.0 dB
     // nominal is what these two buttons offer -- an operator-typed level is
@@ -152,27 +154,27 @@ MainComponent::MainComponent()
     calibrationStartButton_.getProperties().set(az::ui::hintProperty,
                                                 "94 dB calibrator, route 0's mic channel");
     calibrationStartButton_.onClick = [this] { calibrationStartClicked(); };
-    addAndMakeVisible(calibrationStartButton_);
+    rail_.scrollContent().addAndMakeVisible(calibrationStartButton_);
 
     calibrationEndButton_.getProperties().set(az::ui::hintProperty,
                                               "same calibrator, no adjustment since START");
     calibrationEndButton_.onClick = [this] { calibrationEndClicked(); };
-    addAndMakeVisible(calibrationEndButton_);
+    rail_.scrollContent().addAndMakeVisible(calibrationEndButton_);
 
     calibrationReadout_.setText("calibration: not started", juce::dontSendNotification);
     calibrationReadout_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(calibrationReadout_);
+    rail_.scrollContent().addAndMakeVisible(calibrationReadout_);
 
     // Task W2-E2b part B: reachable, minimal -- one button beside the
     // calibration row rather than a new pane.
     exportReportButton_.getProperties().set(az::ui::hintProperty,
                                             "writes report.html into this session's SPL folder");
     exportReportButton_.onClick = [this] { exportReportClicked(); };
-    addAndMakeVisible(exportReportButton_);
+    rail_.scrollContent().addAndMakeVisible(exportReportButton_);
 
     exportReportReadout_.setText("export: no SPL session logged yet", juce::dontSendNotification);
     exportReportReadout_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(exportReportReadout_);
+    rail_.scrollContent().addAndMakeVisible(exportReportReadout_);
 
     // station-3 STORE (T5): one global button, enabled on RTA/TRANSFER and
     // disabled on SPL/XOVER by selectPaneView()/restoreWorkspaceFromSession()
@@ -180,17 +182,17 @@ MainComponent::MainComponent()
     // button starts enabled to match.
     storeButton_.getProperties().set(az::ui::hintProperty, "freezes the current RTA/TRANSFER curve");
     storeButton_.onClick = [this] { storeClicked(); };
-    addAndMakeVisible(storeButton_);
+    rail_.scrollContent().addAndMakeVisible(storeButton_);
 
     storeReadout_.setText("store: nothing frozen yet", juce::dontSendNotification);
     storeReadout_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(storeReadout_);
+    rail_.scrollContent().addAndMakeVisible(storeReadout_);
 
     // Session persistence: the seam this task exists for -- SessionStore/
     // SessionCodec were built and tested in lane L5a with no caller anywhere
     // in app/src until now.
-    session_.attachTo(*this);
-    sweep_.attachTo(*this);
+    session_.attachTo(rail_.scrollContent());
+    sweep_.attachTo(rail_.scrollContent());
     generator_.attachTo(*this);
     wireEqVerify();
     wireAlign();

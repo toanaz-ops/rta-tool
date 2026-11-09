@@ -54,7 +54,10 @@ MainComponentRail::MainComponentRail(rta::platform::AudioIo& audioIo, int channe
 }
 
 void MainComponentRail::attachTo(juce::Component& parent) {
-    railScrollContent_.addAndMakeVisible(devicePanel_);
+    // HW-190 (owner decision 2026-11-09): the DEVICE block (START/STOP above
+    // all) is a child of `parent`, NOT of the scrolled content, so no scroll
+    // position and no row above it can ever push it out of sight.
+    parent.addAndMakeVisible(devicePanel_);
     railScrollContent_.addAndMakeVisible(channelRoleTable_);
     railScrollContent_.addAndMakeVisible(routingMatrix_);
     railScrollContent_.addAndMakeVisible(tfSlotPicker_);
@@ -62,43 +65,43 @@ void MainComponentRail::attachTo(juce::Component& parent) {
     parent.addAndMakeVisible(railScrollView_);
 }
 
-void MainComponentRail::layout(juce::Rectangle<int> bounds) {
-    // Fix round PRs #36/#37 item 4: devicePanel_ (kDevicePanelHeight) +
-    // routingMatrix_ (kRoutingMatrixHeight) + channelRoleTable_ used to
-    // share whatever was left of `bounds` -- fine at a tall window, but at
-    // 1280x800 (and worse at 1100x760) that leftover ran out INSIDE
-    // devicePanel_'s own budget: routingMatrix_ was clamped to a sliver of
-    // its 220px (its GridPanel divides whatever height it gets across 9
-    // rows with no minimum -- kRoutingMatrixHeight's own comment -- so the
-    // rows' text overlapped each other) and channelRoleTable_ was left
-    // exactly zero pixels (clipped away entirely). Both widgets show a ROLE
-    // column, which is what made the squeezed routing matrix read as "the
-    // channel-role table" in review.
+int MainComponentRail::devicePanelHeight() noexcept { return kDevicePanelHeight; }
+
+void MainComponentRail::layoutDevicePanel(juce::Rectangle<int>& column) {
+    devicePanel_.setBounds(column.removeFromTop(kDevicePanelHeight));
+    column.removeFromTop(az::ui::gap);
+}
+
+juce::Rectangle<int> MainComponentRail::layout(juce::Rectangle<int> bounds, int topRowsHeight) {
+    // Fix round PRs #36/#37 item 4: routingMatrix_ (kRoutingMatrixHeight) and
+    // channelRoleTable_ used to share whatever was left of `bounds` -- fine at
+    // a tall window, but at 1280x800 that leftover ran out and routingMatrix_
+    // was clamped to a sliver (its GridPanel divides whatever height it gets
+    // across 9 rows with no minimum, so the rows' text overlapped) and
+    // channelRoleTable_ was left zero pixels. Fix: everything below the pinned
+    // device block lives inside railScrollContent_, sized to its combined
+    // NATURAL height (never less), and railScrollView_ scrolls it within
+    // `bounds`. Pinned by app/tests_juce/test_main_component_rail_layout.cpp.
     //
-    // Fix: all three now live inside railScrollContent_, sized to their
-    // combined NATURAL height (never less), and railScrollView_ scrolls
-    // that content within `bounds` -- so all three always get their full,
-    // non-degenerate size, and a short window scrolls instead of squeezing
-    // one of them to nothing. Pinned by app/tests_juce/
-    // test_main_component_rail_layout.cpp (fix round MEDIUM F1).
-    const int railContentHeight = kDevicePanelHeight + az::ui::gap * 2 + kTfSlotPickerHeight +
+    // HW-190: the device block left the scroll area (layoutDevicePanel), and
+    // the button rows that used to sit ABOVE the viewport moved INTO it, as
+    // its first `topRowsHeight` pixels. Pinning the device block alone would
+    // have taken 300 px from a viewport that is only 168 px tall at 1300x698,
+    // leaving the routing matrix and role table unreachable at every size.
+    const int railContentHeight = topRowsHeight + kTfSlotPickerHeight +
                                   az::ui::gap + kRoutingMatrixHeight +
                                   az::ui::gap * 2 + kChannelRoleTableMinHeight;
     railScrollView_.setBounds(bounds);
 
-    // Fix round LOW F4: subtracting the scrollbar's width unconditionally
-    // left an empty strip down the right edge of every widget whenever the
-    // rail was already tall enough that nothing scrolls. Only reserve it
-    // when the content actually overflows `bounds` -- the same comparison
-    // `railContentHeight` already exists to make.
+    // Fix round LOW F4: only reserve the scrollbar's width when the content
+    // actually overflows `bounds`.
     const bool contentOverflows = bounds.getHeight() < railContentHeight;
     const int contentWidth =
         bounds.getWidth() - (contentOverflows ? railScrollView_.getScrollBarThickness() : 0);
     railScrollContent_.setSize(contentWidth, juce::jmax(bounds.getHeight(), railContentHeight));
 
     auto content = railScrollContent_.getLocalBounds();
-    devicePanel_.setBounds(content.removeFromTop(kDevicePanelHeight));
-    content.removeFromTop(az::ui::gap * 2);
+    const auto rows = content.removeFromTop(topRowsHeight);
     tfSlotPicker_.setBounds(content.removeFromTop(kTfSlotPickerHeight));
     content.removeFromTop(az::ui::gap);
     // Fixed slice, not "whatever is left": the rows inside scroll (see
@@ -107,7 +110,7 @@ void MainComponentRail::layout(juce::Rectangle<int> bounds) {
     content.removeFromTop(az::ui::gap * 2);
 
     // Fills whatever is left of railScrollContent_ -- always at least
-    // kChannelRoleTableMinHeight, more when `bounds` itself is taller than
-    // the natural stack (railContentHeight above).
+    // kChannelRoleTableMinHeight, more when `bounds` itself is taller.
     channelRoleTable_.setBounds(content);
+    return rows;
 }

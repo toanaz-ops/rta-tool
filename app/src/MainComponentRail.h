@@ -41,14 +41,23 @@ public:
     MainComponentRail(rta::platform::AudioIo& audioIo, int channelCount,
                       std::function<rta::platform::Fault()> analysisFault);
 
-    /// Adds the viewport (the only child MainComponent itself sees) into
-    /// `parent` and wires the three widgets as the viewport content's own
-    /// children. Called once, from MainComponent's constructor.
+    /// Adds the device panel and the viewport into `parent` and wires the
+    /// other widgets as the viewport content's own children. Called once, from MainComponent's constructor.
     void attachTo(juce::Component& parent);
 
-    /// The item-4 layout: scrolls devicePanel_/routingMatrix_/channelRoleTable_
-    /// within `bounds` (MainComponent's own rail column).
-    void layout(juce::Rectangle<int> bounds);
+    /// HW-190: places the DEVICE block at the top of `column` (outside the
+    /// scroll viewport) and removes it, plus a gap, from `column`.
+    void layoutDevicePanel(juce::Rectangle<int>& column);
+    [[nodiscard]] static int devicePanelHeight() noexcept;
+
+    /// The item-4 layout: scrolls the rows block, tfSlotPicker_, routingMatrix_
+    /// and channelRoleTable_ within `bounds` (what is left of MainComponent's
+    /// rail column below the device block). Returns the rectangle, in
+    /// `scrollContent()` coordinates, of the first `topRowsHeight` pixels for
+    /// MainComponent to lay its button rows into.
+    juce::Rectangle<int> layout(juce::Rectangle<int> bounds, int topRowsHeight);
+    /// Parent of the button rows that scroll with the rail.
+    [[nodiscard]] juce::Component& scrollContent() noexcept { return railScrollContent_; }
 
     void setDevicePanelEnabled(bool enabled) { devicePanel_.setEnabled(enabled); }
     /// One list feeds BOTH channel-indexed widgets: channelRoleTable_ (roles)

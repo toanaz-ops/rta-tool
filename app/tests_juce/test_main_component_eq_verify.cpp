@@ -12,6 +12,8 @@
 // running", and a scripted snapshot. LOCATE and CAL are the REAL handlers.
 #include <catch2/catch_test_macros.hpp>
 
+#include <functional>
+
 #include "EqVerifyRunnerFixture.h"
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
@@ -28,23 +30,40 @@ using rta::view::PaneSelectorButton;
 
 namespace {
 
+// HW-190: the rail rows live in the rail's scroll content, not directly under
+// MainComponent, so the search descends. REQUIRE non-null: a missing button
+// fails the case instead of dereferencing null.
 juce::Button* findButtonByText(juce::Component& root, const juce::String& text) {
-    for (int i = 0; i < root.getNumChildComponents(); ++i) {
-        if (auto* button = dynamic_cast<juce::Button*>(root.getChildComponent(i))) {
-            if (button->getButtonText() == text) return button;
+    std::function<juce::Button*(juce::Component&)> walk = [&](juce::Component& node) -> juce::Button* {
+        for (int i = 0; i < node.getNumChildComponents(); ++i) {
+            auto* child = node.getChildComponent(i);
+            if (auto* button = dynamic_cast<juce::Button*>(child)) {
+                if (button->getButtonText() == text) return button;
+            }
+            if (auto* found = walk(*child)) return found;
         }
-    }
-    return nullptr;
+        return nullptr;
+    };
+    auto* found = walk(root);
+    INFO("button \"" << text.toStdString() << "\" not found under MainComponent");
+    REQUIRE(found != nullptr);
+    return found;
 }
 
 /// The readout label whose text starts with `prefix` ("delay:", "calibration:").
 juce::String labelStartingWith(juce::Component& root, const juce::String& prefix) {
-    for (int i = 0; i < root.getNumChildComponents(); ++i) {
-        if (auto* label = dynamic_cast<juce::Label*>(root.getChildComponent(i))) {
-            if (label->getText().startsWith(prefix)) return label->getText();
+    juce::String result;
+    std::function<void(juce::Component&)> walk = [&](juce::Component& node) {
+        for (int i = 0; i < node.getNumChildComponents() && result.isEmpty(); ++i) {
+            auto* child = node.getChildComponent(i);
+            if (auto* label = dynamic_cast<juce::Label*>(child)) {
+                if (label->getText().startsWith(prefix)) result = label->getText();
+            }
+            walk(*child);
         }
-    }
-    return {};
+    };
+    walk(root);
+    return result;
 }
 
 /// A REAL MainComponent in LIVE mode (no device opens in a test), the EQ pane

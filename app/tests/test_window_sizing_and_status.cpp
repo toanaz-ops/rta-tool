@@ -96,7 +96,7 @@ TEST_CASE("env parsing is ASCII-only and locale-free (H8 L-3)", "[api_settings_e
     CHECK(rta::api::apiSettingsFromEnvironment(port("\xDF""5")).port == rta::api::ApiSettings{}.port);
 }
 
-TEST_CASE("low-SNR hint applies only to the two no-peak refusals below the shipped level (H8 L-1)",
+TEST_CASE("low-SNR hint applies to no-peak and out-of-window refusals below the shipped level (H8 L-1, HW-185)",
           "[sweep_ir_pipeline]") {
     using rta::measure::SweepIrStatus;
     const double shipped = rta::measure::shippedSweepConfig(48000.0).levelDbFsPeak;
@@ -105,7 +105,9 @@ TEST_CASE("low-SNR hint applies only to the two no-peak refusals below the shipp
     // Negative cases: at or above the shipped level, and a geometry refusal.
     CHECK_FALSE(rta::measure::lowSnrHintApplies(SweepIrStatus::ReferenceNotFound, shipped));
     CHECK_FALSE(rta::measure::lowSnrHintApplies(SweepIrStatus::ReferenceNotFound, shipped + 6.0));
-    CHECK_FALSE(rta::measure::lowSnrHintApplies(SweepIrStatus::ArrivalOutOfWindow, shipped - 20.0));
+    // HW-185: an out-of-window peak at low level is the same SNR story...
+    CHECK(rta::measure::lowSnrHintApplies(SweepIrStatus::ArrivalOutOfWindow, shipped - 20.0));
+    CHECK_FALSE(rta::measure::lowSnrHintApplies(SweepIrStatus::ArrivalOutOfWindow, shipped));
     CHECK_FALSE(rta::measure::lowSnrHintApplies(SweepIrStatus::TailTooShort, shipped - 20.0));
 }
 

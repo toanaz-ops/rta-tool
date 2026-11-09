@@ -14,12 +14,15 @@
 //
 // What is asserted, and what is deliberately NOT:
 //  - masthead GEN/OUT cells fully inside the component and not overlapping;
-//  - DEVICE panel and START inside the rail's scrollable content, i.e.
-//    reachable BY SCROLLING;
-//  - NOT "START visible without scrolling": measured 2026-11-09 it is not (the
-//    rail viewport is only 168 px tall at 1300x698 and 80 px at 1100x610,
-//    START starts at content y=156). The REGRESSION LOCK case records that so
-//    a layout fix flips it knowingly. Owner decision pending (H8 plan, 6a).
+//  - HW-190 (owner decision 2026-11-09): the DEVICE block is pinned to the top of
+//    the rail, outside the scroll viewport, so START is FULLY visible with no
+//    scrolling at 1300x698 and 1100x610. "Visible" is checked against every
+//    ancestor's clip, not just the component bounds: a START inside a viewport
+//    that hides it fails.
+//  - the rail's scrolled content (TF picker, routing matrix, role table) still
+//    has a viewport to scroll in, i.e. pinning the panel did not squeeze it away.
+//  Before HW-190, measured 2026-11-09: START showed ~12 of 62 px at 1300x698
+//  (viewport 168 px tall) and was hidden at the minimum, 1100x610.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -71,27 +74,40 @@ void checkMastheadCells(Size content) {
     }
 }
 
-/// START in the rail content's coordinates (START is a child of the panel,
-/// the panel a child of the scrolled content).
-juce::Rectangle<int> startInContent(const MainComponent& component) {
-    const juce::Component& panel = MainComponentTestAccess::devicePanelForTest(component);
-    const juce::Component& start = MainComponentTestAccess::devicePanelTypedForTest(component).startStopButtonForTest();
-    return start.getBounds() + panel.getPosition();
+/// True when `child` is fully on screen inside `root`: at every ancestor up to
+/// `root`, the child's rectangle (in that ancestor's coordinates) lies inside
+/// the ancestor's own bounds. A viewport's clip holder is such an ancestor, so
+/// a control scrolled or cut out of a viewport's view fails here.
+bool fullyVisibleIn(const juce::Component& root, const juce::Component& child) {
+    juce::Rectangle<int> rect = child.getLocalBounds();
+    for (const juce::Component* c = &child; c != &root; c = c->getParentComponent()) {
+        if (c->getParentComponent() == nullptr) return false;  // not under root
+        rect += c->getPosition();
+        if (!c->getParentComponent()->getLocalBounds().contains(rect)) return false;
+    }
+    return true;
 }
 
-void checkRailReachableByScrolling(Size content) {
+void checkStartFullyVisible(Size content) {
     INFO("content " << content.w << "x" << content.h);
     Rig rig(content);
+    const juce::Component& start =
+        MainComponentTestAccess::devicePanelTypedForTest(rig.component).startStopButtonForTest();
+    REQUIRE(start.isVisible());
+    CHECK(start.getHeight() > 0);
+    CHECK(fullyVisibleIn(rig.component, start));
+
+    // Pinning the panel must not have squeezed the scrolled rail to nothing.
     const juce::Viewport& viewport = MainComponentTestAccess::railViewportForTest(rig.component);
     const juce::Component& railContent = MainComponentTestAccess::railContentForTest(rig.component);
-    const juce::Component& panel = MainComponentTestAccess::devicePanelForTest(rig.component);
     REQUIRE(viewport.getViewedComponent() == &railContent);
-    CHECK_FALSE(panel.getBounds().isEmpty());
-    CHECK(MainComponentTestAccess::devicePanelTypedForTest(rig.component).startStopButtonForTest().isVisible());
-    const auto start = startInContent(rig.component);
-    CHECK_FALSE(start.isEmpty());
-    CHECK(railContent.getLocalBounds().contains(start));
-    CHECK(railContent.getLocalBounds().contains(panel.getBounds()));
+    CHECK(viewport.getHeight() > 0);
+    CHECK(viewport.getBottom() <= rig.component.getHeight());
+    // The pinned panel sits above the viewport and overlaps nothing of it.
+    const juce::Component& panel = MainComponentTestAccess::devicePanelForTest(rig.component);
+    CHECK(panel.getBottom() <= viewport.getY());
+    // The scrolled content is no shorter than the viewport that scrolls it.
+    CHECK(railContent.getHeight() >= viewport.getHeight());
 }
 
 }  // namespace
@@ -107,31 +123,9 @@ TEST_CASE("small screen: the enforced minimum window keeps the masthead GEN/OUT 
     checkMastheadCells({rta::app::kMinimumWidth, rta::app::kMinimumHeight - kTitleBar});
 }
 
-TEST_CASE("small screen: DEVICE panel and START are reachable by scrolling at 1366x768 and the minimum",
+TEST_CASE("small screen: START is fully visible without scrolling at 1366x768 and the minimum (HW-190)",
           "[main_component_small_screen]") {
     const auto sizing = rta::app::windowSizingFor(1366, 768 - 40);
-    checkRailReachableByScrolling({sizing.width, sizing.height - kTitleBar});
-    checkRailReachableByScrolling({rta::app::kMinimumWidth, rta::app::kMinimumHeight - kTitleBar});
-}
-
-// REGRESSION LOCK, not a correctness claim: records the MEASURED state on
-// 2026-11-09 that START is mostly cut off without scrolling. A layout fix that
-// makes START visible turns this red on purpose; flip it to a plain visibility
-// assertion then.
-TEST_CASE("small screen: REGRESSION LOCK -- START is not fully visible without scrolling",
-          "[main_component_small_screen]") {
-    const auto sizing = rta::app::windowSizingFor(1366, 768 - 40);
-    {
-        Rig rig({sizing.width, sizing.height - kTitleBar});  // 1300x698
-        const auto& viewport = MainComponentTestAccess::railViewportForTest(rig.component);
-        const auto start = startInContent(rig.component);
-        const int shown = viewport.getViewArea().getIntersection(start).getHeight();
-        CHECK(shown > 0);              // ~12 of 62 px
-        CHECK(shown < start.getHeight());
-    }
-    {
-        Rig rig({rta::app::kMinimumWidth, rta::app::kMinimumHeight - kTitleBar});  // 1100x610
-        const auto& viewport = MainComponentTestAccess::railViewportForTest(rig.component);
-        CHECK_FALSE(viewport.getViewArea().intersects(startInContent(rig.component)));  // hidden
-    }
+    checkStartFullyVisible({sizing.width, sizing.height - kTitleBar});  // 1300x698
+    checkStartFullyVisible({rta::app::kMinimumWidth, rta::app::kMinimumHeight - kTitleBar});  // 1100x610
 }

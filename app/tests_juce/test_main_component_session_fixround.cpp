@@ -19,6 +19,8 @@
 // already makes elsewhere in this tree.
 #include <catch2/catch_test_macros.hpp>
 
+#include <functional>
+
 #include "CodeLines.h"
 #include "JuceFsPath.h"
 #include "MainComponent.h"
@@ -62,13 +64,24 @@ CaptureMeta makeMeta(std::string id) {
 /// header comment): a flat, one-level search is enough because every button
 /// MainComponent/MainComponentSession own has a distinct label and none of
 /// them nests inside another container.
+// HW-190: the rail rows live in the rail's scroll content, not directly under
+// MainComponent, so the search descends. REQUIRE non-null: a missing button
+// fails the case instead of dereferencing null.
 juce::Button* findButtonByText(juce::Component& root, const juce::String& text) {
-    for (int i = 0; i < root.getNumChildComponents(); ++i) {
-        if (auto* button = dynamic_cast<juce::Button*>(root.getChildComponent(i))) {
-            if (button->getButtonText() == text) return button;
+    std::function<juce::Button*(juce::Component&)> walk = [&](juce::Component& node) -> juce::Button* {
+        for (int i = 0; i < node.getNumChildComponents(); ++i) {
+            auto* child = node.getChildComponent(i);
+            if (auto* button = dynamic_cast<juce::Button*>(child)) {
+                if (button->getButtonText() == text) return button;
+            }
+            if (auto* found = walk(*child)) return found;
         }
-    }
-    return nullptr;
+        return nullptr;
+    };
+    auto* found = walk(root);
+    INFO("button \"" << text.toStdString() << "\" not found under MainComponent");
+    REQUIRE(found != nullptr);
+    return found;
 }
 
 }  // namespace
