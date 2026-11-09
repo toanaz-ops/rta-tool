@@ -8,10 +8,12 @@
 #include "MainComponentTestAccess.h"
 #include "view/IrPaneView.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <thread>
 
 namespace rta::tools
 {
@@ -34,6 +36,8 @@ std::shared_ptr<const rta::measure::SweepIr> syntheticIr()
     ir->originIndex = kOrigin;
     ir->arrivalSamples = kArrival;
     ir->sampleRate = kFs;
+    ir->trustedLowHz = 50.0;  // a sweep states its band; G24 trusts only inside it
+    ir->trustedHighHz = 20000.0;
     const std::size_t arrival = kOrigin + static_cast<std::size_t> (kArrival);
     std::uint32_t state = 12345u;
     for (std::size_t i = arrival + 24; i < ir->samples.size(); ++i)
@@ -84,6 +88,24 @@ void renderIrSpecimen (const juce::File& outDir, int& failures)
         return;
     }
     if (! renderComponent (component, outDir, fileName, 1280, 800))
+        ++failures;
+
+    // H10: the same gate, lower plot on EXCESS. The decomposition runs on its worker (about
+    // half a second), so pump the pane's timer until it has answered.
+    pane->lowerPlotButtonForTest (rta::measure::IrLowerPlot::Excess).onClick();
+    for (int i = 0; i < 1000 && Access::irForTest (component).excessForTest() == nullptr; ++i)
+    {
+        pane->tickForTest();
+        std::this_thread::sleep_for (std::chrono::milliseconds (20));
+    }
+    const auto excess = Access::irForTest (component).excessForTest();
+    if (excess == nullptr || ! excess->valid)
+    {
+        std::printf ("FAILED: no valid excess phase for the specimen -- ir-view-excess.png\n");
+        ++failures;
+        return;
+    }
+    if (! renderComponent (component, outDir, "ir-view-excess.png", 1280, 800))
         ++failures;
 }
 

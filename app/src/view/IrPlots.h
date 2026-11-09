@@ -13,6 +13,7 @@
 #pragma once
 
 #include "measure/IrGateModel.h"
+#include "view/PlotGeometry.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -28,12 +29,17 @@ public:
     /// to 0.1 ms. Not validated here: a start dragged past the end is the model's
     /// refusal to word, and the marker stays where the hand put it.
     std::function<void(const rta::measure::IrGateMarkers&)> onMarkersChanged;
+    /// Fired on mouse-up after a press on the plot.
+    std::function<void()> onMarkersSettled;
 
     void setData(std::shared_ptr<const rta::measure::IrEtc> etc, const rta::measure::IrGateMarkers& markers,
                  bool gateOk);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
+    /// The hand let go: the gate is settled (H10 starts its one expensive
+    /// decomposition here, never per drag event).
+    void mouseUp(const juce::MouseEvent&) override;
 
     /// Where marker `start` (true) or `end` (false) is drawn, in this component's
     /// own coordinates, vertically mid-plot; a test delivers its drag there.
@@ -56,17 +62,34 @@ private:
 
 class IrGatedPlot final : public juce::Component {
 public:
-    /// A null or refused analysis draws the empty state with `emptyText`.
-    void setData(std::shared_ptr<const rta::measure::IrGateAnalysis> analysis, std::string emptyText);
+    /// A null or refused analysis draws the empty state with `emptyText`. In PHASE
+    /// and EXCESS mode a null or invalid `excess` draws `emptyText` too: the
+    /// kernel's own refusal sentence, never an empty curve.
+    void setData(std::shared_ptr<const rta::measure::IrGateAnalysis> analysis,
+                 std::shared_ptr<const rta::measure::IrExcessPhase> excess, rta::measure::IrLowerPlot mode,
+                 std::string emptyText);
     void paint(juce::Graphics&) override;
 
-    /// The dB values of the polyline the last paint drew (one per drawn bin).
+    /// What the last paint drew, so a test reads data, not pixels. Each vector is
+    /// the polyline's values, one per drawn bin; all are empty when the empty
+    /// state was drawn.
     [[nodiscard]] const std::vector<float>& drawnDbForTest() const noexcept { return drawn_; }
+    [[nodiscard]] const std::vector<float>& drawnMeasuredDegForTest() const noexcept { return drawnMeasured_; }
+    [[nodiscard]] const std::vector<float>& drawnMinimumDegForTest() const noexcept { return drawnMinimum_; }
+    [[nodiscard]] const std::vector<float>& drawnExcessDegForTest() const noexcept { return drawnExcess_; }
+    [[nodiscard]] const std::vector<float>& drawnGroupDelayMsForTest() const noexcept { return drawnGroupDelay_; }
+    [[nodiscard]] const std::string& emptyTextForTest() const noexcept { return emptyText_; }
 
 private:
+    void paintMagnitude(juce::Graphics&, PlotGeometry&);
+    void paintPhase(juce::Graphics&, PlotGeometry&);
+    void paintExcess(juce::Graphics&, PlotGeometry&);
+
     std::shared_ptr<const rta::measure::IrGateAnalysis> analysis_;
+    std::shared_ptr<const rta::measure::IrExcessPhase> excess_;
+    rta::measure::IrLowerPlot mode_ = rta::measure::IrLowerPlot::Magnitude;
     std::string emptyText_;
-    std::vector<float> drawn_;
+    std::vector<float> drawn_, drawnMeasured_, drawnMinimum_, drawnExcess_, drawnGroupDelay_;
 };
 
 }  // namespace rta::view

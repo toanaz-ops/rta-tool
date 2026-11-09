@@ -15,6 +15,7 @@
 // `gateSpectrum` reads the stored one.
 #pragma once
 
+#include "measure/ExcessPhaseJob.h"
 #include "measure/IrGateModel.h"
 #include "trace/TraceLibrary.h"
 #include "view/IrPaneView.h"
@@ -46,6 +47,12 @@ public:
     void select(const std::string& traceId);
     /// Moves the markers and re-analyses (the ETC is unchanged).
     void setMarkers(const rta::measure::IrGateMarkers& markers);
+    /// The hand let go of a marker, or the lower plot changed: starts the G24
+    /// decomposition of the settled gate if PHASE or EXCESS needs it and none is
+    /// current. Never called per drag event -- one call is half a second of work,
+    /// so it runs on `ExcessPhaseJob`'s thread and `binding().revision` polls it.
+    void settle() { requestExcess(); }
+    void setLowerPlot(rta::measure::IrLowerPlot mode);
     /// STORE GATED: returns the sentence the pane shows.
     std::string storeGated();
 
@@ -55,9 +62,14 @@ public:
     [[nodiscard]] std::shared_ptr<const rta::measure::IrGateAnalysis> analysisForTest() const noexcept {
         return analysis_;
     }
+    [[nodiscard]] std::shared_ptr<const rta::measure::IrExcessPhase> excessForTest() const noexcept { return excess_; }
+    /// How many decompositions have begun on the worker (a drag must add none).
+    [[nodiscard]] std::size_t excessStartedForTest() const noexcept { return job_.startedCount(); }
 
 private:
     void reanalyse();
+    void requestExcess();
+    void pollExcess();
     [[nodiscard]] std::vector<rta::view::IrChoice> choices() const;
     [[nodiscard]] std::string nameOf(const std::string& traceId) const;
 
@@ -72,4 +84,11 @@ private:
     std::shared_ptr<const rta::measure::IrEtc> etc_;
     std::shared_ptr<const rta::measure::IrGateAnalysis> analysis_;
     std::uint64_t revision_ = 0;
+    // H10: the lower plot's mode (not saved with a session) and the decomposition of the
+    // CURRENT settled gate. `excess_` is null from the first marker move until the worker
+    // answers for the markers now in force.
+    rta::measure::IrLowerPlot lowerPlot_ = rta::measure::IrLowerPlot::Magnitude;
+    std::shared_ptr<const rta::measure::IrExcessPhase> excess_;
+    bool excessRequested_ = false;
+    rta::measure::ExcessPhaseJob job_;
 };

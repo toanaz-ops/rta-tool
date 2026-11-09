@@ -18,6 +18,7 @@
 #include <complex>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -60,6 +61,9 @@ inline constexpr double kEtcSpanMs = 50.0;
 
 [[nodiscard]] IrEtc buildEtc(const SweepIr& ir);
 
+/// What the IR pane's lower plot shows (H10). Not saved with a session.
+enum class IrLowerPlot { Magnitude, Phase, Excess };
+
 /// One gate placement, analysed.
 struct IrGateAnalysis {
     bool ok = false;
@@ -94,6 +98,35 @@ struct IrGateAnalysis {
 [[nodiscard]] std::optional<rta::trace::Trace> gatedTrace(const SweepIr& ir, const IrGateAnalysis& analysis,
                                                           std::string captureId, std::string deviceName,
                                                           std::string channelRoles);
+
+/// The G24 minimum / excess-phase decomposition of ONE gated response
+/// (H10, docs/plans/2026-11-10-h10-g24-excess-phase-display-plan.md, record
+/// docs/dsp/2026-11-09-l4c-ir-gate.md sec. 7). Per-bin vectors share the gated
+/// spectrum's grid (bin k = k * sampleRate / transformSize), DC to Nyquist.
+struct IrExcessPhase {
+    bool valid = false;
+    /// The refusal sentence when `valid` is false; empty otherwise.
+    std::string refusal;
+    double binHz = 0.0;
+    double trustedLowHz = 0.0;   ///< the band the decomposition was allowed to trust
+    double trustedHighHz = 0.0;
+    double broadbandDelayMs = 0.0;  ///< tau0, removed from the excess phase
+    std::vector<float> measuredDeg;   ///< arg(H), unwrapped from DC
+    std::vector<float> minimumDeg;    ///< arg(H_min), unwrapped from DC; arrival-referenced like `measuredDeg`
+    std::vector<float> excessDeg;     ///< phi_x, tau0 removed; wrapped to (-180, 180]
+    std::vector<float> excessGroupDelayMs;
+    /// `tau0 1.25 ms`, or empty when invalid.
+    [[nodiscard]] std::string tau0Text() const;
+};
+
+/// Decomposes `bins` (the gated spectrum, size 2^k + 1) with the core kernel
+/// `rta::dsp::excessPhase`. A bin is trusted when `fMinHz <= f <= trustedHighHz`:
+/// the lower edge is where the GATE stops speaking, the upper one is where the
+/// SWEEP's own excitation stops (`SweepIr::trustedHighHz`). A non-positive
+/// `trustedHighHz` (a hand-built IR that states none) trusts nothing and says so.
+/// One call costs a 2^21-point transform: never call it per drag event.
+[[nodiscard]] IrExcessPhase excessPhaseFor(std::span<const std::complex<float>> bins, double sampleRate,
+                                           double fMinHz, double trustedHighHz);
 
 /// "valid above 104 Hz" -- whole hertz (project CLAUDE.md), rounded UP so the
 /// printed figure is never below what the formula says.

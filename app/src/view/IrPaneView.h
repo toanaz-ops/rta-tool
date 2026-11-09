@@ -20,6 +20,7 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -50,6 +51,15 @@ struct IrPaneBinding {
     /// STORE GATED: adds the gated trace to the library and returns the sentence
     /// to show (what was stored, or why nothing was).
     std::function<std::string()> storeGated;
+    /// H10: which picture the lower plot shows, and the G24 decomposition of the
+    /// gated response behind PHASE and EXCESS. `excess` is null until a settled gate
+    /// has been decomposed; `excessPending` says one is running.
+    std::function<rta::measure::IrLowerPlot()> lowerPlot;
+    std::function<void(rta::measure::IrLowerPlot)> setLowerPlot;
+    std::function<std::shared_ptr<const rta::measure::IrExcessPhase>()> excess;
+    std::function<bool()> excessPending;
+    /// The hand let go of a marker: the moment the decomposition may start.
+    std::function<void()> settle;
     /// Bumps whenever the selection, the markers or the analysis changed.
     std::function<std::uint64_t()> revision;
 };
@@ -72,6 +82,9 @@ public:
     [[nodiscard]] juce::String statusForTest() const { return statusLabel_.getText(); }
     [[nodiscard]] IrEtcPlot& etcPlotForTest() noexcept { return etcPlot_; }
     [[nodiscard]] const IrGatedPlot& gatedPlotForTest() const noexcept { return gatedPlot_; }
+    [[nodiscard]] juce::Button& lowerPlotButtonForTest(rta::measure::IrLowerPlot mode) noexcept {
+        return *modeButtons_[static_cast<std::size_t>(mode)];
+    }
     [[nodiscard]] juce::StringArray pickerTextsForTest() const;
     /// One turn of the pane's own 10 Hz timer (a test harness pumps no message loop).
     void tickForTest() { timerCallback(); }
@@ -83,6 +96,7 @@ private:
     void picked();
     void markersMoved(const rta::measure::IrGateMarkers& markers);
     void storeClicked();
+    void lowerPlotPicked(rta::measure::IrLowerPlot mode);
 
     IrPaneBinding binding_;
     std::uint64_t lastRevision_ = ~std::uint64_t{0};
@@ -92,6 +106,7 @@ private:
     juce::ComboBox irCombo_;
     juce::TextButton storeButton_{"STORE GATED"};
     juce::Label readoutLabel_, statusLabel_;
+    std::array<std::unique_ptr<juce::TextButton>, 3> modeButtons_;  ///< MAG, PHASE, EXCESS
     IrEtcPlot etcPlot_;
     IrGatedPlot gatedPlot_;
 

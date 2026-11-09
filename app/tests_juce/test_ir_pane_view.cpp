@@ -8,6 +8,7 @@
 // The IR is a closed-form two-spike one (a direct delta and an echo), stored
 // through `MainComponentSweep::addIrForTest` -- fast and exact, the same seam the
 // RT60 pane tests use.
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "MainComponent.h"
@@ -15,15 +16,18 @@
 #include "trace/Trace.h"
 #include "view/IrPaneView.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
 
 using Access = MainComponentTestAccess;
+using Catch::Approx;
 constexpr const char* kTag = "[ir_pane_view]";
 constexpr double kFs = 48000.0;
 constexpr std::size_t kOrigin = 1000;
@@ -57,6 +61,20 @@ std::shared_ptr<const rta::measure::SweepIr> echoIr() {
     return ir;
 }
 
+// A direct delta and an echo of 2.0 at +3 ms (inside the default gate), from a sweep that
+// states its trusted band: H = 1 + 2 e^{-jwd}, whose zero is outside the unit circle, so
+// the gated response has a real excess phase and tau0 = d/fs = 3.00 ms (the closed form
+// asserted in app/tests/test_ir_gate_model.cpp).
+std::shared_ptr<const rta::measure::SweepIr> strongEchoIr() {
+    auto ir = std::make_shared<rta::measure::SweepIr>(*echoIr());
+    ir->samples.assign(6000, 0.0f);
+    ir->samples[kOrigin + static_cast<std::size_t>(kArrival)] = 1.0f;
+    ir->samples[kOrigin + static_cast<std::size_t>(kArrival) + 144] = 2.0f;
+    ir->trustedLowHz = 50.0;
+    ir->trustedHighHz = 20000.0;
+    return ir;
+}
+
 std::size_t countGroup(MainComponent& c, const std::string& group) {
     std::size_t n = 0;
     for (const auto& e : Access::libraryForTest(c).entries()) n += e.group == group ? 1 : 0;
@@ -78,10 +96,10 @@ struct Rig {
     rta::view::IrPaneView* pane = nullptr;
     std::string traceId;
 
-    Rig() {
+    explicit Rig(std::shared_ptr<const rta::measure::SweepIr> ir = echoIr()) {
         auto& library = Access::libraryForTest(c);
         traceId = library.add(tinyTrace("swept"), "SWEEP out1 @ 10:00:00", "SWEEP");
-        Access::sweepForTest(c).addIrForTest(traceId, echoIr());
+        Access::sweepForTest(c).addIrForTest(traceId, std::move(ir));
         c.selectPaneView(rta::view::PaneSelectorButton::Ir);
         pane = irPaneOf(c);
         REQUIRE(pane != nullptr);
@@ -90,6 +108,30 @@ struct Rig {
         pane->tickForTest();
     }
 };
+
+// One decomposition is about half a second on the worker: pump the pane's own timer until it answers.
+bool waitForExcess(Rig& rig) {
+    for (int i = 0; i < 1000; ++i) {
+        rig.pane->tickForTest();
+        if (Access::irForTest(rig.c).excessForTest() != nullptr) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return false;
+}
+
+// tau0 is the decomposition's own number, printed to 0.01 ms after the gate's readout, and it
+// lands within one sample (0.021 ms) of the echo's 3.00 ms: ExcessPhase.h's step 6 measured
+// 0.28 sample on a comparable two-path fixture, and the trusted band here (104..20000 Hz of
+// 0..24000) leaves a part-period at each end of the mean, so one sample is the budget.
+void expectTau0Shown(Rig& rig) {
+    const auto excess = Access::irForTest(rig.c).excessForTest();
+    REQUIRE(excess != nullptr);
+    REQUIRE(excess->valid);
+    CHECK(excess->broadbandDelayMs == Approx(3.0).margin(1.0 / kFs * 1000.0));
+    CHECK(rig.pane->readoutForTest().endsWith(juce::String(juce::CharPointer_UTF8(excess->tau0Text().c_str()))));
+}
+
+void paintPane(Rig& rig) { rig.pane->createComponentSnapshot(rig.pane->getLocalBounds(), true); }
 
 }  // namespace
 
@@ -234,4 +276,94 @@ TEST_CASE("ir pane: the selection and the markers survive a rebuild, and an evic
     REQUIRE(again != nullptr);
     CHECK(again->readoutForTest().startsWith("GATE -2.0..8.0 ms"));
     CHECK(again->irComboForTest().getSelectedId() == 1);
+}
+
+// ---- H10: MAG / PHASE / EXCESS ------------------------------------------------------
+
+TEST_CASE("ir pane: MAG, PHASE and EXCESS draw their own curves, and tau0 joins the readout", kTag) {
+    using rta::measure::IrLowerPlot;
+    Rig rig(strongEchoIr());
+    rig.pane->irComboForTest().setSelectedId(1, juce::sendNotificationSync);
+    auto& gated = rig.pane->gatedPlotForTest();
+    paintPane(rig);
+    CHECK(gated.drawnDbForTest().size() > 100);
+    CHECK(gated.drawnMeasuredDegForTest().empty());
+    CHECK(Access::irForTest(rig.c).excessStartedForTest() == 0);  // MAG never asks for it
+
+    rig.pane->lowerPlotButtonForTest(IrLowerPlot::Phase).onClick();
+    paintPane(rig);
+    CHECK(gated.emptyTextForTest() == "computing excess phase...");
+    CHECK(gated.drawnMeasuredDegForTest().empty());
+    REQUIRE(waitForExcess(rig));
+    paintPane(rig);
+    CHECK(gated.drawnDbForTest().empty());
+    CHECK(gated.drawnMeasuredDegForTest().size() > 100);
+    CHECK(gated.drawnMinimumDegForTest().size() == gated.drawnMeasuredDegForTest().size());
+    expectTau0Shown(rig);
+    const auto phaseCount = gated.drawnMeasuredDegForTest().size();
+
+    rig.pane->lowerPlotButtonForTest(IrLowerPlot::Excess).onClick();
+    paintPane(rig);
+    CHECK(gated.drawnExcessDegForTest().size() > 100);
+    CHECK(gated.drawnGroupDelayMsForTest().size() == gated.drawnExcessDegForTest().size());
+    CHECK(gated.drawnMeasuredDegForTest().empty());
+    // Over the trusted band only: the gate's fMin (104 Hz) is above the axis's 20 Hz edge,
+    // so fewer bins than PHASE draws across the whole axis.
+    CHECK(gated.drawnExcessDegForTest().size() < phaseCount);
+    expectTau0Shown(rig);
+    CHECK(rig.pane->readoutForTest().startsWith("GATE -1.0..10.0 ms"));
+
+    rig.pane->lowerPlotButtonForTest(IrLowerPlot::Magnitude).onClick();
+    paintPane(rig);
+    CHECK(gated.drawnDbForTest().size() > 100);
+    CHECK(gated.drawnExcessDegForTest().empty());
+    CHECK_FALSE(rig.pane->readoutForTest().contains("tau0"));
+    // Switching between the three never recomputed: one decomposition in all.
+    CHECK(Access::irForTest(rig.c).excessStartedForTest() == 1);
+}
+
+TEST_CASE("ir pane: the decomposition never runs during a drag, only when the marker is released", kTag) {
+    using rta::measure::IrLowerPlot;
+    Rig rig(strongEchoIr());
+    rig.pane->irComboForTest().setSelectedId(1, juce::sendNotificationSync);
+    rig.pane->lowerPlotButtonForTest(IrLowerPlot::Excess).onClick();
+    REQUIRE(waitForExcess(rig));
+    auto& ir = Access::irForTest(rig.c);
+    CHECK(ir.excessStartedForTest() == 1);
+
+    auto& plot = rig.pane->etcPlotForTest();
+    const auto end = plot.markerCentreForTest(false);
+    const double pxPerMs = static_cast<double>(end.x - plot.markerCentreForTest(true).x) / 11.0;
+    mouseAt(plot, end, true);
+    for (int step = 1; step <= 12; ++step) {
+        mouseAt(plot, {end.x + static_cast<int>(std::lround(0.5 * step * pxPerMs)), end.y}, false);
+        rig.pane->tickForTest();
+    }
+    // Twelve marker moves later: not one decomposition began, and the stale one is gone.
+    CHECK(ir.markersForTest().endMs > 14.0);
+    CHECK(ir.excessStartedForTest() == 1);
+    CHECK(ir.excessForTest() == nullptr);
+    paintPane(rig);
+    CHECK(rig.pane->gatedPlotForTest().emptyTextForTest() == "release the marker to compute excess phase");
+
+    plot.mouseUp(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), end.toFloat(), juce::ModifierKeys(),
+                                  1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &plot, &plot, juce::Time::getCurrentTime(),
+                                  end.toFloat(), juce::Time::getCurrentTime(), 1, true));
+    CHECK(ir.excessStartedForTest() == 2);
+    REQUIRE(waitForExcess(rig));
+    CHECK(ir.excessStartedForTest() == 2);
+}
+
+TEST_CASE("ir pane: a sweep that states no trusted band gets the kernel's refusal, not an empty curve", kTag) {
+    using rta::measure::IrLowerPlot;
+    Rig rig;  // echoIr(): trustedHighHz == 0
+    rig.pane->irComboForTest().setSelectedId(1, juce::sendNotificationSync);
+    rig.pane->lowerPlotButtonForTest(IrLowerPlot::Excess).onClick();
+    REQUIRE(waitForExcess(rig));
+    paintPane(rig);
+    REQUIRE(Access::irForTest(rig.c).excessForTest() != nullptr);
+    CHECK_FALSE(Access::irForTest(rig.c).excessForTest()->valid);
+    CHECK(rig.pane->gatedPlotForTest().emptyTextForTest() == "too few trusted bins for excess phase");
+    CHECK(rig.pane->gatedPlotForTest().drawnExcessDegForTest().empty());
+    CHECK_FALSE(rig.pane->readoutForTest().contains("tau0"));
 }

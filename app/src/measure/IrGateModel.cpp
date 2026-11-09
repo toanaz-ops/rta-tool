@@ -2,12 +2,15 @@
 // Part of RTA Tool -- app/src/measure. See IrGateModel.h.
 #include "measure/IrGateModel.h"
 
+#include "rta/dsp/ExcessPhase.h"
 #include "rta/ir/IrGate.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <numbers>
 
 namespace rta::measure {
 namespace {
@@ -83,6 +86,81 @@ IrGateAnalysis analyseIrGate(const SweepIr& ir, const IrGateMarkers& markers) {
     out.transformSize = (out.bins.size() - 1) * 2;
     out.readout = "GATE " + markersText(markers) + " \xc2\xb7 " + validAboveText(result.fMinHz);
     out.windowText = "gate " + markersText(markers) + ", " + validAboveText(result.fMinHz);
+    return out;
+}
+
+std::string IrExcessPhase::tau0Text() const {
+    if (!valid) return {};
+    char buffer[48];
+    std::snprintf(buffer, sizeof buffer, "tau0 %.2f ms", broadbandDelayMs);
+    return buffer;
+}
+
+namespace {
+
+constexpr double kRadToDeg = 180.0 / std::numbers::pi;
+
+// Display unwrap, in double: add or subtract 2*pi where a step exceeds pi. Not
+// PhaseUnwrap.cpp's float version -- this runs on 8193 bins once per settle and
+// a float running offset would add rounding the picture does not need.
+std::vector<float> unwrappedDegrees(const std::vector<double>& wrappedRad) {
+    std::vector<float> out(wrappedRad.size());
+    double offset = 0.0;
+    double previous = wrappedRad.empty() ? 0.0 : wrappedRad.front();
+    for (std::size_t k = 0; k < wrappedRad.size(); ++k) {
+        const double step = wrappedRad[k] - previous;
+        if (step > std::numbers::pi) offset -= 2.0 * std::numbers::pi;
+        else if (step < -std::numbers::pi) offset += 2.0 * std::numbers::pi;
+        previous = wrappedRad[k];
+        out[k] = static_cast<float>((wrappedRad[k] + offset) * kRadToDeg);
+    }
+    return out;
+}
+
+bool isPowerOfTwoPlusOne(std::size_t n) { return n >= 5 && ((n - 1) & (n - 2)) == 0; }
+
+}  // namespace
+
+IrExcessPhase excessPhaseFor(std::span<const std::complex<float>> bins, double sampleRate, double fMinHz,
+                             double trustedHighHz) {
+    IrExcessPhase out;
+    out.refusal = "too few trusted bins for excess phase";
+    if (!isPowerOfTwoPlusOne(bins.size()) || !(sampleRate > 0.0)) return out;
+    const std::size_t n = bins.size();
+    out.binHz = sampleRate / (2.0 * static_cast<double>(n - 1));
+
+    std::vector<float> magnitude(n);
+    std::vector<std::complex<double>> h(n);
+    std::vector<std::uint8_t> trusted(n, 0);
+    for (std::size_t k = 0; k < n; ++k) {
+        h[k] = {static_cast<double>(bins[k].real()), static_cast<double>(bins[k].imag())};
+        magnitude[k] = std::abs(bins[k]);
+        const double hz = static_cast<double>(k) * out.binHz;
+        trusted[k] = (hz >= fMinHz && hz <= trustedHighHz) ? 1 : 0;
+    }
+    const auto kernel = rta::dsp::excessPhase(magnitude, h, trusted, sampleRate);
+    if (!kernel.valid) return out;
+
+    out.valid = true;
+    out.refusal.clear();
+    out.trustedLowHz = fMinHz;
+    out.trustedHighHz = trustedHighHz;
+    out.broadbandDelayMs = kernel.broadbandDelaySec * 1000.0;
+
+    // arg(H_min) = arg(H) + w*tau0 - phi_x: the kernel's own definition,
+    // phi_x = arg((H/H_min) * e^{+jw tau0}), solved for H_min's phase.
+    std::vector<double> measured(n), minimum(n);
+    out.excessDeg.resize(n);
+    out.excessGroupDelayMs.resize(n);
+    for (std::size_t k = 0; k < n; ++k) {
+        const double w = 2.0 * std::numbers::pi * static_cast<double>(k) * out.binHz;
+        measured[k] = std::arg(h[k]);
+        minimum[k] = measured[k] + w * kernel.broadbandDelaySec - static_cast<double>(kernel.excessPhaseRad[k]);
+        out.excessDeg[k] = static_cast<float>(static_cast<double>(kernel.excessPhaseRad[k]) * kRadToDeg);
+        out.excessGroupDelayMs[k] = static_cast<float>(kernel.excessGroupDelay[k] * 1000.0);
+    }
+    out.measuredDeg = unwrappedDegrees(measured);
+    out.minimumDeg = unwrappedDegrees(minimum);
     return out;
 }
 

@@ -46,12 +46,16 @@ void MainComponentIr::select(const std::string& traceId) {
         selectedName_.clear();
         etc_.reset();
         analysis_.reset();
+        excess_.reset();
+        excessRequested_ = false;
+        job_.invalidate();
         return;
     }
     selectedId_ = traceId;
     selectedName_ = nameOf(traceId);
     etc_ = std::make_shared<const rta::measure::IrEtc>(rta::measure::buildEtc(*ir_));
     reanalyse();
+    requestExcess();  // a pick is a settled gate
 }
 
 void MainComponentIr::setMarkers(const rta::measure::IrGateMarkers& markers) {
@@ -62,8 +66,39 @@ void MainComponentIr::setMarkers(const rta::measure::IrGateMarkers& markers) {
 
 void MainComponentIr::reanalyse() {
     ++revision_;
+    // Whatever the worker is computing was for the previous markers: drop it.
+    excess_.reset();
+    excessRequested_ = false;
+    job_.invalidate();
     analysis_ = ir_ ? std::make_shared<const rta::measure::IrGateAnalysis>(rta::measure::analyseIrGate(*ir_, markers_))
                     : nullptr;
+}
+
+void MainComponentIr::setLowerPlot(rta::measure::IrLowerPlot mode) {
+    if (mode == lowerPlot_) return;
+    lowerPlot_ = mode;
+    ++revision_;
+    requestExcess();
+}
+
+void MainComponentIr::requestExcess() {
+    if (lowerPlot_ == rta::measure::IrLowerPlot::Magnitude || ir_ == nullptr || analysis_ == nullptr || !analysis_->ok ||
+        excess_ != nullptr || excessRequested_) {
+        return;
+    }
+    excessRequested_ = true;
+    ++revision_;
+    // trustedHighHz is the SWEEP's own ceiling; the gate's fMin is the floor. A hand-built IR
+    // that states no ceiling (0) trusts nothing, and the pane says so.
+    job_.submit({analysis_->bins, analysis_->sampleRate, analysis_->fMinHz, ir_->trustedHighHz});
+}
+
+void MainComponentIr::pollExcess() {
+    if (auto done = job_.poll()) {
+        excess_ = std::move(done);
+        excessRequested_ = false;
+        ++revision_;
+    }
 }
 
 std::string MainComponentIr::storeGated() {
@@ -94,10 +129,16 @@ rta::view::IrPaneBinding MainComponentIr::binding() {
     b.markers = [this] { return markers_; };
     b.setMarkers = [this](const rta::measure::IrGateMarkers& markers) { setMarkers(markers); };
     b.storeGated = [this] { return storeGated(); };
+    b.lowerPlot = [this] { return lowerPlot_; };
+    b.setLowerPlot = [this](rta::measure::IrLowerPlot mode) { setLowerPlot(mode); };
+    b.excess = [this] { return excess_; };
+    b.excessPending = [this] { return excessRequested_ && excess_ == nullptr; };
+    b.settle = [this] { settle(); };
     b.revision = [this] {
         // The IR leaving the store (a ninth sweep pops the oldest) clears the
         // selection rather than leaving a pane that gates a ghost.
         if (!selectedId_.empty() && find_ && find_(selectedId_) == nullptr) select(std::string());
+        pollExcess();
         return revision_;
     };
     return b;

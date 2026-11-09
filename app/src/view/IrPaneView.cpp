@@ -12,6 +12,7 @@ namespace {
 constexpr int kTimerHz = 10;
 constexpr int kControlHeight = 28;
 constexpr int kStoreWidth = 130;
+constexpr int kModeWidth = 76;
 
 juce::String fromUtf8(const std::string& text) { return juce::String(juce::CharPointer_UTF8(text.c_str())); }
 
@@ -32,6 +33,23 @@ IrPaneView::IrPaneView(IrPaneBinding binding) : binding_(std::move(binding)) {
     statusLabel_.setColour(juce::Label::textColourId, az::ui::dim);
 
     etcPlot_.onMarkersChanged = [this](const rta::measure::IrGateMarkers& m) { markersMoved(m); };
+    etcPlot_.onMarkersSettled = [this] {
+        if (binding_.settle) binding_.settle();
+        refresh();
+    };
+
+    const char* const names[] = {"MAG", "PHASE", "EXCESS"};
+    const char* const hints[] = {"the gated magnitude",
+                                 "the gated phase beside its minimum phase (same magnitude)",
+                                 "excess phase and excess group delay: what EQ cannot fix (delay, crossover, reflections)"};
+    for (std::size_t i = 0; i < modeButtons_.size(); ++i) {
+        modeButtons_[i] = std::make_unique<juce::TextButton>(names[i]);
+        auto& b = *modeButtons_[i];
+        b.setClickingTogglesState(false);
+        b.getProperties().set(az::ui::hintProperty, hints[i]);
+        b.onClick = [this, i] { lowerPlotPicked(static_cast<rta::measure::IrLowerPlot>(i)); };
+        addAndMakeVisible(b);
+    }
 
     for (juce::Component* c : std::initializer_list<juce::Component*>{&irCombo_, &storeButton_, &readoutLabel_,
                                                                        &statusLabel_, &etcPlot_, &gatedPlot_}) {
@@ -60,7 +78,9 @@ void IrPaneView::resized() {
     top.removeFromRight(az::ui::gap);
     irCombo_.setBounds(top);
     area.removeFromTop(az::ui::gap);
-    readoutLabel_.setBounds(area.removeFromTop(kControlHeight));
+    auto readoutRow = area.removeFromTop(kControlHeight);
+    for (std::size_t i = modeButtons_.size(); i-- > 0;) modeButtons_[i]->setBounds(readoutRow.removeFromRight(kModeWidth));
+    readoutLabel_.setBounds(readoutRow);
     statusLabel_.setBounds(area.removeFromBottom(kControlHeight));
     area.removeFromTop(az::ui::gap);
     const int etcHeight = area.getHeight() * 2 / 5;
@@ -114,6 +134,11 @@ void IrPaneView::storeClicked() {
     statusLabel_.setText(fromUtf8(binding_.storeGated()), juce::dontSendNotification);
 }
 
+void IrPaneView::lowerPlotPicked(rta::measure::IrLowerPlot mode) {
+    if (binding_.setLowerPlot) binding_.setLowerPlot(mode);
+    refresh();
+}
+
 void IrPaneView::refresh() {
     lastRevision_ = binding_.revision ? binding_.revision() : 0;
     refreshPicker();
@@ -125,10 +150,29 @@ void IrPaneView::refresh() {
     etcPlot_.setData(etc, markers, analysis != nullptr && analysis->ok);
     std::string empty = "PRESS SWEEP TO MAKE AN IR, THEN PICK IT (IRs are kept in memory, not in a saved session)";
     if (picked) empty = analysis->ok ? std::string() : analysis->readout;
-    gatedPlot_.setData(analysis, empty);
+    using rta::measure::IrLowerPlot;
+    const IrLowerPlot mode = binding_.lowerPlot ? binding_.lowerPlot() : IrLowerPlot::Magnitude;
+    const auto excess = binding_.excess ? binding_.excess() : nullptr;
+    // PHASE / EXCESS need the decomposition of a SETTLED gate: until it exists the plot says
+    // what it is waiting for, and an invalid one says why (the kernel's own sentence).
+    if (picked && analysis->ok && mode != IrLowerPlot::Magnitude) {
+        if (excess == nullptr) {
+            empty = binding_.excessPending && binding_.excessPending() ? "computing excess phase..."
+                                                                       : "release the marker to compute excess phase";
+        } else if (!excess->valid) {
+            empty = excess->refusal;
+        }
+    }
+    gatedPlot_.setData(analysis, excess, mode, empty);
+    for (std::size_t i = 0; i < modeButtons_.size(); ++i) {
+        modeButtons_[i]->setToggleState(static_cast<std::size_t>(mode) == i, juce::dontSendNotification);
+    }
 
-    readoutLabel_.setText(fromUtf8(picked ? analysis->readout : std::string("GATE -- no IR picked")),
-                          juce::dontSendNotification);
+    std::string readout = picked ? analysis->readout : std::string("GATE -- no IR picked");
+    if (picked && analysis->ok && mode != IrLowerPlot::Magnitude && excess != nullptr && excess->valid) {
+        readout += " · " + excess->tau0Text();
+    }
+    readoutLabel_.setText(fromUtf8(readout), juce::dontSendNotification);
     readoutLabel_.setColour(juce::Label::textColourId,
                             picked && !analysis->ok ? juce::Colour(az::ui::warn) : juce::Colour(az::ui::text));
     storeButton_.setEnabled(picked && analysis->ok);
