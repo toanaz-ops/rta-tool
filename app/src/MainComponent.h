@@ -57,6 +57,8 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    // MainComponentApi.cpp: H8 review M-2, tell the operator the API did not start.
+    void parentHierarchyChanged() override;
 
     // Rationale: MainComponentSynthetic.cpp, above setSyntheticMode().
     void setSyntheticMode(bool enabled);
@@ -140,6 +142,7 @@ private:
     rta::platform::AudioIo audioIo_;
     rta::measure::AnalysisThread analysisThread_;
     std::unique_ptr<rta::measure::SyntheticInput> syntheticInput_;
+    rta::api::ApiSettings apiSettings_;  // before apiServer_: the notice reads it
     std::unique_ptr<rta::api::ApiServer> apiServer_;  // rationale: MainComponent.cpp, above the constructor
     // -------------------------------------------------------------------
 

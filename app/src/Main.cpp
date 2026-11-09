@@ -9,6 +9,7 @@
 
 #include "AppTypefaces.h"
 #include "MainComponent.h"
+#include "WindowSizing.h"
 #include "dev/SpecimenComponent.h"
 
 namespace
@@ -71,7 +72,14 @@ public:
         setUsingNativeTitleBar (true);
         setContentOwned (new RootView(), true);
         setResizable (true, false);
-        centreWithSize (1300, 820);
+        // Sized to the primary display's work area (screen minus taskbar), so a
+        // 1366x768 screen gets a window that fits it, and a floor below which
+        // the masthead and rail would lose controls (WindowSizing.h).
+        const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+        const auto area = display != nullptr ? display->userBounds.toNearestInt() : juce::Rectangle<int> (0, 0, 1366, 728);
+        const auto sizing = rta::app::windowSizingFor (area.getWidth(), area.getHeight());
+        setResizeLimits (sizing.minWidth, sizing.minHeight, 32768, 32768);
+        centreWithSize (sizing.width, sizing.height);
         setVisible (true);
 
         // RootView's keyPressed() (F1, the specimen toggle) only ever fires

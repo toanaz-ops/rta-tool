@@ -19,6 +19,8 @@ set(RTATOOL_SOURCES
     src/MainComponentDelay.cpp
     # MainComponentSynthetic.cpp: setSyntheticMode, split out of MainComponent.cpp.
     src/MainComponentSynthetic.cpp
+    # MainComponentApi.cpp: H8 review M-2, the "API enabled but not running" notice.
+    src/MainComponentApi.cpp
     # MainComponentPanes.cpp: owner decision 2026-09-26's pane selector --
     # MainComponent.cpp's own 400-line-cap split, same shape as
     # MainComponentDelay.cpp/MainComponentCalibration.cpp.

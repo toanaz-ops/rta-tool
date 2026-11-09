@@ -45,7 +45,10 @@ MainComponentRail::MainComponentRail(rta::platform::AudioIo& audioIo, int channe
     tfSlotPicker_.getProperties().set(az::ui::hintProperty,
                                       "which transfer function the next MEAS/REF click assigns a channel to");
     tfSlotPicker_.onChange = [this] {
-        routingMatrix_.setActiveTransferFunction(tfSlotPicker_.getSelectedId() - 1);
+        // Id 0 means "nothing selected" (a cleared combo): clamp, so the slot
+        // is never -1 and the matrix does not keep a stale one (H8 review L-8).
+        routingMatrix_.setActiveTransferFunction(
+            juce::jlimit(0, rta::measure::kMaxTransferFunctions - 1, tfSlotPicker_.getSelectedId() - 1));
     };
 }
 

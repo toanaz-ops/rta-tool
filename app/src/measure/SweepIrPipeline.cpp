@@ -28,6 +28,13 @@ constexpr double kMinIrAfterArrivalSeconds = 0.1;
 // the figure).
 constexpr double kMinPeakToRms = 20.0;
 
+// H8 M-4, PROVISIONAL (owner card HW-184; confirm or change on hardware): the
+// windowed arrival replaces the global peak only when it stands within this
+// many dB of it. A quieter interior peak (leak, early reflection, sidelobe)
+// next to a much louder peak outside the window is ambiguous, and the
+// capture is refused as before H8 rather than adopted as a wrong arrival.
+constexpr double kMaxWindowedBelowGlobalDb = 12.0;
+
 std::size_t nextPowerOfTwo(std::size_t n) {
     std::size_t size = 4;  // RealFft's documented minimum
     while (size < n) size <<= 1;
@@ -41,20 +48,26 @@ struct Peak {
 };
 
 // Largest |x| (first on ties) with index in [lo, hi], plus how far it stands
-// above the rms of the WHOLE signal. The default range is everything.
+// above the rms of the SAME range. The default range is everything. The rms
+// must come from the range searched: a loud peak outside it (an echo past the
+// analysis window) would otherwise inflate the rms and hide a real arrival
+// inside (H8 M-1).
 Peak findPeak(const std::vector<float>& samples, std::size_t lo = 0,
               std::size_t hi = static_cast<std::size_t>(-1)) {
     Peak peak;
     double sumSquares = 0.0;
+    std::size_t inRange = 0;
     for (std::size_t i = 0; i < samples.size(); ++i) {
+        if (i < lo || i > hi) continue;
         const double x = samples[i];
         sumSquares += x * x;
-        if (i >= lo && i <= hi && std::fabs(samples[i]) > std::fabs(peak.value)) {
+        ++inRange;
+        if (std::fabs(samples[i]) > std::fabs(peak.value)) {
             peak.index = i;
             peak.value = samples[i];
         }
     }
-    const double count = static_cast<double>(std::max<std::size_t>(1, samples.size()));
+    const double count = static_cast<double>(std::max<std::size_t>(1, inRange));
     const double rms = std::sqrt(sumSquares / count);
     peak.peakToRms = rms > 0.0 ? std::fabs(static_cast<double>(peak.value)) / rms : 0.0;
     return peak;
@@ -130,7 +143,11 @@ SweepIrOutcome analyseChecked(const SweepCapture& capture, const SweepIrRequest&
     // prominent (same kMinPeakToRms as the reference) and strictly INSIDE the
     // window: a peak on the window edge may be the flank of a real arrival
     // just outside it, which must still be refused, not re-read as a sidelobe.
-    // Otherwise the global peak stands, exactly as before.
+    // Otherwise the global peak stands, exactly as before. M-4: and the window
+    // peak must stay within kMaxWindowedBelowGlobalDb of the global one; a
+    // prominent but much quieter window peak is flagged, so a refusal says the
+    // arrival is ambiguous instead of silently looking like plain geometry.
+    bool ambiguousWindowedPeak = false;
     if (refPeak.index >= leadIn) {
         const long winLoSigned = static_cast<long>(refPeak.index) - static_cast<long>(leadIn);
         const long winHiSigned = static_cast<long>(refPeak.index) + static_cast<long>(fftSize) -
@@ -141,7 +158,14 @@ SweepIrOutcome analyseChecked(const SweepCapture& capture, const SweepIrRequest&
             const Peak windowed = findPeak(measurement.samples, winLo, winHi);
             if (windowed.value != 0.0f && windowed.peakToRms >= kMinPeakToRms &&
                 windowed.index > winLo && windowed.index < winHi) {
-                measPeak = windowed;
+                const double belowGlobalDb =
+                    20.0 * std::log10(std::fabs(static_cast<double>(measPeak.value)) /
+                                      std::fabs(static_cast<double>(windowed.value)));
+                if (belowGlobalDb <= kMaxWindowedBelowGlobalDb) {
+                    measPeak = windowed;
+                } else {
+                    ambiguousWindowedPeak = true;
+                }
             }
         }
     }
@@ -150,7 +174,10 @@ SweepIrOutcome analyseChecked(const SweepCapture& capture, const SweepIrRequest&
     if (delay > static_cast<long>(fftSize) - static_cast<long>(leadIn) - minIrAfterArrival ||
         delay < -static_cast<long>(leadIn) || refPeak.index < leadIn) {
         return refuse(SweepIrStatus::ArrivalOutOfWindow,
-                      "the arrival does not fit the analysis window");
+                      ambiguousWindowedPeak
+                          ? "the arrival is ambiguous -- a much louder peak lies outside "
+                            "the analysis window"
+                          : "the arrival does not fit the analysis window");
     }
 
     // The N-point window, rectangular, from `leadIn` samples before the loop

@@ -4,6 +4,7 @@
 #include "view/SplView.h"
 
 #include "view/MeasureColours.h"
+#include "view/SplEmptyState.h"
 #include "view/SplStrip.h"
 
 #include <az_ui/az_ui.h>
@@ -37,10 +38,22 @@ void SplView::paint(juce::Graphics& g) {
     g.fillAll(az::ui::background);
 
     const auto snapshot = source_->latest();
-    if (!snapshot || !snapshot->spl.has_value()) {
+    const bool noMetrics = snapshot && snapshot->spl.has_value() && snapshot->spl->metrics.empty() &&
+                           snapshot->spl->alarms.empty() && !snapshot->spl->logWriteFailed &&
+                           !snapshot->spl->calibrationInvalid;
+    if (!snapshot || !snapshot->spl.has_value() || noMetrics) {
+        // Two states drew NOTHING before (UI test 2026-11-09, SYNTHETIC on): a
+        // session with no metric rows to show. Say why, instead of a blank pane.
+        const auto lines = rta::view::splEmptyStateLines(snapshot && snapshot->spl.has_value());
         g.setColour(rta::view::emptyStateText);
         g.setFont(az::ui::monoFont(az::ui::tableFontSize));
-        g.drawText("NO SPL SESSION", getLocalBounds(), juce::Justification::centred, false);
+        auto area = getLocalBounds().reduced(az::ui::gap * 2);
+        auto block = area.withSizeKeepingCentre(
+            area.getWidth(), az::ui::fieldHeight * static_cast<int>(lines.size()));
+        for (const auto& line : lines) {
+            g.drawText(juce::String(line), block.removeFromTop(az::ui::fieldHeight),
+                       juce::Justification::centred, false);
+        }
         return;
     }
 

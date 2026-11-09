@@ -227,9 +227,9 @@ MainComponent::MainComponent()
     // API. Bind stays 127.0.0.1 whatever the environment says; see
     // api/ApiSettingsFromEnv.h and Task J's manual check in
     // docs/plans/2026-09-17-remote-api-impl-plan.md.
-    const rta::api::ApiSettings apiSettings = rta::api::apiSettingsFromEnvironment(
+    apiSettings_ = rta::api::apiSettingsFromEnvironment(
         [](const char* name) { return juce::SystemStats::getEnvironmentVariable(name, {}).toStdString(); });
-    apiServer_ = std::make_unique<rta::api::ApiServer>(analysisThread_, apiSettings);
+    apiServer_ = std::make_unique<rta::api::ApiServer>(analysisThread_, apiSettings_);
 }
 
 MainComponent::~MainComponent() {
