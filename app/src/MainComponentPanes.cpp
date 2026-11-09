@@ -46,9 +46,8 @@ std::string layoutSummary(const std::vector<rta::trace::PaneSpec>& panes) {
 // WorkspaceView::appendPane / removeLastPane and leave the rest alone. The
 // constructor's initial workspace is built in MainComponent's init list.
 //
-// WorkspaceView's factory is consumed once, synchronously, in its own
-// constructor (that class's header comment) -- there is no in-place add or
-// remove, so every change is a rebuild from the specs. Reassigning workspace_
+// A replace is a rebuild from the specs (appendPane/removeLastPane above are
+// the only in-place edits). Reassigning workspace_
 // destroys the old WorkspaceView first (plain unique_ptr assignment order),
 // and juce::Component's own destructor detaches a child from its parent
 // automatically -- no explicit removeChildComponent needed.
