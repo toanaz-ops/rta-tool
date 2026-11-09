@@ -107,7 +107,7 @@ private:
 class RtaToolApplication final : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override    { return "RTA Tool"; }
+    const juce::String getApplicationName() override    { return rta::app::testprofile::applicationName ("RTA Tool"); }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
     bool moreThanOneInstanceAllowed() override          { return false; }
 

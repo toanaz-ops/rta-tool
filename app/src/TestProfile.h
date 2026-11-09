@@ -75,10 +75,23 @@ struct Resolution {
     return r.active ? base + kTitleSuffix : base;
 }
 
+/// JUCE derives the single-instance lock (and forwards a second launch's
+/// command line) from getApplicationName(). A test instance must therefore
+/// have its own name, or an owner launch (e.g. double-clicking a session file)
+/// would be forwarded into the TEST window. Real mode: byte-identical `base`.
+[[nodiscard]] inline juce::String applicationName(const Resolution& r, const juce::String& base) {
+    if (!r.active) return base;
+    const auto key = (r.valid ? r.root.getFullPathName() : juce::String("refused")).toLowerCase();
+    return base + "_testprofile_" + juce::String::toHexString(key.hashCode64() & 0xffffffffLL);
+}
+
 // Convenience wrappers that read the real environment.
 [[nodiscard]] inline bool isActive() { return resolveFromEnvironment().active; }
 [[nodiscard]] inline juce::File documentsDirectory() { return documentsDirectory(resolveFromEnvironment()); }
 [[nodiscard]] inline juce::File appDataDirectory() { return appDataDirectory(resolveFromEnvironment()); }
+[[nodiscard]] inline juce::String applicationName(const juce::String& base) {
+    return applicationName(resolveFromEnvironment(), base);
+}
 [[nodiscard]] inline juce::String windowTitle(const juce::String& base) {
     return windowTitle(resolveFromEnvironment(), base);
 }

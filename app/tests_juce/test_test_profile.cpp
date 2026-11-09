@@ -53,3 +53,15 @@ TEST_CASE("test profile: a relative value is rejected, never the real data", "[t
         CHECK(tp::windowTitle(r, "RTA Tool").endsWith("[TEST PROFILE]"));
     }
 }
+
+TEST_CASE("test profile: application name is scoped in test mode, unchanged in real mode", "[test_profile]") {
+    // The name keys JUCE's single-instance lock: a test instance must not
+    // share it with the owner's real instance.
+    CHECK(tp::applicationName(tp::resolve(""), "RTA Tool") == "RTA Tool");
+    const auto a = tp::applicationName(tp::resolve(tempRoot.getChildFile("pa").getFullPathName()), "RTA Tool");
+    const auto b = tp::applicationName(tp::resolve(tempRoot.getChildFile("pb").getFullPathName()), "RTA Tool");
+    CHECK(a != "RTA Tool");
+    CHECK(a.startsWith("RTA Tool_testprofile_"));
+    CHECK(a != b);
+    CHECK(a == tp::applicationName(tp::resolve(tempRoot.getChildFile("pa").getFullPathName()), "RTA Tool"));
+}
