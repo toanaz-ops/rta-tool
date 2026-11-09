@@ -1067,7 +1067,7 @@ the fixing PR is named). Nothing in this table is a HIGH or MEDIUM.
 **Count by disposition (31 rows):** FIX-next-batch 9, DEFER 6,
 NEW-LANE 5, KNOWN-LIMIT 2, STALE 9. **Status 2026-10-21:** all nine FIX rows are
 done (Z25 in #69, the other eight in the H6 closeout PR, ticked above); DEFER 6,
-NEW-LANE 5 and KNOWN-LIMIT 2 were unchanged and remained the open set. **Status 2026-10-22:** Z16 closed by H7, so NEW-LANE is **4 open** (Z2, Z10, Z14, Z15; counted from the rows above, Z6 is KNOWN-LIMIT); DEFER 6 and KNOWN-LIMIT 2 are unchanged. **Status 2026-11-09:** Z14 (NEW-LANE) and Z6 (KNOWN-LIMIT) closed by HW-176, so NEW-LANE is **3 open** (Z2, Z10, Z15) and KNOWN-LIMIT is **1** (Z7, same trigger as Z6, left as is); DEFER 6 is unchanged.
+NEW-LANE 5 and KNOWN-LIMIT 2 were unchanged and remained the open set. **Status 2026-10-22:** Z16 closed by H7, so NEW-LANE is **4 open** (Z2, Z10, Z14, Z15; counted from the rows above, Z6 is KNOWN-LIMIT); DEFER 6 and KNOWN-LIMIT 2 are unchanged. **Status 2026-11-09:** Z14 (NEW-LANE) and Z6 (KNOWN-LIMIT) closed by HW-176, so, with Z2 closed by PR #103, NEW-LANE is **2 open** (Z10, Z15) and KNOWN-LIMIT is **1** (Z7, same trigger as Z6, left as is); DEFER 6 is unchanged.
 
 ### H4 SWEEP — try it and lane LOWs (2026-10-20, closeout of H4)
 
