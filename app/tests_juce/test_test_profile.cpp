@@ -41,7 +41,7 @@ TEST_CASE("test profile: set and absolute redirects under the profile", "[test_p
 }
 
 TEST_CASE("test profile: a relative value is rejected, never the real data", "[test_profile]") {
-    for (const char* value : {"profile", "..\profile", "./x"}) {
+    for (const char* value : {"profile", "..\\profile", "./x"}) {
         const auto r = tp::resolve(value);
         CHECK(r.active);
         CHECK_FALSE(r.valid);
