@@ -11,7 +11,12 @@
 // `[pane] view=` string does.
 #pragma once
 
+#include "trace/Workspace.h"
 #include "view/PaneRegistry.h"
+
+#include <cstddef>
+#include <string>
+#include <vector>
 
 namespace rta::view {
 
@@ -66,5 +71,109 @@ enum class PaneSelectorButton { Rta, Transfer, Spl, Xover, Eq, Align, Rt60 };
     out.requested = "<unrecognised pane selector button>";
     return out;
 }
+
+// ---- Multi-pane editing (owner card HW-176 = A, 2026-11-09) ----------------
+//
+// A plain view press still REPLACES the workspace with one pane. `+ PANE` arms
+// a one-shot: the NEXT view press appends that view instead (duplicates
+// allowed -- two TRANSFER panes at different sources is a real layout), then
+// the arm clears. `- PANE` drops the last pane. Everything below is pure so the
+// rules are provable on all three CI operating systems with no JUCE.
+//
+// Why not shift-click on the view buttons: invisible, the radio group the
+// selector had then lit only one button (it is gone now, HW-176), "remove" collides with duplicates (which TRANSFER?), and a
+// programmatic click carries no modifier keys. See
+// docs/dsp/2026-11-09-multi-pane-selector.md.
+
+/// What a press leaves behind. `panes` is the layout to build (== the input
+/// when `changed` is false). `refusal` is the readout text when the press was
+/// declined; it is empty otherwise.
+struct PaneEdit {
+    std::vector<rta::trace::PaneSpec> panes;
+    bool changed = false;
+    std::string refusal;
+};
+
+/// Equal weights: appending or removing re-splits the workspace evenly, the
+/// same split a fresh session of N panes gets. Carrying the old weights over
+/// would give a new pane a share nobody chose.
+[[nodiscard]] inline std::vector<rta::trace::PaneSpec> withEqualWeights(
+    std::vector<rta::trace::PaneSpec> panes) {
+    for (auto& pane : panes) pane.weight = 1.0f;
+    return panes;
+}
+
+[[nodiscard]] inline bool canAddPane(std::size_t paneCount) {
+    return paneCount < static_cast<std::size_t>(rta::trace::kMaxPanes);
+}
+
+[[nodiscard]] inline bool canRemovePane(std::size_t paneCount) { return paneCount > 1; }
+
+/// A view button pressed with the add-arm in state `addArmed`.
+[[nodiscard]] inline PaneEdit decideViewPress(const std::vector<rta::trace::PaneSpec>& current,
+                                              PaneSelectorButton button, bool addArmed) {
+    const auto resolution = decidePaneSelection(button);
+    PaneEdit edit;
+    edit.panes = current;
+    if (addArmed) {
+        if (!canAddPane(current.size())) {
+            edit.refusal = "panes: at most " + std::to_string(rta::trace::kMaxPanes) +
+                           " panes -- remove one first";
+            return edit;
+        }
+        edit.panes.push_back(rta::trace::PaneSpec{resolution.requested});
+        edit.panes = withEqualWeights(std::move(edit.panes));
+        edit.changed = true;
+        return edit;
+    }
+    // Idempotent: the one pane already showing this view. A multi-pane layout
+    // is never "already showing" a single view -- pressing RTA there collapses
+    // it to one RTA pane, which is what the operator asked for.
+    if (current.size() == 1 && resolvePaneView(current.front().view).view == resolution.view) {
+        return edit;
+    }
+    edit.panes = {rta::trace::PaneSpec{resolution.requested}};
+    edit.changed = true;
+    return edit;
+}
+
+/// `- PANE`: removes the LAST pane (the one most recently appended).
+[[nodiscard]] inline PaneEdit decideRemoveLast(const std::vector<rta::trace::PaneSpec>& current) {
+    PaneEdit edit;
+    edit.panes = current;
+    if (!canRemovePane(current.size())) {
+        edit.refusal = "panes: the last pane cannot be removed";
+        return edit;
+    }
+    edit.panes.pop_back();
+    edit.panes = withEqualWeights(std::move(edit.panes));
+    edit.changed = true;
+    return edit;
+}
+
+/// The views STORE can freeze, one entry per distinct kind, in first-seen
+/// order. SPL has no per-bin curve; XOVER/EQ/ALIGN/RT60 consume stored traces
+/// rather than produce them (STORE research C2). Two TRANSFER panes are one
+/// kind: they read the same fixed-FFT block, so a second trace would be a
+/// byte-identical duplicate.
+[[nodiscard]] inline std::vector<PaneView> storableKinds(const std::vector<PaneView>& present) {
+    std::vector<PaneView> kinds;
+    for (const auto view : present) {
+        if (view != PaneView::Rta && view != PaneView::Transfer) continue;
+        bool seen = false;
+        for (const auto kind : kinds) seen = seen || kind == view;
+        if (!seen) kinds.push_back(view);
+    }
+    return kinds;
+}
+
+/// The views the specs resolve to, in pane order.
+[[nodiscard]] inline std::vector<PaneView> viewsOf(const std::vector<rta::trace::PaneSpec>& panes) {
+    std::vector<PaneView> out;
+    out.reserve(panes.size());
+    for (const auto& pane : panes) out.push_back(resolvePaneView(pane.view).view);
+    return out;
+}
+
 
 }  // namespace rta::view

@@ -18,6 +18,7 @@
 #include <juce_core/juce_core.h>
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,22 @@ struct TempDir {
     }
     ~TempDir() { std::error_code ec; std::filesystem::remove_all(path, ec); }
 };
+
+juce::Button* findButton(juce::Component& root, const juce::String& text) {
+    std::function<juce::Button*(juce::Component&)> walk = [&](juce::Component& node) -> juce::Button* {
+        for (int i = 0; i < node.getNumChildComponents(); ++i) {
+            auto* child = node.getChildComponent(i);
+            if (auto* button = dynamic_cast<juce::Button*>(child)) {
+                if (button->getButtonText() == text) return button;
+            }
+            if (auto* found = walk(*child)) return found;
+        }
+        return nullptr;
+    };
+    auto* found = walk(root);
+    REQUIRE(found != nullptr);
+    return found;
+}
 
 }  // namespace
 
@@ -100,4 +117,44 @@ TEST_CASE("Save on the default single-pane workspace still writes exactly one pa
     const auto reopened = MainComponentTestAccess::paneSpecsForTest(reader);
     REQUIRE(reopened.size() == 1u);
     CHECK(reopened[0].view == "rta");
+}
+
+// HW-176 T5: the layout built through the OPERATOR path (the buttons a human
+// presses), not restoreWorkspaceForTest, survives SAVE then OPEN.
+TEST_CASE("RTA, + PANE TRANSFER, + PANE XOVER, SAVE, OPEN restores the same three specs",
+         "[main_component_session_multipane]") {
+    TempDir dir("selector-round-trip");
+
+    MainComponent writer;
+    writer.setSyntheticMode(true);
+    findButton(writer, "RTA")->onClick();
+    findButton(writer, "+ PANE")->onClick();
+    findButton(writer, "TRANSFER")->onClick();
+    findButton(writer, "+ PANE")->onClick();
+    findButton(writer, "XOVER")->onClick();
+    const auto saved = MainComponentTestAccess::paneSpecsForTest(writer);
+    REQUIRE(saved.size() == 3u);
+
+    MainComponentTestAccess::saveSessionForTest(writer, juce::File(dir.path.string()));
+    CHECK(MainComponentTestAccess::readoutForTest(writer).startsWith("SAVED"));
+
+    MainComponent reader;
+    reader.setSyntheticMode(true);
+    MainComponentTestAccess::openSessionForTest(reader, juce::File(dir.path.string()));
+    CHECK(MainComponentTestAccess::readoutForTest(reader).startsWith("OPENED"));
+
+    const auto reopened = MainComponentTestAccess::paneSpecsForTest(reader);
+    REQUIRE(reopened.size() == 3u);
+    for (std::size_t i = 0; i < 3; ++i) {
+        INFO("pane " << i);
+        CHECK(reopened[i].view == saved[i].view);
+        CHECK(reopened[i].weight == saved[i].weight);
+    }
+    CHECK(reopened[0].view == "rta");
+    CHECK(reopened[1].view == "transfer");
+    CHECK(reopened[2].view == "xover");
+    // Open lights the same set the writer showed.
+    CHECK(findButton(reader, "XOVER")->getToggleState());
+    CHECK(findButton(reader, "TRANSFER")->getToggleState());
+    CHECK_FALSE(findButton(reader, "+ PANE")->isEnabled());
 }

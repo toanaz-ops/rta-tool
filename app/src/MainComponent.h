@@ -68,6 +68,9 @@ public:
     // Rebuilds `workspace_` via the SAME `makePaneFactory` seam the
     // constructor uses (MainComponentPanes.cpp). Never touches SPL logging.
     void selectPaneView(rta::view::PaneSelectorButton button);
+    // HW-176: `+ PANE` arm toggle and `- PANE` (MainComponentPanes.cpp).
+    void toggleAddPaneArm();
+    void removeLastPane();
 
     [[nodiscard]] rta::view::PaneView currentPaneView() const noexcept { return currentPaneView_; }
 
@@ -124,6 +127,12 @@ private:
     void startFreshSplLogWithConfig(const rta::measure::SplConfig& config,
                                     std::optional<double> calibratorLevelDb, std::uint64_t epoch);
     void exportReportClicked();
+    // MainComponentPanes.cpp: the ONE build path selectPaneView, `- PANE` and session Open all
+    // delegate to; also refreshes everything that depends on which panes are showing.
+    void rebuildWorkspace(std::vector<rta::trace::PaneSpec> panes);
+    [[nodiscard]] std::vector<rta::view::PaneView> currentPaneViews() const;
+    void refreshPaneControls();
+    void finishPaneEdit();  // after WorkspaceView::appendPane / removeLastPane
     void storeClicked();  // MainComponentStore.cpp (station-3 T5): freezes the pane's Snapshot into library_
     /// STORE's conversion, shared with VERIFY's after-measurement (MainComponentStore.cpp).
     [[nodiscard]] std::optional<rta::trace::Trace> freezeSnapshot(const rta::measure::Snapshot& snapshot,
@@ -201,13 +210,16 @@ private:
     // STORE (station-3): freezes the live measurement into TraceLibrary.
     juce::TextButton storeButton_{"STORE"};
     juce::Label storeReadout_;
+    // HW-176: the one-shot `+ PANE` arm, and the line that says why a pane edit was refused.
+    bool paneAddArmed_ = false;
+    juce::Label paneReadout_;
 
     // Fix round LOW F3: device panel + routing matrix + channel role table +
     // their scroll viewport (item 4), one member instead of five -- see
     // MainComponentRail.h. RoutingMatrix rows follow the device's channel count.
     MainComponentRail rail_;
 
-    // Pane selector: a radio group. Not persisted (SPL-R11) -- starts at Rta.
+    // Pane selector: seven view buttons plus + PANE / - PANE. Not persisted (SPL-R11) -- starts at Rta.
     MainComponentPaneSelector paneSelector_;
     rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
 

@@ -169,6 +169,11 @@ struct MainComponentTestAccess {
     [[nodiscard]] static juce::String storeReadoutForTest(const MainComponent& c) {
         return c.storeReadout_.getText();
     }
+    // HW-176: the pane-edit readout and the one-shot `+ PANE` arm.
+    [[nodiscard]] static juce::String paneReadoutForTest(const MainComponent& c) {
+        return c.paneReadout_.getText();
+    }
+    [[nodiscard]] static bool paneAddArmedForTest(const MainComponent& c) { return c.paneAddArmed_; }
     [[nodiscard]] static bool storeButtonEnabledForTest(const MainComponent& c) {
         return c.storeButton_.isEnabled();
     }

@@ -27,7 +27,7 @@ line.
 | 6 | P4b THD / STI | no | none | BLOCKED | needs IEC 60268-16 (a purchase); no THD/STI code in `core/` |
 | 7 | L5a trace library + session (STORE, Save/Open) | done | STORE `MainComponent.cpp:146` → `storeClicked` `MainComponentStore.cpp:126`; SAVE `MainComponentSession.cpp:71`; OPEN `:74` | BUILT | PR #43, #51; hardening #55, #57 |
 | 8 | L5b targets / corridor / score | no (dev preview only: `app/src/dev/preview/TargetMatchPreview.cpp`) | none | BLOCKED | needs ISO 2969 or SMPTE ST 202 (a purchase) |
-| 9 | L5c Bode layout + workspaces | done | TRANSFER pane draws the Bode layout (button `MainComponentPanes.cpp:42`). **Partial:** the selector always builds ONE pane (`selectPaneView`); a multi-pane workspace exists only when OPEN restores a saved session (PR #57 saves all panes) | BUILT (partial) | report 004 |
+| 9 | L5c Bode layout + workspaces | done | TRANSFER pane draws the Bode layout (button `MainComponentPanes.cpp`). ~~**Partial:** the selector always builds ONE pane (`selectPaneView`); a multi-pane workspace exists only when OPEN restores a saved session (PR #57 saves all panes)~~ **updated after HW-176 (2026-11-09):** `+ PANE` / `- PANE` build and trim a 1..3 pane workspace from the selector row (`MainComponentPaneSelector.cpp`, rules `view/PaneSelectorDecision.h`); session save already wrote every pane | BUILT | report 004 |
 | 10 | L6a SPL-pro | done | SPL pane `MainComponentPanes.cpp:43`; CAL START `MainComponent.cpp:118`, CAL END `:123`; EXPORT REPORT `:134`; logging starts itself from `pollSplLogging` (`MainComponentSpl.cpp`) | BUILT | report 009; Wave 4b (web viewer) cut 2026-09-25 |
 | 11 | L6b multichannel | done | routing matrix (roles, AVG column) `view/RoutingMatrix.cpp`; rows follow the device channel count (PR #58). TF slots reachable since H8 (PR #96, rail TF picker); **Gap:** `CaptureSequencer` has no caller (deferred) | BUILT (partial) | report 006; PR #58 |
 | 12 | L-API remote API | done | H8 (PR #97): environment switch `RTA_API_ENABLED=1` (optional `RTA_API_PORT`, `RTA_API_TOKEN`; **without a token any local process can read the measurement data over loopback, unauthenticated**; a bad port or an unrecognised enable value falls back silently) read by `MainComponent`'s constructor via `api/ApiSettingsFromEnv.h`; default OFF, bind stays 127.0.0.1. **No UI control** and no settings file (partial). Unmeasured | BUILT (partial) | report 008; PR #16, #18 |
@@ -137,6 +137,8 @@ Arithmetic: 13 + 1 (row 4) = 14, 14 / 19 = 0.7368; 9 + 1 = 10, 10 / 19 = 0.5263;
 (a) does not move because H6 is an `app/` lane. (c) is now measured: 14 / 19.
 
 **After H8 (PRs #96 TF picker, #97 API env switch, #98 M1/N1/N3):** row 11 loses its TF gap (still partial: `CaptureSequencer`); row 12 CORE ONLY -> BUILT (partial). (b) 14 -> 15 / 19 = 78.9 % (row 12 joins the list); (a) stays 15 / 19 = 78.9 % and (b-strict) stays 12 / 19 = 63.2 %.
+
+**After the 2026-11-09 owner-card lanes (HW-176 multi-pane selector):** row 9 flips from BUILT (partial) to BUILT; the multi-pane gap that carried its flag is closed (QA queue Z14, Z6). (a) stays 15 / 19 = 78.9 % (engine); (b) stays 15 / 19 = 78.9 % (row 9 was already counted); (b-strict) 12 -> 13 / 19 = 68.4 % (12 + 1 = 13, 13 / 19 = 0.6842). Rows 11 and 12 stay partial.
 
 **After H7 (PRs #87 `A1`, #88 `A2`, #91 `B1`, #94 `B2`; flake fixes #90, #92, #93 move no count):** rows 1 and 13 flip from
 BUILT (partial) to BUILT; the generator gap that carried both flags is closed.

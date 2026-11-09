@@ -344,13 +344,15 @@ TEST_CASE("selectPaneView keeps the selector buttons' toggle state in sync",
 
 TEST_CASE("re-clicking the already-selected button leaves it lit and the pane unchanged",
          "[main_component_panes]") {
-    // Fix round 2 (verifier LOW F2): deleting setRadioGroupId (:26) stayed
-    // green. Without it, `splButton_`'s clickTogglesState-only behaviour
-    // is a plain invert -- clicking it a second time (as a stray double
-    // click, or simply an operator confirming the pane they are already on)
-    // would turn it OFF while the pane it names is still on screen, with
-    // nothing to turn it back on (selectPaneView's own idempotent guard
-    // fires and touches no button state, because the PANE is not changing).
+    // Fix round 2 (verifier LOW F2), reworded for HW-176: the selector used to
+    // be a JUCE radio group; it is not any more, and syncTo() owns every
+    // button's toggle state while clickingTogglesState stays false. The
+    // mutant this still guards is a button that flips itself on a click: a
+    // second click (a stray double click, or an operator confirming the pane
+    // they are already on) would turn it OFF while the pane it names is still
+    // on screen, with nothing to turn it back on (selectPaneView's own
+    // idempotent guard touches no button state, because the PANE is not
+    // changing).
     MainComponent component;
     component.setSyntheticMode(true);
 

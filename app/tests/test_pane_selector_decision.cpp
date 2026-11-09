@@ -8,6 +8,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <string>
+#include <vector>
+
 using rta::view::decidePaneSelection;
 using rta::view::PaneSelectorButton;
 using rta::view::PaneView;
@@ -94,4 +97,95 @@ TEST_CASE("paneViewName round-trips through resolvePaneView for every PaneView",
         CHECK_FALSE(resolution.fellBack);
         CHECK(resolution.view == view);
     }
+}
+
+// ---- HW-176 multi-pane editing ----------------------------------------------
+
+using rta::trace::PaneSpec;
+using rta::view::canAddPane;
+using rta::view::canRemovePane;
+using rta::view::decideRemoveLast;
+using rta::view::decideViewPress;
+using rta::view::storableKinds;
+
+namespace {
+std::vector<std::string> names(const std::vector<PaneSpec>& panes) {
+    std::vector<std::string> out;
+    for (const auto& pane : panes) out.push_back(pane.view);
+    return out;
+}
+}  // namespace
+
+TEST_CASE("a plain view press replaces the workspace with exactly one pane",
+         "[pane_selector_decision]") {
+    const std::vector<PaneSpec> two{PaneSpec{"rta"}, PaneSpec{"transfer"}};
+    const auto edit = decideViewPress(two, PaneSelectorButton::Spl, false);
+    CHECK(edit.changed);
+    CHECK(edit.refusal.empty());
+    CHECK(names(edit.panes) == std::vector<std::string>{"spl"});
+}
+
+TEST_CASE("pressing the view already alone on screen changes nothing; in a multi-pane layout it collapses",
+         "[pane_selector_decision]") {
+    const auto same = decideViewPress({PaneSpec{"rta"}}, PaneSelectorButton::Rta, false);
+    CHECK_FALSE(same.changed);
+
+    const auto collapsed =
+        decideViewPress({PaneSpec{"rta"}, PaneSpec{"transfer"}}, PaneSelectorButton::Rta, false);
+    CHECK(collapsed.changed);
+    CHECK(names(collapsed.panes) == std::vector<std::string>{"rta"});
+}
+
+TEST_CASE("an armed view press appends, duplicates allowed, with equal weights",
+         "[pane_selector_decision]") {
+    const auto edit = decideViewPress({PaneSpec{"transfer", 0.75f}}, PaneSelectorButton::Transfer, true);
+    CHECK(edit.changed);
+    REQUIRE(edit.panes.size() == 2u);
+    CHECK(names(edit.panes) == std::vector<std::string>{"transfer", "transfer"});
+    CHECK(edit.panes[0].weight == 1.0f);
+    CHECK(edit.panes[1].weight == 1.0f);
+}
+
+TEST_CASE("the pane cap is kMaxPanes exactly: add allowed at kMaxPanes - 1, refused at kMaxPanes",
+         "[pane_selector_decision]") {
+    const auto cap = static_cast<std::size_t>(rta::trace::kMaxPanes);
+    CHECK(canAddPane(cap - 1));
+    CHECK_FALSE(canAddPane(cap));
+
+    std::vector<PaneSpec> full(cap, PaneSpec{"rta"});
+    const auto refused = decideViewPress(full, PaneSelectorButton::Spl, true);
+    CHECK_FALSE(refused.changed);
+    CHECK_FALSE(refused.refusal.empty());
+    CHECK(refused.panes.size() == cap);
+
+    std::vector<PaneSpec> room(cap - 1, PaneSpec{"rta"});
+    const auto accepted = decideViewPress(room, PaneSelectorButton::Spl, true);
+    CHECK(accepted.changed);
+    CHECK(accepted.panes.size() == cap);
+}
+
+TEST_CASE("remove drops the LAST pane, and is refused at one pane", "[pane_selector_decision]") {
+    CHECK_FALSE(canRemovePane(1));
+    CHECK(canRemovePane(2));
+
+    const auto edit = decideRemoveLast({PaneSpec{"rta"}, PaneSpec{"transfer"}, PaneSpec{"xover"}});
+    CHECK(edit.changed);
+    CHECK(names(edit.panes) == std::vector<std::string>{"rta", "transfer"});
+
+    const auto refused = decideRemoveLast({PaneSpec{"rta"}});
+    CHECK_FALSE(refused.changed);
+    CHECK_FALSE(refused.refusal.empty());
+    CHECK(refused.panes.size() == 1u);
+}
+
+TEST_CASE("STORE kinds: one per distinct storable view, first-seen order, others ignored",
+         "[pane_selector_decision]") {
+    const auto kinds = storableKinds(
+        {PaneView::Xover, PaneView::Transfer, PaneView::Transfer, PaneView::Rta, PaneView::Spl});
+    REQUIRE(kinds.size() == 2u);
+    CHECK(kinds[0] == PaneView::Transfer);
+    CHECK(kinds[1] == PaneView::Rta);
+
+    CHECK(storableKinds({PaneView::Xover, PaneView::Spl, PaneView::Eq}).empty());
+    CHECK(storableKinds({PaneView::Transfer, PaneView::Transfer}).size() == 1u);
 }

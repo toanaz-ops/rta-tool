@@ -157,7 +157,7 @@ Theo CLAUDE.md global rule 16, máy local chỉ chạy test hẹp; full suite l�
 
 ## Nợ
 
-**Máy làm được:** analyser rebuild 424 MB (chưa có PR); E4 (`p_c` đọc từ đường fit 20 dB trên cùng rồi ngoại suy ~40 dB — cần research); F2/F3 và G1 (`DEFER(PR #78 area)`, chờ #78 merge); Z21, Z26, Z27, Z28, L9, D7 (xem bảng LOW trong QA queue). NEW-LANE chưa xếp lịch: TF slot picker, multi-pane selector, L-API enable switch, generator/output control, XOVER `appliedDelaySamples`. `CaptureSequencer`, MTW storage vẫn hoãn.
+**Máy làm được:** analyser rebuild 424 MB (chưa có PR); E4 (`p_c` đọc từ đường fit 20 dB trên cùng rồi ngoại suy ~40 dB — cần research); F2/F3 và G1 (`DEFER(PR #78 area)`, chờ #78 merge); Z21, Z26, Z27, Z28, L9, D7 (xem bảng LOW trong QA queue). Không còn NEW-LANE nào chưa xếp lịch trong danh sách này: TF slot picker (H8 #96), L-API enable switch (H8 #97), generator/output control (H7), XOVER `appliedDelaySamples` (#103) và multi-pane selector (HW-176, PR #105) đều đã xong. `CaptureSequencer`, MTW storage vẫn hoãn.
 
 **Cần người:** hàng B (VERIFY), C (SWEEP), ALIGN và RT60 trên phần cứng thật; ISO 3382-1 vẫn là hoãn có chủ ý của chủ nhân (2026-08-30).
 

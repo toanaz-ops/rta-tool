@@ -9,6 +9,7 @@
 namespace rta::view {
 
 WorkspaceView::WorkspaceView(std::vector<rta::trace::PaneSpec> panes, PaneFactory factory) {
+    factory_ = factory;
     auto normalised = rta::trace::normalisePanes(std::move(panes));
     children_.reserve(normalised.size());
     weights_.reserve(normalised.size());
@@ -56,6 +57,35 @@ std::vector<rta::trace::PaneSpec> WorkspaceView::paneSpecs() const {
         specs.push_back(rta::trace::PaneSpec{paneViewName(views_[i]), weights_[i]});
     }
     return specs;
+}
+
+void WorkspaceView::equaliseWeights() {
+    const float share = 1.0f / static_cast<float>(weights_.size());
+    for (auto& weight : weights_) weight = share;
+}
+
+bool WorkspaceView::appendPane(const rta::trace::PaneSpec& spec) {
+    if (children_.size() >= static_cast<std::size_t>(rta::trace::kMaxPanes)) return false;
+    const auto resolution = resolvePaneView(spec.view);
+    auto child = factory_(resolution.view);
+    addAndMakeVisible(*child);
+    if (auto* consumer = dynamic_cast<LibraryConsumer*>(child.get())) consumer->setLibrary(library_);
+    views_.push_back(resolution.view);
+    weights_.push_back(1.0f);
+    children_.push_back(std::move(child));
+    equaliseWeights();
+    resized();
+    return true;
+}
+
+bool WorkspaceView::removeLastPane() {
+    if (children_.size() <= 1) return false;
+    children_.pop_back();  // juce::Component's destructor detaches it from this parent
+    views_.pop_back();
+    weights_.pop_back();
+    equaliseWeights();
+    resized();
+    return true;
 }
 
 void WorkspaceView::setLibrary(const rta::trace::TraceLibrary* library) {

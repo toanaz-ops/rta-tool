@@ -201,7 +201,11 @@ MainComponent::MainComponent()
     rail_.attachTo(*this);
 
     // Owner decision 2026-09-26: the pane selector (MainComponentPanes.cpp).
-    paneSelector_.attach(*this, [this](rta::view::PaneSelectorButton button) { selectPaneView(button); });
+    paneSelector_.attach(*this, [this](rta::view::PaneSelectorButton button) { selectPaneView(button); },
+                         [this] { toggleAddPaneArm(); }, [this] { removeLastPane(); });
+    paneReadout_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(paneReadout_);
+    refreshPaneControls();
 
     addAndMakeVisible(*workspace_);
     // The seam this whole task exists for (docs/HANDOFF.md): a library was
