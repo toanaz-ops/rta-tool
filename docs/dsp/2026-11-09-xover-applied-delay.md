@@ -48,7 +48,11 @@ correct twice (comment at `AlignmentWizard.cpp`, test
   non-zero and sample rates differ per trace; needs a choice of reference side.
   The absolute form needs no such choice and is the same arithmetic.
 
-## ALIGN's sign (T4, NOT fixed here)
+## ALIGN's sign (T4) -- FIXED afterwards in `fix/align-applied-delay-sign`
+
+The paragraph below is the finding as recorded; the fix and its closed-form test
+are in `docs/dsp/2026-09-06-l7-alignment-wizard.md`, "Amendment: the
+applied-delay sign".
 
 `core/src/dsp/CrossoverBandFit.cpp:79-95` pre-rotates hB by
 `e^{+j 2 pi f (D_B - D_A)/fs}`, and `CrossoverFit.h:112` / the fixture assume a

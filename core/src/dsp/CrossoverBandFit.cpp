@@ -93,10 +93,12 @@ BandFit crossoverBandFit(std::span<const std::complex<double>> hA,
             continue;
         }
 
-        // Undo the difference in appliedDelaySamples BEFORE forming R. A
-        // capture delayed by D samples carries e^{-j2 pi f D/fs}, so the
-        // correction is the conjugate of that difference on the B side.
-        const std::complex<double> hBCorrected = hB[k] * std::polar(1.0, rotationPerHz * f);
+        // Undo the difference in appliedDelaySamples BEFORE forming R. The
+        // engine stores a capture with D applied as H_true * e^{+j2 pi f D/fs}
+        // (a positive D discards leading measurement samples = an advance;
+        // measured in test_dualfft_applied_delay_sign.cpp), so the correction
+        // on the B side is the conjugate of that difference: e^{-j2 pi f dD/fs}.
+        const std::complex<double> hBCorrected = hB[k] * std::polar(1.0, -rotationPerHz * f);
         const double magA = std::abs(hA[k]);
         const double magB = std::abs(hBCorrected);
         if (magA <= 0.0 || magB <= 0.0) continue;  // a null bin has no relative phase

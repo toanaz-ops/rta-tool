@@ -52,6 +52,11 @@ inline BandFitOptions baseOptions() {
 
 /// H_A == 1, H_B = e^{j(phi0 - 2 pi f tau0)}: a pure delay plus a constant,
 /// which is exactly the model the fit is built on, so R must come out 1.
+///
+/// `extraDelaySeconds` is a PHYSICAL extra lag on B. To store a capture with
+/// applied delay D, pass -D/fs: the real engine stores H_true * e^{+j2 pi f D/fs}
+/// (an advance), which is test_dualfft_applied_delay_sign.cpp's measurement and
+/// is re-checked end to end in test_crossover_band_fit_real_engine.cpp.
 inline void pureDelayPair(double tau0, double phi0, std::vector<std::complex<double>>& hA,
                    std::vector<std::complex<double>>& hB, double extraDelaySeconds = 0.0) {
     hA.assign(kBins, std::complex<double>{ 1.0, 0.0 });

@@ -115,12 +115,15 @@ TEST_CASE("crossoverBandFit undoes appliedDelaySamples itself -- the correction 
     // so the only way to get it wrong is to pass the wrong number, not to
     // forget the step.
     //
-    // A capture with D extra samples of applied delay carries e^{-j2 pi f D/fs}.
-    // The fixture puts 48 samples of that on H_B and the fit takes them back off.
+    // A capture stored with D samples of applied delay carries e^{+j2 pi f D/fs}
+    // (measured on the real engine: test_dualfft_applied_delay_sign.cpp; this
+    // comment and the fixture used the opposite sign until 2026-11-09). The
+    // fixture puts 48 samples of that on H_B -- an extra lag of -48/fs -- and
+    // the fit takes them back off.
     constexpr double kExtraSamples = 48.0;
     constexpr double kFs = 48000.0;
     std::vector<std::complex<double>> hA, hB;
-    pureDelayPair(3.7e-3, kPi, hA, hB, kExtraSamples / kFs);
+    pureDelayPair(3.7e-3, kPi, hA, hB, -kExtraSamples / kFs);
 
     auto corrected = baseOptions();
     corrected.appliedDelayDifferenceSamples = kExtraSamples;
@@ -136,7 +139,7 @@ TEST_CASE("crossoverBandFit undoes appliedDelaySamples itself -- the correction 
     const double offBy = without.tauSeconds - withIt.tauSeconds;
     INFO("without it: tau = " << without.tauSeconds << ", off by " << offBy
                               << " s (48/48000 = " << (kExtraSamples / kFs) << ")");
-    CHECK_THAT(offBy, WithinAbs(kExtraSamples / kFs, 1e-9));
+    CHECK_THAT(offBy, WithinAbs(-kExtraSamples / kFs, 1e-9));
 }
 
 TEST_CASE("crossoverBandFit refuses with a reason rather than fitting over nothing",
