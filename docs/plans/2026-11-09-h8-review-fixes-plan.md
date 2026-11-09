@@ -11,6 +11,7 @@
 | L-1 | low-SNR hint only on the two "no peak" refusals; reuses `shippedSweepConfig` | `MainComponentSweep.cpp::finish` -> `lowSnrHintApplies` | lower GEN below -12, press SWEEP | positive and negative tests |
 | L-2, L-3 | constant-time bearer compare; ASCII-only env parsing | `ApiPolicy.cpp`, `ApiSettingsFromEnv.h` (MainComponent constructor) | `RTA_API_TOKEN` set, `curl -H "Authorization: Bearer ..."` | tests |
 | L-5, L-6 | doc corrections (master plan line 139, H8 plan c1, sweep plan refs) | docs | n/a | read |
-| L-8 | picker id 0 clamps to slot 0 | `MainComponentRail.cpp` picker `onChange` | clear/select the TF picker | by reading (no test seam for a cleared combo) |
-| 6a | minimum window size and a default that fits the work area | `Main.cpp::MainWindow` -> `WindowSizing.h` | launch on a 1366x768 screen; drag the window narrower | `windowSizingFor` tests; smoke: GetWindowRect vs work area |
+| L-8 | picker id 0 clamps to slot 0 | `MainComponentRail.cpp` picker `onChange` -> `TfSlotPicker.h::tfSlotForPickerId` | clear/select the TF picker | `[tf_slot_picker]` pure test; `[main_component_rail]` clear-to-id-0 case (mutation: raw `id - 1` goes RED) |
+| 6a | minimum window size and a default that fits the work area | `Main.cpp::MainWindow` -> `WindowSizing.h` | launch on a 1366x768 screen; drag the window narrower | `windowSizingFor` tests; smoke: GetWindowRect vs work area; OPEN: layout proof at 1366x768/minimum content found START cut off by the rail viewport (168 px tall at 1300x698, 80 px at 1100x610; START starts at y=156) -- reachable by scroll only |
+| L-7 | `RoutingMatrix::onCellClicked` sets role then tf as two writes | `RoutingMatrix.cpp` | n/a | OPEN: premise refuted -- `configEpoch` has no consumer in `app/src`; routing is re-planned on every drain/publish tick, so no comment written yet |
 | 6b | SPL empty-state explanation | `view/SplView.cpp::paint` -> `SplEmptyState.h` | open the SPL pane with SYNTHETIC on | text test |

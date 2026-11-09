@@ -5,6 +5,7 @@
 // rule (L-1). All pure: no window, no device.
 #include <catch2/catch_test_macros.hpp>
 
+#include "TfSlotPicker.h"
 #include "WindowSizing.h"
 #include "api/ApiPolicy.h"
 #include "api/ApiSettingsFromEnv.h"
@@ -106,4 +107,17 @@ TEST_CASE("low-SNR hint applies only to the two no-peak refusals below the shipp
     CHECK_FALSE(rta::measure::lowSnrHintApplies(SweepIrStatus::ReferenceNotFound, shipped + 6.0));
     CHECK_FALSE(rta::measure::lowSnrHintApplies(SweepIrStatus::ArrivalOutOfWindow, shipped - 20.0));
     CHECK_FALSE(rta::measure::lowSnrHintApplies(SweepIrStatus::TailTooShort, shipped - 20.0));
+}
+
+TEST_CASE("TF slot picker id maps to slot id-1, clamped to 0..7 (H8 L-8)", "[tf_slot_picker]") {
+    using rta::app::tfSlotForPickerId;
+    CHECK(tfSlotForPickerId(1) == 0);
+    CHECK(tfSlotForPickerId(3) == 2);
+    CHECK(tfSlotForPickerId(8) == 7);
+    // A cleared combo reports id 0: slot 0, never -1.
+    CHECK(tfSlotForPickerId(0) == 0);
+    CHECK(tfSlotForPickerId(-5) == 0);
+    // Past the last entry, and a hostile large value: the last slot.
+    CHECK(tfSlotForPickerId(9) == 7);
+    CHECK(tfSlotForPickerId(1'000'000) == 7);
 }
