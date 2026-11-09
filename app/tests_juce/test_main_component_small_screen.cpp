@@ -31,6 +31,7 @@
 #include "WindowSizing.h"
 
 #include <array>
+#include <functional>
 
 namespace {
 
@@ -110,7 +111,48 @@ void checkStartFullyVisible(Size content) {
     CHECK(railContent.getHeight() >= viewport.getHeight());
 }
 
+/// HW-176: the two pane-edit buttons sit in the selector row, which has to hold
+/// nine cells now. They must be on screen, wide enough to show their text, and
+/// overlap nothing in that row.
+void checkPaneEditButtons(Size content) {
+    INFO("content " << content.w << "x" << content.h);
+    Rig rig(content);
+    const auto find = [&rig](const juce::String& text) -> juce::Button* {
+        std::function<juce::Button*(juce::Component&)> walk = [&](juce::Component& node) -> juce::Button* {
+            for (int i = 0; i < node.getNumChildComponents(); ++i) {
+                auto* child = node.getChildComponent(i);
+                if (auto* button = dynamic_cast<juce::Button*>(child)) {
+                    if (button->getButtonText() == text) return button;
+                }
+                if (auto* found = walk(*child)) return found;
+            }
+            return nullptr;
+        };
+        auto* found = walk(rig.component);
+        REQUIRE(found != nullptr);
+        return found;
+    };
+    const juce::Button* add = find("+ PANE");
+    const juce::Button* remove = find("- PANE");
+    const juce::Button* rt60 = find("RT60");
+    for (const juce::Button* b : {add, remove}) {
+        CHECK(b->isVisible());
+        CHECK(b->getWidth() >= 50);  // wide enough for "+ PANE" at the row's font
+        CHECK(fullyVisibleIn(rig.component, *b));
+    }
+    CHECK_FALSE(add->getBounds().intersects(remove->getBounds()));
+    CHECK_FALSE(add->getBounds().intersects(rt60->getBounds()));
+    CHECK(add->getY() == rt60->getY());  // one row
+}
+
 }  // namespace
+
+TEST_CASE("small screen: + PANE / - PANE are on screen at 1366x768 and the minimum",
+          "[main_component_small_screen]") {
+    const auto sizing = rta::app::windowSizingFor(1366, 768 - 40);
+    checkPaneEditButtons({sizing.width, sizing.height - kTitleBar});
+    checkPaneEditButtons({rta::app::kMinimumWidth, rta::app::kMinimumHeight - kTitleBar});
+}
 
 TEST_CASE("small screen: 1366x768 laptop content keeps the masthead GEN/OUT cells on screen",
           "[main_component_small_screen]") {

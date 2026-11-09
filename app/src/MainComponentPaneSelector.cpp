@@ -4,17 +4,19 @@
 
 #include <az_ui/az_ui.h>
 
-void MainComponentPaneSelector::attach(juce::Component& parent, SelectFn onSelect) {
+#include <utility>
+
+void MainComponentPaneSelector::attach(juce::Component& parent, SelectFn onSelect,
+                                       std::function<void()> onToggleAdd,
+                                       std::function<void()> onRemoveLast) {
     using rta::view::PaneSelectorButton;
-    // One radio group: JUCE mutually excludes toggle state within a group
-    // sharing both a group id and a parent, the same "clicking one turns the
-    // others off" contract modeSwitch_ gives itself alone with
-    // setClickingTogglesState(true).
-    constexpr int kPaneSelectorRadioGroupId = 1;
+    // No radio group (HW-176): a multi-pane workspace lights one button per
+    // pane, and JUCE's radio group would force all but one off. Each button
+    // is a plain button; syncTo() owns its toggle state, and a click never
+    // flips it on its own (clickingTogglesState stays false).
     for (auto* button : {&rtaButton_, &transferButton_, &splButton_, &xoverButton_, &eqButton_,
-                         &alignButton_, &rt60Button_}) {
-        button->setRadioGroupId(kPaneSelectorRadioGroupId, juce::dontSendNotification);
-        button->setClickingTogglesState(true);
+                         &alignButton_, &rt60Button_, &addPaneButton_}) {
+        button->setClickingTogglesState(false);
     }
 
     // Matches currentPaneView_'s own default (Rta) -- the button that reads
@@ -40,6 +42,11 @@ void MainComponentPaneSelector::attach(juce::Component& parent, SelectFn onSelec
     eqButton_.onClick = [onSelect] { onSelect(PaneSelectorButton::Eq); };
     alignButton_.onClick = [onSelect] { onSelect(PaneSelectorButton::Align); };
     rt60Button_.onClick = [onSelect] { onSelect(PaneSelectorButton::Rt60); };
+    addPaneButton_.getProperties().set(az::ui::hintProperty,
+                                       "arm, then press a view: that view is ADDED beside the others");
+    removePaneButton_.getProperties().set(az::ui::hintProperty, "remove the last pane");
+    addPaneButton_.onClick = std::move(onToggleAdd);
+    removePaneButton_.onClick = std::move(onRemoveLast);
 
     parent.addAndMakeVisible(rtaButton_);
     parent.addAndMakeVisible(transferButton_);
@@ -48,39 +55,49 @@ void MainComponentPaneSelector::attach(juce::Component& parent, SelectFn onSelec
     parent.addAndMakeVisible(eqButton_);
     parent.addAndMakeVisible(alignButton_);
     parent.addAndMakeVisible(rt60Button_);
+    parent.addAndMakeVisible(addPaneButton_);
+    parent.addAndMakeVisible(removePaneButton_);
 }
 
 void MainComponentPaneSelector::layout(juce::Rectangle<int> row) {
-    // Same "(width - N-1 gaps) / N" shape MainComponent::resized() already
-    // uses for the LOCATE/APPLY and CAL START/CAL END rows -- seven equal
-    // cells, six gaps between them (grown from six when RT60 was added).
-    const int buttonWidth = (row.getWidth() - az::ui::gap * 6) / 7;
-    rtaButton_.setBounds(row.removeFromLeft(buttonWidth));
+    // Nine cells, eight gaps. The two edit cells are narrower than a view
+    // cell ("+ PANE" is shorter than "TRANSFER"): a 7:2-cell split with the
+    // edit cells at 2/3 of a view cell. At the 1100 px minimum window the row
+    // is ~708 px.
+    const int usable = row.getWidth() - az::ui::gap * 8;
+    const int buttonWidth = usable * 3 / 25;           // 7 * 3 + 2 * 2 = 25 thirds
+    const int editWidth = usable * 2 / 25;
+    for (auto* button : {&rtaButton_, &transferButton_, &splButton_, &xoverButton_, &eqButton_,
+                         &alignButton_, &rt60Button_}) {
+        button->setBounds(row.removeFromLeft(buttonWidth));
+        row.removeFromLeft(az::ui::gap);
+    }
+    addPaneButton_.setBounds(row.removeFromLeft(editWidth));
     row.removeFromLeft(az::ui::gap);
-    transferButton_.setBounds(row.removeFromLeft(buttonWidth));
-    row.removeFromLeft(az::ui::gap);
-    splButton_.setBounds(row.removeFromLeft(buttonWidth));
-    row.removeFromLeft(az::ui::gap);
-    xoverButton_.setBounds(row.removeFromLeft(buttonWidth));
-    row.removeFromLeft(az::ui::gap);
-    eqButton_.setBounds(row.removeFromLeft(buttonWidth));
-    row.removeFromLeft(az::ui::gap);
-    alignButton_.setBounds(row.removeFromLeft(buttonWidth));
-    row.removeFromLeft(az::ui::gap);
-    rt60Button_.setBounds(row);
+    removePaneButton_.setBounds(row);
 }
 
-void MainComponentPaneSelector::syncTo(rta::view::PaneView view) {
+void MainComponentPaneSelector::syncTo(const std::vector<rta::view::PaneView>& present) {
     using rta::view::PaneView;
-    rtaButton_.setToggleState(view == PaneView::Rta, juce::dontSendNotification);
-    transferButton_.setToggleState(view == PaneView::Transfer, juce::dontSendNotification);
-    splButton_.setToggleState(view == PaneView::Spl, juce::dontSendNotification);
-    // PR #45 fix round 3 (verifier, PR #43 reconciliation checklist item 3):
-    // this line was missing here, unlike MainComponent::selectPaneView
-    // (MainComponentPanes.cpp), which calls syncTo for every button -- opening a saved XOVER session left every
-    // selector button unlit even though the xover pane itself was showing.
-    xoverButton_.setToggleState(view == PaneView::Xover, juce::dontSendNotification);
-    eqButton_.setToggleState(view == PaneView::Eq, juce::dontSendNotification);
-    alignButton_.setToggleState(view == PaneView::Align, juce::dontSendNotification);
-    rt60Button_.setToggleState(view == PaneView::Rt60, juce::dontSendNotification);
+    const auto has = [&present](PaneView view) {
+        for (const auto v : present) {
+            if (v == view) return true;
+        }
+        return false;
+    };
+    // PR #45 fix round 3: every button, XOVER included, must be synced here;
+    // a missing line once left XOVER unlit after opening a saved session.
+    rtaButton_.setToggleState(has(PaneView::Rta), juce::dontSendNotification);
+    transferButton_.setToggleState(has(PaneView::Transfer), juce::dontSendNotification);
+    splButton_.setToggleState(has(PaneView::Spl), juce::dontSendNotification);
+    xoverButton_.setToggleState(has(PaneView::Xover), juce::dontSendNotification);
+    eqButton_.setToggleState(has(PaneView::Eq), juce::dontSendNotification);
+    alignButton_.setToggleState(has(PaneView::Align), juce::dontSendNotification);
+    rt60Button_.setToggleState(has(PaneView::Rt60), juce::dontSendNotification);
+}
+
+void MainComponentPaneSelector::syncEdit(bool addArmed, bool addEnabled, bool removeEnabled) {
+    addPaneButton_.setToggleState(addArmed, juce::dontSendNotification);
+    addPaneButton_.setEnabled(addEnabled);
+    removePaneButton_.setEnabled(removeEnabled);
 }

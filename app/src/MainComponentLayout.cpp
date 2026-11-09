@@ -154,8 +154,11 @@ void MainComponent::resized() {
     // Owner decision 2026-09-26: RTA/TRANSFER/SPL sits above the workspace,
     // in the main content area -- not the rail, which is already full.
     auto paneSelectorRow = area.removeFromTop(az::ui::buttonCellHeight);
-    area.removeFromTop(az::ui::gap * 2);
     paneSelector_.layout(paneSelectorRow);
+    // HW-176: one caption-high line under the selector for pane-edit messages
+    // (replaces the old 2-gap spacer, so the workspace loses only the 4 px
+    // the line needs beyond it).
+    paneReadout_.setBounds(area.removeFromTop(az::ui::gap * 2 + 4));
 
     workspace_->setBounds(area);
 }

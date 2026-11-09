@@ -14,7 +14,9 @@
 //      MTW can be unavailable outright with mtwEnabled=false/no reference
 //      yet, so "screen shows MTW" is a per-pane fact read off the live
 //      TransferView, never a constant).
-//   2. One global button, branching on currentPaneView() -- see
+//   2. One global button, freezing ONE trace per distinct storable kind the
+//      workspace shows (HW-176 T4: RTA, TRANSFER; two TRANSFER panes read the
+//      same fixed-FFT block, so they are one kind) -- see
 //      CaptureConverter::traceFromSnapshot for the RTA/TRANSFER split itself.
 //   3. No adjustable knobs added here or on Trace/TraceLibrary -- post-hoc
 //      trims already live one layer up, in VirtualTrace.
@@ -128,49 +130,79 @@ void MainComponent::storeClicked() {
         return;
     }
 
-    const auto pane = currentPaneView();
-
-    // The call site's OWN guard, independent of CaptureConverter's copy
-    // (T4's internal check) -- the same "refuse at a label before doing any
-    // work" convention exportReportClicked already uses. Checked before
-    // freezing below: nothing is needed for a refusal this cheap to see coming.
-    if (pane == rta::view::PaneView::Transfer && !snapshot->hasReference) {
-        storeReadout_.setText("store: TRANSFER has no reference fed -- nothing to freeze",
-                              juce::dontSendNotification);
-        return;
-    }
-
-    auto trace = freezeSnapshot(*snapshot, pane);
-    if (!trace.has_value()) {
-        // Reachable, though rarely: the first fixed-FFT frame after start
-        // carries a reference but no transfer block yet (lane-end LOW Z13;
-        // snapshot_xover.cpp waits for exactly that). The refusal is stated,
-        // never a silent no-op and never a dereference of an empty optional,
-        // and it also covers whichever future pane this function does not
-        // yet know about.
+    // HW-176 T4: every distinct storable kind showing, not only the first
+    // pane's. STORE used to branch on currentPaneView() alone, so an
+    // [rta, transfer] layout froze one of the two curves on screen.
+    const auto kinds = rta::view::storableKinds(currentPaneViews());
+    if (kinds.empty()) {
+        // STORE is disabled in this layout; reachable only programmatically.
+        // Stated, never a silent no-op.
         storeReadout_.setText("store: nothing to freeze on this pane", juce::dontSendNotification);
         return;
     }
 
-    // T7: the group is the SAME juce::String the pane selector button itself
-    // shows -- never a second "RTA"/"TRANSFER" literal -- so a rename of
-    // MainComponentPaneSelector's RTA/TRANSFER buttons cannot silently diverge from the
-    // group a stored trace lands in (T7's own mutant).
-    const juce::String paneLabel =
-        pane == rta::view::PaneView::Transfer ? paneSelector_.transferLabel() : paneSelector_.rtaLabel();
-    const juce::String name = paneLabel + " @ " + juce::Time::getCurrentTime().formatted("%H:%M:%S");
+    const juce::String stamp = juce::Time::getCurrentTime().formatted("%H:%M:%S");
+    std::vector<std::string> landed;   // names of the traces that reached the library
+    std::vector<std::string> skipped;  // one stated reason per kind that did not
+    bool transferLanded = false;
 
-    const auto id = library_.add(std::move(*trace), name.toStdString(), paneLabel.toStdString());
-    if (id.empty()) {
-        // TraceLibrary::add refuses only a duplicate id -- T3's monotonic
-        // counter is what makes this branch unreachable in practice; kept as
-        // a stated refusal rather than a silent no-op if it is ever hit.
-        storeReadout_.setText("store: failed (duplicate capture id)", juce::dontSendNotification);
+    for (const auto pane : kinds) {
+        // T7: the group is the SAME juce::String the pane selector button
+        // itself shows -- never a second "RTA"/"TRANSFER" literal -- so a
+        // rename of the selector buttons cannot silently diverge from the
+        // group a stored trace lands in (T7's own mutant).
+        const bool isTransfer = pane == rta::view::PaneView::Transfer;
+        const juce::String paneLabel = isTransfer ? paneSelector_.transferLabel() : paneSelector_.rtaLabel();
+        // A kind's reason carries its label only when several kinds were
+        // attempted: a single-kind click keeps the wording it always had.
+        const std::string prefix = kinds.size() > 1 ? paneLabel.toStdString() + ": " : std::string();
+
+        // The call site's OWN guard, independent of CaptureConverter's copy
+        // (T4's internal check): refuse at a label before doing any work.
+        if (isTransfer && !snapshot->hasReference) {
+            skipped.push_back("TRANSFER has no reference fed -- nothing to freeze");
+            continue;
+        }
+
+        auto trace = freezeSnapshot(*snapshot, pane);
+        if (!trace.has_value()) {
+            // Reachable, though rarely: the first fixed-FFT frame after start
+            // carries a reference but no transfer block yet (lane-end LOW
+            // Z13; snapshot_xover.cpp waits for exactly that).
+            skipped.push_back(prefix + "nothing to freeze on this pane");
+            continue;
+        }
+
+        const juce::String name = paneLabel + " @ " + stamp;
+        const auto id = library_.add(std::move(*trace), name.toStdString(), paneLabel.toStdString());
+        if (id.empty()) {
+            // TraceLibrary::add refuses only a duplicate id -- T3's monotonic
+            // counter makes this unreachable in practice; stated if ever hit.
+            skipped.push_back(prefix + "failed (duplicate capture id)");
+            continue;
+        }
+        landed.push_back(name.toStdString());
+        transferLanded = transferLanded || isTransfer;
+    }
+
+    if (landed.empty()) {
+        // Nothing reached the library. One reason reads exactly as before;
+        // several are joined so none is lost.
+        std::string joined;
+        for (const auto& reason : skipped) joined += (joined.empty() ? "" : "; ") + reason;
+        storeReadout_.setText("store: " + juce::String(joined), juce::dontSendNotification);
         return;
     }
 
-    juce::String message = juce::String("STORED (FIXED FFT): ") + name;
-    if (pane == rta::view::PaneView::Transfer) {
+    juce::String message = "STORED (FIXED FFT): ";
+    for (std::size_t i = 0; i < landed.size(); ++i) {
+        message += (i > 0 ? "; " : "") + juce::String(landed[i]);
+    }
+    // Truthful about what did NOT land: the operator must not read two traces
+    // into a click that stored one.
+    for (const auto& reason : skipped) message += " -- not stored: " + juce::String(reason);
+
+    if (transferLanded) {
         // Owner decision 1: this always freezes the fixed-FFT TransferBlock
         // (research C1) regardless of what is on screen -- state which
         // panes are showing MTW right now (fix round 1, HIGH F1), never a

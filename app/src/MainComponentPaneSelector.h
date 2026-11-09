@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Part of RTA Tool -- app/src. The seven pane-selector buttons (RTA, TRANSFER,
-// SPL, XOVER, EQ, ALIGN, RT60), their radio-group wiring, their layout and
-// the toggle-state sync, split out of MainComponent.h (H7 plan T0).
+// SPL, XOVER, EQ, ALIGN, RT60), the two pane-edit buttons (+ PANE, - PANE),
+// their layout and the toggle-state sync, split out of MainComponent.h (H7 plan T0).
 //
 // The buttons stay CHILDREN of MainComponent -- `attach()` adds them to the
 // parent in the same order the old inline code did -- so the component-tree
@@ -15,21 +15,31 @@
 #include "view/PaneSelectorDecision.h"
 
 #include <functional>
+#include <vector>
 
 class MainComponentPaneSelector {
 public:
     using SelectFn = std::function<void(rta::view::PaneSelectorButton)>;
 
-    /// Wires the radio group, hints and click handlers, marks RTA selected
-    /// (it matches `MainComponent::currentPaneView_`'s own default), then adds
-    /// the seven buttons to `parent`. `onSelect` is called from a click.
-    void attach(juce::Component& parent, SelectFn onSelect);
+    /// Wires hints and click handlers, marks RTA lit (it matches
+    /// `MainComponent::currentPaneView_`'s own default), then adds the seven
+    /// view buttons and `+ PANE` / `- PANE` to `parent`. `onSelect` is called
+    /// from a view click, `onToggleAdd` from `+ PANE`, `onRemoveLast` from
+    /// `- PANE`.
+    void attach(juce::Component& parent, SelectFn onSelect, std::function<void()> onToggleAdd,
+                std::function<void()> onRemoveLast);
 
-    /// Seven equal cells with `az::ui::gap` between them, filling `row`.
+    /// Seven view cells then the two narrower pane-edit cells, `az::ui::gap`
+    /// between them, filling `row`.
     void layout(juce::Rectangle<int> row);
 
-    /// Lights exactly the button that matches `view`, without notification.
-    void syncTo(rta::view::PaneView view);
+    /// Lights every button whose view is in `present` (a multi-pane workspace
+    /// shows several), without notification. There is no radio group: that
+    /// mutual exclusion would un-light all but one of them.
+    void syncTo(const std::vector<rta::view::PaneView>& present);
+
+    /// `+ PANE` armed state (lit) and the two edit buttons' enable state.
+    void syncEdit(bool addArmed, bool addEnabled, bool removeEnabled);
 
     /// The text STORE labels a stored trace's group with: the button's own
     /// string, never a second literal (MainComponentStore.cpp, T7).
@@ -44,4 +54,6 @@ private:
     juce::TextButton eqButton_{"EQ"};        // L7-EQ UI lane: the auto-EQ pane
     juce::TextButton alignButton_{"ALIGN"};  // ALIGN-UI lane: the alignment wizard pane
     juce::TextButton rt60Button_{"RT60"};    // RT60-UI lane: the reverberation-time table
+    juce::TextButton addPaneButton_{"+ PANE"};     // arm: the next view press appends
+    juce::TextButton removePaneButton_{"- PANE"};  // drops the last pane
 };

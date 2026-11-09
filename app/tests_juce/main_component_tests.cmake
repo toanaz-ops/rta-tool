@@ -48,6 +48,9 @@ add_executable(rtatool_main_component_tests
     test_main_component_rail_layout.cpp
     # H8 6a: 1366x768 / minimum-size layout proof (GEN/OUT, START).
     test_main_component_small_screen.cpp
+    # HW-176: + PANE / - PANE against a real MainComponent, and STORE per kind.
+    test_main_component_pane_multi.cpp
+    test_main_component_store_multi.cpp
     test_main_component_fault_slot.cpp
     # test_main_component_session.cpp: SAVE/OPEN SESSION against a real
     # MainComponent. test_main_component_session_fixround.cpp is its own
