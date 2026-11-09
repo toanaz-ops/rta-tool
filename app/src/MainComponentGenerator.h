@@ -85,6 +85,10 @@ public:
     [[nodiscard]] const juce::TextButton& minusButtonForTest() const noexcept { return minusButton_; }
     [[nodiscard]] const juce::TextButton& plusButtonForTest() const noexcept { return plusButton_; }
     [[nodiscard]] const juce::Component& readoutComponentForTest() const noexcept { return readout_; }
+    // H8 6a layout test: the remaining masthead cells.
+    [[nodiscard]] const juce::Component& signalComboForTest() const noexcept { return signalCombo_; }
+    [[nodiscard]] const juce::Component& frequencyComboForTest() const noexcept { return frequencyCombo_; }
+    [[nodiscard]] const juce::Component& outButtonForTest() const noexcept { return outButton_; }
     [[nodiscard]] bool frequencyEnabledForTest() const noexcept { return frequencyCombo_.isEnabled(); }
     [[nodiscard]] int frequencyComboCountForTest() const noexcept { return frequencyCombo_.getNumItems(); }
     [[nodiscard]] bool fastPollRunningForTest() const noexcept { return isTimerRunning(); }

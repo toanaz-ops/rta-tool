@@ -113,6 +113,18 @@ void RoutingMatrix::onCellClicked(int row, int /*column*/) {
     const ChannelRole current = config_.role(row);
     const ChannelRole next = nextRole(current);
     config_.setRole(row, next);
+    // setRole and the setTransferFunction below are two separate stores, each
+    // bumping ChannelConfig::configEpoch_ -- but nothing in app/ consumes that
+    // epoch (analysis rebuilds follow CaptureBus::epoch() only,
+    // AnalysisThreadLoop.cpp:73-84). The analysis thread re-runs planRouting()
+    // on every drain() and publishIfDue() tick (AnalysisThread.cpp:142, :331),
+    // so at most one tick can see (new role, old tf). Such a tick plans a
+    // route from the old tf's reference, if any, and drainPaired() pushes that
+    // tick's hops through analysers_ indexed by route POSITION, not tfIndex
+    // (AnalysisThread.cpp:166-171, :246): the same position shift any role
+    // change causes anyway, since a role change does not rebuild the
+    // Analysers. The next tick sees the consistent pair. The stores are not
+    // reordered: relaxed atomics give no cross-thread order to preserve.
 
     // Tag the channel with the active transfer function ONLY when the click
     // assigned it a real role -- cycling back to Unused leaves whatever
