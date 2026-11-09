@@ -380,7 +380,7 @@ void IrGatedPlot::paintExcess(juce::Graphics& g, PlotGeometry& geometry) {
                    juce::Justification::centredRight, false);
     }
     g.setColour(axisText);
-    g.drawText("excess phase, deg (left) / excess group delay, ms (right)", static_cast<int>(geometry.left) + 6,
+    g.drawText("excess phase, deg (left) / group delay, ms (right), tau0 removed", static_cast<int>(geometry.left) + 6,
                static_cast<int>(geometry.top) + 2, 420, 14, juce::Justification::centredLeft, false);
 
     std::vector<std::pair<double, float>> phase, delay;

@@ -367,3 +367,18 @@ TEST_CASE("ir pane: a sweep that states no trusted band gets the kernel's refusa
     CHECK(rig.pane->gatedPlotForTest().drawnExcessDegForTest().empty());
     CHECK_FALSE(rig.pane->readoutForTest().contains("tau0"));
 }
+
+TEST_CASE("ir pane: the sweep's own low edge binds when a long gate reaches below it", kTag) {
+    using rta::measure::IrLowerPlot;
+    Rig rig(strongEchoIr());  // trustedLowHz = 50
+    rig.pane->irComboForTest().setSelectedId(1, juce::sendNotificationSync);
+    // -1..24 ms: fMin = 1 / (25 ms - 0.5 * 6.25 ms) = 45.7 Hz, BELOW the sweep's 50 Hz.
+    Access::irForTest(rig.c).setMarkers({-1.0, 24.0});
+    REQUIRE(Access::irForTest(rig.c).analysisForTest()->ok);
+    REQUIRE(Access::irForTest(rig.c).analysisForTest()->fMinHz < 50.0);
+    rig.pane->lowerPlotButtonForTest(IrLowerPlot::Excess).onClick();
+    REQUIRE(waitForExcess(rig));
+    const auto excess = Access::irForTest(rig.c).excessForTest();
+    REQUIRE(excess->valid);
+    CHECK(excess->trustedLowHz == Approx(50.0));  // the larger of the two floors
+}

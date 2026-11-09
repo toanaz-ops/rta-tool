@@ -114,7 +114,7 @@ struct IrExcessPhase {
     std::vector<float> measuredDeg;   ///< arg(H), unwrapped from DC
     std::vector<float> minimumDeg;    ///< arg(H_min), unwrapped from DC; arrival-referenced like `measuredDeg`
     std::vector<float> excessDeg;     ///< phi_x, tau0 removed; wrapped to (-180, 180]
-    std::vector<float> excessGroupDelayMs;
+    std::vector<float> excessGroupDelayMs;  ///< tau_x - tau0: the same reference as `excessDeg`
     /// `tau0 1.25 ms`, or empty when invalid.
     [[nodiscard]] std::string tau0Text() const;
 };

@@ -124,8 +124,11 @@ bool isPowerOfTwoPlusOne(std::size_t n) { return n >= 5 && ((n - 1) & (n - 2)) =
 IrExcessPhase excessPhaseFor(std::span<const std::complex<float>> bins, double sampleRate, double fMinHz,
                              double trustedHighHz) {
     IrExcessPhase out;
+    if (!isPowerOfTwoPlusOne(bins.size()) || !(sampleRate > 0.0)) {
+        out.refusal = "excess phase needs a 2^k + 1 bin spectrum and a positive sample rate";
+        return out;
+    }
     out.refusal = "too few trusted bins for excess phase";
-    if (!isPowerOfTwoPlusOne(bins.size()) || !(sampleRate > 0.0)) return out;
     const std::size_t n = bins.size();
     out.binHz = sampleRate / (2.0 * static_cast<double>(n - 1));
 
@@ -155,9 +158,11 @@ IrExcessPhase excessPhaseFor(std::span<const std::complex<float>> bins, double s
     for (std::size_t k = 0; k < n; ++k) {
         const double w = 2.0 * std::numbers::pi * static_cast<double>(k) * out.binHz;
         measured[k] = std::arg(h[k]);
-        minimum[k] = measured[k] + w * kernel.broadbandDelaySec - static_cast<double>(kernel.excessPhaseRad[k]);
+        // One complex product then ONE arg(): the sum of two wrapped angles and a ramp can sit
+        // several turns off, and the unwrap below only repairs steps of one.
+        minimum[k] = std::arg(h[k] * std::polar(1.0, w * kernel.broadbandDelaySec - static_cast<double>(kernel.excessPhaseRad[k])));
         out.excessDeg[k] = static_cast<float>(static_cast<double>(kernel.excessPhaseRad[k]) * kRadToDeg);
-        out.excessGroupDelayMs[k] = static_cast<float>(kernel.excessGroupDelay[k] * 1000.0);
+        out.excessGroupDelayMs[k] = static_cast<float>((kernel.excessGroupDelay[k] - kernel.broadbandDelaySec) * 1000.0);
     }
     out.measuredDeg = unwrappedDegrees(measured);
     out.minimumDeg = unwrappedDegrees(minimum);

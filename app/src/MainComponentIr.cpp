@@ -8,6 +8,7 @@
 #include "measure/IrGateModel.h"
 #include "trace/CaptureConverter.h"
 
+#include <algorithm>
 #include <utility>
 
 void MainComponent::wireIr() {
@@ -90,7 +91,9 @@ void MainComponentIr::requestExcess() {
     ++revision_;
     // trustedHighHz is the SWEEP's own ceiling; the gate's fMin is the floor. A hand-built IR
     // that states no ceiling (0) trusts nothing, and the pane says so.
-    job_.submit({analysis_->bins, analysis_->sampleRate, analysis_->fMinHz, ir_->trustedHighHz});
+    // The sweep's own validity floor binds as well as the gate's: a long gate gives fMin below it.
+    job_.submit({analysis_->bins, analysis_->sampleRate, std::max(analysis_->fMinHz, ir_->trustedLowHz),
+                 ir_->trustedHighHz});
 }
 
 void MainComponentIr::pollExcess() {

@@ -175,9 +175,10 @@ TEST_CASE("A pure delay has no excess phase once its delay is removed", "[ir][ga
         want[k] = w * (tauExact - kDelay / kFs) * 180.0 / kPi;
     }
     CHECK(maxAbsWrappedDiff(r.excessDeg, want) < 0.1);
-    // tau_x, the group delay of H/H_min BEFORE tau0 is removed, is that same number in ms in
-    // every interior bin (bins 0 and 8192 use a one-sided difference of the same form).
-    CHECK(r.excessGroupDelayMs[4000] == Approx(tauExact * 1000.0).margin(2.0e-5));
+    // The displayed group delay is tau_x - tau0, on the same reference as the phase. tau_x of a
+    // pure delay is tauExact in every interior bin and tau0 is its mean, so the difference is 0
+    // (float32 bound as for tau0: 2e-8 s = 2e-5 ms).
+    CHECK(r.excessGroupDelayMs[4000] == Approx(0.0).margin(2.0e-5));
     // The measured phase is unwrapped from DC, so it is the straight line -360*k*D/N degrees
     // (-16875 deg at k = 8000), not a sawtooth. Float32 bins: 6e-8 rad each, so 0.1 deg.
     for (const std::size_t k : {std::size_t{100}, std::size_t{3000}, std::size_t{8000}}) {
@@ -237,10 +238,15 @@ TEST_CASE("An echo stronger than the direct sound leaves the closed-form excess 
     // (curvature a*dtheta^2/8 with dtheta = 2*pi*d/16384 = 0.0184 rad, i.e. 2e-5
     // of ln|H| per bin) and float32 rounding give well under 0.5 deg.
     CHECK(maxAbsWrappedDiff(r.excessDeg, want) < 0.5);
-    // And it is a real excess: the swing of the closed form is large.
-    double swing = 0.0;
-    for (const double v : want) swing = std::max(swing, std::abs(v));
-    CHECK(swing > 60.0);
+    // The implementation's own swing equals the closed form's (and the closed form's is large,
+    // so this cannot pass on a flat curve): peaks agree within the same 0.5 deg bound.
+    double swingWant = 0.0, swingGot = 0.0;
+    for (std::size_t k = 0; k < kGridBins; ++k) {
+        swingWant = std::max(swingWant, std::abs(want[k]));
+        swingGot = std::max<double>(swingGot, std::abs(r.excessDeg[k]));
+    }
+    CHECK(swingGot == Approx(swingWant).margin(0.5));
+    CHECK(swingGot > 60.0);
     // measured = minimum + excess - w*tau0 (the kernel's own identity), unwrapped.
     for (const std::size_t k : {std::size_t{100}, std::size_t{3000}, std::size_t{8000}}) {
         const double w = 2.0 * kPi * static_cast<double>(k) * kFs / static_cast<double>(kGridN);
@@ -266,8 +272,13 @@ TEST_CASE("Too few trusted bins is a refusal with a sentence, never an empty cur
     CHECK(rta::measure::excessPhaseFor(bins, kFs, 99.0, 103.0).valid);
     // A hand-built IR that states no trusted ceiling (0) trusts nothing: no silent Nyquist.
     CHECK_FALSE(rta::measure::excessPhaseFor(bins, kFs, 100.0, 0.0).valid);
-    // A size that is not 2^k + 1 is the kernel's contract broken: refused, not thrown.
-    CHECK_FALSE(rta::measure::excessPhaseFor(std::span(bins).first(1000), kFs, 0.0, kFs / 2.0).valid);
+    // A size that is not 2^k + 1 is the kernel's contract broken: refused, not thrown, and the
+    // sentence names that, not a trust problem. The same for a non-positive sample rate.
+    const auto badSize = rta::measure::excessPhaseFor(std::span(bins).first(1000), kFs, 0.0, kFs / 2.0);
+    CHECK_FALSE(badSize.valid);
+    CHECK_THAT(badSize.refusal, ContainsSubstring("2^k + 1"));
+    CHECK_FALSE(rta::measure::excessPhaseFor(bins, 0.0, 0.0, kFs / 2.0).valid);
+    CHECK_THAT(rta::measure::excessPhaseFor(bins, 0.0, 0.0, 1.0).refusal, ContainsSubstring("sample rate"));
 }
 
 // ---- H10: the worker's newest-wins rule --------------------------------------------
