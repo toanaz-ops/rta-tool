@@ -40,14 +40,16 @@ struct Peak {
     double peakToRms = 0.0;
 };
 
-// Largest |x| (first on ties), plus how far it stands above the rms.
-Peak findPeak(const std::vector<float>& samples) {
+// Largest |x| (first on ties) with index in [lo, hi], plus how far it stands
+// above the rms of the WHOLE signal. The default range is everything.
+Peak findPeak(const std::vector<float>& samples, std::size_t lo = 0,
+              std::size_t hi = static_cast<std::size_t>(-1)) {
     Peak peak;
     double sumSquares = 0.0;
     for (std::size_t i = 0; i < samples.size(); ++i) {
         const double x = samples[i];
         sumSquares += x * x;
-        if (std::fabs(samples[i]) > std::fabs(peak.value)) {
+        if (i >= lo && i <= hi && std::fabs(samples[i]) > std::fabs(peak.value)) {
             peak.index = i;
             peak.value = samples[i];
         }
@@ -113,15 +115,38 @@ SweepIrOutcome analyseChecked(const SweepCapture& capture, const SweepIrRequest&
     deconvConfig.normalisationGain = rta::ir::inBandNormalisation(loop, fLo, fHi);
     const auto loopFlatness = rta::ir::bandFlatness(loop, fLo, fHi);
     auto measurement = rta::ir::deconvolve(capture.measurement, inverse, deconvConfig);
-    const Peak measPeak = findPeak(measurement.samples);
+    Peak measPeak = findPeak(measurement.samples);
     if (!(measPeak.value != 0.0f)) {
         return refuse(SweepIrStatus::MeasurementNotFound, "the measurement channel holds no signal");
     }
 
-    const long delay = static_cast<long>(measPeak.index) - static_cast<long>(refPeak.index);
     const std::size_t leadIn = sweepIrLeadInSamples(fs, fLo);
     const std::size_t fftSize = sweepIrWindowSize(fs, fLo);
     const auto minIrAfterArrival = static_cast<long>(std::ceil(kMinIrAfterArrivalSeconds * fs));
+
+    // H8 M1: the global argmax above can be venue noise in the pre-roll or the
+    // tail beating a low-passed (sub) peak. Look for the arrival inside the
+    // window the arrival check below accepts, and prefer that peak when it is
+    // prominent (same kMinPeakToRms as the reference) and strictly INSIDE the
+    // window: a peak on the window edge may be the flank of a real arrival
+    // just outside it, which must still be refused, not re-read as a sidelobe.
+    // Otherwise the global peak stands, exactly as before.
+    if (refPeak.index >= leadIn) {
+        const long winLoSigned = static_cast<long>(refPeak.index) - static_cast<long>(leadIn);
+        const long winHiSigned = static_cast<long>(refPeak.index) + static_cast<long>(fftSize) -
+                                 static_cast<long>(leadIn) - minIrAfterArrival;
+        if (winHiSigned > winLoSigned + 1) {
+            const auto winLo = static_cast<std::size_t>(winLoSigned);
+            const auto winHi = static_cast<std::size_t>(winHiSigned);
+            const Peak windowed = findPeak(measurement.samples, winLo, winHi);
+            if (windowed.value != 0.0f && windowed.peakToRms >= kMinPeakToRms &&
+                windowed.index > winLo && windowed.index < winHi) {
+                measPeak = windowed;
+            }
+        }
+    }
+
+    const long delay = static_cast<long>(measPeak.index) - static_cast<long>(refPeak.index);
     if (delay > static_cast<long>(fftSize) - static_cast<long>(leadIn) - minIrAfterArrival ||
         delay < -static_cast<long>(leadIn) || refPeak.index < leadIn) {
         return refuse(SweepIrStatus::ArrivalOutOfWindow,
