@@ -60,6 +60,10 @@ public:
         channelRoleTable_.setChannelNames(std::move(names));
     }
     void refreshFromConfig() { routingMatrix_.refreshFromConfig(); }
+    /// H8 lane a: the transfer-function slot the NEXT role-assigning click on
+    /// the routing matrix tags its channel with (`RoutingMatrix::
+    /// setActiveTransferFunction`). Slot 0..kMaxTransferFunctions-1.
+    [[nodiscard]] int activeTransferFunction() const noexcept { return routingMatrix_.activeTransferFunction(); }
     void updateMembership(const rta::measure::RoutingPlan& plan,
                           std::span<const rta::measure::PositionSummary> positions) {
         routingMatrix_.updateMembership(plan, positions);
@@ -71,6 +75,8 @@ private:
     [[nodiscard]] const juce::Component& routingMatrixForTest() const noexcept { return routingMatrix_; }
     // D1: the typed, mutable widget -- a test clicks its cells and reads its rows.
     [[nodiscard]] rta::view::RoutingMatrix& routingMatrixWidgetForTest() noexcept { return routingMatrix_; }
+    // H8 lane a: the TF slot picker -- a test selects an entry the way a click does.
+    [[nodiscard]] juce::ComboBox& tfSlotPickerForTest() noexcept { return tfSlotPicker_; }
     // D8: the OUTER rail viewport itself, not just its content -- so a test
     // can pin that layout() placed it and attachTo() parented it.
     [[nodiscard]] const juce::Viewport& railViewportForTest() const noexcept { return railScrollView_; }
@@ -82,6 +88,8 @@ private:
     rta::view::DevicePanel devicePanel_;
     rta::view::ChannelRoleTable channelRoleTable_;
     rta::view::RoutingMatrix routingMatrix_;
+    // H8 lane a (master plan row 11): entries "TF 1".."TF 8" = slots 0..7.
+    juce::ComboBox tfSlotPicker_;
 
     // Content declared BEFORE viewport (same trap T-1 rule MainComponent.h's
     // class comment states): reverse destruction unwinds the viewport

@@ -268,3 +268,31 @@ TEST_CASE("rail: the device panel's controls are fully visible and GEN stays on 
         CHECK(readout.getRight() <= component.getWidth());
     }
 }
+
+// ---- H8 lane a: TF slot picker (master plan row 11) ------------------------
+
+TEST_CASE("rail: the TF slot picker offers slots 1..8 and retargets the next role click (H8)",
+          "[main_component_rail]") {
+    MainComponent component;
+    component.setSize(1280, 800);
+    component.resized();
+
+    auto& picker = MainComponentTestAccess::tfSlotPickerForTest(component);
+    auto& matrix = MainComponentTestAccess::routingMatrixWidgetForTest(component);
+    const auto& panel = MainComponentTestAccess::devicePanelForTest(component);
+
+    // Entries are "TF 1".."TF 8" = slots 0..7 (kMaxTransferFunctions), default slot 0.
+    REQUIRE(picker.getNumItems() == rta::measure::kMaxTransferFunctions);
+    CHECK(picker.getSelectedId() == 1);
+    CHECK(matrix.activeTransferFunction() == 0);
+    CHECK(picker.isVisible());
+    // Laid out below the device panel and above the matrix it configures.
+    CHECK(picker.getY() >= panel.getBottom());
+    CHECK(picker.getBottom() <= MainComponentTestAccess::routingMatrix(component).getY());
+
+    // Selecting a combo entry fires the production onChange, the same path as a click.
+    picker.setSelectedId(8, juce::sendNotificationSync);
+    CHECK(matrix.activeTransferFunction() == 7);
+    picker.setSelectedId(3, juce::sendNotificationSync);
+    CHECK(matrix.activeTransferFunction() == 2);
+}

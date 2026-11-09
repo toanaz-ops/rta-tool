@@ -79,6 +79,10 @@ struct MainComponentTestAccess {
     [[nodiscard]] static rta::view::RoutingMatrix& routingMatrixWidgetForTest(MainComponent& c) {
         return c.rail_.routingMatrixWidgetForTest();
     }
+    // H8 lane a: the TF slot picker and the slot the matrix will tag with.
+    [[nodiscard]] static juce::ComboBox& tfSlotPickerForTest(MainComponent& c) {
+        return c.rail_.tfSlotPickerForTest();
+    }
     [[nodiscard]] static const juce::Viewport& railViewportForTest(const MainComponent& c) {
         return c.rail_.railViewportForTest();
     }
