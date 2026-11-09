@@ -113,7 +113,7 @@ TEST_CASE("+ PANE is disabled at the cap and - PANE at one pane", "[main_compone
     CHECK_FALSE(MainComponentTestAccess::paneAddArmedForTest(c));
 }
 
-TEST_CASE("- PANE removes the last pane and re-enables + PANE", "[main_component_pane_multi]") {
+TEST_CASE("removing with - PANE drops the last pane and re-enables + PANE", "[main_component_pane_multi]") {
     MainComponent c;
     auto* add = findButton(c, "+ PANE");
     auto* remove = findButton(c, "- PANE");
