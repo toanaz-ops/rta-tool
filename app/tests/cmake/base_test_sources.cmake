@@ -113,6 +113,7 @@ set(RTA_BASE_TEST_SOURCES
     # properties that are the reason the type exists. JUCE-free, so it lives
     # here beside test_trace.cpp.
     test_virtual_trace.cpp
+    test_virtual_trace_applied_delay.cpp
     # Lane L7-ALIGN task H (record Sec.2, Sec.7, Sec.9), FOUR files: one was
     # 538 lines, and the refusal-coverage case added after PR #9's verifier
     # pushed a second past 400. Shared fixtures in AlignmentWizardFixture.h,

@@ -239,6 +239,9 @@ void AlignmentWizard::compute() {
     // file applies no rotation of its own: the appliedDelaySamples correction
     // is a required field of BandFitOptions, so core owns it (ALIGN-R2) and it
     // is impossible to forget here.
+    // PLAIN fromTrace, deliberately: NOT fromTraceRestoringAppliedDelay. The
+    // D_B - D_A correction is applied once, by crossoverBandFit, from the
+    // option set below; restoring it here as well would correct twice.
     const auto virtualA = rta::trace::VirtualTrace::fromTrace(a);
     const auto virtualB = rta::trace::VirtualTrace::fromTrace(b);
     if (!virtualA.has_value() || !virtualB.has_value()) {

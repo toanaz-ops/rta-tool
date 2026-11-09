@@ -89,6 +89,21 @@ std::optional<VirtualTrace> VirtualTrace::fromTrace(const Trace& trace) {
     return result;
 }
 
+std::optional<VirtualTrace> VirtualTrace::fromTraceRestoringAppliedDelay(const Trace& trace) {
+    auto result = fromTrace(trace);
+    const int appliedSamples = trace.meta().appliedDelaySamples;
+    if (!result.has_value() || appliedSamples == 0) return result;
+
+    // Positive tau through applyDelay multiplies by e^{-j 2 pi f tau}, which
+    // cancels the stored e^{+j 2 pi f D/fs}. fs is this trace's own: fromTrace
+    // already refused a non-positive rate through binHz().
+    const double tauSeconds = static_cast<double>(appliedSamples) / trace.meta().sampleRate;
+    std::vector<std::complex<double>> rotated(result->source_.size());
+    rta::dsp::applyDelay(result->source_, result->binWidthHz_, tauSeconds, rotated);
+    result->source_.swap(rotated);
+    return result;
+}
+
 std::optional<VirtualTrace> VirtualTrace::fromSnapshot(const rta::dsp::TransferSnapshot& snapshot) {
     if (snapshot.h.empty() || !(snapshot.binWidthHz > 0.0)) return std::nullopt;
 

@@ -42,6 +42,8 @@ add_executable(rtatool_main_component_tests
     test_main_component_panes_xover.cpp
     test_main_component_panes_xover_round2.cpp
     test_main_component_panes_xover_round3.cpp
+    # Z2: applied-delay restoration reaches the pane (docs/dsp/2026-11-09-xover-applied-delay.md).
+    test_main_component_panes_xover_applied_delay.cpp
     # Fix round MEDIUM F1: item 4's rail-scroll fix had no test.
     test_main_component_rail_layout.cpp
     # H8 6a: 1366x768 / minimum-size layout proof (GEN/OUT, START).
