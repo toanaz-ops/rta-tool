@@ -140,8 +140,8 @@ TEST_CASE("align IR (T11): SWEEP MAIN, SWEEP SUB, MEASURE -- the integer is the 
     for (const auto& line : lines) joined += line + "\n";
     INFO(joined);
     CHECK(joined.find("rho: ") != std::string::npos);
-    CHECK(joined.find("findPolarity, low-pass side: refused (BandTooHigh)") != std::string::npos);
-    CHECK(pane.irInfoForTest().contains("findPolarity, low-pass side: refused (BandTooHigh)"));
+    CHECK(joined.find("findPolarity, low-pass side: refused -- Measured band does not reach high enough (high edge") != std::string::npos);
+    CHECK(pane.irInfoForTest().contains("findPolarity, low-pass side: refused -- Measured band does not reach high enough (high edge"));
     // The verdict resolves the integer: candidates sit ~10.8 ms apart, the
     // corrected integer is within ~0.1 ms of the right one.
     checkChosenCycleNearIdeal(c, 2.0, "T11 IR integer");

@@ -29,19 +29,6 @@ rta::ir::Deconvolution toDeconvolution(const SweepIr& ir) {
     return out;
 }
 
-const char* refusalName(rta::ir::Refusal refusal) {
-    switch (refusal) {
-        case rta::ir::Refusal::None: return "None";
-        case rta::ir::Refusal::NoSignal: return "NoSignal";
-        case rta::ir::Refusal::NoNoiseEstimate: return "NoNoiseEstimate";
-        case rta::ir::Refusal::BandTooLow: return "BandTooLow";
-        case rta::ir::Refusal::BandTooHigh: return "BandTooHigh";
-        case rta::ir::Refusal::SweepBandInsufficient: return "SweepBandInsufficient";
-        case rta::ir::Refusal::CaptureTooShort: return "CaptureTooShort";
-    }
-    return "";
-}
-
 const char* signName(rta::ir::Sign sign) {
     switch (sign) {
         case rta::ir::Sign::Positive: return "+";
@@ -103,15 +90,16 @@ std::vector<std::string> AlignRunner::polaritySignalLines() const {
     std::vector<std::string> lines;
     if (!impl_->wizard) return lines;
     for (const auto& signal : impl_->wizard->polaritySignals()) {
-        char text[200];
         if (signal.standing == SignalStanding::Refused) {
-            std::snprintf(text, sizeof text, "%s: refused (%s) -- no sign listed", signalLabel(signal.kind),
-                          refusalName(signal.refusal));
+            // `reason` already carries the measured number and where to go next.
+            lines.emplace_back(std::string(signalLabel(signal.kind)) + ": refused -- " + signal.reason
+                               + " No sign listed.");
         } else {
+            char text[200];
             std::snprintf(text, sizeof text, "%s: %s (%.2f, advisory) -- %s", signalLabel(signal.kind),
                           signName(signal.sign), signal.figure, signal.reason.c_str());
+            lines.emplace_back(text);
         }
-        lines.emplace_back(text);
     }
     return lines;
 }
