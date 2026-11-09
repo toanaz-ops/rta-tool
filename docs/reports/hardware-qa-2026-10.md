@@ -125,6 +125,20 @@ Cần dây loopback một output → một input của interface (như REF). T�
 
 ---
 
+## 6b. H9 — IR gate (loa + mic, phòng thật)
+
+Một loa trên chân, mic cùng độ cao h, cách d. Phản xạ sàn đi đường dài hơn: Δt = (√(d² + (2h)²) − d) / c. Với d = 1.00 m, h = 1.00 m, c = 343 m/s: (2.236 − 1.000)/343 = **3.60 ms**. Ngưỡng ±0.3 ms là **đề xuất của phiên closeout** (độ chính xác đặt mic bằng thước ~5 cm ≈ 0.15 ms mỗi chiều), không phải số của chuẩn. `fMin = 1/(T − 0.25·T/2)` với T = end − start (`core/include/rta/ir/IrGate.h`).
+
+| # | Làm gì | Kỳ vọng (có số) | Thấy gì thật | Đạt? |
+|---|---|---|---|---|
+| H1 | SWEEP (SYNTHETIC tắt, REF loopback), bấm `IR`, chọn trace. | ETC có đỉnh direct ở 0 ms và một đỉnh phản xạ ở **3.6 ms ± 0.3 ms**. | | |
+| H2 | Kéo marker cuối về 3.0 ms (start -1.0). | Readout `GATE -1.0..3.0 ms · valid above 286 Hz` (T = 4.0 ms, fade-out 1.0 ms, 1/3.5 ms = 285.7). | | |
+| H3 | `STORE GATED`, mở TRANSFER, so trace gated với trace SWEEP gốc. | Trace gốc có gợn lược cách nhau ≈ 1/3.6 ms = **278 Hz**; trên 286 Hz trace gated không còn gợn đó (nhìn bằng mắt; ghi biên độ gợn còn lại nếu có). | | |
+| H4 | Kéo marker đầu về 0.0 ms. | `GATE refused -- ... direct sound ... -0.5 ms`; `STORE GATED` tắt. | | |
+| H5 | ALIGN với một sub thật (SWEEP SUB). | Dòng `findPolarity, low-pass side: refused -- Measured band does not reach high enough (high edge N Hz)...`, N là high edge đo được. Ghi N. | | |
+
+---
+
 ## 7. Kết quả dựng `build-asio/`
 
 Dựng 2026-10-22 14:16 từ `d89c2e2`:

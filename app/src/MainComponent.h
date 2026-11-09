@@ -221,7 +221,7 @@ private:
     // MainComponentRail.h. RoutingMatrix rows follow the device's channel count.
     MainComponentRail rail_;
 
-    // Pane selector: seven view buttons plus + PANE / - PANE. Not persisted (SPL-R11) -- starts at Rta.
+    // Pane selector: eight view buttons (IR since H9) plus + PANE / - PANE. Not persisted (SPL-R11) -- starts at Rta.
     MainComponentPaneSelector paneSelector_;
     rta::view::PaneView currentPaneView_ = rta::view::PaneView::Rta;
 

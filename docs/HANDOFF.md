@@ -5,6 +5,23 @@
 
 ---
 
+# 2026-11-09 (tối) — **H9 / L4c ĐÃ ĐÓNG: IR gate (G25) + câu từ chối polarity. Chưa đo trên phần cứng (HW-175).**
+
+*Plan: `docs/plans/2026-11-09-h9-l4c-ir-gate-plan.md`. Record: `docs/dsp/2026-11-09-l4c-ir-gate.md` (§6 viết theo code đã ship). Repo chuyển trunk-based từ 39f34a4.*
+
+| PR | merge | what |
+|---|---|---|
+| #107 | `55ab8cb` | A1 core `rta::ir::gateSpectrum` (gate 4 điểm half-Hann theo arrival, mặc định -1.0..+10.0 ms, fade-in 0.5 ms, fade-out 25 %; phase qua lead-in rotation sẵn có; `fMin = 1/(T - fadeOut/2)`; 8 refusal mang con số). A2 `IrGateModel` (ETC peak-hold 0.25 ms). A3 pane `IR` (ô view thứ 8), kéo 2 marker, `STORE GATED` -> trace nhóm GATED, hiện trong TRANSFER/XOVER. Fable: 1 HIGH (start trong fade-in làm suy giảm/xoá direct sound) + mở rộng: mọi start sau arrival cũng bị từ chối; 1 MEDIUM comment — đã sửa |
+| #108 | `84d9383` | B1: refusal `findPolarity` trong ALIGN in câu của chủ nhân (QA queue, mục polarity L7) kèm số Hz đo được; NoSignal in confidence đo được (1 số lẻ) và ngưỡng 20.0 dB. Fable: 2 MEDIUM (câu sub phải đúng nguyên văn chủ nhân; NoSignal phải có số đo) — đã sửa |
+
+**Trạng thái:** hàng 5 master plan NOT STARTED -> BUILT (partial: G22 WAV offline, hiển thị G24 chưa làm). (a) 16/19 = 84.2 %, (b) 16/19 = 84.2 %, (b-strict) 13/19 = 68.4 % (không đổi). Fable phase review toàn bộ diff 2321e51..dc13612: không HIGH/MEDIUM trong code.
+
+**Người thử được gì (exe `build-asio\app\rtatool_artefacts\Release\RTA Tool.exe` — dựng lại từ main trước, exe cũ chưa có nút IR):** (1) bật SYNTHETIC, bấm SWEEP -> có trace SWEEP. (2) bấm `IR` trên hàng chọn pane -> chọn IR, thấy ETC (dB theo ms sau arrival) và hai marker; readout `GATE -1.0..10.0 ms · valid above 104 Hz`. (3) kéo marker cuối về 3.0 ms -> readout `valid above` tăng (T=4.0 ms, fade-out 1.0 ms -> 1/3.5 ms = 286 Hz). (4) kéo marker đầu qua -0.5 ms -> `GATE refused -- ... direct sound ... -0.5 ms`, `STORE GATED` tắt. (5) `STORE GATED` -> bấm TRANSFER, trace "... gated" có trong danh sách. (6) ALIGN với sub: dòng `findPolarity, low-pass side: refused -- Measured band does not reach high enough (high edge N Hz)...`. Hàng phần cứng: `docs/reports/hardware-qa-2026-10.md` §6b.
+
+**Còn mở (LOW, chưa làm):** EQ target picker nhận trace GATED mà không biết fMin; trace GATED và SWEEP nguồn cùng màu (shade theo từng group); NoSignal ở nhánh sớm in "0.0 dB"; flake `test_spl_resync_gap.cpp:96-97` (VS-generator leg đỏ ở 2321e51). Việc phần mềm chưa xếp: G22 WAV offline, hiển thị G24, MTW storage v4, `CaptureSequencer`; THD/STI và target chờ mua tiêu chuẩn.
+
+---
+
 # 2026-11-09 (chiều) — **Thẻ chủ nhân HW-176/184/185/190 đã làm; review H8 đóng. Chưa đo trên phần cứng (HW-175 vẫn chờ chủ nhân).**
 
 | PR | what |
@@ -17,7 +34,7 @@
 
 **Người thử được gì (exe `build-asio\app\rtatool_artefacts\Release\RTA Tool.exe`, SYNTHETIC):** (1) cửa sổ nhỏ (kéo hẹp tới tối thiểu): START luôn thấy ở đầu rail. (2) Bấm `+ PANE` rồi `TRANSFER` -> hai pane RTA + TRANSFER; `- PANE` bỏ pane cuối; bấm một nút view thường -> về một pane. (3) STORE với RTA + TRANSFER -> hai trace. (4) XOVER: STORE TRANSFER, APPLY delay, STORE lần nữa, chọn hai trace -> tổng không còn khe lược. (5) HW-183 (chọn TF slot) đã chạy bằng UI Automation: `MEAS TF3` / `REF TF3` đúng; bảng channel role trễ ~3 s (LOW) — `D:\DEV CAVE EP3\shared\reports\2026-11-09-ui-tests\rta-h8-ui-test.md`.
 
-**Còn mở:** HW-175 (buổi đo phần cứng — chủ nhân). Không còn NEW-LANE trong QA queue. Việc phần mềm chưa xếp: L4c (IR gate/min-phase/WAV, chưa có plan), MTW storage v4, `CaptureSequencer`; THD/STI và target vẫn chờ mua tiêu chuẩn. LOW: bảng channel role cập nhật theo timer.
+**Còn mở:** HW-175 (buổi đo phần cứng — chủ nhân). Không còn NEW-LANE trong QA queue. Việc phần mềm chưa xếp: ~~L4c (IR gate/min-phase/WAV, chưa có plan)~~ (L4c gate làm ở H9), MTW storage v4, `CaptureSequencer`; THD/STI và target vẫn chờ mua tiêu chuẩn. LOW: bảng channel role cập nhật theo timer.
 
 ---
 

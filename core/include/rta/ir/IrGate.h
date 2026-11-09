@@ -59,7 +59,7 @@ enum class GateRefusal {
     EmptyIr,               ///< value: the sample count (0)
     BadSampleRate,         ///< value: the sample rate
     StartNotBeforeEnd,     ///< value: the gate length in ms (<= 0)
-    GateRoundsToNothing,   ///< value: the gate length in ms (> 0 but under half a sample)
+    GateRoundsToNothing,   ///< value: the gate length in ms (> 0 but both ends round to one sample)
     DirectSoundInFadeIn,   ///< value: the requested startMs (latest allowed is -Fi samples)
     GateShorterThanFades,  ///< value: the gate length in ms
     StartBeforeIr,         ///< value: the requested startMs
