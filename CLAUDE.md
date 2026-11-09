@@ -45,11 +45,15 @@ dropouts at a live show, which is the exact situation this tool exists for.
 
 ## Build
 
+(full build + full ctest = CI, or local fallback when Actions is unavailable)
+
 ```
 cmake -S . -B build -G "Visual Studio 18 2026" -A x64
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
+
+Local default is narrow: `ctest --test-dir build -C Release -R <suite> --output-on-failure`.
 
 Toolchain verified on this machine: MSVC 14.51 (VS Build Tools 2026),
 Windows SDK 10.0.26100, CMake 4.3.2, Ninja 1.13.2, Python 3.14.6.
