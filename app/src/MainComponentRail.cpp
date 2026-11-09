@@ -26,18 +26,34 @@ constexpr int kRoutingMatrixHeight = 220;
 // internally past this if there are more channels than fit.
 constexpr int kChannelRoleTableMinHeight = 150;
 
+// H8 lane a: one row for the TF slot picker, between devicePanel_ and the
+// routing matrix it configures.
+constexpr int kTfSlotPickerHeight = 26;
+
 }  // namespace
 
 MainComponentRail::MainComponentRail(rta::platform::AudioIo& audioIo, int channelCount,
                                      std::function<rta::platform::Fault()> analysisFault)
     : devicePanel_(audioIo, std::move(analysisFault)),
       channelRoleTable_(audioIo.bus().config()),
-      routingMatrix_(audioIo.bus().config(), channelCount) {}
+      routingMatrix_(audioIo.bus().config(), channelCount) {
+    // Combo ids are 1-based (0 means "nothing selected"), slot = id - 1.
+    for (int slot = 0; slot < rta::measure::kMaxTransferFunctions; ++slot) {
+        tfSlotPicker_.addItem("TF " + juce::String(slot + 1), slot + 1);
+    }
+    tfSlotPicker_.setSelectedId(routingMatrix_.activeTransferFunction() + 1, juce::dontSendNotification);
+    tfSlotPicker_.getProperties().set(az::ui::hintProperty,
+                                      "which transfer function the next MEAS/REF click assigns a channel to");
+    tfSlotPicker_.onChange = [this] {
+        routingMatrix_.setActiveTransferFunction(tfSlotPicker_.getSelectedId() - 1);
+    };
+}
 
 void MainComponentRail::attachTo(juce::Component& parent) {
     railScrollContent_.addAndMakeVisible(devicePanel_);
     railScrollContent_.addAndMakeVisible(channelRoleTable_);
     railScrollContent_.addAndMakeVisible(routingMatrix_);
+    railScrollContent_.addAndMakeVisible(tfSlotPicker_);
     railScrollView_.setViewedComponent(&railScrollContent_, false);
     parent.addAndMakeVisible(railScrollView_);
 }
@@ -61,7 +77,8 @@ void MainComponentRail::layout(juce::Rectangle<int> bounds) {
     // non-degenerate size, and a short window scrolls instead of squeezing
     // one of them to nothing. Pinned by app/tests_juce/
     // test_main_component_rail_layout.cpp (fix round MEDIUM F1).
-    const int railContentHeight = kDevicePanelHeight + az::ui::gap * 2 + kRoutingMatrixHeight +
+    const int railContentHeight = kDevicePanelHeight + az::ui::gap * 2 + kTfSlotPickerHeight +
+                                  az::ui::gap + kRoutingMatrixHeight +
                                   az::ui::gap * 2 + kChannelRoleTableMinHeight;
     railScrollView_.setBounds(bounds);
 
@@ -78,6 +95,8 @@ void MainComponentRail::layout(juce::Rectangle<int> bounds) {
     auto content = railScrollContent_.getLocalBounds();
     devicePanel_.setBounds(content.removeFromTop(kDevicePanelHeight));
     content.removeFromTop(az::ui::gap * 2);
+    tfSlotPicker_.setBounds(content.removeFromTop(kTfSlotPickerHeight));
+    content.removeFromTop(az::ui::gap);
     // Fixed slice, not "whatever is left": the rows inside scroll (see
     // kRoutingMatrixHeight), so this height does not depend on channel count.
     routingMatrix_.setBounds(content.removeFromTop(kRoutingMatrixHeight));

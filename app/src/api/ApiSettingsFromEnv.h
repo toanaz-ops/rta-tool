@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Part of RTA Tool -- app/src/api. No JUCE, no Qt, no audio-device API.
+// H8 lane b (master plan row 12): the operator's switch for the read-only
+// remote API. Record sec.15 R5 says no preferences store exists, so the
+// switch is the process environment, read once at start-up.
+#pragma once
+
+#include "api/ApiSettings.h"
+
+#include <algorithm>
+#include <cctype>
+#include <functional>
+#include <string>
+
+namespace rta::api {
+
+/// Reads a variable by name; empty string = unset. The caller supplies the
+/// platform lookup (MainComponent uses juce::SystemStats), so this stays pure.
+using EnvLookup = std::function<std::string(const char* name)>;
+
+/// Builds the settings from `RTA_API_ENABLED` (1 / true / on / yes,
+/// case-insensitive; anything else, including unset, is OFF), `RTA_API_PORT`
+/// (1..65535; anything else keeps the default) and `RTA_API_TOKEN`.
+/// The bind address is deliberately NOT configurable here: it stays the
+/// loopback default, so enabling the API never exposes it to the network.
+[[nodiscard]] inline ApiSettings apiSettingsFromEnvironment(const EnvLookup& lookup) {
+    ApiSettings settings;
+
+    std::string enabled = lookup("RTA_API_ENABLED");
+    std::transform(enabled.begin(), enabled.end(), enabled.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    settings.enabled = enabled == "1" || enabled == "true" || enabled == "on" || enabled == "yes";
+
+    const std::string port = lookup("RTA_API_PORT");
+    if (!port.empty() && port.size() <= 5 &&
+        std::all_of(port.begin(), port.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        const int value = std::stoi(port);
+        if (value >= 1 && value <= 65535) {
+            settings.port = value;
+        }
+    }
+
+    settings.token = lookup("RTA_API_TOKEN");
+    return settings;
+}
+
+}  // namespace rta::api

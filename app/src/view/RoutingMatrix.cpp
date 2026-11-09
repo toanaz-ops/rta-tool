@@ -129,7 +129,16 @@ void RoutingMatrix::onCellClicked(int row, int /*column*/) {
 
 void RoutingMatrix::refreshFromConfig() {
     for (int ch = 0; ch < channelCount_; ++ch) {
-        grid_.setCellText(ch, 0, roleLabel(config_.role(ch)));
+        // H8 lane a: a channel on a slot other than the default shows it
+        // ("MEAS TF3"), or the picker would assign slots the operator cannot
+        // read back. Slot 0 keeps the bare label, so nothing changes for
+        // anyone who never touches the picker.
+        std::string text = roleLabel(config_.role(ch));
+        const int tf = config_.transferFunction(ch);
+        if (tf > 0 && config_.role(ch) != ChannelRole::Unused) {
+            text += " TF" + std::to_string(tf + 1);
+        }
+        grid_.setCellText(ch, 0, text);
     }
 }
 

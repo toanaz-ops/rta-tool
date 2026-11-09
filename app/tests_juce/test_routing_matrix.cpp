@@ -256,3 +256,26 @@ TEST_CASE("Rows scroll inside the widget's own height once they overflow",
     CHECK(contentHeight() == matrix.viewportForTest().getHeight());
     CHECK_FALSE(matrix.scrollBarVisibleForTest());
 }
+
+TEST_CASE("A channel tagged with a non-default TF slot shows it in the ROLE cell (H8)",
+          "[routing_matrix]") {
+    ChannelConfig config;
+    RoutingMatrix matrix(config, 3);
+
+    // Slot 0 keeps the bare label: nothing changes for an operator who never
+    // opens the picker.
+    matrix.grid().onCellClicked(0, 0);
+    CHECK(matrix.grid().cellText(0, 0) == "MEAS");
+
+    matrix.setActiveTransferFunction(2);  // picker entry "TF 3"
+    matrix.grid().onCellClicked(1, 0);
+    CHECK(matrix.grid().cellText(1, 0) == "MEAS TF3");
+    matrix.grid().onCellClicked(1, 0);
+    CHECK(matrix.grid().cellText(1, 0) == "REF TF3");
+
+    // Cycling back to Unused drops the suffix (tfIndex is kept in the config
+    // but is meaningless for an Unused channel).
+    matrix.grid().onCellClicked(1, 0);
+    CHECK(matrix.grid().cellText(1, 0) == "UNUSED");
+    CHECK(config.transferFunction(1) == 2);
+}
