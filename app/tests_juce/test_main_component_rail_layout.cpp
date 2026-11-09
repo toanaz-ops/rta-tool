@@ -296,3 +296,22 @@ TEST_CASE("rail: the TF slot picker offers slots 1..8 and retargets the next rol
     picker.setSelectedId(3, juce::sendNotificationSync);
     CHECK(matrix.activeTransferFunction() == 2);
 }
+
+TEST_CASE("rail: clearing the TF slot picker falls back to slot 0, never -1 (H8 L-8)",
+          "[main_component_rail]") {
+    MainComponent component;
+    component.setSize(1280, 800);
+    component.resized();
+
+    auto& picker = MainComponentTestAccess::tfSlotPickerForTest(component);
+    auto& matrix = MainComponentTestAccess::routingMatrixWidgetForTest(component);
+
+    picker.setSelectedId(3, juce::sendNotificationSync);
+    REQUIRE(matrix.activeTransferFunction() == 2);
+
+    // A cleared combo fires onChange with getSelectedId() == 0. Without the
+    // clamp that is slot -1, which the matrix would carry into the next click.
+    picker.setSelectedId(0, juce::sendNotificationSync);
+    CHECK(picker.getSelectedId() == 0);
+    CHECK(matrix.activeTransferFunction() == 0);
+}

@@ -44,6 +44,8 @@ public:
     /// The text the fault slot would paint right now ("" when no fault).
     /// Test hook: the slot is pixels, and a test reads text.
     [[nodiscard]] std::string faultLineTextForTest() const { return currentFault().message; }
+    /// The START/STOP switch, so a layout test can check it is on screen (H8 6a).
+    [[nodiscard]] const juce::Component& startStopButtonForTest() const noexcept { return startStopButton_; }
 
 private:
     void timerCallback() override;

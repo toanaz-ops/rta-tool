@@ -44,6 +44,8 @@ add_executable(rtatool_main_component_tests
     test_main_component_panes_xover_round3.cpp
     # Fix round MEDIUM F1: item 4's rail-scroll fix had no test.
     test_main_component_rail_layout.cpp
+    # H8 6a: 1366x768 / minimum-size layout proof (GEN/OUT, START).
+    test_main_component_small_screen.cpp
     test_main_component_fault_slot.cpp
     # test_main_component_session.cpp: SAVE/OPEN SESSION against a real
     # MainComponent. test_main_component_session_fixround.cpp is its own
