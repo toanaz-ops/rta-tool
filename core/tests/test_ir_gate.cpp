@@ -13,6 +13,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cstdio>
 #include <limits>
 #include <string>
 #include <vector>
@@ -128,7 +129,7 @@ TEST_CASE("A start inside the fade-in is refused; at the boundary the direct sou
 
     // One sample later (S = -23, w[23] = 0.995) and the older failures: -0.4 ms
     // (w = 0.896), -0.3 ms (-4 dB) and 0.0 ms (w[0] = 0, direct sound gone).
-    for (const double startMs : {-23.0 / 48.0, -0.4, -0.3, 0.0}) {
+    for (const double startMs : {-23.0 / 48.0, -0.4, -0.3, 0.0, 0.1, 2.0}) {
         GateSpec spec = defaultSpec();
         spec.startMs = startMs;
         const auto refused = rta::ir::gateSpectrum(ir, spec);
@@ -136,7 +137,9 @@ TEST_CASE("A start inside the fade-in is refused; at the boundary the direct sou
         CHECK(refused.refusal == GateRefusal::DirectSoundInFadeIn);
         CHECK(refused.refusalValue == Approx(startMs));
         CHECK_THAT(refused.message, ContainsSubstring("-0.5 ms"));  // the latest allowed start
-        CHECK_THAT(refused.message, ContainsSubstring(startMs == 0.0 ? "0.0" : "-0."));
+        char shown[32];
+        std::snprintf(shown, sizeof shown, "%.1f", startMs);
+        CHECK_THAT(refused.message, ContainsSubstring(std::string("gate start ") + shown));
     }
 
     // No fade-in, no refusal: a hard-edged gate may start on the arrival.
@@ -144,6 +147,11 @@ TEST_CASE("A start inside the fade-in is refused; at the boundary the direct sou
     hard.fadeInMs = 0.0;
     hard.startMs = 0.0;
     CHECK(rta::ir::gateSpectrum(ir, hard).ok());
+    // ...but one sample after it removes the direct sound even with no ramp.
+    hard.startMs = 1.0 / 48.0;
+    const auto late = rta::ir::gateSpectrum(ir, hard);
+    CHECK(late.refusal == GateRefusal::DirectSoundInFadeIn);
+    CHECK_THAT(late.message, ContainsSubstring("0.0 ms"));
 }
 
 TEST_CASE("The gated phase is referenced to the arrival", "[ir][gate]") {
@@ -177,11 +185,12 @@ TEST_CASE("The gated phase is referenced to the arrival", "[ir][gate]") {
     CHECK(worst <= tol * 2.0);
 }
 
-TEST_CASE("A gate that starts after the arrival is still referenced to it", "[ir][gate]") {
-    // S=+96, E=576: the delta sits 240 samples after the arrival, inside the flat
+TEST_CASE("A gate that starts ON the arrival (no fade-in) is referenced to it", "[ir][gate]") {
+    // S=0, Fi=0, E=576: the delta sits 240 samples after the arrival, inside the flat
     // part. There are no pre-arrival samples at all; the lead-in is padded to 1.
     GateSpec spec = defaultSpec();
-    spec.startMs = 2.0;
+    spec.startMs = 0.0;
+    spec.fadeInMs = 0.0;
     spec.endMs = 12.0;
     auto ir = twoSpikes(0.0, 0);
     ir.samples[static_cast<std::size_t>(kArrival)] = 0.0f;

@@ -164,17 +164,17 @@ TEST_CASE("ir pane: dragging a marker moves the marker and the readout", kTag) {
     const double endBefore = markers.endMs;
     const auto startNow = plot.markerCentreForTest(true);
     mouseAt(plot, startNow, true);
-    mouseAt(plot, {startNow.x + static_cast<int>(std::lround(pxPerMs)), startNow.y}, false);
+    mouseAt(plot, {startNow.x + static_cast<int>(std::lround(2.0 * pxPerMs)), startNow.y}, false);
     CHECK(Access::irForTest(rig.c).markersForTest().endMs == endBefore);
-    CHECK(Access::irForTest(rig.c).markersForTest().startMs > -0.5);
+    CHECK(Access::irForTest(rig.c).markersForTest().startMs > 0.5);
 
-    // That drag left the start about 0.0 ms: inside the fade-in, where the gate
-    // would delete the direct sound. The pane says so, with the number, and
+    // That drag left the start about +1.0 ms: after the arrival, where the gate
+    // has no direct sound. The pane says so, with the number, and
     // STORE GATED is off (it used to read "valid" and stay enabled).
     const auto dragged = Access::irForTest(rig.c).markersForTest().startMs;
-    CHECK(dragged > -0.5);
+    CHECK(dragged > 0.5);  // +1.0 ms: after the arrival, no direct sound left
     CHECK(rig.pane->readoutForTest().startsWith("GATE refused -- "));
-    CHECK(rig.pane->readoutForTest().contains("fade-in"));
+    CHECK(rig.pane->readoutForTest().contains("direct sound"));
     CHECK(rig.pane->readoutForTest().contains("-0.5 ms"));
     CHECK_FALSE(rig.pane->storeButtonForTest().isEnabled());
     const auto before = Access::libraryForTest(rig.c).entries().size();

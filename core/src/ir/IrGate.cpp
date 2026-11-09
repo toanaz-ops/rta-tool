@@ -78,12 +78,12 @@ GateResult gateSpectrum(std::span<const float> samples, std::size_t originIndex,
     }
 
     // The arrival is gate index -S. Full weight needs the opening ramp finished
-    // there (w[n] = 1 for n >= Fi), so `S <= 0 && -S < Fi` would attenuate or delete
-    // the direct sound; the latest start that keeps it is -Fi samples.
-    if (fadeIn > 0 && startSamples <= 0 && -startSamples < static_cast<long>(fadeIn)) {
+    // there (w[n] = 1 for n >= Fi), so `-S < Fi` (any start later than -Fi samples,
+    // including every start after the arrival) would attenuate or delete the direct sound; the latest start that keeps it is -Fi samples.
+    if (-startSamples < static_cast<long>(fadeIn)) {
         return refuse(GateRefusal::DirectSoundInFadeIn, spec.startMs,
                       "gate start " + oneDecimal(spec.startMs) +
-                          " ms is inside the fade-in and would attenuate the direct sound (latest start " +
+                          " ms would attenuate or remove the direct sound (latest start " +
                           oneDecimal(-static_cast<double>(fadeIn) * msPerSample) + " ms)");
     }
 

@@ -31,7 +31,7 @@ namespace rta::ir {
 ///
 /// The arrival sits at gate index n = -S. The direct sound keeps full weight only
 /// if the opening ramp has finished by then, n >= Fi; a gate that starts on the
-/// arrival or inside the last Fi samples before it (S <= 0 and -S < Fi) would
+/// arrival or inside the last Fi samples before it (-S < Fi) would
 /// attenuate or delete it and is refused. A gate starting AFTER the arrival (S > 0)
 /// leaves the direct sound out on purpose and is allowed. Fi = 0 never refuses.
 ///
