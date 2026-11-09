@@ -113,7 +113,8 @@ struct BandFitOptions {
     double minimumGatedCoherence = 0.0;
 
     /// D_B - D_A from CaptureMeta::appliedDelaySamples. H_B is pre-rotated by
-    /// e^{+j2 pi f (D_B - D_A)/fs} BEFORE the fit (record Sec.1.4, Sec.4).
+    /// e^{-j2 pi f (D_B - D_A)/fs} BEFORE the fit (a capture stored with D applied
+    /// carries e^{+j2 pi f D/fs}, test_dualfft_applied_delay_sign.cpp) (record Sec.1.4, Sec.4).
     /// Core owns it (ALIGN-R2) so the "off by exactly 48/fs without it" case is
     /// a core test, and so the correction is impossible to FORGET: it is a
     /// required field of the options struct, not a step in a caller's recipe.

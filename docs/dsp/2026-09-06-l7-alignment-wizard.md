@@ -208,8 +208,9 @@ the unit relative response
 
     R_k = H_A,k · conj(H_B,k) / (|H_A,k| |H_B,k|)  = e^{j(φ_A,k − φ_B,k)}
 
-after first multiplying `H_B` by `e^{+j2πf_k(D_B−D_A)/fs}` to undo the
-difference in `appliedDelaySamples` (§1.4). With weights `w_k` (below), find
+after first multiplying `H_B` by `e^{−j2πf_k(D_B−D_A)/fs}` to undo the
+difference in `appliedDelaySamples` (§1.4; sign corrected 2026-11-09, see
+"Amendment: the applied-delay sign" below). With weights `w_k` (below), find
 
     τ* = argmax_τ | Σ_k w_k R_k e^{−j2πf_kτ} |     over a bounded τ range,
     φ₀ = arg( Σ_k w_k R_k e^{−j2πf_kτ*} ),
@@ -720,7 +721,8 @@ Closed forms first; one consistency lock, labelled; no new golden vector.
    convention fail (`dual-fft-conventions.md` item 2).
 5. **Band fit, `appliedDelaySamples` reconciliation.** Same fixture with
    `D_B − D_A = 48` samples recorded in the metas: `τ*` unchanged after the
-   correction, and off by exactly `48/fs` without it — made red once.
+   correction, and off by exactly `48/fs` without it — made red once. (The
+   fixture's sign was reversed until 2026-11-09; see the amendment below.)
 6. **Band fit refusals.** All coherence absent → refusal, not a fit; one bin
    present → refusal (a fit needs at least two distinct frequencies, and the
    record says so rather than letting one bin produce `R = 1`).
@@ -847,3 +849,26 @@ Design and Optimization*, phase-alignment chapter — as reached by station 1,
 second-hand through Sound Design Live, and still to be read directly before
 it is cited as primary. The Butterworth identities in §3 and §5 were worked by
 hand for this record and are asserted by §10.2, not by citation.
+
+## Amendment: the applied-delay sign (2026-11-09, PR `fix/align-applied-delay-sign`)
+
+Written against the shipped code, after the fix.
+
+§4 originally rotated `H_B` by `e^{+j2πf(D_B−D_A)/fs}` on the premise that a
+capture with `D` applied carries `e^{−j2πfD/fs}`. The real engine does the
+opposite: a positive `D` discards the first `D` measurement samples (an
+advance), so `H_stored = H_true · e^{+j2πfD/fs}`
+(`core/tests/test_dualfft_applied_delay_sign.cpp`, T0, which drives
+`DualFftEngine`; `docs/dsp/2026-11-09-xover-applied-delay.md`). Undoing the
+difference therefore needs `e^{−j2πf(D_B−D_A)/fs}`, which is what
+`core/src/dsp/CrossoverBandFit.cpp:101` now applies; `D_A` cancels in
+`H_A·conj(H_B)` only with this sign. Before the fix, two captures stored with
+`D_B−D_A = 9` samples came back 18 samples (`2·9/fs`) wrong.
+
+Why no test caught it: row 5 above and `CrossoverBandFixture.h` built `H_B` by
+hand with the same reversed assumption, so fixture and code agreed. The
+regression lock is `core/tests/test_crossover_band_fit_real_engine.cpp`, which
+builds `hA`/`hB` with the real engine under `D_A ≠ D_B` and asserts the closed
+form `τ* = (L_B−L_A)/fs`, `φ₀ ∈ {0, π}`. `CrossoverBandFixture.h` and row 5's
+test now encode the engine's sign. The app side
+(`AlignmentWizard.cpp:267`, `D_B−D_A`, passed once) needed no change.
