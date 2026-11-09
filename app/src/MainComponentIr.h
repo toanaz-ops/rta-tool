@@ -64,7 +64,7 @@ public:
     }
     [[nodiscard]] std::shared_ptr<const rta::measure::IrExcessPhase> excessForTest() const noexcept { return excess_; }
     /// How many decompositions have begun on the worker (a drag must add none).
-    [[nodiscard]] std::size_t excessStartedForTest() const noexcept { return job_.startedCount(); }
+    [[nodiscard]] std::size_t excessStartedForTest() const noexcept { return job_.startedCountForTest(); }
 
 private:
     void reanalyse();

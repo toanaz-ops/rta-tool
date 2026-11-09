@@ -304,7 +304,7 @@ TEST_CASE("The worker answers the newest submission and never a superseded one",
     const auto answer = pollUntil(job, 10000);
     REQUIRE(answer != nullptr);
     CHECK_FALSE(answer->valid);
-    CHECK(job.startedCount() == 2);
+    CHECK(job.startedCountForTest() == 2);
     CHECK(pollUntil(job, 200) == nullptr);  // and nothing further arrives
 
     // invalidate() makes the running job's answer stale: it never surfaces.

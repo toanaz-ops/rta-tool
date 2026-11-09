@@ -76,7 +76,7 @@ public:
     }
 
     /// How many decompositions have actually begun (a test's "did it recompute").
-    [[nodiscard]] std::size_t startedCount() const noexcept { return started_; }
+    [[nodiscard]] std::size_t startedCountForTest() const noexcept { return started_; }
 
 private:
     using Done = std::pair<std::uint64_t, std::shared_ptr<const IrExcessPhase>>;
