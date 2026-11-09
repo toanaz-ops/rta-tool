@@ -80,15 +80,25 @@ TEST_CASE("a role assigned while an SPL log runs puts a Gap on the affected bloc
 
     // Keep the callbacks coming: the gate refuses them, and the first one that
     // sees it up is what lets the consumer drain. Then let blocks close again.
-    const auto before = thread.splBlockCount(1);
-    for (int i = 0; i < 600 && (bus.resyncPending() || thread.splBlockCount(1) < before + 2 ||
-                                bus.resyncLostFrames() == 0);
-         ++i) {
+    for (int i = 0; i < 600 && (bus.resyncPending() || bus.resyncLostFrames() == 0); ++i) {
         callback(bus, 3, 16);
         juce::Thread::sleep(2);
     }
     REQUIRE_FALSE(bus.resyncPending());
     REQUIRE(bus.resyncLostFrames() > 0);
+
+    // The feed learns of the loss only when a hop reaches feedSpl() (it reads
+    // resyncLostFrames() just before feeding), so the wait must be on blocks
+    // closing AFTER the resync completed, not on the resync itself. Waiting on
+    // the resync alone let the loop end with no further hop ever fed, and the
+    // loss was never reported (8 of 100 runs). Blocks that closed from the
+    // pre-resync backlog must not satisfy it, hence the fresh baseline here.
+    const auto afterResync = thread.splBlockCount(1);
+    for (int i = 0; i < 600 && thread.splBlockCount(1) < afterResync + 2; ++i) {
+        callback(bus, 3, 16);
+        juce::Thread::sleep(2);
+    }
+    REQUIRE(thread.splBlockCount(1) >= afterResync + 2);
     juce::Thread::sleep(50);
 
     INFO("resyncLostFrames = " << bus.resyncLostFrames());
