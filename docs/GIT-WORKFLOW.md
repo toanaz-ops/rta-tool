@@ -1,5 +1,11 @@
 # Git workflow — GitHub is the record, not the local `main`
 
+> **2026-11-09: rule 2 (PR-only) is superseded — trunk-based** (owner: "chọn cái dev nhanh,
+> nhẹ hơn"; global rule 5). Commit to `main`, fetch + rebase onto `origin/main`, narrow build
+> + ctest, push; CI runs on every push to `main` and red main stops the line (fix forward or
+> `git revert`). Rules 1 and 3 (origin/main is the truth; CI green incl. warnings) still hold;
+> rule 4 (merge only on the owner's word) lapses with the PR step.
+
 *Adopted 2026-09-15 at the owner's instruction. Until then, lanes merged into a
 local `main` with `--no-ff` and `push` was a separate owner's word; the local
 `main` drifted up to 36 commits ahead of `origin/main` and CI on GitHub ran only

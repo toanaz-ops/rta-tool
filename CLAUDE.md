@@ -56,12 +56,13 @@ Windows SDK 10.0.26100, CMake 4.3.2, Ninja 1.13.2, Python 3.14.6.
 
 ## Git: GitHub is the record
 
-`origin/main` is the truth; nothing lands on `main` except through a pull
-request whose three-OS CI matrix and the Windows `RTA_BUILD_APP=ON` job are
-both green, and whose PR body carries measured tallies. Local `--no-ff`
-merges into `main` are retired. "Merge" is still the owner's word in the
-current conversation; it now means `gh pr merge`. Full procedure:
-`docs/GIT-WORKFLOW.md`.
+**Trunk-based since 2026-11-09** (owner: "chọn cái dev nhanh, nhẹ hơn"; global rule 5).
+Commit to `main`, `git fetch` → `git rebase origin/main` (no merge commits, never force)
+→ narrow build + ctest for what changed → push. CI (`ci.yml` three-OS matrix +
+`ci-app-on.yml`) runs on every push to `main`; **red main = stop the line**: fix forward
+or `git revert` in the same turn. No PR needed. The repo is public: every push publishes.
+`origin/main` is still the truth. History and the CI/warnings rules:
+`docs/GIT-WORKFLOW.md` (its PR-only rule 2 is superseded).
 
 ## Conventions
 

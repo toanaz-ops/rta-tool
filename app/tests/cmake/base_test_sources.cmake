@@ -130,6 +130,7 @@ set(RTA_BASE_TEST_SOURCES
     test_alignment_wizard_refusals.cpp
     test_alignment_wizard_verdict.cpp
     test_alignment_wizard_signals.cpp
+    test_polarity_refusal_text.cpp
     # ALIGN-UI lane wave A (docs/plans/2026-10-20-align-ui-lane-plan.md):
     #   ...wizard_candidates.cpp  T1: Verdict::candidateTausSeconds, the C5 fixture through the wizard
     #   test_align_runner.cpp     T2: refusals, the output each step plays on, the dwell

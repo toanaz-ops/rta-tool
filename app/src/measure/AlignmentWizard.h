@@ -63,6 +63,13 @@ enum class PolaritySignalKind {
     WhitenedCorrelationPeak,
 };
 
+/// The sentence the operator reads for a findPolarity answer: where to go next
+/// and the measured number that justifies the refusal. `measured` is the
+/// Deconvolution `result` came from (SweepBandInsufficient quotes its trusted
+/// range). Defined in AlignmentWizardSignals.cpp.
+[[nodiscard]] std::string polarityRefusalText(const rta::ir::PolarityResult& result,
+                                              const rta::ir::Deconvolution& measured);
+
 struct PolaritySignal {
     PolaritySignalKind kind = PolaritySignalKind::RelativePolarityRho;
     SignalStanding standing = SignalStanding::Advisory;
