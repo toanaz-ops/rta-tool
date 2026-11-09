@@ -1289,7 +1289,7 @@ Source: PRs #87 (`A1`), #88 (`A2`), #91 (`B1`), #94 (`B2`), flake fixes #90,
 7. Close and reopen the app: pink, -30.0, out 1, stopped, FOLLOW GEN again
    (nothing persists, owner decision D3).
 
-**Lane notes (not started; the owner paused RTA after H7):** M1 (SweepIrPipeline
+**Lane notes (not started; the owner paused RTA after H7) (pause lifted 2026-11-09):** M1 (SweepIrPipeline
 `findPeak` is a global argmax), N1 (the SYNTHETIC out 2 SWEEP refusal below -12
 could name low SNR), N2 (`AudioIo::stop()` can drop one device block, deliberate),
 N3 (destructor-order test relies on a 100 ms sleep window). Detail:

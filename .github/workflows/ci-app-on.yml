@@ -84,6 +84,10 @@ name: CI (app ON)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'memory/**'
   pull_request:
     paths-ignore:
       - 'docs/**'

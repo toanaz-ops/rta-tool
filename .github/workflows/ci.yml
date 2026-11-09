@@ -3,7 +3,15 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'memory/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'memory/**'
 
 # A superseded push on a PR ref cancels that PR's own in-flight run, so an
 # old commit never races a new one for the check mark. A push to `main` is
@@ -22,7 +30,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macOS (slowest leg) runs on push to main only, not on PRs.
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') }}
 
     steps:
       - uses: actions/checkout@v5
