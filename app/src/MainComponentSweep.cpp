@@ -232,12 +232,11 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
         // H8 N1: below the -12 dBFS the record designed the sweep at, a refusal
         // that says "no peak" is more likely too little SNR than a wiring fault
         // (suspected on SYNTHETIC out 2, unmeasured) -- say so, and name the fix.
-        const bool peakRefusal = outcome.status == rta::measure::SweepIrStatus::ReferenceNotFound ||
-                                 outcome.status == rta::measure::SweepIrStatus::MeasurementNotFound ||
-                                 outcome.status == rta::measure::SweepIrStatus::ArrivalOutOfWindow;
-        const juce::String lowSnr = (peakRefusal && armedRequest_.sweep.levelDbFsPeak < -12.0)
-                                        ? " -- level is low, this may be too little SNR; raise GEN"
-                                        : "";
+        // The rule lives in lowSnrHintApplies (SweepIrPipeline.h), unit-tested.
+        const juce::String lowSnr =
+            rta::measure::lowSnrHintApplies(outcome.status, armedRequest_.sweep.levelDbFsPeak)
+                ? " -- level is low, this may be too little SNR; raise GEN"
+                : "";
         say("sweep: refused -- " + juce::String(outcome.message) + lowSnr + " @ " + armedDriveText_);
         return;
     }

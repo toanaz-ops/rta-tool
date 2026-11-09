@@ -261,7 +261,7 @@ this section is what shipped. Line numbers are at `65ee5f6`.*
 | A1 | decision 8: `bandPass(40, 16000, fs, 1)` | **N = 2** (two SOS sections) | `MainComponentSynthetic.cpp:59`, comment above it |
 | A2 | T2: "SYNTHETIC + LOCATE reaches a 4-sample suggestion" | LOCATE suggests **5 samples** (4 + the band-pass's own delay; the PHAT estimate reads 4.76) | `test_synthetic_loopback.cpp`, "SYNTHETIC + LOCATE ..." |
 | A3 | T3 (b) bound: tail term once, four float transforms | tail term **twice**, plus **one extra float stage** | `test_sweep_ir_tolerance.cpp:25-47` |
-| A4 | statuses `TailTooShort`, `ReferenceNotFound`, `ArrivalOutOfWindow` | also `CaptureTooShort`, `MeasurementNotFound`, `Failed`; and a 20x peak/rms gate on the loop | `SweepIrOutcome.h:33-41`, `SweepIrPipeline.cpp:29,97,118` |
+| A4 | statuses `TailTooShort`, `ReferenceNotFound`, `ArrivalOutOfWindow` | also `CaptureTooShort`, `MeasurementNotFound`, `Failed`; and a 20x peak/rms gate on the loop | `SweepIrOutcome.h:33-41`, `SweepIrPipeline.cpp:29,112,176` (as of the H8 review fixes; the gate constant is `kMinPeakToRms`) |
 | A5 | T4: `start(shared_ptr<const LocateCapture>, ...)` | `start(SweepCapture, ...)` **by value** | `SweepIrWorker.h:49` (declaration; its doc comment starts at `:43`; the cited `:46` fell inside that comment), `MainComponentSweep.cpp:170` (the `worker_.start(` call; the cited `:157` is stale) |
 | A6 | abort on `outputEpoch()` change | also aborts when the SYNTHETIC flag differs from the one at arm time | `MainComponentSweep.cpp:124` |
 | A7 | trace metadata unspecified | device name and channel roles captured **at click** | `MainComponentSweep.cpp:100-101,171` |

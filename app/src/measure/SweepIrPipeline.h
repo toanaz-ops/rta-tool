@@ -32,6 +32,17 @@ namespace rta::measure {
     return config;
 }
 
+/// H8 N1 (review L-1): a refusal that says "no peak" at a drive below the
+/// shipped level is more likely too little SNR than a wiring fault. Only the
+/// two "no peak" refusals earn the hint: `ArrivalOutOfWindow` found a peak and
+/// is a geometry (or ambiguity) statement, and "raise GEN" would mislead.
+/// The reference level is `shippedSweepConfig`'s, not a second copy of -12.
+[[nodiscard]] inline bool lowSnrHintApplies(SweepIrStatus status, double levelDbFsPeak) {
+    const bool noPeak = status == SweepIrStatus::ReferenceNotFound ||
+                        status == SweepIrStatus::MeasurementNotFound;
+    return noPeak && levelDbFsPeak < shippedSweepConfig(48000.0).levelDbFsPeak;
+}
+
 struct SweepIrRequest {
     rta::gen::Sweep::Config sweep = shippedSweepConfig(48000.0);
     /// Required capture after the sweep has LEFT THE OUTPUT (owner decision 3):

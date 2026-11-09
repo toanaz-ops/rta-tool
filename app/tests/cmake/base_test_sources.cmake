@@ -165,6 +165,9 @@ set(RTA_BASE_TEST_SOURCES
     # test_sweep_ir_*.cpp, test_ir_store.cpp: SWEEP lane wave B (T3/T4/T5),
     # JUCE-free, proven OFF on all three CI operating systems.
     test_sweep_ir_pipeline.cpp
+    test_sweep_ir_pipeline_ambiguity.cpp
+    # H8 review follow-ups: window sizing, SPL empty state, API status text, bearer compare, hint rule.
+    test_window_sizing_and_status.cpp
     test_sweep_ir_tolerance.cpp
     test_sweep_ir_worker.cpp
     test_sweep_ir_trace.cpp

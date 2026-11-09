@@ -139,7 +139,20 @@ bool bearerAccepted(std::string_view authorizationHeader, const ApiSettings& set
     if (!equalsAsciiCaseInsensitive(authorizationHeader.substr(0, kScheme.size()), kScheme)) {
         return false;
     }
-    return authorizationHeader.substr(kScheme.size()) == settings.token;
+    // Constant time over the longer length: a `==` on strings stops at the
+    // first differing byte, so response timing would tell a local process how
+    // many leading bytes of the token it has right (H8 review L-2). Lengths
+    // are folded into the same accumulator rather than short-circuited.
+    const std::string_view given = authorizationHeader.substr(kScheme.size());
+    const std::string_view expected = settings.token;
+    const std::size_t longest = given.size() > expected.size() ? given.size() : expected.size();
+    unsigned char diff = given.size() == expected.size() ? 0 : 1;
+    for (std::size_t i = 0; i < longest; ++i) {
+        const unsigned char a = i < given.size() ? static_cast<unsigned char>(given[i]) : 0;
+        const unsigned char b = i < expected.size() ? static_cast<unsigned char>(expected[i]) : 0;
+        diff = static_cast<unsigned char>(diff | (a ^ b));
+    }
+    return diff == 0;
 }
 
 int clampPoints(long long requested, const ApiSettings& settings) {
