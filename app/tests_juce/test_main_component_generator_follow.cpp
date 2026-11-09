@@ -206,7 +206,9 @@ TEST_CASE("T13 SWEEP: out 2 works at the -12 ceiling and refuses below it -- SNR
     CHECK(at12.rfind("IR ", 0) == 0);
     const std::string at30 = readoutAt(-30.0);
     INFO("at -30: " << at30);
-    CHECK(at30.rfind("sweep: refused -- the arrival does not fit the analysis window @ -30.0 dBFS peak, out 2", 0) == 0);
+    // H8 N1: the refusal now also says the level may be too low (SNR) and names the fix.
+    CHECK(at30.rfind("sweep: refused -- the arrival does not fit the analysis window -- level is low, "
+                     "this may be too little SNR; raise GEN @ -30.0 dBFS peak, out 2", 0) == 0);
 }
 
 TEST_CASE("T13 SWEEP: a finished sweep reads out and stores its level and output", kTag) {

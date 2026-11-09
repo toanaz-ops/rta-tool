@@ -241,15 +241,20 @@ TEST_CASE("a block rendered when the destructor starts is still pushed: rendered
     std::atomic<int> calls{0};
     std::atomic<bool> parked{false};
     std::atomic<bool> destroying{false};
+    std::atomic<SyntheticInput*> self{nullptr};
     SyntheticInput::Config config;
     config.loopback = &engine;
     config.betweenRenderAndPushForTest = [&] {
         if (calls.fetch_add(1) != 5) return;
         parked = true;
-        waitUntil([&] { return destroying.load(); }, 10000);
-        juce::Thread::sleep(100);  // the destructor is now past any statement before its join
+        waitUntil([&] { return destroying.load() && self.load() != nullptr; }, 10000);
+        // H8 N3: no timing window. stopThreadNoKill's first statement is
+        // signalThreadShouldExit(), so once the thread sees it the destructor has
+        // reached its join; the old ordering deactivated the bus BEFORE that.
+        waitUntil([&] { return self.load()->threadShouldExit(); }, 10000);
     };
     auto input = std::make_unique<SyntheticInput>(bus, config);
+    self = input.get();
 
     REQUIRE(waitUntil([&] { return parked.load(); }, 10000));
     destroying = true;

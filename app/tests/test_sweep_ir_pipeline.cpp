@@ -351,3 +351,29 @@ TEST_CASE("every refusal says why, and a DSP exception is Failed with its text",
     CHECK(failed.status == SweepIrStatus::Failed);
     CHECK_FALSE(failed.message.empty());
 }
+
+// --- H8 M1: the arrival search is windowed -------------------------------------
+
+TEST_CASE("a louder echo past the analysis window does not beat the real arrival (H8 M1)",
+          "[sweep_ir_pipeline]") {
+    const auto request = shortRequest();
+    const rta::gen::Sweep sweep(request.sweep);
+    const double fs = 48000.0;
+    const std::size_t fftSize = rta::measure::sweepIrWindowSize(fs, sweep.validBandLowHz());
+    const std::size_t farDelay = fftSize + 3000;  // well outside the window
+
+    // Same capture twice: the near copy (37 samples, amplitude 0.5) and a
+    // stronger copy far later (amplitude 1.0). Before M1 the global argmax
+    // picked the far one and the capture was refused as ArrivalOutOfWindow.
+    const auto required = rta::measure::requiredTailSamples(request);
+    auto capture = fx::delayCapture(request.sweep, kPreRoll, required + farDelay + 1, 37);
+    const auto far = fx::delayed(capture.reference, farDelay);
+    for (std::size_t i = 0; i < capture.measurement.size(); ++i) {
+        capture.measurement[i] = 0.5f * capture.measurement[i] + far[i];
+    }
+
+    const auto outcome = analyseSweepCapture(capture, request);
+    INFO(outcome.message);
+    REQUIRE(outcome.status == SweepIrStatus::Ok);
+    CHECK(outcome.delaySamples == 37);
+}
