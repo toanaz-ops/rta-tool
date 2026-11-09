@@ -277,3 +277,7 @@ after L6a):
    against that code.
    - L6a's §15 A6 was written first and had to be corrected three times,
      because each fix round made the code say something the record did not.
+
+## Real-app UI tests
+
+Real-app UI tests: launch only via `D:/DEV CAVE EP3/shared/harness/guards/test_app_launcher.ps1 -App rta` (DEVCAVE_TEST_PROFILE); never answer don't-save/discard on a window you did not start. The app maps Documents/app-data through `app/src/TestProfile.h`.

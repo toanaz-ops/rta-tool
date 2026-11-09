@@ -2,6 +2,7 @@
 // Part of RTA Tool -- app/src. See MainComponentEq.h.
 #include "MainComponentEq.h"
 
+#include "TestProfile.h"
 #include "export/EqTextExport.h"
 #include "export/FirExport.h"
 #include "export/FirWavExport.h"
@@ -17,7 +18,7 @@ namespace {
 /// Documents/RTA Tool/<sub>: where every save dialog opens, alongside the
 /// sessions/ folder MainComponentSession already uses.
 juce::File exportFolder(const char* sub) {
-    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    return rta::app::testprofile::documentsDirectory()
         .getChildFile("RTA Tool")
         .getChildFile(sub);
 }

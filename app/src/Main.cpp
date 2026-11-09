@@ -5,10 +5,13 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include <cstdio>
+
 #include <az_ui/az_ui.h>
 
 #include "AppTypefaces.h"
 #include "MainComponent.h"
+#include "TestProfile.h"
 #include "WindowSizing.h"
 #include "dev/SpecimenComponent.h"
 
@@ -67,7 +70,7 @@ class MainWindow final : public juce::DocumentWindow
 {
 public:
     MainWindow()
-        : juce::DocumentWindow ("RTA Tool", az::ui::background, juce::DocumentWindow::allButtons)
+        : juce::DocumentWindow (rta::app::testprofile::windowTitle ("RTA Tool"), az::ui::background, juce::DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar (true);
         setContentOwned (new RootView(), true);
@@ -104,12 +107,23 @@ private:
 class RtaToolApplication final : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override    { return "RTA Tool"; }
+    const juce::String getApplicationName() override    { return rta::app::testprofile::applicationName ("RTA Tool"); }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
     bool moreThanOneInstanceAllowed() override          { return false; }
 
     void initialise (const juce::String&) override
     {
+        // DEVCAVE_TEST_PROFILE set to a relative path: refuse before any window
+        // opens, so a misconfigured test run can never reach real user data.
+        if (const auto profile = rta::app::testprofile::resolveFromEnvironment(); ! profile.valid)
+        {
+            juce::Logger::writeToLog (profile.message);
+            std::fprintf (stderr, "%s\n", profile.message.toRawUTF8());
+            setApplicationReturnValue (2);
+            quit();
+            return;
+        }
+
         installAppTypefaces();
         juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
         window = std::make_unique<MainWindow>();

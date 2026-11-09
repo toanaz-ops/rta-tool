@@ -70,6 +70,7 @@
 // a `performed=1` record beside an uncalibrated log unless this says
 // otherwise.
 #include "MainComponent.h"
+#include "TestProfile.h"
 
 #include "export/SplLog.h"
 #include "export/SplReport.h"
@@ -143,7 +144,7 @@ void MainComponent::startFreshSplLogWithConfig(const rta::measure::SplConfig& co
     // 1-second-resolution timestamp alone is not enough.
     const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     const auto sessionDir =
-        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+        rta::app::testprofile::documentsDirectory()
             .getChildFile("RTA Tool")
             .getChildFile("spl")
             .getChildFile(rta::measure::sessionFolderName(now, epoch));
