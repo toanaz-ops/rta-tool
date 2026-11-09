@@ -15,7 +15,7 @@
 | #97 | b: `RTA_API_ENABLED=1` (+ `RTA_API_PORT`, `RTA_API_TOKEN`) bật API; mặc định TẮT, bind luôn 127.0.0.1 (hàng 12 -> BUILT partial) |
 | #98 | c: M1 tìm đỉnh trong cửa sổ đến, N1 chữ từ chối nêu mức thấp/SNR, N3 test destructor bỏ sleep 100 ms |
 
-**Người thử được gì (exe `build-asiopptatool_artefacts\Release\RTA Tool.exe`, SYNTHETIC):** (1) mở rail, chọn `TF 3` rồi bấm ô ROLE của một kênh hai lần -> `MEAS TF3`, `REF TF3`; bấm lần ba -> `UNUSED`. (2) Đặt `RTA_API_ENABLED=1` trong shell rồi chạy exe; `curl http://127.0.0.1:4736/` (routes: `docs/dsp/2026-09-16-remote-api.md`); không đặt biến thì không có cổng nào mở. (3) SWEEP ở mức dưới -12 trên out 2 bị từ chối: chữ nêu `level is low ... raise GEN`.
+**Người thử được gì (exe `build-asio\app\rtatool_artefacts\Release\RTA Tool.exe`, SYNTHETIC):** (1) mở rail, chọn `TF 3` rồi bấm ô ROLE của một kênh hai lần -> `MEAS TF3`, `REF TF3`; bấm lần ba -> `UNUSED`. (2) Đặt `RTA_API_ENABLED=1` trong shell rồi chạy exe; `curl http://127.0.0.1:4736/` (routes: `docs/dsp/2026-09-16-remote-api.md`); không đặt biến thì không có cổng nào mở. (3) SWEEP ở mức dưới -12 trên out 2 bị từ chối: chữ nêu `level is low ... raise GEN`.
 
 **Còn mở:** M1 chỉ ưu tiên đỉnh nằm KHÔNG sát mép cửa sổ (đỉnh thật ngay mép vẫn theo argmax toàn cục, như cũ); test M1 chưa chạy với code cũ; N1 chưa có test riêng ngoài T13. Slot TF đang chọn không lưu theo session. CI đã gặp một flake `test_spl_resync_gap` (#96, không liên quan) và HTTP 504 khi tải sccache (hạ tầng).
 
