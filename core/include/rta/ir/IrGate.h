@@ -33,7 +33,8 @@ namespace rta::ir {
 /// if the opening ramp has finished by then, n >= Fi; a gate that starts on the
 /// arrival or inside the last Fi samples before it (-S < Fi) would
 /// attenuate or delete it and is refused. A gate starting AFTER the arrival (S > 0)
-/// leaves the direct sound out on purpose and is allowed. Fi = 0 never refuses.
+/// removes the direct sound outright and is refused by the same test, even with
+/// Fi = 0 (then the latest allowed start is the arrival itself, S = 0).
 ///
 /// Both ramps are HALF Hann windows: the flat top is the point of a gate, and a
 /// full Hann over the whole length would taper the direct sound itself. Index
