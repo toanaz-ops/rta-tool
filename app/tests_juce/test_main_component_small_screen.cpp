@@ -31,6 +31,7 @@
 #include "WindowSizing.h"
 
 #include <array>
+#include <cmath>
 #include <functional>
 
 namespace {
@@ -143,6 +144,20 @@ void checkPaneEditButtons(Size content) {
     CHECK_FALSE(add->getBounds().intersects(remove->getBounds()));
     CHECK_FALSE(add->getBounds().intersects(rt60->getBounds()));
     CHECK(add->getY() == rt60->getY());  // one row
+
+    // Every view cell's label fits its cell at the row's own font (the cells were
+    // narrowed to make room for IR; TRANSFER is the widest label). Measured with
+    // the look-and-feel's font, not a guessed pixel count.
+    for (const char* label : {"RTA", "TRANSFER", "SPL", "XOVER", "EQ", "ALIGN", "RT60", "IR"}) {
+        auto* cell = dynamic_cast<juce::TextButton*>(find(label));
+        REQUIRE(cell != nullptr);
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(cell->getLookAndFeel().getTextButtonFont(*cell, cell->getHeight()), cell->getButtonText(),
+                             0.0f, 0.0f);
+        const int textWidth = static_cast<int>(std::ceil(glyphs.getBoundingBox(0, -1, true).getWidth()));
+        INFO(label << ": text " << textWidth << " px in a " << cell->getWidth() << " px cell");
+        CHECK(textWidth <= cell->getWidth() - 8);  // 4 px of air each side
+    }
 }
 
 }  // namespace

@@ -76,7 +76,8 @@ void renderIrSpecimen (const juce::File& outDir, int& failures)
     }
     pane->tickForTest();
     pane->irComboForTest().setSelectedId (1, juce::sendNotificationSync);
-    if (! Access::irForTest (component).analysisForTest()->ok)
+    const auto analysis = Access::irForTest (component).analysisForTest();
+    if (analysis == nullptr || ! analysis->ok)
     {
         std::printf ("FAILED: the default gate was refused -- %s\n", fileName);
         ++failures;

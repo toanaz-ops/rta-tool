@@ -53,10 +53,17 @@ GateResult gateSpectrum(std::span<const float> samples, std::size_t originIndex,
     const long startSamples = std::lround(spec.startMs / msPerSample);
     const long endSamples = std::lround(spec.endMs / msPerSample);
     const long length = endSamples - startSamples;
-    if (!(spec.endMs > spec.startMs) || length <= 0) {
+    if (!(spec.endMs > spec.startMs)) {
         return refuse(GateRefusal::StartNotBeforeEnd, spec.endMs - spec.startMs,
                       "gate start " + oneDecimal(spec.startMs) + " ms is not before its end " +
                           oneDecimal(spec.endMs) + " ms");
+    }
+    if (length <= 0) {
+        // endMs > startMs, but both round to the same sample: a different mistake
+        // from an inverted gate, and the sentence must not call it one.
+        return refuse(GateRefusal::GateRoundsToNothing, spec.endMs - spec.startMs,
+                      "gate " + oneDecimal(spec.startMs) + ".." + oneDecimal(spec.endMs) +
+                          " ms is shorter than one sample (" + oneDecimal(msPerSample) + " ms)");
     }
     const auto fadeIn = static_cast<std::size_t>(std::lround(std::max(0.0, spec.fadeInMs) / msPerSample));
     const auto fadeOut = static_cast<std::size_t>(
@@ -68,6 +75,16 @@ GateResult gateSpectrum(std::span<const float> samples, std::size_t originIndex,
                       "gate " + oneDecimal(gateMs) + " ms is shorter than its fades (" +
                           oneDecimal(static_cast<double>(fadeIn) * msPerSample) + " ms in + " +
                           oneDecimal(static_cast<double>(fadeOut) * msPerSample) + " ms out)");
+    }
+
+    // The arrival is gate index -S. Full weight needs the opening ramp finished
+    // there (w[n] = 1 for n >= Fi), so `S <= 0 && -S < Fi` would attenuate or delete
+    // the direct sound; the latest start that keeps it is -Fi samples.
+    if (fadeIn > 0 && startSamples <= 0 && -startSamples < static_cast<long>(fadeIn)) {
+        return refuse(GateRefusal::DirectSoundInFadeIn, spec.startMs,
+                      "gate start " + oneDecimal(spec.startMs) +
+                          " ms is inside the fade-in and would attenuate the direct sound (latest start " +
+                          oneDecimal(-static_cast<double>(fadeIn) * msPerSample) + " ms)");
     }
 
     // Signed throughout: the arrival may sit before index 0 of a hand-built IR.

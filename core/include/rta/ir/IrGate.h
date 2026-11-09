@@ -29,6 +29,12 @@ namespace rta::ir {
 ///   w[n] = 1                                 Fi <= n < N-Fo
 ///   w[n] = 0.5*(1 + cos(pi*(n-(N-Fo))/Fo))   N-Fo <= n < N      (falls 1 -> 0)
 ///
+/// The arrival sits at gate index n = -S. The direct sound keeps full weight only
+/// if the opening ramp has finished by then, n >= Fi; a gate that starts on the
+/// arrival or inside the last Fi samples before it (S <= 0 and -S < Fi) would
+/// attenuate or delete it and is refused. A gate starting AFTER the arrival (S > 0)
+/// leaves the direct sound out on purpose and is allowed. Fi = 0 never refuses.
+///
 /// Both ramps are HALF Hann windows: the flat top is the point of a gate, and a
 /// full Hann over the whole length would taper the direct sound itself. Index
 /// N would be exactly 0, so the last kept sample is a hair above it.
@@ -52,6 +58,8 @@ enum class GateRefusal {
     EmptyIr,               ///< value: the sample count (0)
     BadSampleRate,         ///< value: the sample rate
     StartNotBeforeEnd,     ///< value: the gate length in ms (<= 0)
+    GateRoundsToNothing,   ///< value: the gate length in ms (> 0 but under half a sample)
+    DirectSoundInFadeIn,   ///< value: the requested startMs (latest allowed is -Fi samples)
     GateShorterThanFades,  ///< value: the gate length in ms
     StartBeforeIr,         ///< value: the requested startMs
     EndPastIr,             ///< value: the requested endMs
@@ -70,7 +78,8 @@ struct GateResult {
 
     /// Lowest frequency the gate can speak for: `1 / (N - Fo/2)` seconds. The
     /// closing ramp only half-counts because a sample inside it carries less
-    /// than full weight; the opening ramp ends before the direct sound, so it
+    /// than full weight; the opening ramp ends at or before the direct sound (a
+    /// start later than `-Fi` samples is refused, `DirectSoundInFadeIn`), so it
     /// shortens nothing. Below this the response is gate-limited, not measured.
     double fMinHz = 0.0;
 

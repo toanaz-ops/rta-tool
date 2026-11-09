@@ -64,17 +64,18 @@ void MainComponentPaneSelector::attach(juce::Component& parent, SelectFn onSelec
 }
 
 void MainComponentPaneSelector::layout(juce::Rectangle<int> row) {
-    // Ten cells, nine gaps. Seven view cells at 2.6 units, and the IR cell and
-    // the two pane-edit cells at 2.0 ("IR", "+ PANE" and "- PANE" are shorter
-    // than "TRANSFER"): 7 * 26 + 3 * 20 = 242 tenths. At the 1100 px minimum
-    // window the row is ~708 px, so a unit is ~26 px and an edit cell ~52 px:
-    // the 50 px floor test_main_component_small_screen.cpp holds them to.
+    // Ten cells, nine gaps, in tenths of a unit: TRANSFER 3.3 (its label is the
+    // widest: 71 px at the row font, measured by test_main_component_small_screen.cpp,
+    // which a 66 px cell squeezed), the other six view cells 2.5, and IR and the two
+    // pane-edit cells 2.0: 33 + 6 * 25 + 3 * 20 = 243. At the 1100 px minimum window
+    // the row is ~692 px, so TRANSFER gets ~84 px and an edit cell ~51 px (the 50 px
+    // floor that same file holds them to).
     const int usable = row.getWidth() - az::ui::gap * 9;
-    const int buttonWidth = usable * 26 / 242;
-    const int editWidth = usable * 20 / 242;
+    const auto widthOf = [usable](int tenths) { return usable * tenths / 243; };
+    const int editWidth = widthOf(20);
     for (auto* button : {&rtaButton_, &transferButton_, &splButton_, &xoverButton_, &eqButton_,
                          &alignButton_, &rt60Button_}) {
-        button->setBounds(row.removeFromLeft(buttonWidth));
+        button->setBounds(row.removeFromLeft(widthOf(button == &transferButton_ ? 33 : 25)));
         row.removeFromLeft(az::ui::gap);
     }
     irButton_.setBounds(row.removeFromLeft(editWidth));

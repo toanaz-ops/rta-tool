@@ -167,6 +167,19 @@ TEST_CASE("ir pane: dragging a marker moves the marker and the readout", kTag) {
     mouseAt(plot, {startNow.x + static_cast<int>(std::lround(pxPerMs)), startNow.y}, false);
     CHECK(Access::irForTest(rig.c).markersForTest().endMs == endBefore);
     CHECK(Access::irForTest(rig.c).markersForTest().startMs > -0.5);
+
+    // That drag left the start about 0.0 ms: inside the fade-in, where the gate
+    // would delete the direct sound. The pane says so, with the number, and
+    // STORE GATED is off (it used to read "valid" and stay enabled).
+    const auto dragged = Access::irForTest(rig.c).markersForTest().startMs;
+    CHECK(dragged > -0.5);
+    CHECK(rig.pane->readoutForTest().startsWith("GATE refused -- "));
+    CHECK(rig.pane->readoutForTest().contains("fade-in"));
+    CHECK(rig.pane->readoutForTest().contains("-0.5 ms"));
+    CHECK_FALSE(rig.pane->storeButtonForTest().isEnabled());
+    const auto before = Access::libraryForTest(rig.c).entries().size();
+    rig.pane->storeButtonForTest().onClick();  // a click on a disabled button must not store
+    CHECK(Access::libraryForTest(rig.c).entries().size() == before);
 }
 
 TEST_CASE("ir pane: STORE GATED adds exactly one trace, in its own group, with the gate in its meta", kTag) {

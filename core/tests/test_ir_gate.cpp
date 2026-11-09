@@ -100,16 +100,50 @@ TEST_CASE("An echo inside the closing ramp is weighted by the half-Hann", "[ir][
     CAPTURE(worst, tol);
     CHECK(worst <= tol);
 
-    // The fade-in half-Hann, same form: a delta 12 samples into the 24-sample opening ramp.
-    // Gate the original IR so that the DIRECT delta sits at n=12 of the gate.
-    GateSpec onRamp = defaultSpec();
-    onRamp.startMs = -12.0 / 48.0;  // S = -12: the delta is sample n=12 of the gate
-    const auto ramp = rta::ir::gateSpectrum(twoSpikes(0.0, 0), onRamp);
+    // The fade-in half-Hann, same form: a PRE-arrival spike 36 samples before the
+    // direct sound is gate index 12 of the 24-sample opening ramp (S = -48). The
+    // direct sound itself is never allowed on the ramp (see the refusal test below).
+    auto precursor = twoSpikes(0.0, 0);
+    precursor.samples[static_cast<std::size_t>(kArrival)] = 0.0f;
+    precursor.samples[static_cast<std::size_t>(kArrival - 36)] = 1.0f;
+    const auto ramp = rta::ir::gateSpectrum(precursor, defaultSpec());
     REQUIRE(ramp.ok());
     REQUIRE(ramp.fadeInSamples == 24);
     const double wIn = std::pow(std::sin(kPi * 12.0 / (2.0 * 24.0)), 2.0);  // sin^2, vs the code's 0.5*(1-cos)
     CHECK(std::abs(ramp.spectrum.bins[0]) == Approx(wIn).margin(floatTolerance(transform, 1.0)));
     CHECK(std::abs(ramp.spectrum.bins[100]) == Approx(wIn).margin(floatTolerance(transform, 1.0)));
+}
+
+TEST_CASE("A start inside the fade-in is refused; at the boundary the direct sound is whole", "[ir][gate]") {
+    const std::size_t transform = defaultSpec().transformSize;
+    const auto ir = twoSpikes(0.0, 0);
+    // Fi = 24 samples. The direct sound is gate index -S and keeps w = 1 iff -S >= 24.
+    GateSpec boundary = defaultSpec();
+    boundary.startMs = -24.0 / 48.0;  // S = -24: w[24] = 1 exactly
+    const auto whole = rta::ir::gateSpectrum(ir, boundary);
+    REQUIRE(whole.ok());
+    double worst = 0.0;
+    for (const auto& bin : whole.spectrum.bins) worst = std::max(worst, std::abs(std::abs(bin) - 1.0));
+    CHECK(worst <= floatTolerance(transform, 1.0));
+
+    // One sample later (S = -23, w[23] = 0.995) and the older failures: -0.4 ms
+    // (w = 0.896), -0.3 ms (-4 dB) and 0.0 ms (w[0] = 0, direct sound gone).
+    for (const double startMs : {-23.0 / 48.0, -0.4, -0.3, 0.0}) {
+        GateSpec spec = defaultSpec();
+        spec.startMs = startMs;
+        const auto refused = rta::ir::gateSpectrum(ir, spec);
+        CAPTURE(startMs);
+        CHECK(refused.refusal == GateRefusal::DirectSoundInFadeIn);
+        CHECK(refused.refusalValue == Approx(startMs));
+        CHECK_THAT(refused.message, ContainsSubstring("-0.5 ms"));  // the latest allowed start
+        CHECK_THAT(refused.message, ContainsSubstring(startMs == 0.0 ? "0.0" : "-0."));
+    }
+
+    // No fade-in, no refusal: a hard-edged gate may start on the arrival.
+    GateSpec hard = defaultSpec();
+    hard.fadeInMs = 0.0;
+    hard.startMs = 0.0;
+    CHECK(rta::ir::gateSpectrum(ir, hard).ok());
 }
 
 TEST_CASE("The gated phase is referenced to the arrival", "[ir][gate]") {
@@ -173,6 +207,7 @@ TEST_CASE("The lowest valid frequency is one over the gate less half its closing
 
     GateSpec wide = defaultSpec();
     wide.startMs = 0.0;
+    wide.fadeInMs = 0.0;  // a start on the arrival is only legal with no opening ramp
     wide.endMs = 20.0;
     wide.fadeOutFraction = 0.5;
     const auto longer = rta::ir::gateSpectrum(ir, wide);
@@ -194,6 +229,15 @@ TEST_CASE("Every refusal carries the value that broke it", "[ir][gate]") {
         CHECK_THAT(result.message, ContainsSubstring("3.0"));
         spec.startMs = spec.endMs = 5.0;
         CHECK(rta::ir::gateSpectrum(ir, spec).refusal == GateRefusal::StartNotBeforeEnd);
+    }
+    SECTION("a gate that rounds to nothing is not called inverted") {
+        GateSpec spec = defaultSpec();
+        spec.startMs = 3.0;
+        spec.endMs = 3.001;  // 0.048 sample
+        const auto result = rta::ir::gateSpectrum(ir, spec);
+        CHECK(result.refusal == GateRefusal::GateRoundsToNothing);
+        CHECK_THAT(result.message, ContainsSubstring("shorter than one sample"));
+        CHECK(result.message.find("not before") == std::string::npos);
     }
     SECTION("gate shorter than its fades") {
         GateSpec spec = defaultSpec();
