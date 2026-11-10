@@ -54,8 +54,6 @@ public:
     };
     [[nodiscard]] Range validRange() const;
 
-    [[nodiscard]] const ClockMapping& mapping() const noexcept { return mapping_; }
-
 private:
     [[nodiscard]] bool tapsInside(std::int64_t n) const;
 
