@@ -16,7 +16,7 @@
 
 **Người thử được gì (exe `build-asio\app\rtatool_artefacts\Release\RTA Tool.exe`, SYNTHETIC):** SWEEP -> `IR` -> bấm `PHASE`: hai đường (đo, minimum); bấm `EXCESS`: excess phase + group delay, readout có `tau0`. Kéo marker: đồ thị không tính lại cho tới khi thả chuột (~0.5 s sau thì có kết quả). Gate quá ngắn/không đủ bin tin cậy -> chữ `too few trusted bins for excess phase`.
 
-**Còn mở:** G22 (WAV offline) — lane riêng, cần research trước. LOW cũ: EQ target picker nhận trace GATED; trace GATED trùng màu SWEEP nguồn; NoSignal nhánh sớm in "0.0 dB". `IrPlots.cpp` 399/400 dòng — sửa lần sau phải tách file.
+**Còn mở:** G22 (WAV offline) — lane riêng, cần research trước. LOW cũ: EQ target picker nhận trace GATED; trace GATED trùng màu SWEEP nguồn; NoSignal nhánh sớm in "0.0 dB". `IrPlots.cpp` đã tách thành `IrEtcPlot.cpp` + `IrGatedPlot.cpp` (cap 400 dòng).
 
 ---
 

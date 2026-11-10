@@ -172,7 +172,7 @@ add_executable(rtatool_view_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Worker.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Analysis.cpp
     # H9 / L4c A3: PaneFactory.cpp's Ir branch -> IrPaneView, its plots and model.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/IrPaneView.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/IrPlots.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/IrGateModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/IrPaneView.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/IrEtcPlot.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/view/IrGatedPlot.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/IrGateModel.cpp
 )
 
 # app/src as an include root, exactly as rtatool and rtatool_analysis_tests do:

@@ -175,11 +175,12 @@ set(RTATOOL_SOURCES
     # --- end RT60-UI lane wave A ------------------------------------------------
     # --- H9 / L4c IR gate (docs/plans/2026-11-09-h9-l4c-ir-gate-plan.md A2/A3) ---
     # IrGateModel.cpp is the production caller of core's rta::ir::gateSpectrum,
-    # MainComponentIr.cpp the composition root's half, IrPaneView.cpp + IrPlots.cpp the pane.
+    # MainComponentIr.cpp the composition root's half, IrPaneView.cpp + IrEtcPlot.cpp + IrGatedPlot.cpp the pane.
     src/MainComponentIr.cpp
     src/measure/IrGateModel.cpp
     src/view/IrPaneView.cpp
-    src/view/IrPlots.cpp
+    src/view/IrEtcPlot.cpp
+    src/view/IrGatedPlot.cpp
     # --- end H9 / L4c ---------------------------------------------------------
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).

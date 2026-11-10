@@ -215,7 +215,8 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/MainComponentIr.cpp
     src/measure/IrGateModel.cpp
     src/view/IrPaneView.cpp
-    src/view/IrPlots.cpp
+    src/view/IrEtcPlot.cpp
+    src/view/IrGatedPlot.cpp
     # --- end H9 / L4c ---------------------------------------------------------
     # SplReportPayloadBuilder.cpp / SplReport.cpp / SplReportHash.cpp /
     # SplReportSections.cpp: see the matching entry in rtatool's own source
