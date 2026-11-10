@@ -157,6 +157,7 @@ void MainComponentWav::analyseClicked() {
 }
 
 void MainComponentWav::poll() {
+    if (!job_.busy()) return;  // nothing running: the timer has nothing to take
     if (auto outcome = job_.poll()) finish(*outcome);
 }
 

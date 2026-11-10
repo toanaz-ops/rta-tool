@@ -52,10 +52,6 @@ public:
     [[nodiscard]] juce::String readoutForTest() const { return readout_.getText(); }
     [[nodiscard]] juce::String fileTextForTest() const { return fileLabel_.getText(); }
     [[nodiscard]] bool analyseEnabledForTest() const { return analyseButton_.isEnabled(); }
-    [[nodiscard]] const juce::Component& loadButtonForTest() const noexcept { return loadButton_; }
-    [[nodiscard]] const juce::Component& analyseButtonForTest() const noexcept { return analyseButton_; }
-    [[nodiscard]] const juce::ComboBox& refComboForTest() const noexcept { return refCombo_; }
-    [[nodiscard]] const juce::ComboBox& measComboForTest() const noexcept { return measCombo_; }
 
 private:
     void say(const juce::String& text) { readout_.setText(text, juce::dontSendNotification); }
