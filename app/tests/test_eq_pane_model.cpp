@@ -8,6 +8,7 @@
 #include "EqTraceFixture.h"
 
 #include "measure/EqPaneModel.h"
+#include "trace/TraceGroups.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -130,6 +131,20 @@ TEST_CASE("EqPaneModel: a trace with no coherence is a target, never a measureme
         CHECK(EqPaneModel::measurementCandidateIds(library).empty());
         CHECK(EqPaneModel::targetCandidateIds(library) == std::vector<std::string>{ rtaId });
     }
+}
+
+TEST_CASE("H11 L1: a GATED trace is never offered as a target (no fMin on a stored trace)",
+          "[eq_pane_model]") {
+    TraceLibrary library;
+    const auto rtaId = library.add(makeEqTrace("rta", kFft64, kFs, std::vector<float>(kBins64, -20.0f)),
+                                   "RTA", "default");
+    const auto gatedId = library.add(gatedTrace("g1"), "GATED 1", rta::trace::kGatedGroup);
+    const auto sweepId = library.add(gatedTrace("s1"), "SWEEP 1", rta::trace::kSweepGroup);
+
+    CHECK(EqPaneModel::targetCandidateIds(library) == std::vector<std::string>{ rtaId, sweepId });
+    // The neighbour: the exclusion is the group, not "any trace with coherence" (the SWEEP
+    // trace has the same fixture shape and stays); and the GATED one is still a library entry.
+    CHECK(library.entry(gatedId) != nullptr);
 }
 
 TEST_CASE("EqPaneModel: FLAT is the default target; a same-grid target is copied bitwise",

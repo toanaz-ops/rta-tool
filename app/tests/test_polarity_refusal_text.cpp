@@ -71,4 +71,19 @@ TEST_CASE("L4c: NoSignal quotes the MEASURED confidence (one decimal) against th
     result.confidenceDb = 12.34;  // the fixture's input
     const auto text = polarityRefusalText(result, {});
     CHECK(has(text, "Arrival confidence 12.3 dB is below the 20.0 dB needed to decide."));
+
+    // The neighbour: a measured NEGATIVE confidence (noise louder than the arrival) is still a
+    // measured number and is quoted.
+    result.confidenceDb = -3.0;
+    CHECK(has(polarityRefusalText(result, {}), "Arrival confidence -3.0 dB is below the 20.0 dB"));
+}
+
+TEST_CASE("H11 L3: NoSignal on a path that never measured a confidence quotes no number",
+          "[polarity_text]") {
+    // confidenceDb defaults to 0.0 and findPolarity returns early (empty or silent search
+    // window) without setting it: the sentence must not say "0.0 dB".
+    const auto text = polarityRefusalText(refused(rta::ir::Refusal::NoSignal, 0, 0), {});
+    CHECK_FALSE(has(text, "dB"));
+    CHECK_FALSE(has(text, "0.0"));
+    CHECK(has(text, "Measure again, louder or closer."));
 }

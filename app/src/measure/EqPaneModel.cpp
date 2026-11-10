@@ -3,6 +3,7 @@
 
 #include "measure/EqTraceGrid.h"
 #include "measure/EqTrustMask.h"
+#include "trace/TraceGroups.h"
 
 #include <algorithm>
 #include <cmath>
@@ -44,6 +45,9 @@ std::vector<std::string> EqPaneModel::measurementCandidateIds(const rta::trace::
 std::vector<std::string> EqPaneModel::targetCandidateIds(const rta::trace::TraceLibrary& library) {
     std::vector<std::string> ids;
     for (const auto& entry : library.entries()) {
+        // A stored GATED response carries no fMin: its bins below the gate's own
+        // low edge are not a response, so as a TARGET they would be garbage (H11 L1).
+        if (entry.group == rta::trace::kGatedGroup) continue;
         if (entry.visible && library.trace(entry.traceId) != nullptr) ids.push_back(entry.traceId);
     }
     return ids;
