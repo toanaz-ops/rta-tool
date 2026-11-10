@@ -23,7 +23,7 @@ enum class TransferAveraging {
                   ///< operator chose a range of, where "forget the old frames" is the wrong
                   ///< question (docs/dsp/2026-11-10-g22-offline-wav-transfer.md D3).
     Exponential,  ///< one-pole, the coefficient SpectrumEngine already uses.
-                  ///< Config branch the product never sets (owner decision 2026-10-21, audit row "Config branches with exactly one production value"): production uses `Fifo` (the default; app/src never sets `transferAveraging`); this value is reachable only from tests until a lane gives it an operator path (CLAUDE.md rule 5).
+                  ///< Tests only (owner decision 2026-10-21, audit row "Config branches with exactly one production value"): the live analyser uses `Fifo` (the default; the live path never sets `transferAveraging`), the offline WAV transfer (G22, app/src/measure/WavTransfer.cpp) uses `Cumulative`; this value is reachable only from tests until a lane gives it an operator path (CLAUDE.md rule 5).
 };
 
 /// Two ring buffers, one delay compensation, three running accumulators

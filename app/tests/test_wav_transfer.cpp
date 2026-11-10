@@ -22,7 +22,11 @@
 //     sum_n w[n] (w[n+m] - w[n]) = sum w w' + O(m^2 pi^2 / N) and sum w w' =
 //     [w^2/2] = 0 over the frame. H1 therefore keeps only the zero-mean part,
 //     averaged over Neff independent frames: rms / sqrt(Neff). A bin-wise
-//     MAXIMUM over ~5000 bins of such a quantity is taken as 4x its rms.
+//     MAXIMUM over ~5000 bins of such a quantity is taken as 4x its rms --
+//     a JUDGEMENT, not a derivation (an extreme-value bound would need the
+//     bins' distribution). It is safe here because the rms itself is built
+//     from the leakage UPPER bound |E|/|X_w| <= sqrt(4/3) pi M1 / N, which sits
+//     above the typical error, so 4x that bound leaves slack no real maximum reaches.
 //  2. float32 FFT (memory/float32-fft-precision.md): ~1e-6 relative on the
 //     peak bin, which for pink at the top of the band is ~1e-6 * 500 = 5e-4
 //     of that bin's own magnitude, far below (1). Added as a floor of 1e-3.

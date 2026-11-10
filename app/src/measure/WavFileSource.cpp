@@ -5,13 +5,18 @@
 
 namespace rta::measure {
 
-std::unique_ptr<WavFileSource> WavFileSource::open(const juce::File& file) {
+std::unique_ptr<WavFileSource> WavFileSource::open(const juce::File& file, OpenFailure* why) {
+    if (why != nullptr) *why = OpenFailure::NotReadable;
     if (!file.existsAsFile()) return nullptr;
     juce::AudioFormatManager formats;  // D1: no lossy codec is ever registered
     formats.registerFormat(new juce::WavAudioFormat(), true);
     formats.registerFormat(new juce::AiffAudioFormat(), false);
     std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
-    if (reader == nullptr || reader->numChannels == 0 || reader->lengthInSamples <= 0) return nullptr;
+    if (reader == nullptr) return nullptr;
+    if (reader->numChannels == 0 || reader->lengthInSamples <= 0) {
+        if (why != nullptr) *why = OpenFailure::NoSamples;
+        return nullptr;
+    }
     return std::unique_ptr<WavFileSource>(new WavFileSource(std::move(reader)));
 }
 

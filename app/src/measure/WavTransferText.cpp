@@ -24,11 +24,17 @@ std::string channelName(int zeroBased) { return "ch" + std::to_string(zeroBased 
 
 /// "-12 samples (-0.3 ms)": whole samples, then milliseconds to one decimal.
 std::string delayText(int samples, double sampleRate) {
-    const double ms = sampleRate > 0.0 ? 1000.0 * samples / sampleRate : 0.0;
-    return std::to_string(samples) + " samples (" + fixed(ms, 1) + " ms)";
+    return std::to_string(samples) + " samples (" + wavTransferDelayMsText(samples, sampleRate) + " ms)";
 }
 
 }  // namespace
+
+std::string wavTransferDelayMsText(int samples, double sampleRate) {
+    const double ms = sampleRate > 0.0 ? 1000.0 * samples / sampleRate : 0.0;
+    std::string text = fixed(ms, 1);
+    if (text == "-0.0") text = "0.0";  // printf keeps the sign of a negative that rounds to zero
+    return text;
+}
 
 std::string wavTransferRefusalText(const WavTransferOutcome& o) {
     if (!o.refusal.has_value()) return {};
@@ -52,6 +58,10 @@ std::string wavTransferRefusalText(const WavTransferOutcome& o) {
                                                     : std::string("to the end")) +
                    ") does not fit inside the file, which is " + fixed(o.fileLengthSeconds, 2) +
                    " s long.";
+        case WavTransferRefusal::RangeRoundsToZero:
+            return "The range length (" + fixed(o.requestedLengthSeconds, 6) +
+                   " s) is less than one sample at " + fixed(o.sampleRate, 0) +
+                   " Hz. Pick a longer range.";
         case WavTransferRefusal::RangeTooShort:
             return "The range is too short: after the " + std::to_string(o.discardedSamples) +
                    "-sample delay discard it reaches " + fixed(o.reachableAverages, 1) +

@@ -11,6 +11,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace rta::trace {
@@ -71,6 +72,12 @@ public:
     [[nodiscard]] bool setVisible(const std::string& id, bool visible);
     [[nodiscard]] bool setGroup(const std::string& id, std::string group);
     [[nodiscard]] bool setShadeIndex(const std::string& id, int shadeIndex);
+
+    /// Gives `id` the lowest shade index that no OTHER entry in `groups` uses
+    /// (empty `groups` = every entry). `add` numbers shades per group, so two
+    /// groups that are drawn together each start at 0 and their first traces
+    /// share a colour; this is the cross-group alternative (H11 L2, L-WAV).
+    [[nodiscard]] bool assignSharedShade(const std::string& id, std::span<const std::string_view> groups = {});
 
     /// Makes `id` the only visible trace. One user action, so at most one
     /// revision step regardless of how many entries flip -- and none at all

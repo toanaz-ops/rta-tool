@@ -112,12 +112,16 @@ void MainComponentWav::loadClicked() {
 bool MainComponentWav::performLoad(const juce::File& file) {
     // A new file ends whatever the old one was doing: its answer would be filed under the wrong name.
     job_.cancelAndDiscard();
-    const auto probe = rta::measure::WavFileSource::open(file);
+    rta::measure::WavFileSource::OpenFailure why{};
+    const auto probe = rta::measure::WavFileSource::open(file, &why);
     if (probe == nullptr) {
         file_ = juce::File();
         setControlsEnabled(false);
         fileLabel_.setText("not loaded", juce::dontSendNotification);
-        say("wav: " + file.getFileName() + " could not be read (WAV and AIFF only)");
+        say("wav: " + file.getFileName() +
+            (why == rta::measure::WavFileSource::OpenFailure::NoSamples
+                 ? " has no samples"
+                 : " could not be read (WAV and AIFF only)"));
         return false;
     }
     file_ = file;
@@ -167,13 +171,16 @@ void MainComponentWav::finish(rta::measure::WavTransferOutcome& out) {
         return;
     }
     const std::string name = out.trace->meta().deviceName;
-    // `add` gives the trace the lowest free shade in group WAV, the way every other store does.
-    if (library_.add(std::move(*out.trace), name, rta::trace::kWavGroup).empty()) {
+    const auto id = library_.add(std::move(*out.trace), name, rta::trace::kWavGroup);
+    if (id.empty()) {
         say("not stored -- duplicate capture id");
         return;
     }
-    const double ms = out.sampleRate > 0.0 ? 1000.0 * out.delaySamples / out.sampleRate : 0.0;
-    say("delay " + juce::String(out.delaySamples) + " samples (" + utf8(fixed(ms, 1)) + " ms), " +
+    // `add` numbers shades per group, so the first WAV trace would share shade 0 with the first
+    // SWEEP/STORE trace on TRANSFER: take the lowest index unused across every entry instead.
+    (void)library_.assignSharedShade(id);
+    say("delay " + juce::String(out.delaySamples) + " samples (" +
+        utf8(rta::measure::wavTransferDelayMsText(out.delaySamples, out.sampleRate)) + " ms), " +
         rta::measure::wavTransferTrustWord(out.trust) + " trust, " + utf8(fixed(out.effectiveAverages, 1)) +
         " averages -> stored " + utf8(name));
 }

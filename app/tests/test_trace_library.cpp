@@ -161,3 +161,31 @@ TEST_CASE("clearing an already-empty library does not advance the revision", "[l
 
     CHECK(lib.revision() == before);
 }
+
+TEST_CASE("assignSharedShade takes the lowest index unused across the named groups", "[library]") {
+    TraceLibrary lib;
+    lib.add(makeTrace("s0"), "S0", "SWEEP");  // shade 0 in SWEEP
+    lib.add(makeTrace("s1"), "S1", "SWEEP");  // shade 1
+    lib.add(makeTrace("g0"), "G0", "GATED");  // shade 0 in its own group: the collision
+    REQUIRE(lib.entry("g0")->shadeIndex == 0);
+
+    const std::string_view both[] = {"SWEEP", "GATED"};
+    CHECK(lib.assignSharedShade("g0", both));
+    CHECK(lib.entry("g0")->shadeIndex == 2);  // 0 and 1 are SWEEP's
+
+    lib.add(makeTrace("w0"), "W0", "WAV");  // shade 0 in its own group
+    CHECK(lib.assignSharedShade("w0"));      // no groups = every entry: 0, 1, 2 taken
+    CHECK(lib.entry("w0")->shadeIndex == 3);
+    // Naming only SWEEP ignores GATED's 2 and WAV's 3: lowest free there is 2.
+    const std::string_view sweepOnly[] = {"SWEEP"};
+    CHECK(lib.assignSharedShade("w0", sweepOnly));
+    CHECK(lib.entry("w0")->shadeIndex == 2);
+
+    // A gap is filled, and the entry itself never counts as using its own shade.
+    CHECK(lib.setShadeIndex("s1", 5));
+    CHECK(lib.assignSharedShade("w0"));
+    CHECK(lib.entry("w0")->shadeIndex == 1);
+    CHECK(lib.assignSharedShade("w0"));  // unchanged on a repeat
+    CHECK(lib.entry("w0")->shadeIndex == 1);
+    CHECK_FALSE(lib.assignSharedShade("nope"));
+}

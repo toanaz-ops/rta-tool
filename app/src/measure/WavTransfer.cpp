@@ -126,6 +126,10 @@ WavTransferOutcome analyseWavTransfer(const SampleBlockSource& source,
     ctx.rangeStart = std::llround(request.startSeconds * fs);
     ctx.rangeLength = request.lengthSeconds > 0.0 ? std::llround(request.lengthSeconds * fs)
                                                   : fileLength - ctx.rangeStart;
+    // A length that rounds to no samples is not "outside the file": it is shorter than one sample.
+    if (request.lengthSeconds > 0.0 && ctx.rangeLength == 0) {
+        return refuse(out, WavTransferRefusal::RangeRoundsToZero);
+    }
     if (ctx.rangeStart >= fileLength || ctx.rangeLength <= 0 ||
         ctx.rangeStart + ctx.rangeLength > fileLength) {
         return refuse(out, WavTransferRefusal::RangeOutsideFile);

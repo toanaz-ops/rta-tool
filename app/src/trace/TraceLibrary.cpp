@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "trace/TraceLibrary.h"
 
+#include <algorithm>
 #include <atomic>
 
 namespace rta::trace {
@@ -102,6 +103,21 @@ bool TraceLibrary::setShadeIndex(const std::string& id, int shadeIndex) {
     e->shadeIndex = shadeIndex;
     ++revision_;
     return true;
+}
+
+bool TraceLibrary::assignSharedShade(const std::string& id, std::span<const std::string_view> groups) {
+    if (findEntry(id) == nullptr) return false;
+    std::vector<bool> used;
+    for (const auto& e : entries_) {
+        if (e.traceId == id || e.shadeIndex < 0) continue;
+        if (!groups.empty() && std::find(groups.begin(), groups.end(), e.group) == groups.end()) continue;
+        const auto idx = static_cast<std::size_t>(e.shadeIndex);
+        if (idx >= used.size()) used.resize(idx + 1, false);
+        used[idx] = true;
+    }
+    std::size_t shade = 0;
+    while (shade < used.size() && used[shade]) ++shade;
+    return setShadeIndex(id, static_cast<int>(shade));
 }
 
 void TraceLibrary::soloOnly(const std::string& id) {

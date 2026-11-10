@@ -144,11 +144,76 @@ TEST_CASE("W2: cancel and read failure", "[wavtransfer]") {
     failing.failAtOrAfter = 0;  // the delay stage cannot read
     CHECK(run(failing).refusal == WavTransferRefusal::ReadFailed);
 
-    // The delay windows read the first 2^18 samples of a 480000-sample range and
-    // the last 2^18; failing from 300000 on spares the first and kills the end window.
+    // A 480000-sample range is shorter than 3 * 2^18, so its delay stage reads ONE
+    // window ([0, 2^18)); failing from 300000 on spares it, and the failure lands in
+    // the AVERAGING loop (the 65536-sample block that runs past 300000). The
+    // delay-stage case on a non-first window is the next test.
     auto late = twoChannel(480000, 5);
     late.failAtOrAfter = 300000;
     CHECK(run(late).refusal == WavTransferRefusal::ReadFailed);
+}
+
+namespace {
+/// Fails ONLY a read of exactly one delay window (2^18 samples) at `failStart`;
+/// every averaging read (65536 samples) succeeds, so a delay-stage read failure
+/// that were ignored would leave nothing else to report it.
+class DelayWindowFailSource final : public SampleBlockSource {
+public:
+    DelayWindowFailSource(const MemorySource& inner, std::int64_t failStart)
+        : inner_(inner), failStart_(failStart) {}
+    int numChannels() const override { return inner_.numChannels(); }
+    double sampleRate() const override { return inner_.sampleRate(); }
+    std::int64_t lengthSamples() const override { return inner_.lengthSamples(); }
+    bool read(int channel, std::int64_t start, std::span<float> out) const override {
+        if (out.size() == (std::size_t{1} << 18) && start == failStart_) return false;
+        return inner_.read(channel, start, out);
+    }
+
+private:
+    const MemorySource& inner_;
+    std::int64_t failStart_;
+};
+}  // namespace
+
+TEST_CASE("W2: a read that fails in the middle or the last delay window is refused", "[wavtransfer]") {
+    // 800000 samples >= 3 * 2^18: delayWindowOffsets = {0, 268928, 537856} (each
+    // starts at or after the previous end), three windows.
+    const auto memory = twoChannel(800000, 5);
+    for (const std::int64_t failStart : {std::int64_t{268928}, std::int64_t{537856}}) {
+        const DelayWindowFailSource source(memory, failStart);
+        const auto out = analyseWavTransfer(source, {0, 1, 0.0, 0.0, "w.wav"}, kNoCancel);
+        CHECK(out.refusal == WavTransferRefusal::ReadFailed);
+    }
+    // Control: a failure at an offset no window reads changes nothing.
+    const DelayWindowFailSource unaffected(memory, 12345);
+    CHECK(analyseWavTransfer(unaffected, {0, 1, 0.0, 0.0, "w.wav"}, kNoCancel).ok());
+}
+
+TEST_CASE("W2: a length under one sample is its own refusal", "[wavtransfer]") {
+    const auto source = twoChannel(480000, 0);
+    // 1e-5 s at 48 kHz is 0.48 samples: rounds to 0, which is not "outside the file".
+    const auto out = run(source, {0, 1, 0.0, 1e-5, "z.wav"});
+    CHECK(out.refusal == WavTransferRefusal::RangeRoundsToZero);
+    const auto text = wavTransferRefusalText(out);
+    CHECK(contains(text, "less than one sample"));
+    CHECK(contains(text, "48000 Hz"));
+    CHECK_FALSE(contains(text, "does not fit"));
+}
+
+TEST_CASE("W2: a delay that rounds to zero milliseconds prints no sign", "[wavtransfer]") {
+    CHECK(wavTransferDelayMsText(-1, 48000.0) == "0.0");  // -0.0208 ms
+    CHECK(wavTransferDelayMsText(1, 48000.0) == "0.0");
+    CHECK(wavTransferDelayMsText(-53, 48000.0) == "-1.1");
+    CHECK(wavTransferDelayMsText(37, 48000.0) == "0.8");
+    CHECK(wavTransferDelayMsText(5, 0.0) == "0.0");
+    WavTransferOutcome o;
+    o.sampleRate = 44100.0;
+    o.refusal = WavTransferRefusal::DelayMoved;
+    o.delayFirst = -1;
+    o.delayLast = 1;
+    const auto text = wavTransferRefusalText(o);
+    CHECK(contains(text, "-1 samples (0.0 ms)"));
+    CHECK_FALSE(contains(text, "-0.0"));
 }
 
 TEST_CASE("W2: each refusal sentence carries its measured numbers in the readout format",

@@ -258,3 +258,54 @@ TEST_CASE("wav transfer file: a file that is not audio is refused on load", kTag
           "wav: rta_h11_notes.wav could not be read (WAV and AIFF only)");
     CHECK_FALSE(Access::wavForTest(c).analyseEnabledForTest());
 }
+
+TEST_CASE("wav transfer file: a delay that rounds to 0.0 ms reads \"0.0 ms\", never \"-0.0 ms\"", kTag) {
+    const auto channels = fourChannels(-1);  // -1 sample = -0.0208 ms at 48 kHz
+    TempFile temp("lead1.wav");
+    REQUIRE(wavfile::write(temp.file, wavfile::Container::Wav, wavfile::Sample::Float32, wavfix::kFs, channels));
+    MainComponent c;
+    analyseWhole(c, temp.file, 1, 3);
+    REQUIRE(countGroup(c, rta::trace::kWavGroup) == 1);
+    CHECK(onlyWavTrace(c).meta().appliedDelaySamples == -1);
+    const auto readout = Access::wavForTest(c).readoutForTest();
+    CHECK(readout.startsWith("delay -1 samples (0.0 ms), "));
+    CHECK_FALSE(readout.contains("-0.0"));
+}
+
+TEST_CASE("wav transfer file: the stored WAV trace takes the lowest shade unused across ALL entries", kTag) {
+    const auto channels = fourChannels(37);
+    TempFile temp("shade.wav");
+    REQUIRE(wavfile::write(temp.file, wavfile::Container::Wav, wavfile::Sample::Float32, wavfix::kFs, channels));
+
+    MainComponent c;
+    auto& library = Access::libraryForTest(c);
+    // A SWEEP/STORE trace already holds shade 0 of its own group.
+    rta::trace::CaptureMeta meta;
+    meta.id = "shade-test-sweep";
+    meta.sampleRate = wavfix::kFs;
+    meta.fftSize = 8;
+    auto sweep = rta::trace::Trace::make(meta, std::vector<float>(5, -20.0f));
+    REQUIRE(sweep.has_value());
+    REQUIRE_FALSE(library.add(std::move(*sweep), "sweep", rta::trace::kSweepGroup).empty());
+    REQUIRE(library.entry("shade-test-sweep")->shadeIndex == 0);
+
+    analyseWhole(c, temp.file, 1, 3);
+    int wavShade = -1;
+    for (const auto& e : library.entries()) {
+        if (e.group == rta::trace::kWavGroup) wavShade = e.shadeIndex;
+    }
+    CHECK(wavShade == 1);  // not 0: that is the SWEEP trace's colour on TRANSFER
+}
+
+TEST_CASE("wav transfer file: a WAV with no samples says so, not \"WAV and AIFF only\"", kTag) {
+    // A canonical 44-byte header: mono, 16-bit, 48 kHz, a data chunk of 0 bytes.
+    const unsigned char header[44] = {'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E', 'f', 'm', 't', ' ',
+                                      16,  0,   0,   0,   1,  0, 1, 0, 0x80, 0xBB, 0, 0, 0x00, 0x77, 0x01, 0,
+                                      2,   0,   16,  0,   'd', 'a', 't', 'a', 0, 0, 0, 0};
+    TempFile temp("empty.wav");
+    REQUIRE(temp.file.replaceWithData(header, sizeof header));
+    MainComponent c;
+    CHECK_FALSE(Access::performLoadWavForTest(c, temp.file));
+    CHECK(Access::wavForTest(c).readoutForTest() == "wav: rta_h11_empty.wav has no samples");
+    CHECK_FALSE(Access::wavForTest(c).analyseEnabledForTest());
+}

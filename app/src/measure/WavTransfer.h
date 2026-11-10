@@ -44,6 +44,7 @@ enum class WavTransferRefusal {
     ChannelOutOfRange,
     BadSampleRate,
     RangeOutsideFile,
+    RangeRoundsToZero,  ///< a positive length that is under half a sample: 0 samples, not "outside"
     RangeTooShort,
     NoCorrelation,
     DelayMoved,
@@ -102,5 +103,9 @@ struct WavTransferOutcome {
 /// decimal, ms one decimal, Hz whole, delays in whole samples (D9). Empty when
 /// the outcome is a success.
 [[nodiscard]] std::string wavTransferRefusalText(const WavTransferOutcome& outcome);
+
+/// "0.8" / "-1.1": `samples` at `sampleRate` in milliseconds, one decimal. A value
+/// that rounds to zero prints "0.0", never "-0.0" (a 1-sample lead is -0.02 ms).
+[[nodiscard]] std::string wavTransferDelayMsText(int samples, double sampleRate);
 
 }  // namespace rta::measure

@@ -23,8 +23,11 @@ namespace rta::measure {
 
 class WavFileSource final : public SampleBlockSource {
 public:
-    /// Null when the file is missing, unreadable, not WAV/AIFF, or has no samples.
-    [[nodiscard]] static std::unique_ptr<WavFileSource> open(const juce::File& file);
+    enum class OpenFailure { NotReadable, NoSamples };
+
+    /// Null when the file is missing, unreadable, not WAV/AIFF, or has no samples;
+    /// `why` (if given) says which of the two families it was.
+    [[nodiscard]] static std::unique_ptr<WavFileSource> open(const juce::File& file, OpenFailure* why = nullptr);
 
     [[nodiscard]] int numChannels() const override { return channels_; }
     [[nodiscard]] double sampleRate() const override { return sampleRate_; }

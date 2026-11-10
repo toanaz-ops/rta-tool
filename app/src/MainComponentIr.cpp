@@ -124,15 +124,8 @@ std::string MainComponentIr::storeGated() {
     // A GATED trace takes the colour its SWEEP source does when `add` gives both shade 0 (one
     // group each), so two curves of one measurement look like one. Lowest index unused across
     // BOTH groups instead (H11 L2).
-    std::vector<bool> used;
-    for (const auto& e : library_->entries()) {
-        if (e.traceId == id || e.shadeIndex < 0 || (e.group != rta::trace::kSweepGroup && e.group != kGroup)) continue;
-        if (static_cast<std::size_t>(e.shadeIndex) >= used.size()) used.resize(static_cast<std::size_t>(e.shadeIndex) + 1, false);
-        used[static_cast<std::size_t>(e.shadeIndex)] = true;
-    }
-    int shade = 0;
-    while (static_cast<std::size_t>(shade) < used.size() && used[static_cast<std::size_t>(shade)]) ++shade;
-    (void)library_->setShadeIndex(id, shade);
+    const std::string_view both[] = {rta::trace::kSweepGroup, kGroup};
+    (void)library_->assignSharedShade(id, both);
     return "stored: " + name + " \xc2\xb7 " + rta::measure::validAboveText(analysis_->fMinHz);
 }
 
