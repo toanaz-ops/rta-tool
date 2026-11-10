@@ -21,6 +21,7 @@
 #include "MainComponentRt60.h"
 #include "MainComponentSession.h"
 #include "MainComponentSweep.h"
+#include "MainComponentWav.h"
 #include "measure/AnalysisThread.h"
 #include "measure/Analyser.h"
 #include "measure/CalibrationSession.h"
@@ -250,6 +251,8 @@ private:
     MainComponentSweep sweep_;
     // H7 generator (MainComponentGenerator.h): after sweep_ -- its host callbacks read sweep_.busy().
     MainComponentGenerator generator_;
+    // H11 W3 (MainComponentWav.h): LOAD WAV -> offline transfer trace. After library_, which it fills.
+    MainComponentWav wav_;
 
     juce::Rectangle<int> mastheadArea_;
 

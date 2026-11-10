@@ -338,4 +338,10 @@ struct MainComponentTestAccess {
     // H9 / L4c (A3): app/tests_juce/test_ir_pane_view.cpp. The selection, the gate
     // markers and the cached analysis live in `MainComponentIr`.
     [[nodiscard]] static MainComponentIr& irForTest(MainComponent& c) { return c.ir_; }
+
+    // H11 W3: app/tests_juce/test_wav_transfer_file.cpp and tools/snapshot_wav.cpp.
+    // `performLoadWavForTest` is what the LOAD WAV chooser's callback does; the controls, the
+    // ANALYSE press and the worker's answer are on `MainComponentWav`'s own hooks.
+    [[nodiscard]] static MainComponentWav& wavForTest(MainComponent& c) { return c.wav_; }
+    static bool performLoadWavForTest(MainComponent& c, const juce::File& file) { return c.wav_.performLoad(file); }
 };

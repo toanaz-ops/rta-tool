@@ -183,6 +183,8 @@ target_sources(rtatool_snapshot PRIVATE
     ${CMAKE_SOURCE_DIR}/tools/snapshot_rt60.cpp
     # snapshot_ir.cpp: H9 / L4c task A3's ir-view.png, same reason.
     ${CMAKE_SOURCE_DIR}/tools/snapshot_ir.cpp
+    # snapshot_wav.cpp: H11 W3's main-wav.png, same reason.
+    ${CMAKE_SOURCE_DIR}/tools/snapshot_wav.cpp
     # snapshot_generator.cpp: H7 wave B1's main-live-gen.png, same reason.
     ${CMAKE_SOURCE_DIR}/tools/snapshot_generator.cpp
 )
@@ -195,7 +197,9 @@ target_include_directories(rtatool_snapshot PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     # app/tests: EqTraceFixture.h, so tools/snapshot_eq.cpp renders the very
     # trace the EQ pane tests assert on.
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    # app/tests_juce: WavFileWriter.h, so main-wav.png loads a real file like the test does.
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests_juce)
 
 target_compile_definitions(rtatool_snapshot PRIVATE
     JUCE_WEB_BROWSER=0

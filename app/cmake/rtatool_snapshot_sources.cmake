@@ -214,6 +214,12 @@ set(RTATOOL_SNAPSHOT_SOURCES
     # --- H9 / L4c IR gate (docs/plans/2026-11-09-h9-l4c-ir-gate-plan.md A2/A3) ---
     src/MainComponentIr.cpp
     src/measure/IrGateModel.cpp
+    # H11 G22 (W2 + W3): MainComponent links MainComponentWav, which reaches all of these.
+    src/MainComponentWav.cpp
+    src/measure/WavTransfer.cpp
+    src/measure/WavTransferText.cpp
+    src/measure/WavFileSource.cpp
+    src/measure/WavTransferJob.cpp
     src/view/IrPaneView.cpp
     src/view/IrEtcPlot.cpp
     src/view/IrGatedPlot.cpp

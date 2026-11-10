@@ -183,9 +183,13 @@ set(RTATOOL_SOURCES
     src/view/IrGatedPlot.cpp
     # --- end H9 / L4c ---------------------------------------------------------
     # --- H11 G22 (docs/plans/2026-11-10-h11-g22-offline-wav-plan.md): W2's pure analysis;
-    # its production caller (MainComponentWav.cpp via WavTransferJob) arrives with W3.
+    # its production caller is MainComponentWav.cpp via WavTransferJob (W3), which reads the
+    # file through WavFileSource (JUCE WAV/AIFF readers).
     src/measure/WavTransfer.cpp
     src/measure/WavTransferText.cpp
+    src/measure/WavFileSource.cpp
+    src/measure/WavTransferJob.cpp
+    src/MainComponentWav.cpp
     # --- end H11 G22 ---
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).

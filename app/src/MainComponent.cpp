@@ -127,7 +127,8 @@ MainComponent::MainComponent()
                  // H7 T13: the level (and, for the rail button, the outputs) a press plays.
                  [this] { return measurementDrive(); }}),
       // H7 generator: GEN / - / + and a readout; the runner asks us what the app looks like.
-      generator_(audioIo_.output(), [this] { return generatorEnvironment(); }) {
+      generator_(audioIo_.output(), [this] { return generatorEnvironment(); }),
+      wav_(library_) {
     // HW-190: the button rows scroll with the rail (rail_.scrollContent()),
     // below the pinned DEVICE block -- see MainComponentRail::layout.
     modeSwitch_.setClickingTogglesState(true);
@@ -193,6 +194,7 @@ MainComponent::MainComponent()
     // in app/src until now.
     session_.attachTo(rail_.scrollContent());
     sweep_.attachTo(rail_.scrollContent());
+    wav_.attachTo(rail_.scrollContent());
     generator_.attachTo(*this);
     wireEqVerify();
     wireAlign();
@@ -286,6 +288,7 @@ void MainComponent::timerCallback() {
     pollLocatePipeline();
     pollCalibrationPipeline();
     sweep_.poll();
+    wav_.poll();        // H11: a finished WAV transfer becomes a trace
     generator_.poll();  // H7: epoch / device stop; before the SYNTHETIC early return below
     refreshMeasurementHints();
     eq_.pollVerify();  // L7-EQ VERIFY: before the SYNTHETIC early return below

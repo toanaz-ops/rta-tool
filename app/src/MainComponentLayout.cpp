@@ -35,6 +35,7 @@ constexpr int kMastheadHeight = az::ui::touchTarget + az::ui::spacing;
 // content from it.
 constexpr int kRailRowsHeight = az::ui::buttonCellHeight + az::ui::gap +  // mode switch
                                 5 * (kRowHeight + az::ui::gap) +         // locate, sweep, cal, export, store
+                                MainComponentWav::kRowsHeight + az::ui::gap +  // LOAD WAV block
                                 (kRowHeight * 2 + az::ui::gap) + az::ui::gap;  // session
 
 }  // namespace
@@ -141,6 +142,10 @@ void MainComponent::resized() {
     storeButton_.setBounds(storeRow.removeFromLeft(storeButtonWidth));
     storeRow.removeFromLeft(az::ui::gap);
     storeReadout_.setBounds(storeRow);
+    rows.removeFromTop(az::ui::gap);
+
+    // H11 W3: LOAD WAV and its channel / range controls, directly under STORE (record D8).
+    wav_.layout(rows.removeFromTop(MainComponentWav::kRowsHeight));
     rows.removeFromTop(az::ui::gap);
 
     // Session persistence: SAVE SESSION / OPEN SESSION share one row, the
