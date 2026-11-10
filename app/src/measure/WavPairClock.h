@@ -16,8 +16,9 @@
 namespace rta::measure {
 
 struct ClockSearchOptions {
-    /// Centre of the offset search, samples (meas minus ref); the bext difference
-    /// when both files carry one, else 0 (record E2).
+    /// Centre of the offset search, samples: the MEASUREMENT index of reference sample 0, which is
+    /// T_ref - T_meas from the two bext time references when both files carry one, else 0 (record E2;
+    /// `bextPriorSamples`).
     std::int64_t priorOffsetSamples = 0;
     /// The search covers prior +- this many seconds. 10 s is the production
     /// default; a test may narrow it only to keep a fixture small.
@@ -78,6 +79,8 @@ struct ClockResult {
     double residualRms = 0.0;
     double maxResidual = 0.0;
     double minRangeSeconds = 0.0;  ///< RangeTooShort
+    /// RangeTooShort with LENGTH empty: what both files cover after START, seconds (0 = the typed range was short).
+    double overlapAfterStartSeconds = 0.0;
     std::int64_t overlapFirst = 0;  ///< RangeOutsideOverlap: first/last reference sample both files cover
     std::int64_t overlapLast = -1;
     double maxRangeMinutes = 0.0;   ///< RangeTooLong

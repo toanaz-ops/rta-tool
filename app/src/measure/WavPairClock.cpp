@@ -85,6 +85,26 @@ ClockResult tooLong(double maxPpm, double fs) {
     return r;
 }
 
+/// Where the ONE retry of the coarse look goes: the middle of the part of the range whose window can
+/// have a partner in the measurement. The range may reach far past the measurement's end (LENGTH empty =
+/// to the end of the reference: a 60 min reference against a 5 min measurement), and a window there
+/// measures nothing. A reference window starting at s pairs with measurement [s + off, s + off + width)
+/// for some off in prior +- halfWidth, so s is limited to
+///   [-off, measLength - width - off]
+/// for the least and greatest off; failing that (a measurement barely longer than a window), for the
+/// prior alone; failing that, the middle of the whole range.
+std::int64_t retryStart(std::int64_t refLength, std::int64_t measLength, std::int64_t rangeStart,
+                        std::int64_t rangeLength, std::int64_t width, std::int64_t prior,
+                        std::int64_t halfWidth) {
+    const std::int64_t last = std::min(rangeStart + rangeLength, refLength) - width;
+    for (const std::int64_t slack : {halfWidth, std::int64_t{0}}) {
+        const std::int64_t lo = std::max(rangeStart, -(prior - slack));
+        const std::int64_t hi = std::min(last, measLength - width - (prior + slack));
+        if (hi >= lo) return lo + (hi - lo) / 2;
+    }
+    return rangeStart + (rangeLength - width) / 2;
+}
+
 }  // namespace
 
 ClockResult estimateClockMapping(const SampleBlockSource& reference, int referenceChannel,
@@ -111,15 +131,16 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
     // The window at the range start; if THAT one is not Accepted (the start may
     // be silence or a count-in) retry ONCE at the range middle. One retry, not a
     // scan: a scan is what pass 1 already is, and a third look would only hide a
-    // wrong prior. The offset (meas minus ref) is a property of the two files, so
-    // a middle window answers the same question.
+    // wrong prior. The offset (the measurement index of reference sample 0, i.e. T_ref - T_meas from
+    // the bext stamps) is a property of the two files, so a window elsewhere answers the same question.
     const std::int64_t coarseWidth = std::min(kCoarseWindow, rangeLength);
     bool readFailed = false;
     CoarseLook coarse = detail::coarseLook(reference, referenceChannel, measurement, measurementChannel,
                                            rangeStart, coarseWidth, options.priorOffsetSamples, halfWidth,
                                            readFailed);
     if (!readFailed && !coarse.accepted && !cancel.load()) {
-        const std::int64_t middle = rangeStart + (rangeLength - coarseWidth) / 2;
+        const std::int64_t middle = retryStart(reference.lengthSamples(), measurement.lengthSamples(), rangeStart,
+                                               rangeLength, coarseWidth, options.priorOffsetSamples, halfWidth);
         const CoarseLook second = detail::coarseLook(reference, referenceChannel, measurement,
                                                      measurementChannel, middle, coarseWidth,
                                                      options.priorOffsetSamples, halfWidth, readFailed);
@@ -168,11 +189,31 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
         return r;
     };
     {
-        const auto o = overlapFor(rangeLength);
+        auto o = overlapFor(rangeLength);
+        if (toEnd) {
+            // The margin scales with the length, and the unresolved remainder of a long reference is
+            // far longer than the range that is left (1.2 s of margin on an hour). So: clip, take the
+            // margin of the CLIPPED length, extend to the overlap it leaves, and clip once more (the
+            // longer length has a slightly larger margin).
+            const std::int64_t whole = rangeLength;
+            rangeLength = std::min(rangeLength, o.last - rangeStart + 1);
+            if (rangeLength > 0) {
+                o = overlapFor(rangeLength);
+                rangeLength = std::min(whole, o.last - rangeStart + 1);
+                o = overlapFor(std::max<std::int64_t>(rangeLength, 0));
+                rangeLength = std::min(rangeLength, o.last - rangeStart + 1);
+            }
+        }
         if (rangeStart < o.first) return outside(o.first, o.last);
-        if (toEnd) rangeLength = std::min(rangeLength, o.last - rangeStart + 1);
         if (rangeStart + rangeLength - 1 > o.last) return outside(o.first, o.last);
-        if (rangeLength < kMinRange) return toEnd ? outside(o.first, o.last) : tooShort();
+        if (rangeLength < kMinRange) {
+            if (!toEnd) return tooShort();
+            if (rangeLength <= 0) return outside(o.first, o.last);
+            // START is inside both files; what is left after it is short.
+            ClockResult r = tooShort();
+            r.overlapAfterStartSeconds = static_cast<double>(rangeLength) / fs;
+            return r;
+        }
         if (toEnd && rangeTooLong(rangeLength, options.maxPpm)) return tooLong(options.maxPpm, fs);
     }
 

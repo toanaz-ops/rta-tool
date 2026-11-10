@@ -182,3 +182,25 @@ TEST_CASE("relative delay: refusals -- a difference past one sample, too few bin
     other.h.pop_back();
     CHECK_THROWS_AS(relativeFractionalDelay(*near, other, options()), std::invalid_argument);
 }
+
+TEST_CASE("relative delay: the sample rate comes from the windows, and two rates are refused") {
+    const Pair2 p = build(1500.0, 7);
+    // Both windows relabelled 44.1 kHz: the delay in samples is -slope / 2 pi * the WINDOWS' rate, whatever
+    // the options say (the absolute fit reads window.sampleRate; the two fits must agree on one source).
+    WindowSpectrum a = p.a, b = p.b;
+    a.sampleRate = b.sampleRate = 44100.0;
+    PhaseSlopeOptions at44 = options(), at48 = options();
+    at44.sampleRate = 44100.0;
+    at48.sampleRate = 48000.0;
+    at44.maxHz = at48.maxHz = 10000.0;  // the default band is fs / 4: pin it so only the RATE differs
+    const auto r44 = relativeFractionalDelay(b, a, at44);
+    const auto r48 = relativeFractionalDelay(b, a, at48);
+    REQUIRE(r44.has_value());
+    REQUIRE(r48.has_value());
+    CHECK(*r44 == *r48);
+    CHECK(std::fabs(*r44 - 0.24 * 44100.0 / kFs) <= relativeBound(p.b, p.a));
+    // A window and an anchor on different rates have no common clock to measure a difference on.
+    WindowSpectrum other = p.a;
+    other.sampleRate = 96000.0;
+    CHECK_FALSE(relativeFractionalDelay(p.b, other, options()).has_value());
+}

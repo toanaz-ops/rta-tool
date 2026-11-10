@@ -153,6 +153,8 @@ std::optional<double> relativeFractionalDelay(const WindowSpectrum& window, cons
     if (window.h.size() != anchor.h.size() || !(window.binHz == anchor.binHz)) {
         throw std::invalid_argument("relativeFractionalDelay: the two spectra are on different grids");
     }
+    // Two clocks have no common sample to count a difference in.
+    if (!(window.sampleRate == anchor.sampleRate)) return std::nullopt;
     const double maxHz = maxHzOf(options);
     std::vector<Point> points;
     double previous = 0.0;
@@ -175,7 +177,8 @@ std::optional<double> relativeFractionalDelay(const WindowSpectrum& window, cons
     if (points.size() < options.minBins || points.size() < 2) return std::nullopt;
     double slope = 0.0, intercept = 0.0;
     if (!fitLine(points, slope, intercept)) return std::nullopt;
-    const double relative = -slope / (2.0 * kPi) * options.sampleRate;
+    // The windows' rate, as in `fractionalDelayOf`: the spectra know the rate they were taken at.
+    const double relative = -slope / (2.0 * kPi) * window.sampleRate;
     if (std::fabs(relative) > kMaxResidualSamples) return std::nullopt;
     return relative;
 }

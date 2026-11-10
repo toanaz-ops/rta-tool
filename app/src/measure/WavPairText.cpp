@@ -58,6 +58,12 @@ std::string clockSentence(const WavPairOutcome& o) {
                    " samples at worst): a clock wandered or the acoustic path changed -- pick a shorter "
                    "range.";
         case ClockRefusal::RangeTooShort:
+            if (c.overlapAfterStartSeconds > 0.0) {
+                return "Only " + fixed(c.overlapAfterStartSeconds, 3) +
+                       " s of the reference after the start are covered by both files, and at least " +
+                       fixed(c.minRangeSeconds, 3) +
+                       " s are needed to measure clock drift. Pick an earlier start.";
+            }
             return "The range is too short to measure clock drift: at least " + fixed(c.minRangeSeconds, 3) +
                    " s are needed. Pick a longer range.";
         case ClockRefusal::RangeTooLong:

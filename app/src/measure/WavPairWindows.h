@@ -54,12 +54,17 @@ struct DriftBand {
     return {100.0, std::min(sampleRate / 8.0, 3000.0)};
 }
 
-/// Predicted total drift error over the range, samples, from pass 1's own scatter.
-/// The line is least squares through K windows with residual RMS r1 spread over
+/// Predicted total drift error over the range, samples, from PASS 2's scatter (the final ratio is pass
+/// 1's slope plus the slope pass 2 measures on the corrected pair, so pass 1's own error is gone; its
+/// residual also carries the smear of a window drifting inside itself and would over-refuse).
+/// The line is least squares through K windows with residual RMS r2 spread over
 /// `spread` samples; for a LS line the slope's standard error is
 ///   sigma / sqrt(sum (x - xbar)^2),  sum (x - xbar)^2 ~ K spread^2 / 12
 /// (evenly spaced x), so the drift error accumulated over the range is
-///   u = r1 sqrt(12 / K) rangeLength / spread.
+///   u = r2 sqrt(12 / K) rangeLength / spread.
+/// The gate u <= 0.1 sample is thus a limit on r2 that depends on K and on how much of the range the
+/// windows cover: r2 <= 0.1 / (sqrt(12 / K) * rangeLength / spread). Fewer windows, or a wider range
+/// than the windows span, lower the r2 a pair may show.
 /// The fit is Theil-Sen, not LS: its efficiency for Gaussian noise is ~0.95, so
 /// its standard error is ~1.03x the LS one -- u is an approximation, not a bound
 /// (test_wav_pair_transfer_gates.cpp measures it against simulated Theil-Sen fits).

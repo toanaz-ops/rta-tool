@@ -96,7 +96,9 @@ struct WindowSpectrum {
 ///
 /// Weights 1 / ((1 - gw)/gw + (1 - ga)/ga): the two phases are independent, so
 /// their variances (each ~ (1 - gamma^2) / (2 gamma^2 Neff)) add.
-/// @return nullopt when fewer than `minBins` bins qualify or |difference| > 1.
+/// The rate is the windows' own (`WindowSpectrum::sampleRate`, as in `fractionalDelayOf`), not
+/// `options.sampleRate`; two spectra on different rates give nullopt.
+/// @return nullopt when fewer than `minBins` bins qualify, |difference| > 1, or the rates differ.
 /// @throws std::invalid_argument when the spectra are on different grids.
 [[nodiscard]] std::optional<double> relativeFractionalDelay(const WindowSpectrum& window,
                                                             const WindowSpectrum& anchor,

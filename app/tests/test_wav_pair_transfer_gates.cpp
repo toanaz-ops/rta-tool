@@ -5,7 +5,8 @@
 //   - RangeTooLong: the pass-1 lag search must stay under a quarter window;
 //   - the 60 % coverage rule's ACCEPTED side;
 //   - E7's 0.05-sample shared-clock threshold on both sides;
-//   - ClockUncertain: the predicted drift error u = r1 sqrt(12 / K) range / spread, checked against
+//   - ClockUncertain: the predicted drift error u = r2 sqrt(12 / K) range / spread (r2 = PASS 2's residual RMS,
+//     the code's input; the limit u <= 0.1 is r2 <= 0.1 / (sqrt(12 / K) range / spread), so it moves with K), checked against
 //     simulated Theil-Sen fits and, end to end, against a measurement with independent noise.
 #include "WavPairFixture.h"
 
@@ -154,7 +155,7 @@ TEST_CASE("H12 fix: E7's shared-clock threshold has neighbours -- 0.025 sample t
 }
 
 TEST_CASE("H12 fix: the predicted drift error is the slope's standard error across the range", "[wavpair]") {
-    // Closed form: K = 4, r1 = 0.05, spread = 3/4 * 2^17, range 2^17 -> 0.05 * sqrt(3) * 4/3.
+    // Closed form: K = 4, r2 = 0.05, spread = 3/4 * 2^17, range 2^17 -> 0.05 * sqrt(3) * 4/3.
     CHECK(std::abs(detail::predictedDriftError(0.05, 4, 98304.0, 131072) - 0.05 * std::sqrt(3.0) * 4.0 / 3.0) <
           1e-12);
     // Against simulation: K evenly spaced windows with independent Gaussian noise sigma, a Theil-Sen line,

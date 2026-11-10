@@ -15,6 +15,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <atomic>
+#include <algorithm>
 #include <cmath>
 
 using namespace rta::measure;
@@ -102,4 +103,70 @@ TEST_CASE("H12 fix M2: LENGTH 0 with two files analyses to the end of the overla
     CHECK(out.sharedClock);
     CHECK(out.offsetSeconds * kRate == 4800.0);
     CHECK(out.transfer.trace->meta().deviceName == "WAV handheld.wav ch1 vs console.wav ch1");
+}
+
+namespace {
+
+/// A long reference and a measurement much shorter than it: the measurement starts 0.1 s after the
+/// reference's sample 0 and ends 12 s in, the reference runs 40 s. `silentSeconds` of digital silence
+/// are laid over the start of BOTH files (the shift is an integer, so the same stretch).
+Pair longReferencePair(double silentSeconds) {
+    constexpr std::ptrdiff_t kShift = 4800;
+    auto p = shiftedPair(40 * 48000, 12 * 48000, kShift);
+    const auto silent = static_cast<std::size_t>(silentSeconds * kRate);
+    std::fill_n(p.reference.channels[0].begin(), silent, 0.0f);
+    std::fill_n(p.measurement.channels[0].begin(), silent + kShift, 0.0f);
+    return p;
+}
+
+}  // namespace
+
+TEST_CASE("H12 fix 2: LENGTH empty on a long reference retries the coarse look INSIDE the measurement", "[wavpair]") {
+    // START sits over 3.5 s of silence, so the first coarse look (0.5 .. 3.23 s) is refused and the one
+    // retry decides. Its window used to be the middle of the DEFAULT range (to the end of the 40 s
+    // reference, ~19 s), 7 s past where the 12 s measurement ends: nothing was measured and the pair was
+    // refused as NoCoarseAlignment, while typing the length succeeded.
+    const auto p = longReferencePair(3.5);
+    const auto toEnd = analyse(p, request(0.5, 0.0));
+    INFO(wavPairRefusalText(toEnd));
+    CHECK(toEnd.clock.refusal != ClockRefusal::NoCoarseAlignment);
+    CHECK(toEnd.clock.ok());
+    // Symmetry: with LENGTH typed (10 s) the retry already lay inside the measurement.
+    const auto typed = analyse(p, request(0.5, 10.0));
+    INFO(wavPairRefusalText(typed));
+    CHECK(typed.clock.ok());
+}
+
+TEST_CASE("H12 fix 2: a to-end range ends within the ppm margin of the true overlap end", "[wavpair]") {
+    // The margin was computed from the unresolved remainder of the 40 s reference (800 samples at
+    // 400 ppm + 32 taps) and trimmed that much from a ~11 s range that needs 243.
+    const auto p = longReferencePair(0.0);
+    const auto out = analyse(p, request(0.5, 0.0));
+    INFO(wavPairRefusalText(out));
+    REQUIRE(out.clock.ok());
+    const std::int64_t length = out.clock.estimate->rangeLength;
+    const std::int64_t last = 24000 + length - 1;
+    const std::int64_t trueLast = 12 * 48000 - 1 - 4800;  // the last reference sample with a partner
+    const std::int64_t margin = static_cast<std::int64_t>(std::ceil(400e-6 * static_cast<double>(length))) + 32;
+    CHECK(trueLast - last >= margin - 1);  // never past the margin ...
+    CHECK(trueLast - last <= margin + 1);  // ... and not further in than it
+}
+
+TEST_CASE("H12 fix 2: a to-end range left shorter than the minimum by the overlap is RangeTooShort", "[wavpair]") {
+    // The measurement ends 24000 + 2^17 + 4800 samples in: START 0.500 s leaves the overlap 2^17 - 85
+    // samples (2.729 s) -- START is INSIDE the files, so this is not a "does not fit".
+    const auto p = shiftedPair(288000, 24000 + (1 << 17) + 4800, 4800);
+    const auto out = analyse(p, request(0.5, 0.0));
+    INFO(wavPairRefusalText(out));
+    REQUIRE(out.clock.refusal == ClockRefusal::RangeTooShort);
+    CHECK(out.refusal != WavPairRefusal::RangeOutsideFile);
+    const auto text = wavPairRefusalText(out);
+    CHECK_THAT(text, ContainsSubstring("after the start"));
+    CHECK_THAT(text, ContainsSubstring("2.729 s"));
+    CHECK_THAT(text, ContainsSubstring("at least 2.731 s"));
+    // Neighbour: START 0.4 s leaves 2^17 + 4800 - 85 samples, past the minimum: not RangeTooShort.
+    const auto earlier = analyse(p, request(0.4, 0.0));
+    INFO(wavPairRefusalText(earlier));
+    CHECK(earlier.clock.refusal != ClockRefusal::RangeTooShort);
+    CHECK(earlier.clock.ok());
 }

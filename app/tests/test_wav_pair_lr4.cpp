@@ -22,12 +22,19 @@
 #include "WavPairFixture.h"
 
 #include "measure/WavPairTransfer.h"
+#include "measure/WavPairWindows.h"
+#include "rta/dsp/ClockDrift.h"
+#include "rta/dsp/DelayFinder.h"
+#include "rta/dsp/DelayPolicy.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <string>
+#include <vector>
 
 using namespace rta::measure;
 using namespace wavpair;
@@ -55,6 +62,50 @@ double firstMoment(System system, double alignedDelay) {
     return m1;
 }
 
+/// WHY the delay is measured relative (the guard this file's cases lean on): the ABSOLUTE phase-slope fit
+/// of ONE pass-1 window of this very fixture, in the band the production pass uses. It either answers
+/// nothing (|residual| past the fit's one-sample validity, so the window would be dropped) or answers a
+/// delay more than half a sample off the truth. If the fixture stopped being non-linear-phase (a refactor
+/// that swaps the LR4 for a flat system) this returns false and the test fails -- the relative fit would
+/// then be protecting against nothing.
+bool absoluteFitIsBlind(const Case& c, const Pair& pair, double* totalOut) {
+    constexpr std::int64_t kWidth = 1 << 15;
+    constexpr std::int64_t kStart = 24000;
+    const auto prior = static_cast<std::int64_t>(c.bSeconds * wavfix::kFs);
+    std::vector<float> ref(kWidth), meas(kWidth);
+    for (std::int64_t i = 0; i < kWidth; ++i) {
+        ref[static_cast<std::size_t>(i)] = pair.reference.channels[0][static_cast<std::size_t>(kStart + i)];
+    }
+    const auto readMeas = [&](std::int64_t at) {
+        for (std::int64_t i = 0; i < kWidth; ++i) {
+            meas[static_cast<std::size_t>(i)] = pair.measurement.channels[0][static_cast<std::size_t>(at + i)];
+        }
+    };
+    const auto band = detail::driftBand(wavfix::kFs);
+    rta::dsp::PhatOptions phat;
+    phat.sampleRate = wavfix::kFs;
+    phat.minHz = band.minHz;
+    phat.maxHz = band.maxHz;
+    rta::dsp::DelayPolicy policy;
+    policy.minLag = -64;
+    policy.maxLag = 64;
+    readMeas(kStart + prior);
+    const auto look = rta::dsp::suggestDelay(ref, meas, phat, policy);
+    const std::int64_t lag = look.best.delaySamples;
+    readMeas(kStart + prior + lag);
+    const auto spectrum = rta::dsp::windowSpectrum(ref, meas, 0, wavfix::kFs);
+    if (!spectrum.has_value()) return false;
+    rta::dsp::PhaseSlopeOptions slope;
+    slope.sampleRate = wavfix::kFs;
+    slope.minHz = band.minHz;
+    slope.maxHz = band.maxHz;
+    const auto absolute = rta::dsp::fractionalDelayOf(*spectrum, 0, slope);
+    const double truth = c.bSeconds * wavfix::kFs + c.eps * (kStart + 0.5 * kWidth);
+    const double total = absolute ? static_cast<double>(prior + lag) + absolute->delaySamples : 1e9;
+    if (totalOut != nullptr) *totalOut = total;
+    return !absolute.has_value() || std::fabs(total - truth) > 0.5;
+}
+
 void runCase(const Case& c) {
     const auto begin = std::chrono::steady_clock::now();
     const double b = c.bSeconds * wavfix::kFs;
@@ -71,6 +122,12 @@ void runCase(const Case& c) {
     const auto out = analyseWavPairTransfer(pair.reference, 0, pair.measurement, 0, request, cancel);
     INFO(c.name << ": " << wavPairRefusalText(out));
     REQUIRE(out.ok());
+    double absoluteTotal = 0.0;
+    const bool blind = absoluteFitIsBlind(c, pair, &absoluteTotal);
+    std::printf("[%s] absolute fit of one window: %s (truth %.2f)\n", c.name,
+                absoluteTotal > 1e8 ? "refused" : std::to_string(absoluteTotal).c_str(),
+                c.bSeconds * wavfix::kFs + c.eps * (24000 + 16384));
+    CHECK(blind);
 
     const double rangeSamples = request.lengthSeconds * wavfix::kFs;
     const double ppmBound = kDelta / rangeSamples * 1e6;
