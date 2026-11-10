@@ -73,9 +73,13 @@ DualFftEngine::DualFftEngine(const Config& config)
     referenceBins_.resize(numBins_);
     measurementBins_.resize(numBins_);
 
-    fifoSxx_.assign(config_.fifoDepth * numBins_, 0.0);
-    fifoSyy_.assign(config_.fifoDepth * numBins_, 0.0);
-    fifoSxy_.assign(config_.fifoDepth * numBins_, std::complex<double>{0.0, 0.0});
+    // Cumulative keeps no per-frame history, so it must not pay depth x numBins
+    // x 32 B (524 MB for 2000 frames at 8193 bins) for slots it never reads.
+    const std::size_t fifoSlots =
+        config_.averaging == TransferAveraging::Cumulative ? 0 : config_.fifoDepth;
+    fifoSxx_.assign(fifoSlots * numBins_, 0.0);
+    fifoSyy_.assign(fifoSlots * numBins_, 0.0);
+    fifoSxy_.assign(fifoSlots * numBins_, std::complex<double>{0.0, 0.0});
     runningSumSxx_.assign(numBins_, 0.0);
     runningSumSyy_.assign(numBins_, 0.0);
     runningSumSxy_.assign(numBins_, std::complex<double>{0.0, 0.0});
@@ -93,6 +97,7 @@ void DualFftEngine::validate() const {
     if (!(config_.sampleRate > 0.0)) {
         throw std::invalid_argument("DualFftEngine sampleRate must be positive");
     }
+    // fifoDepth is only meaningful for Fifo; Cumulative and Exponential ignore it.
     if (config_.averaging == TransferAveraging::Fifo && config_.fifoDepth == 0) {
         throw std::invalid_argument("DualFftEngine fifoDepth must be at least 1");
     }
@@ -140,6 +145,12 @@ double DualFftEngine::effectiveAverages() const noexcept {
         // ones have already been subtracted back out of the running sum.
         return fifoEffectiveAverages(window_.coefficients(), config_.hopSize,
                                       std::min(frameCount_, config_.fifoDepth));
+    }
+    if (config_.averaging == TransferAveraging::Cumulative) {
+        // A FIFO deep enough never to drop a frame IS the cumulative average,
+        // so its overlap-corrected count is the right one -- no second formula
+        // to keep in step with fifoEffectiveAverages.
+        return fifoEffectiveAverages(window_.coefficients(), config_.hopSize, frameCount_);
     }
     return exponentialEffectiveAverages(window_.coefficients(), config_.hopSize, alpha_,
                                          frameCount_);
@@ -278,6 +289,17 @@ void DualFftEngine::accumulate(std::size_t bin, double sxx, double syy,
         // Accumulators are MEANS, not sums (implementation note 3), so they
         // are directly comparable with SpectrumEngine::density().
         const double count = static_cast<double>(std::min(frameCount_, depth));
+        sxxMean_[bin] = runningSumSxx_[bin] / count;
+        syyMean_[bin] = runningSumSyy_[bin] / count;
+        sxyMean_[bin] = runningSumSxy_[bin] / count;
+    } else if (config_.averaging == TransferAveraging::Cumulative) {
+        // Same running-sum-then-divide as the Fifo branch before it ever drops
+        // a frame, so Cumulative after F frames equals Fifo(depth >= F) by
+        // construction (same additions, same order).
+        runningSumSxx_[bin] += sxx;
+        runningSumSyy_[bin] += syy;
+        runningSumSxy_[bin] += sxy;
+        const double count = static_cast<double>(frameCount_);
         sxxMean_[bin] = runningSumSxx_[bin] / count;
         syyMean_[bin] = runningSumSyy_[bin] / count;
         sxyMean_[bin] = runningSumSxy_[bin] / count;

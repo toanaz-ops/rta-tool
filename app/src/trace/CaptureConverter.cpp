@@ -47,6 +47,7 @@ namespace {
 [[nodiscard]] std::string transferAveragingName(rta::dsp::TransferAveraging averaging) {
     switch (averaging) {
         case rta::dsp::TransferAveraging::Fifo: return "Fifo";
+        case rta::dsp::TransferAveraging::Cumulative: return "Cumulative";
         case rta::dsp::TransferAveraging::Exponential: return "Exponential";
     }
     return "Fifo";

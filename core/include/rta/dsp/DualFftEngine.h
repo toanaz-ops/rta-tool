@@ -18,6 +18,10 @@ namespace rta::dsp {
 /// function must not do -- it would take minutes to forget a moved microphone.
 enum class TransferAveraging {
     Fifo,         ///< running sum over the last `fifoDepth` frames, exact drop-off
+    Cumulative,   ///< running sums over EVERY frame since construction/reset, no drop-off.
+                  ///< O(numBins) memory (no FIFO slots). For an offline recording the
+                  ///< operator chose a range of, where "forget the old frames" is the wrong
+                  ///< question (docs/dsp/2026-11-10-g22-offline-wav-transfer.md D3).
     Exponential,  ///< one-pole, the coefficient SpectrumEngine already uses.
                   ///< Config branch the product never sets (owner decision 2026-10-21, audit row "Config branches with exactly one production value"): production uses `Fifo` (the default; app/src never sets `transferAveraging`); this value is reachable only from tests until a lane gives it an operator path (CLAUDE.md rule 5).
 };
@@ -40,6 +44,7 @@ public:
         TransferAveraging averaging = TransferAveraging::Fifo;
         std::size_t fifoDepth = 16;          ///< Fifo only, >= 1
         double timeConstantSeconds = 0.5;    ///< Exponential only, > 0
+                                         ///< (`fifoDepth` is ignored by Cumulative too)
 
         /// Positive = the measurement lags the reference by this many samples.
         /// Applied BEFORE the transform, as an integer-sample stream offset --
@@ -114,7 +119,8 @@ private:
 
     /// FIFO storage: `fifoDepth * numBins` slots per accumulator, indexed
     /// `[slot * numBins + bin]`. Only used when config_.averaging == Fifo, but
-    /// allocated unconditionally at construction so process() never allocates.
+    /// allocated for Fifo and Exponential at construction so process() never
+    /// allocates. Cumulative leaves it empty: it keeps no per-frame history.
     std::vector<double> fifoSxx_;
     std::vector<double> fifoSyy_;
     std::vector<std::complex<double>> fifoSxy_;
