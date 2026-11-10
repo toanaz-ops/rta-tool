@@ -233,4 +233,84 @@ with one decimal; Hz whole (CLAUDE.md "Reading out numbers").
 
 ## 6. Shipped
 
-*Written after the code exists.*
+*Written against the shipped code, commits `26103c9`..`ead3ad9` plus the lane-end LOW
+commit `bb7cef2`. Fable phase review over `925fb3a..ead3ad9`: 0 HIGH, 0 MEDIUM, 9 LOW.*
+
+**Engine (D3).** `TransferAveraging::Cumulative` (`core/src/dsp/DualFftEngine.cpp`)
+keeps double running sums of Sxx, Syy and Sxy. It divides by `frameCount` every
+frame and allocates no FIFO slots; `fifoDepth` is ignored for it. Neff is
+`fifoEffectiveAverages(window, hop, frameCount)`. `reset()` zeroes the sums and
+re-arms the delay skip. The test (`core/tests/test_dualfft_cumulative.cpp`)
+holds it to Fifo(depth F) and Fifo(depth F+7) within a derived 2Fu summation
+bound, and against Fifo(depth F-1) as a must-differ.
+
+**Delay (D4), as built** (`app/src/measure/WavTransfer.cpp`):
+
+- W = min(2^18, range) samples. The windows are start, middle and end, and they
+  collapse when the range is short:
+  - one window below 2W (10.92 s at 48 kHz). DelayMoved CANNOT fire there.
+  - two windows from 2W to 3W.
+  - three windows only at 3W (16.38 s) or more.
+- So a short song-length range gets no delay-movement check. This is a
+  property of the design, not a bug: a shorter range also accumulates less
+  drift.
+- Lags are limited to +/- round(1 s x fs), also capped at 1<<20 (that cap binds
+  only above 1.048 MHz).
+- The D5 range check runs once at D = 0 before the delay stage, and again
+  after |D| is known.
+- Sign chain: `meas[n] = y[n - D]` -> `suggestDelay` gives +D -> the engine
+  drops the first D measurement samples. The closed-form tests at D = +37 and
+  D = -53 assert phase with no residual slope.
+
+**Minimum range (D5).** F_min is the smallest frame count with
+`fifoEffectiveAverages(Hann 16384, 4096, F) >= 8.0`. The test computes it. It is
+F = 15 (Neff 8.068; F = 14 gives 7.549), i.e. 16384 + 14 x 4096 = 73 728
+samples = 1.536 s at 48 kHz after the |D| discard. A positive length that rounds
+to zero samples is its own refusal (`RangeRoundsToZero`); an empty WAV reads
+"has no samples".
+
+**UI (D8), as built:**
+
+- The `LOAD WAV` row sits UNDER `STORE` on the rail, not beside it (rail width).
+- The chooser filter is `*.wav;*.aif;*.aiff`.
+- `START` and `LENGTH` accept digits and '.' only. `LENGTH` is prefilled with
+  the file length floored to 10 ms, so "whole file" never rounds past the end.
+  Empty means to the end.
+- A mono file loads, shows the refusal sentence, and `ANALYSE` stays disabled.
+- Readout: `delay N samples (x.x ms), <good|fair|poor> trust, N.N averages ->
+  stored <name>`. The trust thresholds are Locate's.
+- The worker opens its own reader per job. The message thread only probes the
+  header at LOAD.
+- Newest wins: start() cancels, waits and drops the old future, so a stale
+  result cannot land.
+- Polling runs on the existing 2 Hz timer.
+- Cancel granularity: cancel is checked between 65 536-sample blocks and between
+  delay windows. The uncancellable unit is one 2^18-sample window pair plus one
+  PHAT, so a second `ANALYSE`, a new `LOAD` or closing the app mid-analysis
+  blocks the message thread for that long.
+- Test seams: `performLoadWavForTest`, `setControlsForTest`, `analyseClicked`,
+  `waitForJobForTest` (not the plan's `analyseWavForTest`).
+
+**Trace (D6).**
+
+- Group `WAV`.
+- `deviceName` = "WAV <file> ch<M> vs ch<R>", 1-based; `channelRoles` also
+  1-based.
+- `averagingType` "Cumulative". `SessionDecode` treats it as an opaque string,
+  so it reloads.
+- Shade: `TraceLibrary::assignSharedShade` with no group filter, i.e. the lowest
+  index unused across the whole library, so it never sits on shade 0 beside the
+  first SWEEP trace.
+
+**Formats.** WAV 24-bit and float32 and AIFF 24-bit are tested end to end
+(`app/tests_juce/test_wav_transfer_file.cpp`). RF64 is decoded by JUCE but
+untested. Every worker exception is reported as ReadFailed.
+
+**LOWs fixed in the same lane:**
+
+- L1: the EQ target picker excludes `GATED`.
+- L2: a GATED trace takes the lowest shade unused across SWEEP + GATED.
+- L3: ALIGN NoSignal paths that never measured a confidence print no number.
+  The `confidenceDb == 0.0` test also catches `Polarity.cpp`'s digitally-silent
+  floor branch, which cannot happen on real audio. A measured-flag in core is
+  the clean fix (follow-up).

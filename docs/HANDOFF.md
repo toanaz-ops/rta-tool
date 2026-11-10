@@ -5,6 +5,27 @@
 
 ---
 
+# 2026-11-10 (chiều) — **H11: G22 transfer function offline từ file WAV + 3 LOW cũ + tách `IrPlots.cpp`. Hàng 5 master plan BUILT. Chưa đo trên phần cứng.**
+
+*Plan: `docs/plans/2026-11-10-h11-g22-offline-wav-plan.md`. Record: `docs/dsp/2026-11-10-g22-offline-wav-transfer.md` (§1 sửa bảng parity: REW không có TF 2 kênh từ file; §6 viết theo code). Trunk-based.*
+
+| commit | what |
+|---|---|
+| `d087302` | `IrPlots.cpp` (399) -> `IrEtcPlot.cpp` + `IrGatedPlot.cpp` + `IrPlotDrawing.h` |
+| `26103c9` | W1 core `TransferAveraging::Cumulative` (tổng chạy, O(numBins), Neff = `fifoEffectiveAverages(F)`) |
+| `06edcef` | W2 `analyseWavTransfer` (thuần, không JUCE): delay GCC-PHAT trên tối đa 3 cửa sổ 2^18, từ chối nếu lệch >1 sample; range tối thiểu F=15 frame = 1.536 s @48k; câu từ chối có số đo; `TraceGroups.h` |
+| `224f8e5`, `59f48b0` | L1 EQ target bỏ GATED; L3 NoSignal nhánh sớm không in "0.0 dB"; L2 shade GATED khác SWEEP |
+| `b7e91ef`, `ead3ad9` | W3 rail `LOAD WAV` -> REF/MEAS ch, START/LENGTH, `ANALYSE` -> `WavTransferJob` (worker, newest wins) -> trace nhóm WAV |
+| `bb7cef2` | LOW cuối lane (Fable): test read-fail ở cửa sổ delay giữa, shade WAV toàn library (`assignSharedShade`), "-0.0 ms", `RangeRoundsToZero`, WAV rỗng, guard list |
+
+Fable phase review `925fb3a..ead3ad9`: 0 HIGH, 0 MEDIUM, 9 LOW (8 sửa, L3 sentinel `== 0.0` để follow-up). orphan_check (base 925fb3a) exit 0. (a) 16/19, (b) 16/19, (b-strict) 13 -> 14/19 = 73.7 %.
+
+**Người thử được gì (exe dựng lại từ main):** ghi một WAV nhiều kênh (kênh console + kênh mic, cùng một recorder) -> rail `LOAD WAV` -> chọn file -> `REF ch` / `MEAS ch` / `START s` / `LENGTH s` -> `ANALYSE` -> readout `delay N samples (x.x ms), good trust, N.N averages -> stored WAV <file> chM vs chR`; bấm TRANSFER thấy trace (magnitude/phase/coherence). File mono -> câu từ chối, `ANALYSE` tắt. Ảnh offscreen: `shots/main-wav.png`.
+
+**Còn mở:** hai file WAV riêng (recorder ghi mono theo track / hai thiết bị — cần đo drift + resample), lane riêng; L3 cần cờ "đã đo" trong `PolarityResult` (core); `TestProfile.h` (#110) có 2 hàm orphan theo orphan_check base 9b6615a — không phải của lane này; `test_ir_pane_view.cpp` 397/400 dòng.
+
+---
+
 # 2026-11-10 — **H10: hiển thị G24 (min/excess phase) trên response đã gate; flake `test_spl_resync_gap` đã sửa. Chưa đo trên phần cứng.**
 
 *Plan: `docs/plans/2026-11-10-h10-g24-excess-phase-display-plan.md`. Record: `docs/dsp/2026-11-09-l4c-ir-gate.md` §7. Trunk-based, commit thẳng main.*
