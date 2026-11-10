@@ -94,6 +94,24 @@ struct PolarityResult {
     std::size_t arrivalIndex = 0;
     double confidenceDb = 0.0;
 
+    /// True exactly when `confidenceDb` is a figure somebody measured: the window
+    /// peak was found AND the pre-arrival floor it is divided by is non-zero.
+    ///
+    /// Why a flag and not "confidenceDb == 0.0": 0.0 is also a legal MEASURED value
+    /// (peak equal to the floor), so the number cannot say whether it was computed.
+    /// Every early return -- unusable sweep band, empty or silent search window,
+    /// capture too short, no harmonic spacing -- leaves it at the default 0.0, and
+    /// a refusal text built from that would quote "0.0 dB" about a number nobody
+    /// measured. A later NoSignal (no excursion reaching `arrivalFraction`, no
+    /// readable band, or a low confidence) happens AFTER the figure exists, so
+    /// there it is true and the figure may be quoted.
+    ///
+    /// A zero floor is on the FALSE side: the ratio peak/0 has no value, the code
+    /// stores 0.0 in its place, and quoting that placeholder would be the same
+    /// fiction. The arrival itself may well have been found in that case; the flag
+    /// describes the confidence figure, not the arrival.
+    bool arrivalMeasured = false;
+
     /// The measured -10 dB edges of the arrival, in hertz, clamped to the band
     /// the excitation covered. Reported whether or not the gate passed, so a
     /// refusal can say "low edge 110.6 Hz, gate 100 Hz" instead of just "no".

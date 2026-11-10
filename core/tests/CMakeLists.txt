@@ -77,6 +77,7 @@ add_executable(rta_core_tests
     test_ir_decay_clarity.cpp
     test_ir_decay_truncation.cpp
     test_ir_polarity.cpp
+    test_ir_polarity_measured.cpp
     test_relative_polarity.cpp
     test_relative_polarity_guard.cpp
     test_ir_spectrum.cpp

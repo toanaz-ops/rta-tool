@@ -69,6 +69,7 @@ TEST_CASE("L4c: the remaining refusals each say what to do", "[polarity_text]") 
 TEST_CASE("L4c: NoSignal quotes the MEASURED confidence (one decimal) against the gate", "[polarity_text]") {
     auto result = refused(rta::ir::Refusal::NoSignal, 0, 0);
     result.confidenceDb = 12.34;  // the fixture's input
+    result.arrivalMeasured = true;
     const auto text = polarityRefusalText(result, {});
     CHECK(has(text, "Arrival confidence 12.3 dB is below the 20.0 dB needed to decide."));
 
@@ -80,10 +81,25 @@ TEST_CASE("L4c: NoSignal quotes the MEASURED confidence (one decimal) against th
 
 TEST_CASE("H11 L3: NoSignal on a path that never measured a confidence quotes no number",
           "[polarity_text]") {
-    // confidenceDb defaults to 0.0 and findPolarity returns early (empty or silent search
+    // arrivalMeasured defaults to false and findPolarity returns early (empty or silent search
     // window) without setting it: the sentence must not say "0.0 dB".
     const auto text = polarityRefusalText(refused(rta::ir::Refusal::NoSignal, 0, 0), {});
     CHECK_FALSE(has(text, "dB"));
     CHECK_FALSE(has(text, "0.0"));
     CHECK(has(text, "Measure again, louder or closer."));
+}
+
+TEST_CASE("H11 L3: a measured NoSignal confidence of exactly 0.0 dB is quoted; an unmeasured one is not",
+          "[polarity_text]") {
+    // The flag, not the value, decides: peak equal to the floor is a real 0.0 dB, and the old
+    // `confidenceDb == 0.0` sentinel hid it behind the "no arrival" sentence.
+    auto result = refused(rta::ir::Refusal::NoSignal, 0, 0);
+    result.confidenceDb = 0.0;
+    result.arrivalMeasured = true;
+    CHECK(has(polarityRefusalText(result, {}), "Arrival confidence 0.0 dB is below the 20.0 dB"));
+
+    result.arrivalMeasured = false;
+    const auto text = polarityRefusalText(result, {});
+    CHECK(has(text, "No arrival could be measured"));
+    CHECK_FALSE(has(text, "0.0 dB"));
 }
