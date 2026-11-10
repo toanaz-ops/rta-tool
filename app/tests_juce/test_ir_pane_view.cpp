@@ -252,6 +252,19 @@ TEST_CASE("ir pane: STORE GATED adds exactly one trace, in its own group, with t
     CHECK(countGroup(rig.c, "GATED") == 2);
 }
 
+TEST_CASE("ir pane: a GATED trace does not share its SWEEP source's shade (H11 L2)", kTag) {
+    Rig rig;  // SWEEP shade 0 in its own group
+    auto& lib = Access::libraryForTest(rig.c);
+    REQUIRE(lib.entry(rig.traceId)->shadeIndex == 0);
+    rig.pane->irComboForTest().setSelectedId(1, juce::sendNotificationSync);
+    rig.pane->storeButtonForTest().onClick();
+    rig.pane->storeButtonForTest().onClick();
+    const auto gated = lib.entries().subspan(1);
+    REQUIRE(gated.size() == 2);
+    CHECK(gated[0].shadeIndex == 1);  // lowest unused across SWEEP + GATED
+    CHECK(gated[1].shadeIndex == 2);
+}
+
 TEST_CASE("ir pane: a refused gate says why, with the number, and STORE GATED is off", kTag) {
     Rig rig;
     rig.pane->irComboForTest().setSelectedId(1, juce::sendNotificationSync);

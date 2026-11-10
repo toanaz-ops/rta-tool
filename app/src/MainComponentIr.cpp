@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <vector>
 
 void MainComponent::wireIr() {
     ir_.attach(library_, [this](const std::string& traceId) { return sweep_.irStore().find(traceId); });
@@ -120,6 +121,18 @@ std::string MainComponentIr::storeGated() {
     const std::string name = selectedName_ + " gated";
     const auto id = library_->add(std::move(*trace), name, kGroup);
     if (id.empty()) return "not stored -- duplicate capture id";
+    // A GATED trace takes the colour its SWEEP source does when `add` gives both shade 0 (one
+    // group each), so two curves of one measurement look like one. Lowest index unused across
+    // BOTH groups instead (H11 L2).
+    std::vector<bool> used;
+    for (const auto& e : library_->entries()) {
+        if (e.traceId == id || e.shadeIndex < 0 || (e.group != rta::trace::kSweepGroup && e.group != kGroup)) continue;
+        if (static_cast<std::size_t>(e.shadeIndex) >= used.size()) used.resize(static_cast<std::size_t>(e.shadeIndex) + 1, false);
+        used[static_cast<std::size_t>(e.shadeIndex)] = true;
+    }
+    int shade = 0;
+    while (static_cast<std::size_t>(shade) < used.size() && used[static_cast<std::size_t>(shade)]) ++shade;
+    (void)library_->setShadeIndex(id, shade);
     return "stored: " + name + " \xc2\xb7 " + rta::measure::validAboveText(analysis_->fMinHz);
 }
 
