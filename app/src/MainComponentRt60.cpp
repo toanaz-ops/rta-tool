@@ -7,6 +7,7 @@
 #include "MainComponent.h"
 
 #include "measure/Rt60Analysis.h"
+#include "trace/TraceGroups.h"
 #include "measure/Rt60EnsembleReadout.h"
 
 #include <algorithm>
@@ -37,7 +38,7 @@ std::vector<rta::view::Rt60Choice> MainComponentRt60::choices() const {
     // Newest first: the sweep just taken is the one the operator wants. Every
     // SWEEP trace is listed, with or without an IR (decision 9).
     for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
-        if (it->group != "SWEEP") continue;
+        if (it->group != rta::trace::kSweepGroup) continue;
         out.push_back({it->traceId, it->name, sweep_.find && sweep_.find(it->traceId) != nullptr});
     }
     return out;

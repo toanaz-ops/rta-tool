@@ -8,6 +8,7 @@
 // many outputs there are, how to freeze a snapshot into a Trace, and whether
 // LOCATE, CAL, SWEEP or VERIFY holds the output or the shared capture.
 #include "MainComponent.h"
+#include "trace/TraceGroups.h"
 
 void MainComponent::wireAlign() {
     rta::measure::AlignHost host;
@@ -71,7 +72,7 @@ rta::view::AlignIrHooks MainComponentAlign::irHooks() {
         const auto entries = library_->entries();
         // Newest first: the sweep just taken is the one the operator wants.
         for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
-            if (it->group == "SWEEP" && sweep_.find(it->traceId) != nullptr) {
+            if (it->group == rta::trace::kSweepGroup && sweep_.find(it->traceId) != nullptr) {
                 choices.push_back({ it->traceId, it->name });
             }
         }

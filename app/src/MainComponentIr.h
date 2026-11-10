@@ -17,6 +17,7 @@
 
 #include "measure/ExcessPhaseJob.h"
 #include "measure/IrGateModel.h"
+#include "trace/TraceGroups.h"
 #include "trace/TraceLibrary.h"
 #include "view/IrPaneView.h"
 
@@ -31,7 +32,7 @@ public:
     /// The library group a stored gated response goes under. Its own group, not
     /// "SWEEP": the RT60 and ALIGN pickers list SWEEP traces as IR sources, and a
     /// gated response has no IR behind it.
-    static constexpr const char* kGroup = "GATED";
+    static constexpr const char* kGroup = rta::trace::kGatedGroup;
 
     void attach(rta::trace::TraceLibrary& library,
                 std::function<std::shared_ptr<const rta::measure::SweepIr>(const std::string&)> findIr) {

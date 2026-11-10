@@ -91,6 +91,9 @@ set(RTA_IMPL_TEST_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/Rt60Worker.cpp
     # IrGateModel.cpp: H9 / L4c task A2 -- test_ir_gate_model.cpp calls straight into it.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/IrGateModel.cpp
+    # WavTransfer*.cpp: H11 W2 -- test_wav_transfer*.cpp call straight into them.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/WavTransfer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/WavTransferText.cpp
     # AlignRunner.cpp / AlignReadout.cpp: ALIGN-UI lane wave A tasks T2/T3 --
     # test_align_runner*.cpp / test_align_readout.cpp call straight into them.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunner.cpp

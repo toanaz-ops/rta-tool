@@ -7,6 +7,7 @@
 
 #include "measure/IrGateModel.h"
 #include "trace/CaptureConverter.h"
+#include "trace/TraceGroups.h"
 
 #include <algorithm>
 #include <utility>
@@ -23,7 +24,7 @@ std::vector<rta::view::IrChoice> MainComponentIr::choices() const {
     // traces whose IR is still in memory are offered -- nothing can be gated
     // without one, and the pane's empty state says why the list may be empty.
     for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
-        if (it->group != "SWEEP" || find_(it->traceId) == nullptr) continue;
+        if (it->group != rta::trace::kSweepGroup || find_(it->traceId) == nullptr) continue;
         out.push_back({it->traceId, it->name});
     }
     return out;

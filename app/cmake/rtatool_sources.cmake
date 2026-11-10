@@ -182,6 +182,11 @@ set(RTATOOL_SOURCES
     src/view/IrEtcPlot.cpp
     src/view/IrGatedPlot.cpp
     # --- end H9 / L4c ---------------------------------------------------------
+    # --- H11 G22 (docs/plans/2026-11-10-h11-g22-offline-wav-plan.md): W2's pure analysis;
+    # its production caller (MainComponentWav.cpp via WavTransferJob) arrives with W3.
+    src/measure/WavTransfer.cpp
+    src/measure/WavTransferText.cpp
+    # --- end H11 G22 ---
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).
     src/view/TraceStroke.cpp

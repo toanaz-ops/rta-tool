@@ -182,4 +182,7 @@ set(RTA_BASE_TEST_SOURCES
     test_rt60_worker.cpp
     # H9 / L4c task A2: the IR pane's numbers and words (gate readout, ETC, stored trace).
     test_ir_gate_model.cpp
+    # H11 W2: the offline WAV transfer analysis (docs/dsp/2026-11-10-g22-offline-wav-transfer.md).
+    test_wav_transfer.cpp
+    test_wav_transfer_refusals.cpp
 )

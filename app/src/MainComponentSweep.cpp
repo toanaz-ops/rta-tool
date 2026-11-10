@@ -8,6 +8,7 @@
 #include "measure/OutputPolicy.h"
 #include "rta/gen/Sweep.h"
 #include "trace/CaptureConverter.h"
+#include "trace/TraceGroups.h"
 
 #include <cmath>
 #include <utility>
@@ -251,7 +252,7 @@ void MainComponentSweep::finish(const std::shared_ptr<const rta::measure::SweepI
     const juce::String outputTag = named ? " out" + juce::String(armedOutput_ + 1) : juce::String();
     const juce::String name = "SWEEP" + outputTag + " @ " + juce::Time::getCurrentTime().formatted("%H:%M:%S") +
                               " (" + armedDriveText_ + ")";
-    const auto id = library_.add(std::move(*trace), name.toStdString(), "SWEEP");
+    const auto id = library_.add(std::move(*trace), name.toStdString(), rta::trace::kSweepGroup);
     if (id.empty()) {
         say("sweep: failed (duplicate capture id)");
         return;
