@@ -36,6 +36,13 @@ struct WavTransferRequest {
     double startSeconds = 0.0;
     double lengthSeconds = 0.0;  ///< 0 = to the end of the file
     std::string fileName;        ///< basename only; rides in CaptureMeta::deviceName (record D6)
+
+    // H12 (record docs/dsp/2026-11-10-g22b-two-file-wav-drift.md E9): display-only
+    // names for a pair of files seen through one two-channel source. Their defaults
+    // reproduce the one-file behaviour byte for byte.
+    std::string referenceFileName;      ///< empty = the reference is in `fileName` too
+    int displayReferenceChannel = -1;   ///< 0-based; -1 = `referenceChannel`
+    int displayMeasurementChannel = -1; ///< 0-based; -1 = `measurementChannel`
 };
 
 enum class WavTransferRefusal {

@@ -94,6 +94,12 @@ set(RTA_IMPL_TEST_SOURCES
     # WavTransfer*.cpp: H11 W2 -- test_wav_transfer*.cpp call straight into them.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/WavTransfer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/WavTransferText.cpp
+    # H12 T3: the two-file pair -- test_wav_pair_transfer*.cpp call straight into them.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/ResampledPairSource.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/WavPairClock.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/WavPairWindows.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/WavPairTransfer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/WavPairText.cpp
     # AlignRunner.cpp / AlignReadout.cpp: ALIGN-UI lane wave A tasks T2/T3 --
     # test_align_runner*.cpp / test_align_readout.cpp call straight into them.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/measure/AlignRunner.cpp

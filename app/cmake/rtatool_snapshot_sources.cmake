@@ -218,6 +218,11 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/MainComponentWav.cpp
     src/measure/WavTransfer.cpp
     src/measure/WavTransferText.cpp
+    src/measure/ResampledPairSource.cpp
+    src/measure/WavPairClock.cpp
+    src/measure/WavPairWindows.cpp
+    src/measure/WavPairTransfer.cpp
+    src/measure/WavPairText.cpp
     src/measure/WavFileSource.cpp
     src/measure/WavTransferJob.cpp
     src/view/IrPaneView.cpp

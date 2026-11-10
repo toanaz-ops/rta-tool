@@ -98,8 +98,12 @@ WavTransferOutcome analyseWavTransfer(const SampleBlockSource& source,
                                       const WavTransferRequest& request,
                                       const std::atomic<bool>& cancel) {
     WavTransferOutcome out;
-    out.referenceChannel = request.referenceChannel;
-    out.measurementChannel = request.measurementChannel;
+    const int shownRef = request.displayReferenceChannel >= 0 ? request.displayReferenceChannel
+                                                              : request.referenceChannel;
+    const int shownMeas = request.displayMeasurementChannel >= 0 ? request.displayMeasurementChannel
+                                                                 : request.measurementChannel;
+    out.referenceChannel = shownRef;
+    out.measurementChannel = shownMeas;
     out.fileChannels = source.numChannels();
     out.sampleRate = source.sampleRate();
     out.requestedStartSeconds = request.startSeconds;
@@ -246,9 +250,11 @@ WavTransferOutcome analyseWavTransfer(const SampleBlockSource& source,
     rta::trace::CaptureMeta meta;
     meta.id = rta::trace::nextCaptureId();
     meta.capturedAtUnixMs = nowUnixMs();
-    const std::string refName = "ch" + std::to_string(request.referenceChannel + 1);
-    const std::string measName = "ch" + std::to_string(request.measurementChannel + 1);
-    meta.deviceName = "WAV " + request.fileName + " " + measName + " vs " + refName;
+    const std::string refName = "ch" + std::to_string(shownRef + 1);
+    const std::string measName = "ch" + std::to_string(shownMeas + 1);
+    meta.deviceName = "WAV " + request.fileName + " " + measName + " vs " +
+                      (request.referenceFileName.empty() ? std::string() : request.referenceFileName + " ") +
+                      refName;
     meta.channelRoles = refName + "=Reference," + measName + "=Measurement";
     meta.sampleRate = fs;
     meta.fftSize = static_cast<int>(kFftSize);

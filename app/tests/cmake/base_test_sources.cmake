@@ -185,4 +185,8 @@ set(RTA_BASE_TEST_SOURCES
     # H11 W2: the offline WAV transfer analysis (docs/dsp/2026-11-10-g22-offline-wav-transfer.md).
     test_wav_transfer.cpp
     test_wav_transfer_refusals.cpp
+    # H12 T3: the two-file pair (docs/dsp/2026-11-10-g22b-two-file-wav-drift.md).
+    test_wav_pair_transfer.cpp
+    test_wav_pair_transfer_refusals.cpp
+    test_wav_pair_transfer_limits.cpp
 )

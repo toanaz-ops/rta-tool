@@ -187,6 +187,13 @@ set(RTATOOL_SOURCES
     # file through WavFileSource (JUCE WAV/AIFF readers).
     src/measure/WavTransfer.cpp
     src/measure/WavTransferText.cpp
+    # H12 G22b T3 (docs/plans/2026-11-10-h12-g22b-two-file-wav-plan.md): the two-file pair; its
+    # production caller is MainComponentWav.cpp via WavTransferJob (T4).
+    src/measure/ResampledPairSource.cpp
+    src/measure/WavPairClock.cpp
+    src/measure/WavPairWindows.cpp
+    src/measure/WavPairTransfer.cpp
+    src/measure/WavPairText.cpp
     src/measure/WavFileSource.cpp
     src/measure/WavTransferJob.cpp
     src/MainComponentWav.cpp
