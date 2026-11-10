@@ -110,7 +110,7 @@ struct PolarityResult {
     /// stores 0.0 in its place, and quoting that placeholder would be the same
     /// fiction. The arrival itself may well have been found in that case; the flag
     /// describes the confidence figure, not the arrival.
-    bool arrivalMeasured = false;
+    bool confidenceMeasured = false;
 
     /// The measured -10 dB edges of the arrival, in hertz, clamped to the band
     /// the excitation covered. Reported whether or not the gate passed, so a

@@ -10,8 +10,9 @@
 //     <profile>\AppData   <profile>\LocalAppData   <profile>\Documents
 // and this header is the ONLY place the app maps "user documents" to a
 // directory. The app stores nothing under app data, so no app-data mapping
-// exists; the launcher still creates the AppData dirs so a stray write lands
-// inside the profile.
+// exists. The launcher's AppData dirs catch only writes that honour the APPDATA
+// variable; a JUCE getSpecialLocation write would bypass them (CSIDL, above),
+// so any future app-data file must be mapped here first.
 //
 // RULES.
 //  - Variable unset or empty: behaviour is exactly the old one (real paths).

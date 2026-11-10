@@ -200,7 +200,7 @@ PolarityResult findPolarity(const Deconvolution& source, const PolarityConfig& c
     }
     const double noiseRms = std::sqrt(sumSq / static_cast<double>(count));
     out.confidenceDb = noiseRms > 0.0 ? 20.0 * std::log10(peak / noiseRms) : 0.0;
-    out.arrivalMeasured = noiseRms > 0.0;  // a zero floor has no ratio: 0.0 above is a placeholder
+    out.confidenceMeasured = noiseRms > 0.0;  // a zero floor has no ratio: 0.0 above is a placeholder
 
     // The verdict: the first excursion reaching `arrivalFraction` of the peak.
     Sign verdict = Sign::Unknown;

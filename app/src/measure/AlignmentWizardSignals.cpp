@@ -62,11 +62,11 @@ std::string polarityRefusalText(const rta::ir::PolarityResult& result,
             return "This sweep is only trustworthy " + range + " -- not enough to decide.";
         }
         case Refusal::NoSignal:
-            // `arrivalMeasured` is false on every path that returns before a confidence
+            // `confidenceMeasured` is false on every path that returns before a confidence
             // is computed (empty or silent search window) and when the pre-arrival floor
             // is zero. "0.0 dB" there would be a number nobody measured.
-            if (!result.arrivalMeasured) {
-                return "No arrival could be measured in this response, so there is no confidence to quote."
+            if (!result.confidenceMeasured) {
+                return "No arrival confidence could be measured in this response, so there is none to quote."
                        " Measure again, louder or closer.";
             }
             return "Arrival confidence " + db(result.confidenceDb) + " dB is below the "

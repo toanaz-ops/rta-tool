@@ -4,6 +4,7 @@
 // IR pane over a real MainComponent, and the mouse/decomposition helpers.
 #pragma once
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "MainComponent.h"
