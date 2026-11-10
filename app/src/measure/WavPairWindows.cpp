@@ -18,11 +18,15 @@ WindowStatus measureWindows(const SampleBlockSource& reference, int referenceCha
     const int count = std::max(pass.windowCount, 1);
     rta::dsp::PhatOptions phat;
     phat.sampleRate = pass.sampleRate;
+    phat.minHz = pass.minHz;
+    phat.maxHz = pass.maxHz;
     rta::dsp::DelayPolicy policy;
     policy.minLag = static_cast<std::ptrdiff_t>(-pass.lagBound);
     policy.maxLag = static_cast<std::ptrdiff_t>(pass.lagBound);
     rta::dsp::PhaseSlopeOptions slope;
     slope.sampleRate = pass.sampleRate;
+    slope.minHz = pass.minHz;
+    slope.maxHz = pass.maxHz;
 
     std::vector<float> ref(static_cast<std::size_t>(width));
     std::vector<float> meas(ref.size());

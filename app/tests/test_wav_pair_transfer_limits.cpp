@@ -9,24 +9,21 @@
 // (the case skips itself otherwise: it prints, it does not gate).
 //
 // Rows: ppm | pass-1 windows accepted | lowest / best delay trust | verdict.
-//   -100 | 9/9 | 0.288 / 0.304 | ok, ppm error +0.000
-//   +100 | 9/9 | 0.285 / 0.300 | ok, ppm error  0.000   <- the highest that is clean on every window
-//   +125 | 7/9 | 0.224 / 0.259 | ok, ppm error -0.002
-//   -150 | 3/9 | 0.192 / 0.212 | ok, ppm error +0.000   (thin)
-//   +150 | 3/9 | 0.190 / 0.209 | ok, ppm error -0.002   (thin)
-//   +175 | 0/9 | 0.165 / 0.193 | NoCorrelation (phase-slope fit withheld on every window)
-//   +200 | 0/9 | 0.150 / 0.168 | NoCorrelation
-//   +400 | 0/9 | 0.076 / 0.089 | NoCoarseAlignment (the 2^17 coarse window smears 52 samples)
-//   +800 | 0/9 | -     / 0.047 | NoCoarseAlignment
-//  +1000 | 0/9 | -     / 0.043 | NoCoarseAlignment
-// ("lowest" is over windows `suggestDelay` Accepted, whether or not the phase-slope
-// fraction then resolved; "-" none were Accepted.) The record's 1000 ppm (E4) is
-// NOT reachable by this estimator: the limit is its capture range, not a judgement
-// about what a clock error is. `ClockSearchOptions::maxPpm` = 100, the highest round
-// number clean on all 9 windows. The edge is soft and depends on the range length
-// and where the integer lags round (140 ppm on a 3.5 s range resolved ONE window of
-// five), which is why the shipped limit sits at the clean row, not the last one that
-// happened to pass.
+// BAND-LIMITED (coarse and pass 1: PHAT and phase-slope fit over 100 Hz .. 3 kHz):
+//   -300 | 9/9 | 0.703 / 0.724 | ok, ppm error +0.001
+//   +100 | 9/9 | 0.910 / 0.933 | ok, ppm error  0.000
+//   +150 | 9/9 | 0.859 / 0.888 | ok, ppm error  0.000
+//   +200 | 9/9 | 0.808 / 0.836 | ok, ppm error  0.000
+//   +300 | 9/9 | 0.693 / 0.721 | ok, ppm error +0.013
+//   +400 | 9/9 | 0.574 / 0.605 | ok, ppm error +0.062   <- the highest that is clean on every window
+//   +600 | 4/9 | 0.357 / 0.396 | NoCoarseAlignment (2^17 coarse window smears 79 samples)
+//  +1000 | 0/9 | 0.227 / 0.259 | NoCoarseAlignment
+// BEFORE the band limit (full band) the same fixture gave 9/9 at 100, 7/9 at 125,
+// 3/9 at 150 and 0/9 from 175 up (trust 0.285 at 100): drift smears each window,
+// the smear decorrelates the HIGH bins first, and PHAT weights every bin equally.
+// ("lowest" is over windows `suggestDelay` Accepted whether or not the phase-slope
+// fraction then resolved.) The record's 1000 ppm (E4) is not reachable; the limit
+// is the coarse window's smear. `ClockSearchOptions::maxPpm` = 400.
 #include "WavPairFixture.h"
 
 #include "measure/WavPairTransfer.h"
@@ -103,6 +100,8 @@ SweepRow sweepOne(double ppm) {
     pass.priorDelay = static_cast<std::int64_t>(trueDelayAt(b, eps, 0.5 * wavfix::kFs));
     pass.lagBound = 300;
     pass.sampleRate = wavfix::kFs;
+    pass.minHz = detail::driftBand(wavfix::kFs).minHz;
+    pass.maxHz = detail::driftBand(wavfix::kFs).maxHz;
     pass.measFirst = 0;
     pass.measLast = 528000 - 1;
     std::vector<rta::dsp::DelayObservation> obs;
@@ -153,26 +152,22 @@ WavPairOutcome analyseDrift(double ppm, double maxPpm, double lengthSeconds = 3.
 
 }  // namespace
 
-TEST_CASE("H12 T3: the shipped ceiling is the measured one: 95 ppm passes, 125 ppm is DriftTooLarge",
+TEST_CASE("H12 T3: the shipped ceiling is the measured one: 380 ppm passes, 480 ppm is DriftTooLarge",
           "[wavpair]") {
-    CHECK(ClockSearchOptions{}.maxPpm == 100.0);
-    const auto under = analyseDrift(95.0, 0.0, 6.5);
+    CHECK(ClockSearchOptions{}.maxPpm == 400.0);
+    const auto under = analyseDrift(380.0, 0.0, 6.5);
     INFO(wavPairRefusalText(under));
     REQUIRE(under.ok());
-    CHECK(std::abs(under.ppm - 95.0) < 0.3);
-    // 125 ppm still resolves on 7 of 9 windows (sweep above), so it is measured and
-    // refused by name; the same with the opposite sign.
-    for (const double ppm : {125.0, -125.0}) {
+    CHECK(std::abs(under.ppm - 380.0) < 0.3);
+    for (const double ppm : {480.0, -480.0}) {
         const auto over = analyseDrift(ppm, 0.0, 6.5);
         INFO(wavPairRefusalText(over));
         REQUIRE(over.clock.refusal == ClockRefusal::DriftTooLarge);
-        CHECK(std::abs(over.clock.ppm - ppm) < 0.3);
-        CHECK(over.clock.maxPpm == 100.0);
+        CHECK(std::abs(over.clock.ppm - ppm) < 2.0);  // pass 1 is open loop: 478.89 for 480
+        CHECK(over.clock.maxPpm == 400.0);
     }
-    // Far past the capture range the windows are withheld first: refused all the
-    // same, never silently accepted.
-    const auto far = analyseDrift(400.0, 0.0, 6.5);
-    CHECK_FALSE(far.ok());
+    // Far past the capture range the coarse search fails first: refused all the same.
+    CHECK_FALSE(analyseDrift(1000.0, 0.0, 6.5).ok());
 }
 
 TEST_CASE("H12 T3: DriftTooLarge names the measured ppm and the limit; its neighbour just under is accepted",
@@ -195,7 +190,7 @@ TEST_CASE("H12 T3: DriftTooLarge names the measured ppm and the limit; its neigh
 
 TEST_CASE("H12 T3: ppm sweep (RTA_PPM_SWEEP=1 to print it)", "[wavpair][sweep]") {
     if (!sweepRequested()) SKIP("set RTA_PPM_SWEEP=1 to print the sweep");
-    for (const double ppm : {-100.0, -150.0, 100.0, 125.0, 150.0, 175.0, 200.0, 400.0, 800.0, 1000.0}) {
+    for (const double ppm : {-300.0, 100.0, 150.0, 200.0, 300.0, 400.0, 600.0, 1000.0}) {
         const SweepRow r = sweepOne(ppm);
         std::printf("[sweep] %6.0f ppm: pass-1 windows %d/%d accepted, trust lowest %.3f best %.3f | %s\n", r.ppm,
                     r.accepted, r.windows, r.lowestTrust, r.bestTrust, r.verdict.c_str());

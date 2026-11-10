@@ -59,6 +59,13 @@ WavPairOutcome analyseWavPairTransfer(const SampleBlockSource& reference, int re
     // --- E2-E7 ---------------------------------------------------------------
     out.clock = estimateClockMapping(reference, referenceChannel, measurement, measurementChannel, rangeStart,
                                      rangeLength, request.clock, cancel);
+    if (out.clock.refusal == ClockRefusal::RangeOutsideOverlap) {
+        out.clock.refusal.reset();
+        out.overlapFirstSeconds = static_cast<double>(out.clock.overlapFirst) / fs;
+        out.overlapLastSeconds = static_cast<double>(out.clock.overlapLast + 1) / fs;
+        if (out.clock.overlapLast < out.clock.overlapFirst) out.overlapFirstSeconds = out.overlapLastSeconds = 0.0;
+        return refuse(WavPairRefusal::RangeOutsideFile);
+    }
     if (!out.clock.ok()) return out;
     const ClockEstimate& estimate = *out.clock.estimate;
     out.ppm = estimate.ppm;

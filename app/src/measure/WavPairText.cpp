@@ -60,6 +60,8 @@ std::string clockSentence(const WavPairOutcome& o) {
         case ClockRefusal::RangeTooShort:
             return "The range is too short to measure clock drift: at least " + fixed(c.minRangeSeconds, 2) +
                    " s are needed. Pick a longer range.";
+        case ClockRefusal::RangeOutsideOverlap:
+            return "The range does not fit inside the part of the reference where both files overlap.";
         case ClockRefusal::ReadFailed:
             return "A file could not be read.";
         case ClockRefusal::Cancelled:

@@ -8,6 +8,7 @@
 #include "measure/WavTransfer.h"
 #include "rta/dsp/ClockDrift.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <vector>
@@ -20,6 +21,10 @@ struct WindowPass {
     std::int64_t priorDelay = 0;  ///< delay the integer search is centred on, samples
     std::int64_t lagBound = 0;    ///< integer lag searched within +- this
     double sampleRate = 0.0;
+    /// Band (Hz) of the integer GCC-PHAT and of the phase-slope fit; maxHz 0 = the
+    /// full band (PHAT: Nyquist, fit: fs/4). See `driftBand`.
+    double minHz = 0.0;
+    double maxHz = 0.0;
     /// The measurement samples [measFirst, measLast] a window may touch (the
     /// meas file for pass 1; the pair's valid range for pass 2). A window that
     /// does not fit is SKIPPED, never read: a read outside must not become ReadFailed.
@@ -34,6 +39,20 @@ struct WindowTally {
     double lowestAcceptedTrust = 1.0;  ///< lowest trust among Accepted windows (1 when none)
     double trustFloor = 0.0;  ///< the trust it needed (acceptMultiple * null floor)
 };
+
+/// The band the clock search works in before the drift is removed. Drift smears
+/// each window by eps * N samples, and a delay smear of s samples decorrelates a
+/// bin at f by about (2 pi f s / fs)^2 -- the HIGH bins go first, and PHAT weights
+/// every bin equally, so they drag the peak down with them. Restricting to
+/// 100 Hz .. min(fs/8, 3 kHz) keeps the bins that survive a large smear (s = 5
+/// samples at 3 kHz is 0.2 rad). Pass 2, on the corrected pair, uses the full band.
+struct DriftBand {
+    double minHz;
+    double maxHz;
+};
+[[nodiscard]] inline DriftBand driftBand(double sampleRate) noexcept {
+    return {100.0, std::min(sampleRate / 8.0, 3000.0)};
+}
 
 enum class WindowStatus { Ok, Cancelled, ReadFailed };
 

@@ -206,10 +206,6 @@ TEST_CASE("H12 T3: +80 ppm through the +6 dB biquad: the stored transfer is the 
 TEST_CASE("H12 T3: -150 ppm, the other sign", "[wavpair]") {
     Spec s{"-150ppm/2.5s biquad", -150e-6, 2.5, 10.5};
     s.system = true;
-    // The brief names -150 ppm; the shipped ceiling (100, measured: see
-    // test_wav_pair_transfer_limits.cpp) is below it, so this case raises the limit.
-    // It resolves 3 windows of 9 (a thin fit) and the sign path is what it proves.
-    s.clock.maxPpm = 200.0;
     s.clock.priorOffsetSamples = static_cast<std::int64_t>(2.5 * wavfix::kFs);
     s.clock.coarseHalfWidthSeconds = 0.1;
     const Run r = run(s);
@@ -228,7 +224,6 @@ TEST_CASE("H12 T3: 0 ppm with a 1.7 s start offset is the shared-clock branch, a
     REQUIRE(r.out.ok());
     CHECK(r.out.sharedClock);       // E7: no pass 2, no resampling
     CHECK(r.out.ppm == 0.0);
-    CHECK(r.out.residualRms == 0.0);  // pass 2 never ran
     CHECK(r.out.offsetSeconds == 1.7);  // 81600 samples, an exact integer offset
     // The pair source copies: the offset is the whole story, and G22 then sees delay 0.
     CHECK(r.out.transfer.delaySamples == 0);

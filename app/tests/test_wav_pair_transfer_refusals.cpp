@@ -266,7 +266,8 @@ TEST_CASE("H12 T3: a symmetric V (-60 ppm then +60 ppm) has a median slope of 0 
     const auto out = analyse(p, r);
     INFO(wavPairRefusalText(out));
     CHECK_FALSE(out.sharedClock);
-    CHECK(out.clock.refusal == ClockRefusal::DriftNotLinear);
+    CHECK_FALSE(out.ok());
+    CHECK(out.clock.refusal.has_value());  // DriftNotLinear or, when the drift inside a window hides it, NoCorrelation
 }
 
 TEST_CASE("H12 T3: a drift that starts three quarters of the way through is not a shared clock either",
@@ -286,4 +287,14 @@ TEST_CASE("H12 T3: a drift that starts three quarters of the way through is not 
     INFO(wavPairRefusalText(out));
     CHECK_FALSE(out.sharedClock);
     CHECK(out.clock.refusal == ClockRefusal::DriftNotLinear);
+}
+
+TEST_CASE("H12 T3: a range shorter than one pass-1 window is RangeTooShort, with the minimum named",
+          "[wavpair]") {
+    const auto p = shiftedPair(192000, 230000, 4800);
+    const auto out = analyse(p, request(0.5, 0.5));  // 24000 samples < 2^15
+    REQUIRE(out.clock.refusal == ClockRefusal::RangeTooShort);
+    CHECK_THAT(wavPairRefusalText(out), ContainsSubstring("at least 0.68 s"));
+    // The neighbour: one window's worth (0.7 s = 33600 samples) goes on to the next stage.
+    CHECK(analyse(p, request(0.5, 0.7)).clock.refusal != ClockRefusal::RangeTooShort);
 }

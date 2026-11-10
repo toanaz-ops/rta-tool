@@ -59,6 +59,9 @@ CoarseLook coarseLook(const SampleBlockSource& reference, int referenceChannel,
     }
     rta::dsp::PhatOptions phat;
     phat.sampleRate = reference.sampleRate();
+    const detail::DriftBand band = detail::driftBand(phat.sampleRate);
+    phat.minHz = band.minHz;
+    phat.maxHz = band.maxHz;
     rta::dsp::DelayPolicy policy;
     const std::int64_t shift = spanStart - refStart;  // offset d <-> padded lag = d - shift
     policy.minLag = static_cast<std::ptrdiff_t>(std::max<std::int64_t>(prior - halfWidth - shift, 0));
@@ -160,6 +163,8 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
     pass1.priorDelay = coarse.offset;
     pass1.lagBound = std::llround(options.maxPpm * 1e-6 * static_cast<double>(rangeLength)) + kLagMargin;
     pass1.sampleRate = fs;
+    pass1.minHz = detail::driftBand(fs).minHz;
+    pass1.maxHz = detail::driftBand(fs).maxHz;
     pass1.measFirst = 0;
     pass1.measLast = measurement.lengthSamples() - 1;
     std::vector<rta::dsp::DelayObservation> observations;
@@ -187,35 +192,39 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
     ClockEstimate estimate;
     estimate.windowsUsed = tally1.accepted;
     const auto rangeStartD = static_cast<double>(rangeStart);
-    // E7 declares a shared clock from the SLOPE alone, but a Theil-Sen slope is a
-    // median: a delay that is flat for half the range and then drifts has a median
-    // slope of ~0 and would be waved through (measured: 0 then +250 ppm read
-    // "shared clock", and G22's DelayMoved cannot see it on a range under 2^19
-    // samples, where it has one delay window). So the shared branch also needs
-    // pass 1's own line to fit (residual RMS within the E6 gate); otherwise the
-    // pair goes through pass 2, which refuses a bend as DriftNotLinear.
-    if (std::abs(eps) * static_cast<double>(rangeLength) <= kSharedClockSamples &&
-        fit1->residualRms <= kMaxResidualRms) {
-        // One clock: only the integer offset, taken at the range start. No pass 2
-        // and no resampling -- the pair source copies samples bitwise.
-        const double delay = std::round(fit1->intercept);
-        estimate.sharedClock = true;
-        estimate.mapping = {delay, 1.0, true};  // t(n) = n + delay
-        estimate.offsetSeconds = delay / fs;
-        ClockResult r;
-        r.estimate = estimate;
-        return r;
-    }
+    // E7. The slope alone can wave a bend through (a Theil-Sen slope is a median: flat
+    // for 3/4 of the range then drifting reads ~0), so a shared clock is not
+    // believed on pass 1: it goes through pass 2 below, whose residual gate refuses
+    // a bend as DriftNotLinear exactly as for a drifting pair.
+    const bool shared = std::abs(eps) * static_cast<double>(rangeLength) <= kSharedClockSamples;
+    // Pass 1 works in a LOW band (see driftBand), where a system with a non-flat
+    // phase has a group delay of its own: on the +6 dB biquad that moved an exact
+    // integer offset by a whole sample. So even a shared clock goes through pass 2,
+    // in the full band, to settle the integer -- it just never resamples.
+    const double sharedDelay = std::round(fit1->intercept);
 
     // --- E5/E6 pass 2 --------------------------------------------------------
     // Pass 1's line (positions relative to the range start, x = n - rangeStart):
     //   t1(n) = (rangeStart + b) + x (1 + eps).
     ClockMapping first;
-    first.ratio = 1.0 + eps;
-    first.offsetSamples = (rangeStartD + fit1->intercept) - rangeStartD * first.ratio;
-    first.integerOnly = false;
+    if (shared) {
+        first = {sharedDelay, 1.0, true};  // t(n) = n + delay, a bitwise copy
+    } else {
+        first.ratio = 1.0 + eps;
+        first.offsetSamples = (rangeStartD + fit1->intercept) - rangeStartD * first.ratio;
+        first.integerOnly = false;
+    }
     const ResampledPairSource corrected(reference, referenceChannel, measurement, measurementChannel, first);
     const auto valid = corrected.validRange();
+    // The range must lie in the overlap this mapping leaves, BEFORE pass 2 reads
+    // it: windows that fall outside are skipped, and skipping them would turn a
+    // range-outside-the-overlap refusal into a thin-coverage one.
+    if (valid.empty() || rangeStart < valid.first || rangeStart + rangeLength - 1 > valid.last) {
+        ClockResult r = refuse(ClockRefusal::RangeOutsideOverlap);
+        r.overlapFirst = valid.first;
+        r.overlapLast = valid.last;
+        return r;
+    }
 
     WindowPass pass2;
     pass2.windowLength = rangeLength >= kPass2Window ? kPass2Window : kPass1Window;
@@ -242,6 +251,17 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
         r.residualRms = fit2->residualRms;
         r.maxResidual = fit2->maxAbsResidual;
         return r;
+    }
+
+    if (shared) {
+        // E7: only the integer offset, the full-band residual rounded into it.
+        const double delay = sharedDelay + std::round(fit2->intercept);
+        estimate.sharedClock = true;
+        estimate.mapping = {delay, 1.0, true};
+        estimate.offsetSeconds = delay / fs;
+        ClockResult shared_r;
+        shared_r.estimate = estimate;
+        return shared_r;
     }
 
     // The corrected pair's delay is d2(x) = b2 + eps2 x: reference sample n pairs

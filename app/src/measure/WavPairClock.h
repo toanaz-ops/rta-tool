@@ -22,17 +22,15 @@ struct ClockSearchOptions {
     /// The search covers prior +- this many seconds. 10 s is the production
     /// default; a test may narrow it only to keep a fixture small.
     double coarseHalfWidthSeconds = 10.0;
-    /// |ppm| above this is refused (record E4). 100: MEASURED on the two-file
+    /// |ppm| above this is refused (record E4). 400: MEASURED on the two-file
     /// fixture, not the record's 1000 (sweep table in
-    /// app/tests/test_wav_pair_transfer_limits.cpp). At 100 ppm all 9 pass-1 windows
-    /// resolve; at 125 only 7, at 150 only 3, at 175 none: the clock drifts 4-6
-    /// samples INSIDE one 2^15 window and the phase-slope fit loses the coherence it
-    /// needs (fewer than 8 bins with gamma^2 >= 0.5). A pair beyond ~170 ppm is
-    /// therefore refused as NoCorrelation / NoCoarseAlignment (it cannot be
-    /// measured), and DriftTooLarge is what a pair the windows CAN still measure,
-    /// 100..~150 ppm, is refused with. Raising the limit without widening that
-    /// capture range only invites thin fits (3 windows of 9).
-    double maxPpm = 100.0;
+    /// app/tests/test_wav_pair_transfer_limits.cpp). With the coarse and pass-1
+    /// GCC-PHAT and phase-slope fit band-limited (see `detail::driftBand`) all 9
+    /// pass-1 windows resolve up to 400 ppm; at 600 the 2^17 coarse window smears
+    /// 79 samples and the pair is refused as NoCoarseAlignment (it cannot be
+    /// measured). DriftTooLarge is what a pair the search CAN still measure
+    /// (400..~500 ppm) is refused with.
+    double maxPpm = 400.0;
 };
 
 enum class ClockRefusal {
@@ -41,6 +39,7 @@ enum class ClockRefusal {
     DriftTooLarge,      ///< E4
     DriftNotLinear,     ///< E6
     RangeTooShort,      ///< shorter than one pass-1 window
+    RangeOutsideOverlap,  ///< the range does not fit where the two files overlap under the pass-1 mapping
     ReadFailed,
     Cancelled,
 };
@@ -74,6 +73,8 @@ struct ClockResult {
     double residualRms = 0.0;
     double maxResidual = 0.0;
     double minRangeSeconds = 0.0;  ///< RangeTooShort
+    std::int64_t overlapFirst = 0;  ///< RangeOutsideOverlap: first/last reference sample both files cover
+    std::int64_t overlapLast = -1;
 
     [[nodiscard]] bool ok() const noexcept { return estimate.has_value(); }
 };
