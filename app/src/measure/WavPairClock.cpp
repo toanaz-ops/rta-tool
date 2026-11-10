@@ -26,13 +26,6 @@ constexpr std::int64_t kLagMargin = 64;       // E3: +-(round(maxPpm*1e-6*length
 constexpr std::int64_t kPass2LagBound = 64;   // after pass 1 the pair is within a few samples
 constexpr double kSharedClockSamples = 0.05;  // E7
 constexpr double kMaxResidualRms = 0.1;       // E6
-// Pass 1 cannot hold the 0.1 gate (its windows are half as long, and a system with
-// a non-linear phase moves the phase-slope delay by up to ~0.2 sample from one
-// window to the next, measured on the +6 dB biquad), but a residual of a whole
-// sample is no estimator noise: pass 2 would be correcting a line that is not
-// there and its windows, smeared by the drift inside them, cannot be trusted
-// either. Refuse as DriftNotLinear here, with pass 1's numbers.
-constexpr double kGrossResidualRms = 1.0;
 constexpr double kMinCoverage = 0.6;  // accepted windows must span 60 % of the first-to-last-centre span
 
 struct CoarseLook {
@@ -182,13 +175,6 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
     }
     const auto fit1 = rta::dsp::fitDriftTheilSen(observations);
     if (!fit1.has_value()) return noCorrelation(tally1);
-
-    if (fit1->residualRms > kGrossResidualRms) {
-        ClockResult r = refuse(ClockRefusal::DriftNotLinear);
-        r.residualRms = fit1->residualRms;
-        r.maxResidual = fit1->maxAbsResidual;
-        return r;
-    }
 
     // --- E4 / E7 -------------------------------------------------------------
     const double eps = fit1->slope;

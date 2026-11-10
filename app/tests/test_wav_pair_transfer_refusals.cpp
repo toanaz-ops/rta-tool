@@ -268,3 +268,22 @@ TEST_CASE("H12 T3: a symmetric V (-60 ppm then +60 ppm) has a median slope of 0 
     CHECK_FALSE(out.sharedClock);
     CHECK(out.clock.refusal == ClockRefusal::DriftNotLinear);
 }
+
+TEST_CASE("H12 T3: a drift that starts three quarters of the way through is not a shared clock either",
+          "[wavpair]") {
+    // 7 of 9 pass-1 windows sit on the flat part, so more than half of all pairwise
+    // slopes are exactly 0 and the Theil-Sen slope is 0 -- the one case where the
+    // slope alone says "one clock" while the last quarter drifts by 1 sample
+    // (13 ppm over 78000 samples). Pass 1's own line leaves 0.33 samples rms; pass
+    // 2 then sees the last window leave the line by 0.6 and refuses it (> 0.1).
+    const double range = 6.5 * kRate;
+    const double bendAt = 0.5 * kRate + 0.75 * range;
+    const double b = 2.0 * kRate;
+    const auto p = makePair(384000, 528000, bentClock(b, 0.0, 13e-6, bendAt), 11, false);
+    auto r = request(0.5, 6.5);
+    r.clock.priorOffsetSamples = static_cast<std::int64_t>(b);
+    const auto out = analyse(p, r);
+    INFO(wavPairRefusalText(out));
+    CHECK_FALSE(out.sharedClock);
+    CHECK(out.clock.refusal == ClockRefusal::DriftNotLinear);
+}
