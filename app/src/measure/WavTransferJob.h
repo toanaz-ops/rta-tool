@@ -10,8 +10,13 @@
 // window-pair read plus one PHAT, so start(), LOAD and the destructor can block the
 // message thread for that long. The worker opens ITS OWN `WavFileSource`; no reader is ever
 // shared with the message thread. Destruction cancels and waits.
+//
+// H12 T4: the same job also runs a TWO-file pair (record docs/dsp/2026-11-10-g22b-two-file-wav-drift.md
+// E2, E9). The worker opens both files, takes the offset-search prior from their `bext` time
+// references when BOTH carry one, and calls `analyseWavPairTransfer`.
 #pragma once
 
+#include "measure/WavPairTransfer.h"
 #include "measure/WavTransfer.h"
 
 #include <juce_core/juce_core.h>
@@ -23,6 +28,33 @@
 
 namespace rta::measure {
 
+/// The offset-search prior (meas minus ref, samples) from the two `bext` time references: their
+/// difference when BOTH files carry one, else 0 (record E2: one reference alone says nothing about
+/// the other recorder's clock).
+[[nodiscard]] inline std::int64_t bextPriorSamples(std::optional<std::int64_t> reference,
+                                                   std::optional<std::int64_t> measurement) noexcept {
+    return reference.has_value() && measurement.has_value() ? *measurement - *reference : 0;
+}
+
+/// A two-file request. `request.clock.priorOffsetSamples` is overwritten by the worker.
+struct WavPairJobRequest {
+    juce::File reference;
+    juce::File measurement;
+    int referenceChannel = 0;  ///< 0-based, in the reference file
+    int measurementChannel = 0;  ///< 0-based, in the measurement file
+    WavPairRequest request;
+};
+
+/// What the worker returns: the one-file outcome, or the pair's.
+struct WavJobOutcome {
+    bool pairMode = false;
+    WavTransferOutcome single;
+    WavPairOutcome pair;
+
+    [[nodiscard]] bool ok() const noexcept { return pairMode ? pair.ok() : single.ok(); }
+    [[nodiscard]] WavTransferOutcome& transfer() noexcept { return pairMode ? pair.transfer : single; }
+};
+
 class WavTransferJob {
 public:
     WavTransferJob() = default;
@@ -33,9 +65,12 @@ public:
     /// Cancels any running job, then launches this one.
     void start(const juce::File& file, WavTransferRequest request);
 
+    /// Cancels any running job, then launches a two-file pair.
+    void start(WavPairJobRequest job);
+
     /// The finished outcome of the newest request, once; empty while it runs or
     /// when nothing is pending.
-    [[nodiscard]] std::optional<WavTransferOutcome> poll();
+    [[nodiscard]] std::optional<WavJobOutcome> poll();
 
     [[nodiscard]] bool busy() const noexcept { return running_.valid(); }
 
@@ -43,7 +78,7 @@ public:
     void cancelAndDiscard();
 
 private:
-    std::future<WavTransferOutcome> running_;
+    std::future<WavJobOutcome> running_;
     std::shared_ptr<std::atomic<bool>> cancel_;
 };
 

@@ -216,6 +216,7 @@ set(RTATOOL_SNAPSHOT_SOURCES
     src/measure/IrGateModel.cpp
     # H11 G22 (W2 + W3): MainComponent links MainComponentWav, which reaches all of these.
     src/MainComponentWav.cpp
+    src/MainComponentWavPair.cpp
     src/measure/WavTransfer.cpp
     src/measure/WavTransferText.cpp
     src/measure/ResampledPairSource.cpp

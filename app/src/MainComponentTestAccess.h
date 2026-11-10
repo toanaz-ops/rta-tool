@@ -344,4 +344,10 @@ struct MainComponentTestAccess {
     // ANALYSE press and the worker's answer are on `MainComponentWav`'s own hooks.
     [[nodiscard]] static MainComponentWav& wavForTest(MainComponent& c) { return c.wav_; }
     static bool performLoadWavForTest(MainComponent& c, const juce::File& file) { return c.wav_.performLoad(file); }
+    // H12 T4: app/tests_juce/test_wav_pair_file.cpp and tools/snapshot_wav.cpp -- what the LOAD MEAS WAV
+    // chooser's callback does, and the CLEAR MEAS press.
+    static bool performLoadMeasWavForTest(MainComponent& c, const juce::File& file) {
+        return c.wav_.performLoadMeas(file);
+    }
+    static void clearMeasWavForTest(MainComponent& c) { c.wav_.clearMeasClicked(); }
 };

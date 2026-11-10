@@ -19,14 +19,17 @@
 #include "measure/WavTransferJob.h"
 #include "trace/TraceLibrary.h"
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 class MainComponentWav final {
 public:
-    /// Height of everything `layout` places: four control rows and a two-row readout, with a
-    /// gap between each. MainComponentLayout.cpp adds it to the rail's scrolling rows.
-    static constexpr int kRowsHeight = 6 * az::ui::touchTarget + 4 * az::ui::gap;
+    /// Height of everything `layout` places: five control rows (LOAD / LOAD MEAS / CLEAR MEAS, the
+    /// file line, REF/MEAS, START/LENGTH, ANALYSE) and a two-row readout, with a gap between each.
+    /// MainComponentLayout.cpp adds it to the rail's scrolling rows.
+    static constexpr int kRowsHeight = 7 * az::ui::touchTarget + 5 * az::ui::gap;
 
     explicit MainComponentWav(rta::trace::TraceLibrary& library);
 
@@ -38,6 +41,14 @@ public:
     /// What the chooser's callback does. False (and a readout saying why) for a file that is not
     /// a readable WAV/AIFF; a mono file loads but refuses with the record's sentence.
     bool performLoad(const juce::File& file);
+    /// H12 T4 (record E9): `LOAD MEAS WAV` adds an optional SECOND file -- the measurement
+    /// recorded on another device. `performLoadMeas` is what its chooser's callback does: false
+    /// (and a readout) for an unreadable file or when no reference file is loaded yet; the SAME
+    /// file as the reference is the one-file path, so it clears the second file. `CLEAR MEAS`
+    /// returns to the one-file path exactly as before.
+    void loadMeasClicked();
+    bool performLoadMeas(const juce::File& file);
+    void clearMeasClicked();
     /// ANALYSE: starts the worker on the current file and controls; a press while one runs
     /// replaces it (newest wins).
     void analyseClicked();
@@ -52,18 +63,40 @@ public:
     [[nodiscard]] juce::String readoutForTest() const { return readout_.getText(); }
     [[nodiscard]] juce::String fileTextForTest() const { return fileLabel_.getText(); }
     [[nodiscard]] bool analyseEnabledForTest() const { return analyseButton_.isEnabled(); }
+    /// How many channels the MEAS combo offers (the second file's when one is loaded).
+    [[nodiscard]] int measChannelCountForTest() const { return measCombo_.getNumItems(); }
+    [[nodiscard]] bool hasMeasFileForTest() const { return measFile_ != juce::File(); }
 
 private:
     void say(const juce::String& text) { readout_.setText(text, juce::dontSendNotification); }
     void setControlsEnabled(bool enabled);
-    void finish(rta::measure::WavTransferOutcome& outcome);
+    void finish(rta::measure::WavJobOutcome& outcome);
+    /// Rebuilds the file line, the channel lists, the enabled state and the readout from
+    /// `file_`/`measFile_` (MainComponentWavPair.cpp, with the second file's half of LOAD).
+    void refreshFiles();
+    void analysePair();
+    /// The success sentence; `pair` null for the one-file path.
+    [[nodiscard]] juce::String successText(const rta::measure::WavTransferOutcome& out,
+                                           const rta::measure::WavPairOutcome* pair,
+                                           const std::string& name) const;
 
     rta::trace::TraceLibrary& library_;
     rta::measure::WavTransferJob job_;
     std::unique_ptr<juce::FileChooser> chooser_;
     juce::File file_;
+    juce::File measFile_;  ///< empty = the one-file path
+    // Header facts of each loaded file, taken at LOAD on the message thread.
+    int refChannels_ = 0;
+    int measChannels_ = 0;
+    juce::String refSummary_;
+    juce::String measSummary_;
+    std::optional<std::int64_t> refTimeReference_;
+    std::optional<std::int64_t> measTimeReference_;
+    double refRate_ = 0.0;
 
     juce::TextButton loadButton_{"LOAD WAV"};
+    juce::TextButton loadMeasButton_{"LOAD MEAS WAV"};
+    juce::TextButton clearMeasButton_{"CLEAR MEAS"};
     juce::Label fileLabel_;
     juce::Label refLegend_{{}, "REF"};
     juce::ComboBox refCombo_;

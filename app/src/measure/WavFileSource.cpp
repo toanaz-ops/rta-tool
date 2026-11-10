@@ -24,7 +24,14 @@ WavFileSource::WavFileSource(std::unique_ptr<juce::AudioFormatReader> reader)
     : reader_(std::move(reader)),
       channels_(static_cast<int>(reader_->numChannels)),
       sampleRate_(reader_->sampleRate),
-      length_(reader_->lengthInSamples) {}
+      length_(reader_->lengthInSamples) {
+    // `metadataValues[key]` would answer "" for a missing key, which parses as 0 -- a time
+    // reference of zero is a real value, so test for the key first.
+    const char* const key = juce::WavAudioFormat::bwavTimeReference;
+    if (reader_->metadataValues.containsKey(key)) {
+        timeReference_ = reader_->metadataValues[key].getLargeIntValue();
+    }
+}
 
 bool WavFileSource::read(int channel, std::int64_t startSample, std::span<float> out) const {
     if (channel < 0 || channel >= channels_ || startSample < 0 || out.empty() ||

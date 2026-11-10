@@ -6,7 +6,9 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace wavfile {
@@ -15,8 +17,12 @@ enum class Container { Wav, Aiff };
 enum class Sample { Pcm24, Pcm16, Float32 };
 
 /// `channels[c][n]`, equal lengths. PCM clips outside +-1, so a caller scales first.
+///
+/// `timeReference` (WAV only), when set, is written into a Broadcast WAV `bext` chunk as its time
+/// reference in samples. JUCE writes the chunk only for a non-zero value, so pass one.
 inline bool write(const juce::File& file, Container container, Sample sample, double sampleRate,
-                  const std::vector<std::vector<float>>& channels) {
+                  const std::vector<std::vector<float>>& channels,
+                  std::optional<std::int64_t> timeReference = std::nullopt) {
     if (channels.empty()) return false;
     file.deleteFile();
     auto stream = std::make_unique<juce::FileOutputStream>(file);
@@ -24,13 +30,16 @@ inline bool write(const juce::File& file, Container container, Sample sample, do
     std::unique_ptr<juce::OutputStream> base(stream.release());
 
     const int bits = sample == Sample::Pcm24 ? 24 : sample == Sample::Pcm16 ? 16 : 32;
-    const auto options =
+    auto options =
         juce::AudioFormatWriterOptions{}
             .withSampleFormat(sample == Sample::Float32 ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
                                                         : juce::AudioFormatWriterOptions::SampleFormat::integral)
             .withSampleRate(sampleRate)
             .withNumChannels(static_cast<int>(channels.size()))
             .withBitsPerSample(bits);
+    if (timeReference.has_value() && container == Container::Wav) {
+        options = options.withMetadata(juce::WavAudioFormat::bwavTimeReference, juce::String(*timeReference));
+    }
 
     std::unique_ptr<juce::AudioFormatWriter> writer;
     if (container == Container::Wav) {

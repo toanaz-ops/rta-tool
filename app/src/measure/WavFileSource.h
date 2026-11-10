@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace rta::measure {
@@ -34,6 +35,11 @@ public:
     [[nodiscard]] std::int64_t lengthSamples() const override { return length_; }
     [[nodiscard]] bool read(int channel, std::int64_t startSample, std::span<float> out) const override;
 
+    /// The Broadcast WAV `bext` time reference (samples since midnight of the recorder's clock):
+    /// H12 record E2's prior for the offset search. Absent for a WAV with no `bext` chunk and for
+    /// AIFF, which carries none. Header data: safe to read at LOAD on the message thread.
+    [[nodiscard]] std::optional<std::int64_t> timeReferenceSamples() const noexcept { return timeReference_; }
+
 private:
     explicit WavFileSource(std::unique_ptr<juce::AudioFormatReader> reader);
 
@@ -42,6 +48,7 @@ private:
     int channels_ = 0;
     double sampleRate_ = 0.0;
     std::int64_t length_ = 0;
+    std::optional<std::int64_t> timeReference_;
     mutable std::vector<float*> destinations_;
 };
 

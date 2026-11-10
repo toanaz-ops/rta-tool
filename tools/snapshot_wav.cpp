@@ -7,6 +7,7 @@
 #include "MainComponent.h"
 #include "MainComponentTestAccess.h"
 #include "WavFileWriter.h"
+#include "WavPairFixture.h"
 #include "WavTransferFixture.h"
 #include "trace/TraceGroups.h"
 
@@ -67,6 +68,56 @@ void renderWavSpecimen (const juce::File& outDir, int& failures)
     if (! renderComponent (component, outDir, fileName, 1280, 1100))
         ++failures;
     file.deleteFile();
+}
+
+void renderWavPairSpecimen (const juce::File& outDir, int& failures)
+{
+    constexpr const char* fileName = "main-wav-pair.png";
+    using Access = MainComponentTestAccess;
+
+    const auto pair = wavpair::makePair (8 * 48000, 11 * 48000, wavpair::linearClock (3.2 * wavfix::kFs, 80e-6), 11, true);
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory);
+    const auto refFile = tmp.getChildFile ("rta_snapshot_console.wav");
+    const auto measFile = tmp.getChildFile ("rta_snapshot_handheld.wav");
+    const std::int64_t refBext = 100000;
+    const bool written = wavfile::write (refFile, wavfile::Container::Wav, wavfile::Sample::Float32, wavfix::kFs,
+                                         pair.reference.channels, refBext)
+                         && wavfile::write (measFile, wavfile::Container::Wav, wavfile::Sample::Float32, wavfix::kFs,
+                                            pair.measurement.channels, refBext + static_cast<std::int64_t> (3.2 * wavfix::kFs));
+    if (! written)
+    {
+        std::printf ("FAILED: could not write the pair specimen WAVs -- %s\n", fileName);
+        ++failures;
+        refFile.deleteFile();
+        measFile.deleteFile();
+        return;
+    }
+
+    MainComponent component;
+    component.setSyntheticMode (true);
+    component.selectPaneView (rta::view::PaneSelectorButton::Transfer);
+    auto& wav = Access::wavForTest (component);
+    bool ok = Access::performLoadWavForTest (component, refFile)
+              && Access::performLoadMeasWavForTest (component, measFile);
+    if (ok)
+    {
+        wav.setControlsForTest (1, 1, 0.5, 6.5);
+        wav.analyseClicked();
+        ok = wav.waitForJobForTest (120000);
+    }
+    std::size_t stored = 0;
+    for (const auto& e : Access::libraryForTest (component).entries())
+        stored += e.group == rta::trace::kWavGroup ? 1 : 0;
+    if (! ok || stored != 1)
+    {
+        std::printf ("FAILED: the WAV pair analysis stored %zu traces (%s) -- %s\n", stored,
+                     wav.readoutForTest().toRawUTF8(), fileName);
+        ++failures;
+    }
+    else if (! renderComponent (component, outDir, fileName, 1280, 1100))
+        ++failures;
+    refFile.deleteFile();
+    measFile.deleteFile();
 }
 
 } // namespace rta::tools

@@ -3,6 +3,7 @@
 #include "MainComponentWav.h"
 
 #include "measure/WavFileSource.h"
+#include "MainComponentWavText.h"
 #include "trace/TraceGroups.h"
 
 #include <cmath>
@@ -13,27 +14,20 @@
 
 namespace {
 
+using namespace mainwav;
+
 constexpr int kRowHeight = az::ui::touchTarget;
-
-juce::String utf8(const std::string& text) { return juce::String::fromUTF8(text.c_str()); }
-
-std::string fixed(double value, int decimals) {
-    char buffer[64];
-    std::snprintf(buffer, sizeof buffer, "%.*f", decimals, value);
-    return buffer;
-}
-
-void fillChannels(juce::ComboBox& combo, int count, int selected1Based) {
-    combo.clear(juce::dontSendNotification);
-    for (int i = 1; i <= count; ++i) combo.addItem("ch" + juce::String(i), i);
-    combo.setSelectedId(selected1Based, juce::dontSendNotification);
-}
 
 }  // namespace
 
 MainComponentWav::MainComponentWav(rta::trace::TraceLibrary& library) : library_(library) {
     loadButton_.getProperties().set(az::ui::hintProperty, "a WAV/AIFF recording of a reference and a measurement");
     loadButton_.onClick = [this] { loadClicked(); };
+    loadMeasButton_.getProperties().set(az::ui::hintProperty,
+                                        "an optional second recording that holds the measurement (another device)");
+    loadMeasButton_.onClick = [this] { loadMeasClicked(); };
+    clearMeasButton_.getProperties().set(az::ui::hintProperty, "back to one file: reference and measurement in LOAD WAV");
+    clearMeasButton_.onClick = [this] { clearMeasClicked(); };
     analyseButton_.getProperties().set(az::ui::hintProperty,
                                        "transfer function of the chosen range, stored as a WAV trace");
     analyseButton_.onClick = [this] { analyseClicked(); };
@@ -53,7 +47,7 @@ MainComponentWav::MainComponentWav(rta::trace::TraceLibrary& library) : library_
 
 void MainComponentWav::attachTo(juce::Component& parent) {
     for (juce::Component* c : std::initializer_list<juce::Component*>{
-             &loadButton_, &fileLabel_, &refLegend_, &refCombo_, &measLegend_, &measCombo_, &startLegend_,
+             &loadButton_, &loadMeasButton_, &clearMeasButton_, &fileLabel_, &refLegend_, &refCombo_, &measLegend_, &measCombo_, &startLegend_,
              &startEditor_, &lengthLegend_, &lengthEditor_, &analyseButton_, &readout_}) {
         parent.addAndMakeVisible(*c);
     }
@@ -61,12 +55,18 @@ void MainComponentWav::attachTo(juce::Component& parent) {
 
 void MainComponentWav::layout(juce::Rectangle<int> area) {
     const int gap = az::ui::gap;
-    // Row 1: LOAD WAV and the file's own line, shaped like the STORE row above.
+    // Row 1: LOAD WAV / LOAD MEAS WAV / CLEAR MEAS. Row 2: the file line(s).
     auto row = area.removeFromTop(kRowHeight);
     const int buttonWidth = (row.getWidth() - gap) / 4;
-    loadButton_.setBounds(row.removeFromLeft(buttonWidth));
+    // LOAD MEAS WAV is the longest label, so it gets the widest third.
+    const int usable = row.getWidth() - 2 * gap;
+    loadButton_.setBounds(row.removeFromLeft(usable * 28 / 100));
     row.removeFromLeft(gap);
-    fileLabel_.setBounds(row);
+    loadMeasButton_.setBounds(row.removeFromLeft(usable * 42 / 100));
+    row.removeFromLeft(gap);
+    clearMeasButton_.setBounds(row);
+    area.removeFromTop(gap);
+    fileLabel_.setBounds(area.removeFromTop(kRowHeight));
     area.removeFromTop(gap);
 
     // Rows 2 and 3: a legend, a field, a legend, a field.
@@ -116,6 +116,7 @@ bool MainComponentWav::performLoad(const juce::File& file) {
     const auto probe = rta::measure::WavFileSource::open(file, &why);
     if (probe == nullptr) {
         file_ = juce::File();
+        refChannels_ = 0;
         setControlsEnabled(false);
         fileLabel_.setText("not loaded", juce::dontSendNotification);
         say("wav: " + file.getFileName() +
@@ -126,30 +127,25 @@ bool MainComponentWav::performLoad(const juce::File& file) {
     }
     file_ = file;
     const double fs = probe->sampleRate();
-    const int channels = probe->numChannels();
     const double seconds = fs > 0.0 ? static_cast<double>(probe->lengthSamples()) / fs : 0.0;
-    fileLabel_.setText(file.getFileName() + " - " + juce::String(channels) + " ch, " + utf8(fixed(fs, 0)) +
-                           " Hz, " + utf8(fixed(seconds, 1)) + " s",
-                       juce::dontSendNotification);
-    fillChannels(refCombo_, channels, 1);
-    fillChannels(measCombo_, channels, channels >= 2 ? 2 : 1);
+    refChannels_ = probe->numChannels();
+    refRate_ = fs;
+    refTimeReference_ = probe->timeReferenceSamples();
+    refSummary_ = file.getFileName() + " - " + juce::String(refChannels_) + " ch, " + utf8(fixed(fs, 0)) +
+                  " Hz, " + utf8(fixed(seconds, 1)) + " s";
     startEditor_.setText("0", false);
     // Floored to 10 ms so the prefilled "whole file" can never round past the end.
     lengthEditor_.setText(utf8(fixed(std::floor(seconds * 100.0) / 100.0, 2)), false);
-    setControlsEnabled(channels >= 2);
-    if (channels < 2) {
-        rta::measure::WavTransferOutcome refusal;
-        refusal.refusal = rta::measure::WavTransferRefusal::NotEnoughChannels;
-        refusal.fileChannels = channels;
-        say(utf8(rta::measure::wavTransferRefusalText(refusal)));
-    } else {
-        say("wav: " + juce::String(channels) + " channels, pick REF and MEAS, then ANALYSE");
-    }
+    refreshFiles();
     return true;
 }
 
 void MainComponentWav::analyseClicked() {
     if (file_ == juce::File() || !analyseButton_.isEnabled()) return;
+    if (measFile_ != juce::File()) {
+        analysePair();
+        return;
+    }
     rta::measure::WavTransferRequest request;
     request.referenceChannel = refCombo_.getSelectedId() - 1;
     request.measurementChannel = measCombo_.getSelectedId() - 1;
@@ -165,13 +161,15 @@ void MainComponentWav::poll() {
     if (auto outcome = job_.poll()) finish(*outcome);
 }
 
-void MainComponentWav::finish(rta::measure::WavTransferOutcome& out) {
+void MainComponentWav::finish(rta::measure::WavJobOutcome& out) {
     if (!out.ok()) {
-        say(utf8(rta::measure::wavTransferRefusalText(out)));
+        say(utf8(out.pairMode ? rta::measure::wavPairRefusalText(out.pair)
+                              : rta::measure::wavTransferRefusalText(out.single)));
         return;
     }
-    const std::string name = out.trace->meta().deviceName;
-    const auto id = library_.add(std::move(*out.trace), name, rta::trace::kWavGroup);
+    auto& transfer = out.transfer();
+    const std::string name = transfer.trace->meta().deviceName;
+    const auto id = library_.add(std::move(*transfer.trace), name, rta::trace::kWavGroup);
     if (id.empty()) {
         say("not stored -- duplicate capture id");
         return;
@@ -179,10 +177,7 @@ void MainComponentWav::finish(rta::measure::WavTransferOutcome& out) {
     // `add` numbers shades per group, so the first WAV trace would share shade 0 with the first
     // SWEEP/STORE trace on TRANSFER: take the lowest index unused across every entry instead.
     (void)library_.assignSharedShade(id);
-    say("delay " + juce::String(out.delaySamples) + " samples (" +
-        utf8(rta::measure::wavTransferDelayMsText(out.delaySamples, out.sampleRate)) + " ms), " +
-        rta::measure::wavTransferTrustWord(out.trust) + " trust, " + utf8(fixed(out.effectiveAverages, 1)) +
-        " averages -> stored " + utf8(name));
+    say(successText(transfer, out.pairMode ? &out.pair : nullptr, name));
 }
 
 void MainComponentWav::setControlsForTest(int ref, int meas, double start, double length) {

@@ -95,6 +95,8 @@ add_executable(rtatool_main_component_tests
     test_ir_pane_view.cpp
     # H11 W3: LOAD WAV / ANALYSE from real WAV and AIFF files, and the L2 shade case lives in test_ir_pane_view.cpp.
     test_wav_transfer_file.cpp
+    # H12 T4: LOAD MEAS WAV / CLEAR MEAS and the two-file ANALYSE, real float32 files incl. bext.
+    test_wav_pair_file.cpp
     # test_main_component_export.cpp: D7 (docs/HUMAN-QA-QUEUE.md, PR #43 r4
     # item 14) -- exportReportClicked()'s catch branch had no test at all.
     test_main_component_export.cpp

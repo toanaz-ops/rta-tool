@@ -197,6 +197,7 @@ set(RTATOOL_SOURCES
     src/measure/WavFileSource.cpp
     src/measure/WavTransferJob.cpp
     src/MainComponentWav.cpp
+    src/MainComponentWavPair.cpp
     # --- end H11 G22 ---
     # TraceStroke.cpp is the stroking half StoredTraceLayer.cpp calls
     # strokeMagnitudeExtents()/strokePhaseColumns() on (task 7's split).

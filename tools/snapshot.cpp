@@ -315,6 +315,7 @@ int main (int argc, char** argv)
     rta::tools::renderRt60Specimen (outDir, failures);  // main-live-rt60.png, RT60-UI wave A
     rta::tools::renderIrSpecimen (outDir, failures);  // ir-view.png, H9 / L4c task A3
     rta::tools::renderWavSpecimen (outDir, failures);  // main-wav.png, H11 W3
+    rta::tools::renderWavPairSpecimen (outDir, failures);  // main-wav-pair.png, H12 T4
     rta::tools::renderGeneratorSpecimen (outDir, failures);  // main-live-gen.png, H7 wave B1
     rta::tools::renderOwnSpecimen (outDir, failures);  // main-live-own.png, H7 wave B2
 

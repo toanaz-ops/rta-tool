@@ -15,4 +15,10 @@ namespace rta::tools
 // analysis does not finish with a trace.
 void renderWavSpecimen (const juce::File& outDir, int& failures);
 
+// H12 T4: `main-wav-pair.png`. The rail after LOAD WAV + LOAD MEAS WAV on two one-channel float32
+// files (the measurement 80 ppm fast and 3.2 s late, `bext` references on both) and ANALYSE:
+// both file names on the file line, the readout with the clock and offset, and the stored pair
+// trace in the TRANSFER pane. Same failure contract as renderWavSpecimen.
+void renderWavPairSpecimen (const juce::File& outDir, int& failures);
+
 } // namespace rta::tools
