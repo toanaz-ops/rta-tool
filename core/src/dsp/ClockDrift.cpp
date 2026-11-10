@@ -33,33 +33,70 @@ double median(std::vector<double> v) {
     return 0.5 * (lower + upper);
 }
 
+struct Point {
+    double f, phase, weight;
+};
+
+/// Weighted least squares phi = a f + c over `points` (phases already unwrapped),
+/// centred on the weighted means so the normal equations stay well conditioned
+/// (f spans ~1e4 Hz, a ~1e-4). `slope` is in rad / Hz.
+bool fitLine(const std::vector<Point>& points, double& slope, double& intercept) {
+    double sw = 0.0, sf = 0.0, sp = 0.0;
+    for (const auto& p : points) { sw += p.weight; sf += p.weight * p.f; sp += p.weight * p.phase; }
+    const double fMean = sf / sw, pMean = sp / sw;
+    double sxx = 0.0, sxy = 0.0;
+    for (const auto& p : points) {
+        sxx += p.weight * (p.f - fMean) * (p.f - fMean);
+        sxy += p.weight * (p.f - fMean) * (p.phase - pMean);
+    }
+    if (!(sxx > 0.0)) return false;
+    slope = sxy / sxx;
+    intercept = pMean - slope * fMean;
+    return true;
+}
+
+double maxHzOf(const PhaseSlopeOptions& options) {
+    const double maxHz = options.maxHz > 0.0 ? options.maxHz : options.sampleRate / 4.0;
+    if (maxHz < options.minHz) throw std::invalid_argument("phase slope: maxHz below minHz");
+    return maxHz;
+}
+
+/// (1 - gamma^2) / gamma^2: the phase variance of one bin up to the common factor
+/// 1 / (2 Neff). The 1e-6 floor on 1 - gamma^2 keeps a noiseless bin finite (it
+/// then weighs 1e6 times a gamma^2 = 0.5 bin, not infinity).
+double relativeVariance(double gamma2) {
+    return std::max(1.0 - gamma2, kOneMinusGammaFloor) / gamma2;
+}
+
+/// Adds 2 pi multiples to `phase` until it is within pi of `previous`, and
+/// carries the accumulated multiple in `offset`.
+double unwrapNear(double phase, double previous, double& offset) {
+    while (phase - previous > kPi) { phase -= 2.0 * kPi; offset -= 2.0 * kPi; }
+    while (phase - previous < -kPi) { phase += 2.0 * kPi; offset += 2.0 * kPi; }
+    return phase;
+}
+
 }  // namespace
 
-std::optional<FractionalDelay> fractionalDelayByPhaseSlope(std::span<const float> reference,
-                                                           std::span<const float> measurement,
-                                                           std::ptrdiff_t integerDelay,
-                                                           const PhaseSlopeOptions& options) {
+std::optional<WindowSpectrum> windowSpectrum(std::span<const float> reference,
+                                             std::span<const float> measurement,
+                                             std::ptrdiff_t integerDelay, double sampleRate) {
     if (reference.size() != measurement.size()) {
-        throw std::invalid_argument("fractionalDelayByPhaseSlope: spans must be the same length");
+        throw std::invalid_argument("windowSpectrum: spans must be the same length");
     }
-    if (!(options.sampleRate > 0.0)) {
-        throw std::invalid_argument("fractionalDelayByPhaseSlope: sampleRate must be positive");
+    if (!(sampleRate > 0.0)) {
+        throw std::invalid_argument("windowSpectrum: sampleRate must be positive");
     }
-    const double maxHz = options.maxHz > 0.0 ? options.maxHz : options.sampleRate / 4.0;
-    if (maxHz < options.minHz) {
-        throw std::invalid_argument("fractionalDelayByPhaseSlope: maxHz below minHz");
-    }
-
     DualFftEngine::Config config;
     config.fftSize = kFftSize;
     config.hopSize = kHopSize;
-    config.sampleRate = options.sampleRate;
+    config.sampleRate = sampleRate;
     config.window = WindowType::Hann;
     config.averaging = TransferAveraging::Cumulative;
     // Range-check before narrowing; the engine itself rejects |delay| > 1<<20.
     if (integerDelay < std::numeric_limits<int>::min() ||
         integerDelay > std::numeric_limits<int>::max()) {
-        throw std::invalid_argument("fractionalDelayByPhaseSlope: integerDelay out of range");
+        throw std::invalid_argument("windowSpectrum: integerDelay out of range");
     }
     config.referenceDelaySamples = static_cast<int>(integerDelay);
     DualFftEngine engine(config);
@@ -70,55 +107,77 @@ std::optional<FractionalDelay> fractionalDelayByPhaseSlope(std::span<const float
     // fit with.
     const TransferSnapshot snapshot = makeSnapshot(engine, Estimator::H1);
     if (!snapshot.coherence) return std::nullopt;
+    WindowSpectrum out;
+    out.sampleRate = sampleRate;
+    out.binHz = snapshot.binWidthHz;
+    out.effectiveAverages = snapshot.effectiveAverages;
+    out.h = snapshot.h;
+    out.gammaSquared = *snapshot.coherence;
+    return out;
+}
 
-    struct Point {
-        double f, phase, weight;
-    };
+std::optional<FractionalDelay> fractionalDelayOf(const WindowSpectrum& window, std::ptrdiff_t integerDelay,
+                                                 const PhaseSlopeOptions& options) {
+    const double maxHz = maxHzOf(options);
     std::vector<Point> points;
     double previous = 0.0;
     double offset = 0.0;  // accumulated multiple of 2 pi
     // Bins 0 and N/2 are real for a real signal: their H1 phase is 0 or pi
     // whatever the delay, so they carry no delay information and, at the very
     // end of the frequency axis, would carry the most leverage on the slope.
-    for (std::size_t k = 1; k + 1 < snapshot.h.size(); ++k) {
-        const double f = engine.binFrequency(k);
+    for (std::size_t k = 1; k + 1 < window.h.size(); ++k) {
+        const double f = static_cast<double>(k) * window.binHz;
         if (f < options.minHz || f > maxHz) continue;
-        const double gamma2 = static_cast<double>((*snapshot.coherence)[k]);
+        const double gamma2 = static_cast<double>(window.gammaSquared[k]);
         if (!(gamma2 >= options.minCoherence)) continue;
         // Unwrap along frequency over the SELECTED bins only: a bin the
         // coherence gate dropped is noise and must not steer the branch.
-        double phase = std::arg(snapshot.h[k]) + offset;
-        if (!points.empty()) {
-            while (phase - previous > kPi) { phase -= 2.0 * kPi; offset -= 2.0 * kPi; }
-            while (phase - previous < -kPi) { phase += 2.0 * kPi; offset += 2.0 * kPi; }
-        }
+        double phase = std::arg(window.h[k]) + offset;
+        if (!points.empty()) phase = unwrapNear(phase, previous, offset);
         previous = phase;
-        const double oneMinus = std::max(1.0 - gamma2, kOneMinusGammaFloor);
-        points.push_back({f, phase, gamma2 / oneMinus});
+        points.push_back({f, phase, 1.0 / relativeVariance(gamma2)});
     }
     if (points.size() < options.minBins || points.size() < 2) return std::nullopt;
-
-    // Weighted least squares phi = a f + c, centred on the weighted means so
-    // the normal equations stay well conditioned (f spans ~1e4 Hz, a ~1e-4).
-    double sw = 0.0, sf = 0.0, sp = 0.0;
-    for (const auto& p : points) { sw += p.weight; sf += p.weight * p.f; sp += p.weight * p.phase; }
-    const double fMean = sf / sw, pMean = sp / sw;
-    double sxx = 0.0, sxy = 0.0;
-    for (const auto& p : points) {
-        sxx += p.weight * (p.f - fMean) * (p.f - fMean);
-        sxy += p.weight * (p.f - fMean) * (p.phase - pMean);
-    }
-    if (!(sxx > 0.0)) return std::nullopt;
-    const double slope = sxy / sxx;  // rad / Hz
-    const double intercept = pMean - slope * fMean;
+    double slope = 0.0, intercept = 0.0;
+    if (!fitLine(points, slope, intercept)) return std::nullopt;
 
     // Engine convention: H1 = Sxy / Sxx with Sxy = conj(X) Y, so a measurement
     // that lags by tau seconds has phase -2 pi f tau; tau = -slope / (2 pi).
-    const double residualSamples = -slope / (2.0 * kPi) * options.sampleRate;
+    const double residualSamples = -slope / (2.0 * kPi) * window.sampleRate;
     if (std::fabs(residualSamples) > kMaxResidualSamples) return std::nullopt;
+    return FractionalDelay{static_cast<double>(integerDelay) + residualSamples, intercept, points.size()};
+}
 
-    return FractionalDelay{static_cast<double>(integerDelay) + residualSamples, intercept,
-                           points.size()};
+std::optional<double> relativeFractionalDelay(const WindowSpectrum& window, const WindowSpectrum& anchor,
+                                              const PhaseSlopeOptions& options) {
+    if (window.h.size() != anchor.h.size() || !(window.binHz == anchor.binHz)) {
+        throw std::invalid_argument("relativeFractionalDelay: the two spectra are on different grids");
+    }
+    const double maxHz = maxHzOf(options);
+    std::vector<Point> points;
+    double previous = 0.0;
+    double offset = 0.0;
+    for (std::size_t k = 1; k + 1 < window.h.size(); ++k) {
+        const double f = static_cast<double>(k) * window.binHz;
+        if (f < options.minHz || f > maxHz) continue;
+        const double gw = static_cast<double>(window.gammaSquared[k]);
+        const double ga = static_cast<double>(anchor.gammaSquared[k]);
+        if (!(gw >= options.minCoherence) || !(ga >= options.minCoherence)) continue;
+        // arg(Hw conj(Ha)): the system's phase is in BOTH and cancels exactly;
+        // what is left is -2 pi f (tau_w - tau_a) / fs. H1 = Sxy / Sxx with Sxx
+        // real and positive, so arg(H1) = arg(Sxy).
+        double phase = std::arg(window.h[k] * std::conj(anchor.h[k])) + offset;
+        if (!points.empty()) phase = unwrapNear(phase, previous, offset);
+        previous = phase;
+        // Independent estimates: the variances of the two phases ADD.
+        points.push_back({f, phase, 1.0 / (relativeVariance(gw) + relativeVariance(ga))});
+    }
+    if (points.size() < options.minBins || points.size() < 2) return std::nullopt;
+    double slope = 0.0, intercept = 0.0;
+    if (!fitLine(points, slope, intercept)) return std::nullopt;
+    const double relative = -slope / (2.0 * kPi) * options.sampleRate;
+    if (std::fabs(relative) > kMaxResidualSamples) return std::nullopt;
+    return relative;
 }
 
 std::optional<DriftFit> fitDriftTheilSen(std::span<const DelayObservation> points) {

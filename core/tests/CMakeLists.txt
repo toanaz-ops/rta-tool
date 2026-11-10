@@ -12,6 +12,7 @@ add_executable(rta_core_tests
     test_average_count.cpp
     test_kaiser_sinc_interpolator.cpp
     test_clock_drift.cpp
+    test_clock_drift_relative.cpp
     test_theil_sen.cpp
     test_delay_finder.cpp
     test_delay_policy.cpp

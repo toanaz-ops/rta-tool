@@ -189,4 +189,8 @@ set(RTA_BASE_TEST_SOURCES
     test_wav_pair_transfer.cpp
     test_wav_pair_transfer_refusals.cpp
     test_wav_pair_transfer_limits.cpp
+    # H12 fix: LR4-crossover pairs (H2), the range limits (M1, M2).
+    test_wav_pair_lr4.cpp
+    test_wav_pair_transfer_range.cpp
+    test_wav_pair_transfer_gates.cpp
 )

@@ -3,7 +3,6 @@
 
 #include "measure/WavPairWindows.h"
 #include "rta/dsp/ClockDrift.h"
-#include "rta/dsp/DelayPolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +12,7 @@ namespace rta::measure {
 
 namespace {
 
+using detail::CoarseLook;
 using detail::WindowPass;
 using detail::WindowStatus;
 using detail::WindowTally;
@@ -20,61 +20,20 @@ using detail::WindowTally;
 constexpr std::int64_t kCoarseWindow = std::int64_t{1} << 17;  // E2
 constexpr std::int64_t kPass1Window = std::int64_t{1} << 15;   // E3
 constexpr std::int64_t kPass2Window = std::int64_t{1} << 16;   // E6
+// Four pass-1 windows (2^17 / 2^15) spread over at least 3/4 of the range: the
+// least that gives a baseline, i.e. a ppm, worth fitting. Below it the drift
+// line stands on a few hundred samples of baseline (3 windows on a ~33600-sample
+// range spread over 832 samples).
+constexpr std::int64_t kMinRange = std::int64_t{1} << 17;
 constexpr int kMinWindows = 3;
 constexpr int kMaxWindows = 32;
 constexpr std::int64_t kLagMargin = 64;       // E3: +-(round(maxPpm*1e-6*length) + 64)
 constexpr std::int64_t kPass2LagBound = 64;   // after pass 1 the pair is within a few samples
+constexpr std::int64_t kKernelTaps = 32;      // the resampler reads +-32 taps
 constexpr double kSharedClockSamples = 0.05;  // E7
 constexpr double kMaxResidualRms = 0.1;       // E6
+constexpr double kMaxUncertainty = 0.1;       // samples of total drift error over the range
 constexpr double kMinCoverage = 0.6;  // accepted windows must span 60 % of the first-to-last-centre span
-
-struct CoarseLook {
-    bool accepted = false;
-    std::int64_t offset = 0;
-    double trust = 0.0;
-    double floor = 0.0;
-};
-
-/// E2 for ONE reference window at `refStart`: the window is zero-padded to the
-/// length of the measurement span so `suggestDelay` sees equal lengths, and the
-/// lag window is the requested offset interval translated into that span's
-/// coordinates and clipped to where the whole window still lies inside it.
-/// The span itself is clipped to the measurement file, never failed.
-CoarseLook coarseLook(const SampleBlockSource& reference, int referenceChannel,
-                      const SampleBlockSource& measurement, int measurementChannel,
-                      std::int64_t refStart, std::int64_t width, std::int64_t prior,
-                      std::int64_t halfWidth, bool& readFailed) {
-    CoarseLook look;
-    const std::int64_t measLength = measurement.lengthSamples();
-    const std::int64_t spanStart = std::max<std::int64_t>(refStart + prior - halfWidth, 0);
-    const std::int64_t spanEnd = std::min<std::int64_t>(refStart + prior + halfWidth + width, measLength);
-    if (spanEnd - spanStart < width) return look;
-    std::vector<float> span(static_cast<std::size_t>(spanEnd - spanStart));
-    std::vector<float> padded(span.size(), 0.0f);
-    const std::span<float> refPart(padded.data(), static_cast<std::size_t>(width));
-    if (!measurement.read(measurementChannel, spanStart, span) ||
-        !reference.read(referenceChannel, refStart, refPart)) {
-        readFailed = true;
-        return look;
-    }
-    rta::dsp::PhatOptions phat;
-    phat.sampleRate = reference.sampleRate();
-    const detail::DriftBand band = detail::driftBand(phat.sampleRate);
-    phat.minHz = band.minHz;
-    phat.maxHz = band.maxHz;
-    rta::dsp::DelayPolicy policy;
-    const std::int64_t shift = spanStart - refStart;  // offset d <-> padded lag = d - shift
-    policy.minLag = static_cast<std::ptrdiff_t>(std::max<std::int64_t>(prior - halfWidth - shift, 0));
-    policy.maxLag = static_cast<std::ptrdiff_t>(
-        std::min<std::int64_t>(prior + halfWidth - shift, static_cast<std::int64_t>(span.size()) - width));
-    if (policy.minLag > policy.maxLag) return look;
-    const auto suggestion = rta::dsp::suggestDelay(padded, span, phat, policy);
-    look.trust = suggestion.trust;
-    look.floor = policy.acceptMultiple * suggestion.nullFloor;
-    look.accepted = suggestion.verdict == rta::dsp::DelayVerdict::Accepted;
-    look.offset = static_cast<std::int64_t>(suggestion.best.delaySamples) + shift;
-    return look;
-}
 
 ClockResult refuse(ClockRefusal why) {
     ClockResult r;
@@ -112,6 +71,20 @@ double coverageOf(const std::vector<rta::dsp::DelayObservation>& points, std::in
     return (hi - lo) / static_cast<double>(rangeLength - width);
 }
 
+/// The pass-1 lag search runs within +-lagBound of the coarse offset; a window of
+/// 2^15 samples only survives a delay that moves inside it if that is a small
+/// part of it. Past a quarter window the search window cannot be trusted.
+bool rangeTooLong(std::int64_t rangeLength, double maxPpm) {
+    return maxPpm * 1e-6 * static_cast<double>(rangeLength) > static_cast<double>(kPass1Window) / 4.0;
+}
+
+ClockResult tooLong(double maxPpm, double fs) {
+    ClockResult r = refuse(ClockRefusal::RangeTooLong);
+    r.maxPpm = maxPpm;
+    r.maxRangeMinutes = (static_cast<double>(kPass1Window) / 4.0 / (maxPpm * 1e-6)) / fs / 60.0;
+    return r;
+}
+
 }  // namespace
 
 ClockResult estimateClockMapping(const SampleBlockSource& reference, int referenceChannel,
@@ -119,14 +92,19 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
                                  std::int64_t rangeStart, std::int64_t rangeLength,
                                  const ClockSearchOptions& options, const std::atomic<bool>& cancel) {
     const double fs = reference.sampleRate();
+    // LENGTH 0: to the end of the overlap, which is only known once the offset is.
+    const bool toEnd = rangeLength == 0;
+    if (toEnd) rangeLength = reference.lengthSamples() - rangeStart;
     if (rangeStart < 0 || rangeLength <= 0 || rangeStart + rangeLength > reference.lengthSamples()) {
         return refuse(ClockRefusal::ReadFailed);
     }
-    if (rangeLength < kPass1Window) {
+    const auto tooShort = [&] {
         ClockResult r = refuse(ClockRefusal::RangeTooShort);
-        r.minRangeSeconds = static_cast<double>(kPass1Window) / fs;
+        r.minRangeSeconds = static_cast<double>(kMinRange) / fs;
         return r;
-    }
+    };
+    if (rangeLength < kMinRange) return tooShort();
+    if (!toEnd && rangeTooLong(rangeLength, options.maxPpm)) return tooLong(options.maxPpm, fs);
     const std::int64_t halfWidth = std::llround(options.coarseHalfWidthSeconds * fs);
 
     // --- E2 coarse offset ----------------------------------------------------
@@ -137,23 +115,65 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
     // a middle window answers the same question.
     const std::int64_t coarseWidth = std::min(kCoarseWindow, rangeLength);
     bool readFailed = false;
-    CoarseLook coarse = coarseLook(reference, referenceChannel, measurement, measurementChannel, rangeStart,
-                                   coarseWidth, options.priorOffsetSamples, halfWidth, readFailed);
+    CoarseLook coarse = detail::coarseLook(reference, referenceChannel, measurement, measurementChannel,
+                                           rangeStart, coarseWidth, options.priorOffsetSamples, halfWidth,
+                                           readFailed);
     if (!readFailed && !coarse.accepted && !cancel.load()) {
         const std::int64_t middle = rangeStart + (rangeLength - coarseWidth) / 2;
-        const CoarseLook second = coarseLook(reference, referenceChannel, measurement, measurementChannel,
-                                             middle, coarseWidth, options.priorOffsetSamples, halfWidth,
-                                             readFailed);
-        if (second.accepted || second.trust > coarse.trust) coarse = second;
+        const CoarseLook second = detail::coarseLook(reference, referenceChannel, measurement,
+                                                     measurementChannel, middle, coarseWidth,
+                                                     options.priorOffsetSamples, halfWidth, readFailed);
+        const bool better = second.accepted ||
+                            (second.measured && (!coarse.measured || second.trust > coarse.trust)) ||
+                            (!second.measured && !coarse.measured && second.spanSamples > coarse.spanSamples);
+        if (better) coarse = second;
     }
     if (readFailed) return refuse(ClockRefusal::ReadFailed);
     if (cancel.load()) return refuse(ClockRefusal::Cancelled);
+    if (!coarse.accepted && !coarse.measured) {
+        // Nothing was correlated: say what was missing, not "trust 0.00 of 0.00".
+        ClockResult r = refuse(ClockRefusal::CoarseSpanTooShort);
+        r.coarseSpanSeconds = static_cast<double>(coarse.spanSamples) / fs;
+        r.coarseNeededSeconds = static_cast<double>(coarseWidth) / fs;
+        r.priorSeconds = static_cast<double>(options.priorOffsetSamples) / fs;
+        r.measurementSeconds = static_cast<double>(measurement.lengthSamples()) / fs;
+        r.halfWidthSeconds = options.coarseHalfWidthSeconds;
+        return r;
+    }
     if (!coarse.accepted) {
         ClockResult r = refuse(ClockRefusal::NoCoarseAlignment);
         r.bestTrust = coarse.trust;
         r.trustFloor = coarse.floor;
         r.halfWidthSeconds = options.coarseHalfWidthSeconds;
         return r;
+    }
+
+    // --- the range against the overlap, BEFORE pass 1 (M2) -------------------
+    // Reference sample n sits near n + offset on the measurement, give or take the
+    // ppm margin and the resampler's taps. A range that runs past the measurement's
+    // end must be named for what it is: left to pass 1 its windows are skipped and
+    // the refusal reads "the delay may bend".
+    const auto overlapFor = [&](std::int64_t length) {
+        const std::int64_t margin =
+            static_cast<std::int64_t>(std::ceil(options.maxPpm * 1e-6 * static_cast<double>(length))) + kKernelTaps;
+        struct Overlap { std::int64_t first, last; } o;
+        o.first = std::max<std::int64_t>(0, margin - coarse.offset);
+        o.last = std::min(reference.lengthSamples() - 1, measurement.lengthSamples() - 1 - coarse.offset - margin);
+        return o;
+    };
+    const auto outside = [&](std::int64_t first, std::int64_t last) {
+        ClockResult r = refuse(ClockRefusal::RangeOutsideOverlap);
+        r.overlapFirst = first;
+        r.overlapLast = last;
+        return r;
+    };
+    {
+        const auto o = overlapFor(rangeLength);
+        if (rangeStart < o.first) return outside(o.first, o.last);
+        if (toEnd) rangeLength = std::min(rangeLength, o.last - rangeStart + 1);
+        if (rangeStart + rangeLength - 1 > o.last) return outside(o.first, o.last);
+        if (rangeLength < kMinRange) return toEnd ? outside(o.first, o.last) : tooShort();
+        if (toEnd && rangeTooLong(rangeLength, options.maxPpm)) return tooLong(options.maxPpm, fs);
     }
 
     // --- E3 pass 1 -----------------------------------------------------------
@@ -191,6 +211,7 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
     }
     ClockEstimate estimate;
     estimate.windowsUsed = tally1.accepted;
+    estimate.rangeLength = rangeLength;
     const auto rangeStartD = static_cast<double>(rangeStart);
     // E7. The slope alone can wave a bend through (a Theil-Sen slope is a median: flat
     // for 3/4 of the range then drifting reads ~0), so a shared clock is not
@@ -220,10 +241,7 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
     // it: windows that fall outside are skipped, and skipping them would turn a
     // range-outside-the-overlap refusal into a thin-coverage one.
     if (valid.empty() || rangeStart < valid.first || rangeStart + rangeLength - 1 > valid.last) {
-        ClockResult r = refuse(ClockRefusal::RangeOutsideOverlap);
-        r.overlapFirst = valid.first;
-        r.overlapLast = valid.last;
-        return r;
+        return outside(valid.first, valid.last);
     }
 
     WindowPass pass2;
@@ -253,7 +271,30 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
         return r;
     }
 
-    if (shared) {
+    // A drift the windows scatter too much to pin down: refused before it is applied. The scatter that
+    // counts is PASS 2's. The final ratio is pass 1's slope plus the slope pass 2 measures on the
+    // corrected pair, so pass 1's own error is removed by pass 2; pass 1's residual also carries the
+    // smear of a window drifting inside itself (0.2 sample rms at 380 ppm, which pass 2 then removes:
+    // the final ppm is exact to 0.02), so gating on it would refuse the pairs the ceiling admits.
+    {
+        double lo = residuals.front().positionSamples, hi = lo;
+        for (const auto& p : residuals) {
+            lo = std::min(lo, p.positionSamples);
+            hi = std::max(hi, p.positionSamples);
+        }
+        const double u = detail::predictedDriftError(fit2->residualRms, tally2.accepted, hi - lo, rangeLength);
+        if (u > kMaxUncertainty) {
+            ClockResult r = refuse(ClockRefusal::ClockUncertain);
+            r.uncertaintySamples = u;
+            r.uncertaintyLimit = kMaxUncertainty;
+            return r;
+        }
+        estimate.uncertaintySamples = u;
+    }
+
+    // E7 needs pass 2 to agree: a slope that adds up to more than the shared-clock
+    // threshold over the range means the clock was NOT shared after all.
+    if (shared && std::abs(fit2->slope) * static_cast<double>(rangeLength) <= kSharedClockSamples) {
         // E7: only the integer offset, the full-band residual rounded into it.
         const double delay = sharedDelay + std::round(fit2->intercept);
         estimate.sharedClock = true;
@@ -267,12 +308,13 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
     // The corrected pair's delay is d2(x) = b2 + eps2 x: reference sample n pairs
     // with corrected sample n + d2, which IS measurement position t1(n + d2):
     //   t(n) = t1(rangeStart + x + d2(x))
-    //        = (rangeStart + b) + (x + b2 + eps2 x)(1 + eps)
-    //        = (rangeStart + b) + b2 (1 + eps) + x (1 + eps)(1 + eps2).
+    //        = first.offset + (rangeStart + x + b2 + eps2 x) first.ratio
+    // -- for a drifting pair first = (rangeStart + b) + x (1 + eps), so
+    //   t(n) = (rangeStart + b) + b2 (1 + eps) + x (1 + eps)(1 + eps2).
     ClockMapping composed;
     composed.integerOnly = false;
-    composed.ratio = (1.0 + eps) * (1.0 + fit2->slope);
-    const double atRangeStart = (rangeStartD + fit1->intercept) + fit2->intercept * (1.0 + eps);
+    composed.ratio = first.ratio * (1.0 + fit2->slope);
+    const double atRangeStart = first.offsetSamples + (rangeStartD + fit2->intercept) * first.ratio;
     composed.offsetSamples = atRangeStart - rangeStartD * composed.ratio;
     estimate.mapping = composed;
     estimate.ppm = (composed.ratio - 1.0) * 1e6;

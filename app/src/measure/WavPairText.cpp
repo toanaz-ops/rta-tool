@@ -32,7 +32,7 @@ std::string clockSentence(const WavPairOutcome& o) {
     const ClockResult& c = o.clock;
     switch (*c.refusal) {
         case ClockRefusal::NoCoarseAlignment:
-            return "The two files could not be lined up within " + fixed(c.halfWidthSeconds, 1) +
+            return "The two files could not be lined up within " + fixed(c.halfWidthSeconds, 3) +
                    " s of the expected start offset: the best delay trust was " + fixed(c.bestTrust, 2) +
                    " and " + fixed(c.trustFloor, 2) +
                    " is needed. They may not carry the same programme, or one recording started more "
@@ -58,10 +58,27 @@ std::string clockSentence(const WavPairOutcome& o) {
                    " samples at worst): a clock wandered or the acoustic path changed -- pick a shorter "
                    "range.";
         case ClockRefusal::RangeTooShort:
-            return "The range is too short to measure clock drift: at least " + fixed(c.minRangeSeconds, 2) +
+            return "The range is too short to measure clock drift: at least " + fixed(c.minRangeSeconds, 3) +
                    " s are needed. Pick a longer range.";
+        case ClockRefusal::RangeTooLong:
+            return "The range is too long for the clock search: at this sample rate and the " +
+                   shortest(c.maxPpm) + " ppm it allows, at most " + fixed(c.maxRangeMinutes, 1) +
+                   " minutes can be analysed in one go. Pick a shorter range.";
+        case ClockRefusal::CoarseSpanTooShort:
+            return "The measurement leaves only " + fixed(c.coarseSpanSeconds, 3) +
+                   " s to line the files up in (" + fixed(c.coarseNeededSeconds, 3) +
+                   " s are needed; the measurement file is " + fixed(c.measurementSeconds, 3) +
+                   " s long and the expected start offset is " + fixed(c.priorSeconds, 3) +
+                   " s). The measurement is too short, or the expected offset points outside it.";
+        case ClockRefusal::ClockUncertain:
+            return "The clock drift cannot be pinned down well enough over this range: the delay windows "
+                   "scatter so much that the drift is uncertain by " + fixed(c.uncertaintySamples, 2) +
+                   " samples across the range, and " + fixed(c.uncertaintyLimit, 2) +
+                   " is the limit. Pick a longer range or a louder passage.";
         case ClockRefusal::RangeOutsideOverlap:
-            return "The range does not fit inside the part of the reference where both files overlap.";
+            return "The range does not fit inside the part of the reference where both files overlap, which "
+                   "runs from " + fixed(static_cast<double>(c.overlapFirst) / o.referenceRate, 3) + " s to " +
+                   fixed(static_cast<double>(c.overlapLast + 1) / o.referenceRate, 3) + " s.";
         case ClockRefusal::ReadFailed:
             return "A file could not be read.";
         case ClockRefusal::Cancelled:
@@ -89,12 +106,12 @@ std::string wavPairRefusalText(const WavPairOutcome& o) {
                        std::to_string(channels) + " channels (ch1 to ch" + std::to_string(channels) + ").";
             }
             case WavPairRefusal::RangeOutsideFile:
-                return "The range (start " + fixed(o.requestedStartSeconds, 2) + " s, length " +
-                       (o.requestedLengthSeconds > 0.0 ? fixed(o.requestedLengthSeconds, 2) + " s"
+                return "The range (start " + fixed(o.requestedStartSeconds, 3) + " s, length " +
+                       (o.requestedLengthSeconds > 0.0 ? fixed(o.requestedLengthSeconds, 3) + " s"
                                                         : std::string("to the end")) +
                        ") does not fit inside the part of the reference where both files overlap, which "
-                       "runs from " + fixed(o.overlapFirstSeconds, 2) + " s to " +
-                       fixed(o.overlapLastSeconds, 2) + " s.";
+                       "runs from " + fixed(o.overlapFirstSeconds, 3) + " s to " +
+                       fixed(o.overlapLastSeconds, 3) + " s.";
         }
         return {};
     }

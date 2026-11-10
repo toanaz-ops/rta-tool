@@ -7,6 +7,7 @@
 #include "WavPairFixture.h"
 
 #include "measure/WavPairTransfer.h"
+#include "measure/WavPairWindows.h"
 #include "rta/dsp/ClockDrift.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -97,7 +98,7 @@ TEST_CASE("H12 T3: the search width is a hard edge -- 1.2x the half-width is ref
         REQUIRE(out.clock.refusal == ClockRefusal::NoCoarseAlignment);
         CHECK(out.clock.bestTrust < out.clock.trustFloor);
         const auto text = wavPairRefusalText(out);
-        CHECK_THAT(text, ContainsSubstring("within 0.1 s"));
+        CHECK_THAT(text, ContainsSubstring("within 0.100 s"));
         CHECK_THAT(text, ContainsSubstring("is needed"));
     }
     {
@@ -162,7 +163,9 @@ TEST_CASE("H12 T3: a range the overlap cannot hold is RangeOutsideFile, never Re
     const auto out = analyse(p, request(0.5, 4.5));  // wants 0.5 .. 5.0 s
     REQUIRE(out.refusal == WavPairRefusal::RangeOutsideFile);
     CHECK_FALSE(out.transfer.refusal.has_value());
-    CHECK(std::abs(out.overlapLastSeconds - (220800 - 4800) / kRate) < 1.0 / kRate);
+    // The overlap ends where the measurement does (216000), less the margin the clock stage keeps before
+    // pass 1: ceil(400 ppm * 216000 samples) = 87 plus the resampler's 32 taps.
+    CHECK(std::abs(out.overlapLastSeconds - (220800 - 4800 - 87 - 32) / kRate) < 1.0 / kRate);
     CHECK_THAT(wavPairRefusalText(out), ContainsSubstring("overlap"));
     // The neighbour: a range that ends inside the overlap is accepted.
     CHECK(analyse(p, request(0.5, 3.9)).ok());
@@ -236,7 +239,11 @@ TEST_CASE("H12 T3: a bend too sharp to measure is refused, never read as a flat 
 
 TEST_CASE("H12 T3: the linearity gate has neighbours on both sides (0.1 sample rms)", "[wavpair]") {
     const double range = 6.5 * kRate;
-    // eps2 chosen so the shape's own rms is 0.7 and 1.5 times the gate. FLAT system
+    // eps2 chosen so the shape's own rms is 1.5 times the gate (refused) and 0.7 times the
+    // STRICTER limit (accepted): the predicted-drift-error gate u = r2 sqrt(12 / K2) range /
+    // spread2 (0.1 sample) is stricter than E6 whenever K2 is small -- here K2 = 4 pass-2 windows,
+    // u = 2.19 r2, so it bites at r2 = 0.046, and the accepted side of this neighbour has to sit
+    // under THAT, not under 0.1. FLAT system
     // (H = 1): through the biquad the phase-slope delay moves by up to ~0.2 sample
     // between windows whose residual delays differ (the fit's weights change with
     // the residual), which is estimator jitter on top of the shape -- measured
@@ -244,12 +251,14 @@ TEST_CASE("H12 T3: the linearity gate has neighbours on both sides (0.1 sample r
     // says, but it means the gate's neighbours can only be placed from geometry on
     // a system that has no phase to bias the fit.
     const double perEps = idealResidualRms(1.0, range);  // rms per unit eps2
-    const double under = 0.7 * 0.1 / perEps;
+    const double uPerRms = rta::measure::detail::predictedDriftError(1.0, 4, range - 65536.0,
+                                                                     static_cast<std::int64_t>(range));
+    const double under = 0.7 * (0.1 / uPerRms) / perEps;
     const double over = 1.5 * 0.1 / perEps;
     const auto accepted = analyseBent(under, false);
     INFO(wavPairRefusalText(accepted));
     CHECK(accepted.ok());
-    CHECK(accepted.residualRms < 0.1);
+    CHECK(accepted.residualRms < 0.1 / uPerRms);
     CHECK(analyseBent(over, false).clock.refusal == ClockRefusal::DriftNotLinear);
 }
 
@@ -289,12 +298,11 @@ TEST_CASE("H12 T3: a drift that starts three quarters of the way through is not 
     CHECK(out.clock.refusal == ClockRefusal::DriftNotLinear);
 }
 
-TEST_CASE("H12 T3: a range shorter than one pass-1 window is RangeTooShort, with the minimum named",
+TEST_CASE("H12 T3: a range shorter than the 2^17-sample minimum is RangeTooShort, with the minimum named",
           "[wavpair]") {
+    // (The neighbours 2^17 - 1 and 2^17 are in test_wav_pair_transfer_range.cpp.)
     const auto p = shiftedPair(192000, 230000, 4800);
-    const auto out = analyse(p, request(0.5, 0.5));  // 24000 samples < 2^15
+    const auto out = analyse(p, request(0.5, 0.5));  // 24000 samples
     REQUIRE(out.clock.refusal == ClockRefusal::RangeTooShort);
-    CHECK_THAT(wavPairRefusalText(out), ContainsSubstring("at least 0.68 s"));
-    // The neighbour: one window's worth (0.7 s = 33600 samples) goes on to the next stage.
-    CHECK(analyse(p, request(0.5, 0.7)).clock.refusal != ClockRefusal::RangeTooShort);
+    CHECK_THAT(wavPairRefusalText(out), ContainsSubstring("at least 2.731 s"));
 }

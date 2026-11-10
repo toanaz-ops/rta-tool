@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // H12 T3 fixtures: a reference file and a measurement file recorded on a clock
-// that is off by eps and started b samples late.
+// that is off by eps and whose recording began b samples EARLIER than the
+// reference's (b samples of pre-roll: reference sample 0 is measurement sample b).
 //
 // INDEPENDENCE FROM THE CODE UNDER TEST. The measurement is NOT made with
 // rta::dsp::KaiserSincInterpolator (that would test the resampler against
@@ -85,15 +86,51 @@ struct Pair {
     MemorySource measurement;  ///< one channel
 };
 
+/// The system the pair is measured through, in double, from rest.
+using System = std::vector<double> (*)(const std::vector<float>&);
+
+inline std::vector<double> flatSystem(const std::vector<float>& x) { return {x.begin(), x.end()}; }
+
+namespace lr4 {
+
+using Cascade = rta::dsp::BiquadCascade;
+
+/// RBJ cookbook 2nd-order Butterworth (Q = 1/sqrt 2) low-pass / high-pass at fc.
+inline rta::dsp::Biquad::Coeffs butterworth(bool highPass, double fc) {
+    const double w0 = 2.0 * std::numbers::pi * fc / kFs, c = std::cos(w0);
+    const double alpha = std::sin(w0) / (2.0 * std::numbers::sqrt2 / 2.0);
+    const double a0 = 1.0 + alpha;
+    const double sign = highPass ? 1.0 : -1.0;
+    const double b0 = (1.0 + sign * c) / 2.0 / a0, b1 = -sign * (1.0 + sign * c) / a0;
+    return {b0, b1, b0, -2.0 * c / a0, (1.0 - alpha) / a0};
+}
+
+/// y = LP4(x) + HP4(x), each 4th order Linkwitz-Riley = two cascaded Butterworth biquads. The sum
+/// of the two is flat in magnitude (Linkwitz & Riley 1976) and all-pass in phase: 360 degrees over
+/// the band, group delay 2/(Q w0) = 216 samples at 100 Hz, 15 at 1500 Hz. The test never trusts that
+/// identity: it measures the magnitude and compares it to 0 dB.
+inline std::vector<double> through(const std::vector<float>& x, double fc) {
+    Cascade lp({butterworth(false, fc), butterworth(false, fc)});
+    Cascade hp({butterworth(true, fc), butterworth(true, fc)});
+    std::vector<double> y(x.size());
+    for (std::size_t i = 0; i < x.size(); ++i) y[i] = lp.processSample(x[i]) + hp.processSample(x[i]);
+    return y;
+}
+
+}  // namespace lr4
+
+inline std::vector<double> lr4At100(const std::vector<float>& x) { return lr4::through(x, 100.0); }
+inline std::vector<double> lr4At1500(const std::vector<float>& x) { return lr4::through(x, 1500.0); }
+
 /// reference[n] = x[n]; measurement[m] = y(tau(m)) with y = system(x). `tau`
 /// maps a measurement sample index to the time (in reference samples) it sees.
 /// `x` is generated long enough that tau(measLength) never runs off its end.
 template <class Tau>
-Pair makePair(std::size_t refLength, std::size_t measLength, Tau tau, std::uint32_t seed = 11,
-              bool throughSystem = true) {
+Pair makePairThrough(std::size_t refLength, std::size_t measLength, Tau tau, System system,
+                     std::uint32_t seed = 11) {
     const auto need = static_cast<std::size_t>(std::ceil(tau(static_cast<double>(measLength)))) + 600;
     const auto x = wavfix::pink(std::max(need, refLength), seed);
-    const auto y = throughSystem ? systemOutput(x) : std::vector<double>(x.begin(), x.end());
+    const auto y = system(x);
     Pair p;
     p.reference.channels.assign(1, std::vector<float>(x.begin(), x.begin() + static_cast<std::ptrdiff_t>(refLength)));
     p.measurement.channels.assign(1, std::vector<float>(measLength));
@@ -103,9 +140,19 @@ Pair makePair(std::size_t refLength, std::size_t measLength, Tau tau, std::uint3
     return p;
 }
 
+template <class Tau>
+Pair makePair(std::size_t refLength, std::size_t measLength, Tau tau, std::uint32_t seed = 11,
+              bool throughSystem = true) {
+    return makePairThrough(refLength, measLength, tau, throughSystem ? System(systemOutput) : System(flatSystem),
+                           seed);
+}
+
 /// Meas sample m sees y((m - b)/(1 + eps)): the measurement clock is `eps` fast
-/// and its recording started b samples after the reference's. Reference sample
-/// n therefore sits at measurement position t(n) = b + n (1 + eps).
+/// and its recording began b samples BEFORE the reference's (meas sample 0 sees
+/// reference time -b / (1 + eps), i.e. b samples of pre-roll). Reference sample
+/// n therefore sits at measurement position t(n) = b + n (1 + eps), and a
+/// recorder wall-clock stamp (bext TimeReference) for the measurement is the
+/// reference's MINUS b.
 inline auto linearClock(double bSamples, double eps) {
     return [=](double m) { return (m - bSamples) / (1.0 + eps); };
 }

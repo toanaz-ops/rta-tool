@@ -35,6 +35,7 @@ bool MainComponentWav::performLoadMeas(const juce::File& file) {
     if (file == file_) {
         // The same recording twice is the one-file path: its channels already hold both signals.
         measFile_ = juce::File();
+        prefillLength();
         refreshFiles();
         return true;
     }
@@ -52,6 +53,7 @@ bool MainComponentWav::performLoadMeas(const juce::File& file) {
     measFile_ = file;
     measChannels_ = probe->numChannels();
     measTimeReference_ = probe->timeReferenceSamples();
+    prefillLength();
     measSummary_ = file.getFileName() + " - " + juce::String(measChannels_) + " ch, " + utf8(fixed(fs, 0)) +
                    " Hz, " + utf8(fixed(seconds, 1)) + " s";
     refreshFiles();
@@ -64,7 +66,19 @@ void MainComponentWav::clearMeasClicked() {
     measChannels_ = 0;
     measSummary_ = {};
     measTimeReference_.reset();
+    prefillLength();
     if (file_ != juce::File()) refreshFiles();
+}
+
+void MainComponentWav::prefillLength() {
+    if (measFile_ != juce::File()) {
+        // Two files: empty LENGTH = to the end of the part both cover, which depends on the offset
+        // and so is only known to the analysis (the reference's own length would run past it).
+        lengthEditor_.setText({}, false);
+    } else {
+        // One file. Floored to 10 ms so the prefilled "whole file" can never round past the end.
+        lengthEditor_.setText(utf8(fixed(std::floor(refSeconds_ * 100.0) / 100.0, 2)), false);
+    }
 }
 
 void MainComponentWav::refreshFiles() {

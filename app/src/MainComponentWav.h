@@ -62,6 +62,7 @@ public:
     [[nodiscard]] bool waitForJobForTest(int timeoutMs);
     [[nodiscard]] juce::String readoutForTest() const { return readout_.getText(); }
     [[nodiscard]] juce::String fileTextForTest() const { return fileLabel_.getText(); }
+    [[nodiscard]] juce::String lengthTextForTest() const { return lengthEditor_.getText(); }
     [[nodiscard]] bool analyseEnabledForTest() const { return analyseButton_.isEnabled(); }
     /// How many channels the MEAS combo offers (the second file's when one is loaded).
     [[nodiscard]] int measChannelCountForTest() const { return measCombo_.getNumItems(); }
@@ -74,6 +75,7 @@ private:
     /// Rebuilds the file line, the channel lists, the enabled state and the readout from
     /// `file_`/`measFile_` (MainComponentWavPair.cpp, with the second file's half of LOAD).
     void refreshFiles();
+    void prefillLength();  ///< one file: the reference's length; two files: empty (= to the end of the overlap)
     void analysePair();
     /// The success sentence; `pair` null for the one-file path.
     [[nodiscard]] juce::String successText(const rta::measure::WavTransferOutcome& out,
@@ -93,6 +95,7 @@ private:
     std::optional<std::int64_t> refTimeReference_;
     std::optional<std::int64_t> measTimeReference_;
     double refRate_ = 0.0;
+    double refSeconds_ = 0.0;  ///< the reference file's length, for the one-file LENGTH prefill
 
     juce::TextButton loadButton_{"LOAD WAV"};
     juce::TextButton loadMeasButton_{"LOAD MEAS WAV"};

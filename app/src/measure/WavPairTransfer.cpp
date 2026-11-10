@@ -50,9 +50,11 @@ WavPairOutcome analyseWavPairTransfer(const SampleBlockSource& reference, int re
         return refuse(WavPairRefusal::RangeOutsideFile);
     }
     const std::int64_t rangeStart = std::llround(request.startSeconds * fs);
-    const std::int64_t rangeLength =
-        request.lengthSeconds > 0.0 ? std::llround(request.lengthSeconds * fs) : refLength - rangeStart;
-    if (rangeStart >= refLength || rangeLength <= 0 || rangeStart + rangeLength > refLength) {
+    // LENGTH 0 = to the end of the part both files cover: only the clock stage knows
+    // where that is (the overlap moves with the offset), so it resolves the length.
+    const bool toEnd = !(request.lengthSeconds > 0.0);
+    std::int64_t rangeLength = toEnd ? 0 : std::llround(request.lengthSeconds * fs);
+    if (rangeStart >= refLength || (!toEnd && (rangeLength <= 0 || rangeStart + rangeLength > refLength))) {
         return refuse(WavPairRefusal::RangeOutsideFile);
     }
 
@@ -68,6 +70,7 @@ WavPairOutcome analyseWavPairTransfer(const SampleBlockSource& reference, int re
     }
     if (!out.clock.ok()) return out;
     const ClockEstimate& estimate = *out.clock.estimate;
+    rangeLength = estimate.rangeLength;
     out.ppm = estimate.ppm;
     out.offsetSeconds = estimate.offsetSeconds;
     out.sharedClock = estimate.sharedClock;
@@ -88,7 +91,7 @@ WavPairOutcome analyseWavPairTransfer(const SampleBlockSource& reference, int re
     transfer.referenceChannel = 0;
     transfer.measurementChannel = 1;
     transfer.startSeconds = request.startSeconds;
-    transfer.lengthSeconds = request.lengthSeconds;
+    transfer.lengthSeconds = toEnd ? static_cast<double>(rangeLength) / fs : request.lengthSeconds;
     transfer.fileName = request.measurementFileName;
     transfer.referenceFileName = request.referenceFileName;
     transfer.displayReferenceChannel = referenceChannel;

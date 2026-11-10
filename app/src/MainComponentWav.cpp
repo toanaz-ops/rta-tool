@@ -130,12 +130,12 @@ bool MainComponentWav::performLoad(const juce::File& file) {
     const double seconds = fs > 0.0 ? static_cast<double>(probe->lengthSamples()) / fs : 0.0;
     refChannels_ = probe->numChannels();
     refRate_ = fs;
+    refSeconds_ = seconds;
     refTimeReference_ = probe->timeReferenceSamples();
     refSummary_ = file.getFileName() + " - " + juce::String(refChannels_) + " ch, " + utf8(fixed(fs, 0)) +
                   " Hz, " + utf8(fixed(seconds, 1)) + " s";
     startEditor_.setText("0", false);
-    // Floored to 10 ms so the prefilled "whole file" can never round past the end.
-    lengthEditor_.setText(utf8(fixed(std::floor(seconds * 100.0) / 100.0, 2)), false);
+    prefillLength();
     refreshFiles();
     return true;
 }
@@ -184,7 +184,7 @@ void MainComponentWav::setControlsForTest(int ref, int meas, double start, doubl
     refCombo_.setSelectedId(ref, juce::dontSendNotification);
     measCombo_.setSelectedId(meas, juce::dontSendNotification);
     startEditor_.setText(utf8(fixed(start, 3)), false);
-    lengthEditor_.setText(utf8(fixed(length, 3)), false);
+    lengthEditor_.setText(length > 0.0 ? utf8(fixed(length, 3)) : juce::String(), false);  // 0 = empty = to the end
 }
 
 bool MainComponentWav::waitForJobForTest(int timeoutMs) {

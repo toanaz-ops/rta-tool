@@ -28,12 +28,16 @@
 
 namespace rta::measure {
 
-/// The offset-search prior (meas minus ref, samples) from the two `bext` time references: their
-/// difference when BOTH files carry one, else 0 (record E2: one reference alone says nothing about
-/// the other recorder's clock).
+/// The offset-search prior (measurement-file sample index of reference sample 0, samples) from the
+/// two `bext` time references: reference minus measurement when BOTH files carry one, else 0 (record
+/// E2: one reference alone says nothing about the other recorder's clock).
+///
+/// Sign. `ClockMapping` t(n) = offset + n * ratio maps a REFERENCE index to a MEASUREMENT index. A
+/// time reference is the wall-clock sample count of a file's FIRST sample. If the measurement began
+/// later by D (T_m = T_r + D), reference sample n is measurement sample n - D, so offset = T_r - T_m.
 [[nodiscard]] inline std::int64_t bextPriorSamples(std::optional<std::int64_t> reference,
                                                    std::optional<std::int64_t> measurement) noexcept {
-    return reference.has_value() && measurement.has_value() ? *measurement - *reference : 0;
+    return reference.has_value() && measurement.has_value() ? *reference - *measurement : 0;
 }
 
 /// A two-file request. `request.clock.priorOffsetSamples` is overwritten by the worker.

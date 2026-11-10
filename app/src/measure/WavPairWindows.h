@@ -54,9 +54,41 @@ struct DriftBand {
     return {100.0, std::min(sampleRate / 8.0, 3000.0)};
 }
 
+/// Predicted total drift error over the range, samples, from pass 1's own scatter.
+/// The line is least squares through K windows with residual RMS r1 spread over
+/// `spread` samples; for a LS line the slope's standard error is
+///   sigma / sqrt(sum (x - xbar)^2),  sum (x - xbar)^2 ~ K spread^2 / 12
+/// (evenly spaced x), so the drift error accumulated over the range is
+///   u = r1 sqrt(12 / K) rangeLength / spread.
+/// The fit is Theil-Sen, not LS: its efficiency for Gaussian noise is ~0.95, so
+/// its standard error is ~1.03x the LS one -- u is an approximation, not a bound
+/// (test_wav_pair_transfer_gates.cpp measures it against simulated Theil-Sen fits).
+[[nodiscard]] double predictedDriftError(double residualRms, int windows, double spread,
+                                         std::int64_t rangeLength);
+
 enum class WindowStatus { Ok, Cancelled, ReadFailed };
 
+/// E2 for ONE reference window at `refStart`: the window is zero-padded to the
+/// length of the measurement span so `suggestDelay` sees equal lengths, and the
+/// lag window is the requested offset interval translated into that span's
+/// coordinates and clipped to where the whole window still lies inside it.
+/// The span itself is clipped to the measurement file, never failed.
+struct CoarseLook {
+    bool measured = false;  ///< false: the span was shorter than the window, so nothing was correlated
+    bool accepted = false;
+    std::int64_t offset = 0;
+    double trust = 0.0;
+    double floor = 0.0;
+    std::int64_t spanSamples = 0;  ///< the measurement samples the search could use
+};
+[[nodiscard]] CoarseLook coarseLook(const SampleBlockSource& reference, int referenceChannel,
+                                    const SampleBlockSource& measurement, int measurementChannel,
+                                    std::int64_t refStart, std::int64_t width, std::int64_t prior,
+                                    std::int64_t halfWidth, bool& readFailed);
+
 /// Appends one `DelayObservation` per Accepted window whose fraction resolved.
+/// Every fraction is measured relative to the window of highest trust (see
+/// `rta::dsp::relativeFractionalDelay`).
 /// positionSamples is the window centre relative to `rangeStart`, so a line fit
 /// has its intercept at the range start.
 [[nodiscard]] WindowStatus measureWindows(const SampleBlockSource& reference, int referenceChannel,

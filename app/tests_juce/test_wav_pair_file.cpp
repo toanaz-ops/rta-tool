@@ -13,8 +13,11 @@
 //   ppm      the clock error eps * 1e6, within T3's budget: kDelta / rangeSamples * 1e6 with
 //            kDelta = 0.1 sample (a 0.1-sample delay budget over a 6.5 s range is 0.32 ppm);
 //   offset   t(rangeStart) - rangeStart = (b + eps * start) seconds, printed to 3 decimals;
-//   bext     written as a difference equal to the true offset in samples (ref = 100000 so the
-//            chunk is non-zero -- JUCE omits a bext chunk whose time reference is 0).
+//   bext     a time reference is the wall-clock sample count of a file's FIRST sample, so the offset
+//            (the measurement-file index of reference sample 0) is REFERENCE minus MEASUREMENT: a
+//            measurement that began b samples earlier carries ref - b, one that began later ref + D.
+//            The reference's is 1000000 so every case stays positive and the chunk non-zero (JUCE omits
+//            a bext chunk whose time reference is 0).
 // FILES stay small: an 8 s reference; the 14 s case is a zero-clock-error integer shift so the
 // fixture costs no interpolation.
 #include <catch2/catch_test_macros.hpp>
@@ -41,7 +44,7 @@ constexpr const char* kTag = "[wav_pair_file]";
 constexpr double kFs = wavfix::kFs;
 constexpr std::size_t kRefSamples = 8 * 48000;
 constexpr double kDeltaSamples = 0.1;  // T3's delay budget (app/tests/test_wav_pair_transfer.cpp kDelta)
-constexpr std::int64_t kRefBext = 100000;
+constexpr std::int64_t kRefBext = 1000000;
 
 struct TempFile {
     juce::File file;
@@ -118,7 +121,7 @@ TEST_CASE("wav pair file: +80 ppm and a 3.2 s offset with bext references -> one
     const auto& pair = driftPair();
     TempFile ref("a_ref.wav"), meas("a_meas.wav");
     REQUIRE(writeFloat(ref.file, pair.reference.channels, kRefBext));
-    REQUIRE(writeFloat(meas.file, pair.measurement.channels, kRefBext + static_cast<std::int64_t>(3.2 * kFs)));
+    REQUIRE(writeFloat(meas.file, pair.measurement.channels, kRefBext - static_cast<std::int64_t>(3.2 * kFs)));
 
     MainComponent c;
     analysePair(c, ref.file, meas.file, 0.5, 6.5);
@@ -141,7 +144,7 @@ TEST_CASE("wav pair file: a 14 s offset is found through the bext prior and refu
     const auto pair = shiftedPair(14.0, 23.0);
     TempFile ref("b_ref.wav"), meas("b_meas.wav"), refPlain("b_ref_plain.wav"), measPlain("b_meas_plain.wav");
     REQUIRE(writeFloat(ref.file, pair.reference.channels, kRefBext));
-    REQUIRE(writeFloat(meas.file, pair.measurement.channels, kRefBext + static_cast<std::int64_t>(14.0 * kFs)));
+    REQUIRE(writeFloat(meas.file, pair.measurement.channels, kRefBext - static_cast<std::int64_t>(14.0 * kFs)));
     REQUIRE(writeFloat(refPlain.file, pair.reference.channels));
     REQUIRE(writeFloat(measPlain.file, pair.measurement.channels));
 
@@ -156,10 +159,35 @@ TEST_CASE("wav pair file: a 14 s offset is found through the bext prior and refu
         analysePair(c, refPlain.file, measPlain.file, 0.0, 8.0);
         CHECK(countGroup(c, rta::trace::kWavGroup) == 0);
         const auto readout = Access::wavForTest(c).readoutForTest();
-        CHECK(readout.startsWith("The two files could not be lined up within 10.0 s"));
+        CHECK(readout.startsWith("The two files could not be lined up within 10.000 s"));
     }
     std::printf("[wav pair 14 s] wall %.1f s\n",
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count());
+}
+
+TEST_CASE("wav pair file: a measurement that starts 14 s LATER (negative offset) is found through the bext prior",
+          kTag) {
+    // meas[m] = y[m + 14 s]: the measurement began 14 s after the reference, so its time reference is the
+    // reference's PLUS 14 s and the offset is -14 s. Without the prior the +-10 s search around 0 misses it.
+    const auto pair = wavpair::shiftedPair(20 * 48000, 9 * 48000, -static_cast<std::ptrdiff_t>(14 * 48000));
+    TempFile ref("h_ref.wav"), meas("h_meas.wav"), refPlain("h_ref_plain.wav"), measPlain("h_meas_plain.wav");
+    REQUIRE(writeFloat(ref.file, pair.reference.channels, kRefBext));
+    REQUIRE(writeFloat(meas.file, pair.measurement.channels, kRefBext + static_cast<std::int64_t>(14.0 * kFs)));
+    REQUIRE(writeFloat(refPlain.file, pair.reference.channels));
+    REQUIRE(writeFloat(measPlain.file, pair.measurement.channels));
+    {
+        MainComponent c;
+        analysePair(c, ref.file, meas.file, 14.5, 5.0);
+        INFO(Access::wavForTest(c).readoutForTest());
+        REQUIRE(countGroup(c, rta::trace::kWavGroup) == 1);
+        CHECK(Access::wavForTest(c).readoutForTest().contains("offset -14.000 s"));
+    }
+    {
+        MainComponent c;
+        analysePair(c, refPlain.file, measPlain.file, 14.5, 5.0);
+        CHECK(countGroup(c, rta::trace::kWavGroup) == 0);
+        CHECK(Access::wavForTest(c).readoutForTest().startsWith("The two files could not be lined up within 10.000 s"));
+    }
 }
 
 TEST_CASE("wav pair file: a bext reference on the measurement alone is no prior", kTag) {
@@ -245,4 +273,28 @@ TEST_CASE("wav pair file: a shared clock (0 ppm, 1.7 s offset) says so", kTag) {
     const auto readout = Access::wavForTest(c).readoutForTest();
     CHECK(readout.contains(", shared clock, offset 1.700 s -> stored "));
     CHECK_FALSE(readout.contains("ppm corrected"));
+}
+
+TEST_CASE("wav pair file: LENGTH is empty in pair mode and analyses to the end of the overlap", kTag) {
+    // A measurement 30 % shorter than the reference: the reference's own length would run past the overlap.
+    const auto pair = shiftedPair(1.0, 7.0);
+    TempFile ref("i_ref.wav"), meas("i_meas.wav");
+    REQUIRE(writeFloat(ref.file, pair.reference.channels));
+    REQUIRE(writeFloat(meas.file, pair.measurement.channels));
+
+    MainComponent c;
+    auto& wav = Access::wavForTest(c);
+    REQUIRE(Access::performLoadWavForTest(c, ref.file));
+    CHECK(wav.lengthTextForTest() == "8.00");  // one file: the whole file, as before
+    REQUIRE(Access::performLoadMeasWavForTest(c, meas.file));
+    CHECK(wav.lengthTextForTest().isEmpty());  // two files: to the end of the overlap
+    wav.setControlsForTest(1, 1, 0.5, 0.0);
+    wav.analyseClicked();
+    REQUIRE(wav.waitForJobForTest(120000));
+    INFO(wav.readoutForTest());
+    REQUIRE(countGroup(c, rta::trace::kWavGroup) == 1);
+    CHECK(wav.readoutForTest().contains(", offset 1.000 s -> stored "));
+    // Back to one file: the prefill returns.
+    Access::clearMeasWavForTest(c);
+    CHECK(wav.lengthTextForTest() == "8.00");
 }

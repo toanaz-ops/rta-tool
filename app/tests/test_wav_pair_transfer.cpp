@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // H12 T3 (docs/dsp/2026-11-10-g22b-two-file-wav-drift.md E2-E9): two files, a
-// clock that is off by eps and a start that is b late -> the stored transfer
+// clock that is off by eps and a recording that began b samples earlier -> the stored transfer
 // trace, against the closed form of the system the fixture built.
 // Refusals: test_wav_pair_transfer_refusals.cpp. The ppm ceiling and the
 // reference interpolator's own accuracy: test_wav_pair_transfer_limits.cpp.
@@ -222,7 +222,7 @@ TEST_CASE("H12 T3: 0 ppm with a 1.7 s start offset is the shared-clock branch, a
     s.clock.coarseHalfWidthSeconds = 0.1;
     const Run r = run(s);
     REQUIRE(r.out.ok());
-    CHECK(r.out.sharedClock);       // E7: no pass 2, no resampling
+    CHECK(r.out.sharedClock);       // E7: no resampling (pass 2 still runs, in the full band, to settle the integer)
     CHECK(r.out.ppm == 0.0);
     CHECK(r.out.offsetSeconds == 1.7);  // 81600 samples, an exact integer offset
     // The pair source copies: the offset is the whole story, and G22 then sees delay 0.
