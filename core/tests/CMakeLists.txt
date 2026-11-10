@@ -11,6 +11,8 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(rta_core_tests
     test_average_count.cpp
     test_kaiser_sinc_interpolator.cpp
+    test_clock_drift.cpp
+    test_theil_sen.cpp
     test_delay_finder.cpp
     test_delay_policy.cpp
     test_delay_policy_trust.cpp

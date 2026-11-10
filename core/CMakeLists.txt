@@ -12,6 +12,7 @@ add_library(rta_core STATIC
     src/dsp/AverageCount.cpp
     src/dsp/BandWeights.cpp
     src/dsp/BiquadResponse.cpp
+    src/dsp/ClockDrift.cpp
     src/dsp/ButterworthDesign.cpp
     src/dsp/CrossoverBandFit.cpp
     src/dsp/CrossoverFit.cpp
