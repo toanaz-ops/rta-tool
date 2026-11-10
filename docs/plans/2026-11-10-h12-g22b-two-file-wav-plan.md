@@ -1,0 +1,20 @@
+# H12 -- G22b two-file WAV transfer function (offset, clock drift, resampling)
+
+*2026-11-10. Record: `docs/dsp/2026-11-10-g22b-two-file-wav-drift.md` (E1-E10).
+Follows H11 (`docs/plans/2026-11-10-h11-g22-offline-wav-plan.md`). Code read at
+`77e722d`. Unmeasured on hardware.*
+
+## Tasks
+
+| id | task | called from (production caller) | operator path | proof |
+|---|---|---|---|---|
+| T1 | core `rta::dsp::KaiserSincInterpolator` (±32 taps, beta 10.06, E5): `resample(input span, firstPosition, step, output span)`, positions relative to `input[0]`, throws if a tap would fall outside `input` | `app/src/measure/ResampledPairSource.cpp` (T3) | rail `LOAD WAV` + `LOAD MEAS WAV` -> `ANALYSE` | `core/tests/test_kaiser_sinc_interpolator.cpp`: integer positions, step 1 -> bitwise copy; sinusoids at 0.05/0.25/0.45 fs, step 1 +/- 150e-6 from a fractional start vs the analytic value, bound derived from the Kaiser design (A = 100 dB) + float32 input rounding (comment the derivation); a tone at 0.6 fs is attenuated by >= the derived stopband; out-of-range positions throw |
+| T2 | core `rta/dsp/ClockDrift.h`: `fractionalDelayByPhaseSlope(ref, meas, integerDelay, fs, ...)` (DualFftEngine Cumulative + makeSnapshot; gamma^2 / (1 - gamma^2) weights over gamma^2 >= 0.5, f <= fs/4; returns delay + bins used, nullopt when < 8 bins) and `fitDriftTheilSen(span<const DelayObservation>) -> DriftFit{intercept, slope, residualRms, maxAbsResidual, used}` | T3 `estimateClockMapping` | as T1 | `core/tests/test_clock_drift.cpp`: a pure fractional delay (built in the frequency domain, not with T1) of 0.0/0.13/0.37/-0.42 samples recovered within a derived bound; constant system phase (a biquad) does not change the slope across windows; Theil-Sen exact line exact, 25 % gross outliers -> the line, residual RMS vs hand values, < 2 points refused |
+| T3 | app (no JUCE): `estimateClockMapping(refSource, refCh, measSource, measCh, range, priorOffset, cancel)` per E2-E4, E6-E7 (two passes, composition, refusals with measured numbers); `ResampledPairSource` (2-channel `SampleBlockSource`: ch0 = ref direct, ch1 = meas through T1 at t(n) = b + n*ratio, reading the needed meas span + 32-tap margins); `analyseWavPairTransfer(...)` = estimate -> pair source -> G22 `analyseWavTransfer`; outcome gains `ppm`, `offsetSeconds`, `sharedClock`, `residualRms`; refusal sentences for SampleRateMismatch, NoCoarseAlignment, DriftTooLarge, DriftNotLinear | `MainComponentWav.cpp` via `WavTransferJob` (T4) | as T1 | `app/tests/test_wav_pair_transfer.cpp` with the analytic multitone fixture of record §5 (independent of T1): +80 ppm / 3.2 s, -150 ppm, 0 ppm / 1.7 s (shared-clock branch, no resample) -> |ppm_hat - ppm| and tone-bin magnitude/phase within derived bounds; refusals: rate mismatch, offset 12 s without prior, 1500 ppm, a delay that bends mid-range, uncorrelated, cancel; the neighbour of each threshold (offset 9.9 s accepted; 990 ppm accepted; residual just under the gate accepted) |
+| T4 | JUCE: `WavFileSource` exposes the bext time reference (`"bwav time reference"` metadata, absent -> nullopt); rail `LOAD MEAS WAV` (optional second file) + `CLEAR MEAS` beside `LOAD WAV`; when set, `MEAS ch` lists the second file's channels; `WavTransferJob` takes one or two files; readout adds `clock +x.xx ppm corrected` / `shared clock` and `offset s.sss s` | `MainComponent` rail | rail `LOAD WAV` -> `LOAD MEAS WAV` -> channels, START/LENGTH -> `ANALYSE` -> trace in group WAV | `app/tests_juce/test_wav_pair_file.cpp`: two float32 WAVs written in-test from the T3 fixture -> one WAV trace, readout carries ppm and offset; a pair with bext references whose difference is the true 14 s offset -> found (without bext it is refused); different rates -> refusal on the readout; `CLEAR MEAS` returns to the single-file path; snapshot `main-wav-pair.png` |
+
+Every new `.cpp` into every source list. Wave close: `tools/orphan_check.py --base 77e722d ...` exit 0, Fable read-only review of the phase diff, HIGH/MEDIUM fixed, record §6 written against the code.
+
+## Order
+
+T1 + T2 (core, one builder) -> T3 -> T4.
