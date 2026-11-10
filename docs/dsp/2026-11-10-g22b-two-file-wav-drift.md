@@ -321,7 +321,10 @@ Each item below supersedes the sentence of §2-§5 it names.*
   a sinusoid, 9.5e-8 against a 1e-4 bound), never by the production
   interpolator. The 1500 ppm refusal of §5 became 480 and 1000 ppm cases.
 
-**Open LOWs (round 3, not fixed; follow-up):**
+**Round-3 LOWs -- all four fixed in `d1b6430`** (a swallowed first clip now
+re-margins and reports `RangeTooShort`; a sub-millisecond remainder prints in
+samples; the default band edge uses the window's sample rate; the LR4 comment
+names PHAT's band-limited lag). As found:
 
 - `WavPairClock.cpp:198-206`: when the first clip already leaves no range, the
   refusal is `RangeOutsideFile` quoting the unclipped end, in a band about one
