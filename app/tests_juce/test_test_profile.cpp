@@ -12,7 +12,6 @@ namespace tp = rta::app::testprofile;
 
 namespace {
 const juce::File realDocs = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-const juce::File realAppData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
 const juce::File tempRoot = juce::File::getSpecialLocation(juce::File::tempDirectory);
 }  // namespace
 
@@ -22,7 +21,6 @@ TEST_CASE("test profile: unset or empty keeps the real paths", "[test_profile]")
         CHECK_FALSE(r.active);
         CHECK(r.valid);
         CHECK(tp::documentsDirectory(r) == realDocs);
-        CHECK(tp::appDataDirectory(r) == realAppData.getChildFile("RTA Tool"));
         CHECK(tp::windowTitle(r, "RTA Tool") == "RTA Tool");
     }
 }
@@ -33,11 +31,9 @@ TEST_CASE("test profile: set and absolute redirects under the profile", "[test_p
     REQUIRE(r.active);
     REQUIRE(r.valid);
     CHECK(tp::documentsDirectory(r) == profile.getChildFile("Documents"));
-    CHECK(tp::appDataDirectory(r) == profile.getChildFile("AppData").getChildFile("RTA Tool"));
     CHECK(tp::windowTitle(r, "RTA Tool") == "RTA Tool [TEST PROFILE]");
     // Nothing leaks to the real locations.
     CHECK_FALSE(tp::documentsDirectory(r).isAChildOf(realDocs));
-    CHECK_FALSE(tp::appDataDirectory(r).isAChildOf(realAppData));
 }
 
 TEST_CASE("test profile: a relative value is rejected, never the real data", "[test_profile]") {
@@ -48,7 +44,6 @@ TEST_CASE("test profile: a relative value is rejected, never the real data", "[t
         CHECK(r.message.contains("DEVCAVE_TEST_PROFILE"));
         CHECK(r.message.contains("absolute"));
         CHECK(tp::documentsDirectory(r).isAChildOf(tempRoot));
-        CHECK(tp::appDataDirectory(r).isAChildOf(tempRoot));
         CHECK_FALSE(tp::documentsDirectory(r).isAChildOf(realDocs));
         CHECK(tp::windowTitle(r, "RTA Tool").endsWith("[TEST PROFILE]"));
     }

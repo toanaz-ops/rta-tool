@@ -8,13 +8,15 @@
 // (shared/harness/guards/test_app_launcher.ps1 -App rta) therefore sets
 // DEVCAVE_TEST_PROFILE=<absolute dir>, laid out as
 //     <profile>\AppData   <profile>\LocalAppData   <profile>\Documents
-// and this header is the ONLY place the app maps "user documents" and "user
-// app data" to a directory.
+// and this header is the ONLY place the app maps "user documents" to a
+// directory. The app stores nothing under app data, so no app-data mapping
+// exists; the launcher still creates the AppData dirs so a stray write lands
+// inside the profile.
 //
 // RULES.
 //  - Variable unset or empty: behaviour is exactly the old one (real paths).
 //  - Variable set and absolute: documents -> <profile>/Documents,
-//    app data -> <profile>/AppData/<app folder>, window title gets a suffix.
+//    window title gets a suffix.
 //  - Variable set but relative: refused. The helpers then return a path under
 //    the system temp directory (never a real-data path) and `refusal()`
 //    carries the message; Main.cpp shows it and quits before a window opens.
@@ -66,11 +68,6 @@ struct Resolution {
     return r.valid ? r.root.getChildFile("Documents") : refusedSink().getChildFile("Documents");
 }
 
-[[nodiscard]] inline juce::File appDataDirectory(const Resolution& r, const juce::String& appFolder = "RTA Tool") {
-    if (!r.active) return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile(appFolder);
-    return (r.valid ? r.root : refusedSink()).getChildFile("AppData").getChildFile(appFolder);
-}
-
 [[nodiscard]] inline juce::String windowTitle(const Resolution& r, const juce::String& base) {
     return r.active ? base + kTitleSuffix : base;
 }
@@ -86,9 +83,7 @@ struct Resolution {
 }
 
 // Convenience wrappers that read the real environment.
-[[nodiscard]] inline bool isActive() { return resolveFromEnvironment().active; }
 [[nodiscard]] inline juce::File documentsDirectory() { return documentsDirectory(resolveFromEnvironment()); }
-[[nodiscard]] inline juce::File appDataDirectory() { return appDataDirectory(resolveFromEnvironment()); }
 [[nodiscard]] inline juce::String applicationName(const juce::String& base) {
     return applicationName(resolveFromEnvironment(), base);
 }
