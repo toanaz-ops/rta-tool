@@ -5,6 +5,22 @@
 
 ---
 
+# 2026-11-10 (khuya) — **H13: dọn việc không cần phần cứng (orphan `TestProfile.h`, tách test IR pane, cờ `confidenceMeasured`).**
+
+| commit | what |
+|---|---|
+| `e73c2ae` | #110: xoá `isActive()` và cả hai `appDataDirectory()` khỏi `TestProfile.h` (app không ghi gì vào app data; orphan_check base d70bb57 exit 0) |
+| `17c0c47` | `test_ir_pane_view.cpp` (397) -> `test_ir_pane_view.cpp` (174) + `test_ir_pane_view_h10.cpp` (116) + `ir_pane_view_rig.h`; 11/11 case giữ nguyên tên và nội dung |
+| `7ce93e2` + LOW fix | L3: `PolarityResult::confidenceMeasured` thay sentinel `confidenceDb == 0.0`; false ở mọi nhánh return sớm và khi floor = 0; câu NoSignal không số khi false. Mutant: flag không set / set luôn / app quay về sentinel -> đều RED tại dòng test đã nêu |
+
+`IrPlots.cpp` đã tách từ H11 (`d087302`), không còn file nào sát 400. Fable review `d70bb57..7ce93e2`: 0 HIGH, 0 MEDIUM, 4 LOW, đã sửa cả 4 (đổi tên cờ cho khớp nghĩa, rig header tự include `catch_approx`, câu TestProfile.h tự mâu thuẫn, record l4c + HANDOFF cũ).
+
+**Ghi chú cho chủ dự án (không đổi):** IR sạch tuyệt đối (floor trước arrival = 0) vẫn bị từ chối NoSignal vì confidence không tính được; chỉ xảy ra với tín hiệu tổng hợp, không với phép đo thật.
+
+**Còn mở:** HW-175 (chủ dự án).
+
+---
+
 # 2026-11-10 (tối) — **H12: G22b transfer function từ HAI file WAV (offset, clock drift, resample). Chưa đo trên phần cứng.**
 
 *Plan: `docs/plans/2026-11-10-h12-g22b-two-file-wav-plan.md`. Record: `docs/dsp/2026-11-10-g22b-two-file-wav-drift.md` (§6 sửa theo code). Builder chạy Sonnet 5.5, review Fable.*
@@ -22,7 +38,7 @@ Fable: vòng 1 2 HIGH/2 MEDIUM -> vòng 2 1 MEDIUM -> vòng 3 0 HIGH/0 MEDIUM, 7
 
 **Người thử được gì:** rail `LOAD WAV` (file console) -> `LOAD MEAS WAV` (file recorder cầm tay) -> chọn REF/MEAS ch, START, để trống LENGTH -> `ANALYSE` -> readout `... clock +xx.xx ppm corrected, offset s.sss s -> stored WAV <meas> chM vs <ref> chR`; trace hiện trong TRANSFER. Hai file cùng recorder -> `shared clock`. Ảnh offscreen `shots/main-wav-pair.png`.
 
-**Còn mở:** 4 LOW code (§6 cuối record); cổng `ClockUncertain` ở range ngắn chưa đo với phòng thật (HW-175); case kiểm thử chậm nhất 19.3 s.
+**Còn mở:** ~~4 LOW code~~ (sửa ở `d1b6430`); cổng `ClockUncertain` ở range ngắn chưa đo với phòng thật (HW-175); case kiểm thử chậm nhất 19.3 s.
 
 ---
 
@@ -39,11 +55,11 @@ Fable: vòng 1 2 HIGH/2 MEDIUM -> vòng 2 1 MEDIUM -> vòng 3 0 HIGH/0 MEDIUM, 7
 | `b7e91ef`, `ead3ad9` | W3 rail `LOAD WAV` -> REF/MEAS ch, START/LENGTH, `ANALYSE` -> `WavTransferJob` (worker, newest wins) -> trace nhóm WAV |
 | `bb7cef2` | LOW cuối lane (Fable): test read-fail ở cửa sổ delay giữa, shade WAV toàn library (`assignSharedShade`), "-0.0 ms", `RangeRoundsToZero`, WAV rỗng, guard list |
 
-Fable phase review `925fb3a..ead3ad9`: 0 HIGH, 0 MEDIUM, 9 LOW (8 sửa, L3 sentinel `== 0.0` để follow-up). orphan_check (base 925fb3a) exit 0. (a) 16/19, (b) 16/19, (b-strict) 13 -> 14/19 = 73.7 %.
+Fable phase review `925fb3a..ead3ad9`: 0 HIGH, 0 MEDIUM, 9 LOW (8 sửa, L3 sentinel `== 0.0` để follow-up, đã sửa bằng `confidenceMeasured` ở 7ce93e2). orphan_check (base 925fb3a) exit 0. (a) 16/19, (b) 16/19, (b-strict) 13 -> 14/19 = 73.7 %.
 
 **Người thử được gì (exe dựng lại từ main):** ghi một WAV nhiều kênh (kênh console + kênh mic, cùng một recorder) -> rail `LOAD WAV` -> chọn file -> `REF ch` / `MEAS ch` / `START s` / `LENGTH s` -> `ANALYSE` -> readout `delay N samples (x.x ms), good trust, N.N averages -> stored WAV <file> chM vs chR`; bấm TRANSFER thấy trace (magnitude/phase/coherence). File mono -> câu từ chối, `ANALYSE` tắt. Ảnh offscreen: `shots/main-wav.png`.
 
-**Còn mở:** hai file WAV riêng (recorder ghi mono theo track / hai thiết bị — cần đo drift + resample), lane riêng; L3 cần cờ "đã đo" trong `PolarityResult` (core); `TestProfile.h` (#110) có 2 hàm orphan theo orphan_check base 9b6615a — không phải của lane này; `test_ir_pane_view.cpp` 397/400 dòng.
+**Còn mở:** ~~hai file WAV riêng~~ (xong ở H12); ~~L3 cờ "đã đo"~~, ~~`TestProfile.h` orphan~~, ~~`test_ir_pane_view.cpp` 397/400~~ (xong ở H13, mục trên).
 
 ---
 
