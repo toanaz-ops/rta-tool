@@ -55,8 +55,10 @@ bool fitLine(const std::vector<Point>& points, double& slope, double& intercept)
     return true;
 }
 
-double maxHzOf(const PhaseSlopeOptions& options) {
-    const double maxHz = options.maxHz > 0.0 ? options.maxHz : options.sampleRate / 4.0;
+/// `sampleRate` is the WINDOW's: the delay is scaled by it, so the default band edge (fs / 4) must be
+/// the same clock, not `options.sampleRate`.
+double maxHzOf(const PhaseSlopeOptions& options, double sampleRate) {
+    const double maxHz = options.maxHz > 0.0 ? options.maxHz : sampleRate / 4.0;
     if (maxHz < options.minHz) throw std::invalid_argument("phase slope: maxHz below minHz");
     return maxHz;
 }
@@ -118,7 +120,7 @@ std::optional<WindowSpectrum> windowSpectrum(std::span<const float> reference,
 
 std::optional<FractionalDelay> fractionalDelayOf(const WindowSpectrum& window, std::ptrdiff_t integerDelay,
                                                  const PhaseSlopeOptions& options) {
-    const double maxHz = maxHzOf(options);
+    const double maxHz = maxHzOf(options, window.sampleRate);
     std::vector<Point> points;
     double previous = 0.0;
     double offset = 0.0;  // accumulated multiple of 2 pi
@@ -155,7 +157,7 @@ std::optional<double> relativeFractionalDelay(const WindowSpectrum& window, cons
     }
     // Two clocks have no common sample to count a difference in.
     if (!(window.sampleRate == anchor.sampleRate)) return std::nullopt;
-    const double maxHz = maxHzOf(options);
+    const double maxHz = maxHzOf(options, window.sampleRate);
     std::vector<Point> points;
     double previous = 0.0;
     double offset = 0.0;

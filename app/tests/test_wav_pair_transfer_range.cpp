@@ -170,3 +170,38 @@ TEST_CASE("H12 fix 2: a to-end range left shorter than the minimum by the overla
     CHECK(earlier.clock.refusal != ClockRefusal::RangeTooShort);
     CHECK(earlier.clock.ok());
 }
+
+TEST_CASE("H12 LOWs: a to-end START past the first clip but short of the overlap end is RangeTooShort", "[wavpair]") {
+    // The first clip takes its margin from the WHOLE to-end length. With the ppm limit raised to 10 % that
+    // margin (~148k samples) swallows the range, and the old code quoted that unclipped end as
+    // RangeOutsideOverlap while ~119k partnered samples remain after START. (Raised so the margin can
+    // exceed the 2^17 coarse window the pipeline needs inside the overlap; at 400 ppm the path cannot be
+    // reached through the coarse look.) The remainder is re-margined from its own length.
+    const auto p = longReferencePair(0.0);
+    auto r = request(440000.0 / kRate, 0.0);
+    r.clock.maxPpm = 100000.0;
+    const auto out = analyse(p, r);
+    INFO(wavPairRefusalText(out));
+    REQUIRE(out.clock.refusal == ClockRefusal::RangeTooShort);
+    CHECK(out.clock.overlapAfterStartSeconds > 118000.0 / kRate);
+    CHECK(out.clock.overlapAfterStartSeconds < 121000.0 / kRate);
+    CHECK(out.refusal != WavPairRefusal::RangeOutsideFile);
+}
+
+TEST_CASE("H12 LOWs: a remainder that rounds to 0.000 s is stated in samples", "[wavpair]") {
+    // 12 samples are 0.00025 s: "Only 0.000 s" read as nothing at all. Built at the text level: the
+    // pipeline's coarse look needs 2^17 partnered samples, so it never produces a remainder this small.
+    WavPairOutcome o;
+    o.referenceRate = kRate;
+    o.clock.refusal = ClockRefusal::RangeTooShort;
+    o.clock.overlapAfterStartSeconds = 12.0 / kRate;
+    o.clock.minRangeSeconds = 131072.0 / kRate;
+    const auto text = wavPairRefusalText(o);
+    CHECK_THAT(text, ContainsSubstring("Only 12 samples of the reference after the start"));
+    CHECK_THAT(text, !ContainsSubstring("0.000 s of the reference"));
+    o.clock.overlapAfterStartSeconds = 1.0 / kRate;
+    CHECK_THAT(wavPairRefusalText(o), ContainsSubstring("Only 1 sample of the reference after the start"));
+    // At and above half a millisecond the seconds form is kept.
+    o.clock.overlapAfterStartSeconds = 0.001;
+    CHECK_THAT(wavPairRefusalText(o), ContainsSubstring("Only 0.001 s of the reference after the start"));
+}

@@ -204,3 +204,28 @@ TEST_CASE("relative delay: the sample rate comes from the windows, and two rates
     other.sampleRate = 96000.0;
     CHECK_FALSE(relativeFractionalDelay(p.b, other, options()).has_value());
 }
+
+TEST_CASE("H12 LOWs: the default band edge follows the window's sample rate, not options.sampleRate", "[clockdrift]") {
+    // Hand-built H1: a 0.3-sample delay up to 12 kHz (fs/4 of the 48 kHz WINDOW), 0.9 sample above it.
+    // options.sampleRate says 96 kHz and maxHz is left at 0: a band edge taken from the options would be
+    // 24 kHz, take in the 0.9-sample bins and misreport the delay.
+    constexpr double kWindowRate = 48000.0;
+    constexpr std::size_t kBins = 2049;
+    WindowSpectrum w;
+    w.sampleRate = kWindowRate;
+    w.binHz = kWindowRate / 4096.0;
+    w.effectiveAverages = 30.0;
+    for (std::size_t k = 0; k < kBins; ++k) {
+        const double f = static_cast<double>(k) * w.binHz;
+        const double delay = f <= kWindowRate / 4.0 ? 0.3 : 0.9;
+        const double phase = -2.0 * 3.14159265358979323846 * f * delay / kWindowRate;
+        w.h.emplace_back(std::cos(phase), std::sin(phase));
+        w.gammaSquared.push_back(1.0f);
+    }
+    PhaseSlopeOptions o;
+    o.sampleRate = 96000.0;
+    o.minHz = 100.0;
+    const auto d = fractionalDelayOf(w, 0, o);
+    REQUIRE(d.has_value());
+    CHECK(std::fabs(d->delaySamples - 0.3) < 0.01);
+}

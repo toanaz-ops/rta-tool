@@ -197,6 +197,13 @@ ClockResult estimateClockMapping(const SampleBlockSource& reference, int referen
             // longer length has a slightly larger margin).
             const std::int64_t whole = rangeLength;
             rangeLength = std::min(rangeLength, o.last - rangeStart + 1);
+            if (rangeLength <= 0) {
+                // The margin of the WHOLE length swallowed the range, yet partnered samples may remain
+                // after START: take the margin of what is left (a minimal range's) and let the
+                // iterations below settle it, so a short remainder is RangeTooShort, not "outside".
+                o = overlapFor(0);
+                rangeLength = std::min(whole, o.last - rangeStart + 1);
+            }
             if (rangeLength > 0) {
                 o = overlapFor(rangeLength);
                 rangeLength = std::min(whole, o.last - rangeStart + 1);

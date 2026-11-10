@@ -5,6 +5,7 @@
 // in the readout, samples two decimals; trust two decimals as in G22).
 #include "measure/WavPairTransfer.h"
 
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -59,8 +60,13 @@ std::string clockSentence(const WavPairOutcome& o) {
                    "range.";
         case ClockRefusal::RangeTooShort:
             if (c.overlapAfterStartSeconds > 0.0) {
-                return "Only " + fixed(c.overlapAfterStartSeconds, 3) +
-                       " s of the reference after the start are covered by both files, and at least " +
+                // Under half a millisecond "0.000 s" reads as nothing at all: count the samples.
+                const auto samples = std::llround(c.overlapAfterStartSeconds * o.referenceRate);
+                const std::string amount = c.overlapAfterStartSeconds < 0.0005
+                                               ? std::to_string(samples) + (samples == 1 ? " sample" : " samples")
+                                               : fixed(c.overlapAfterStartSeconds, 3) + " s";
+                return "Only " + amount +
+                       " of the reference after the start are covered by both files, and at least " +
                        fixed(c.minRangeSeconds, 3) +
                        " s are needed to measure clock drift. Pick an earlier start.";
             }

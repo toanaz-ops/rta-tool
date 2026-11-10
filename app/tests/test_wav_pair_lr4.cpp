@@ -65,7 +65,9 @@ double firstMoment(System system, double alignedDelay) {
 /// WHY the delay is measured relative (the guard this file's cases lean on): the ABSOLUTE phase-slope fit
 /// of ONE pass-1 window of this very fixture, in the band the production pass uses. It either answers
 /// nothing (|residual| past the fit's one-sample validity, so the window would be dropped) or answers a
-/// delay more than half a sample off the truth. If the fixture stopped being non-linear-phase (a refactor
+/// delay more than half a sample off the truth. (The miss, ~14.8 samples at LR4 @ 1500 Hz, is the
+/// INTEGER stage: PHAT's lag lands on the band-limited group delay, ~15 samples there, and the phase
+/// fit then adds its residual; the phase-slope fit itself is not what is off by that much.) If the fixture stopped being non-linear-phase (a refactor
 /// that swaps the LR4 for a flat system) this returns false and the test fails -- the relative fit would
 /// then be protecting against nothing.
 bool absoluteFitIsBlind(const Case& c, const Pair& pair, double* totalOut) {
