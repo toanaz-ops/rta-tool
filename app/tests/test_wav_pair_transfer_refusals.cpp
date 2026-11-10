@@ -252,3 +252,19 @@ TEST_CASE("H12 T3: the linearity gate has neighbours on both sides (0.1 sample r
     CHECK(accepted.residualRms < 0.1);
     CHECK(analyseBent(over, false).clock.refusal == ClockRefusal::DriftNotLinear);
 }
+
+TEST_CASE("H12 T3: a symmetric V (-60 ppm then +60 ppm) has a median slope of 0 and is still not a shared clock",
+          "[wavpair]") {
+    // Theil-Sen's slope is a median: this delay goes down 9 samples and back up
+    // again, its slope reads ~0, and without the linearity condition on the shared
+    // branch it would be taken for "one clock" with only an integer offset applied.
+    const double bendAt = (0.5 + 3.25) * kRate;
+    const double b = 2.0 * kRate;
+    const auto p = makePair(384000, 528000, bentClock(b, -60e-6, 60e-6, bendAt), 11, false);
+    auto r = request(0.5, 6.5);
+    r.clock.priorOffsetSamples = static_cast<std::int64_t>(b);
+    const auto out = analyse(p, r);
+    INFO(wavPairRefusalText(out));
+    CHECK_FALSE(out.sharedClock);
+    CHECK(out.clock.refusal == ClockRefusal::DriftNotLinear);
+}
