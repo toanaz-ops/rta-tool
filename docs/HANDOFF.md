@@ -5,6 +5,27 @@
 
 ---
 
+# 2026-11-10 (tối) — **H12: G22b transfer function từ HAI file WAV (offset, clock drift, resample). Chưa đo trên phần cứng.**
+
+*Plan: `docs/plans/2026-11-10-h12-g22b-two-file-wav-plan.md`. Record: `docs/dsp/2026-11-10-g22b-two-file-wav-drift.md` (§6 sửa theo code). Builder chạy Sonnet 5.5, review Fable.*
+
+| commit | what |
+|---|---|
+| `fd16f35` | T1 core `KaiserSincInterpolator` (±32 tap, beta 10.06, chuẩn tới 0.45 fs) |
+| `75bb761` | T2 core `ClockDrift` (phase-slope + Theil-Sen) |
+| `35ac0ff`..`40f1d88` | T3 `estimateClockMapping` (coarse ±10 s, pass 1 band 100 Hz–3 kHz, pass 2 full band), `ResampledPairSource`, `analyseWavPairTransfer`; trần đo được 400 ppm |
+| `4696df3`, `57fe477` | T4 rail `LOAD MEAS WAV` / `CLEAR MEAS`, bext prior, readout `clock +x.xx ppm corrected` / `shared clock`, `offset s.sss s` |
+| `1ae0016` | sửa Fable vòng 1: dấu bext prior ngược (HIGH), delay tuyệt đối mỗi cửa sổ hỏng với crossover LR4 -> đo delay TƯƠNG ĐỐI với cửa sổ neo (HIGH), range tối thiểu 2^17 + cổng bất định `ClockUncertain`, kiểm tra overlap trước pass 1, LENGTH trống = tới hết overlap |
+| `0d5a108` | sửa Fable vòng 2: retry coarse nằm trong phần có file đo, margin theo độ dài đã cắt, `RangeTooShort` sau START |
+
+Fable: vòng 1 2 HIGH/2 MEDIUM -> vòng 2 1 MEDIUM -> vòng 3 0 HIGH/0 MEDIUM, 7 LOW (3 LOW record đã sửa trong §6; 4 LOW code để follow-up, ghi ở §6). orphan_check (base 77e722d) exit 0. Tally master plan không đổi (row 5 đã BUILT).
+
+**Người thử được gì:** rail `LOAD WAV` (file console) -> `LOAD MEAS WAV` (file recorder cầm tay) -> chọn REF/MEAS ch, START, để trống LENGTH -> `ANALYSE` -> readout `... clock +xx.xx ppm corrected, offset s.sss s -> stored WAV <meas> chM vs <ref> chR`; trace hiện trong TRANSFER. Hai file cùng recorder -> `shared clock`. Ảnh offscreen `shots/main-wav-pair.png`.
+
+**Còn mở:** 4 LOW code (§6 cuối record); cổng `ClockUncertain` ở range ngắn chưa đo với phòng thật (HW-175); case kiểm thử chậm nhất 19.3 s.
+
+---
+
 # 2026-11-10 (chiều) — **H11: G22 transfer function offline từ file WAV + 3 LOW cũ + tách `IrPlots.cpp`. Hàng 5 master plan BUILT. Chưa đo trên phần cứng.**
 
 *Plan: `docs/plans/2026-11-10-h11-g22-offline-wav-plan.md`. Record: `docs/dsp/2026-11-10-g22-offline-wav-transfer.md` (§1 sửa bảng parity: REW không có TF 2 kênh từ file; §6 viết theo code). Trunk-based.*

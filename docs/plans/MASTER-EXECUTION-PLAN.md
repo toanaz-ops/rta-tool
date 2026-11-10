@@ -138,6 +138,8 @@ Arithmetic: 13 + 1 (row 4) = 14, 14 / 19 = 0.7368; 9 + 1 = 10, 10 / 19 = 0.5263;
 
 **After H8 (PRs #96 TF picker, #97 API env switch, #98 M1/N1/N3):** row 11 loses its TF gap (still partial: `CaptureSequencer`); row 12 CORE ONLY -> BUILT (partial). (b) 14 -> 15 / 19 = 78.9 % (row 12 joins the list); (a) stays 15 / 19 = 78.9 % and (b-strict) stays 12 / 19 = 63.2 %.
 
+**After H12 (G22b two-file WAV, 2026-11-10):** no count moves -- row 5 is already BUILT. Rail `LOAD MEAS WAV` adds a second file: coarse offset (bext prior T_ref - T_meas, +/-10 s search), clock drift by window delays relative to an anchor + Theil-Sen (two passes, <= 400 ppm measured), Kaiser-sinc resampling, then G22's one-file analysis on the resampled pair. Record `docs/dsp/2026-11-10-g22b-two-file-wav-drift.md`, plan `docs/plans/2026-11-10-h12-g22b-two-file-wav-plan.md`.
+
 **After H11 (G22 offline WAV, 2026-11-10):** row 5 flips BUILT (partial) -> BUILT; its last gap closes. (a) stays 16 / 19 = 84.2 % and (b) stays 16 / 19 = 84.2 % (row 5 was already counted); (b-strict) 13 -> 14 / 19 = 73.7 % (13 + 1 = 14, 14 / 19 = 0.7368).
 
 **After H10 (G24 display, 2026-11-10):** no count moves -- row 5 stays BUILT (partial) for G22 alone.

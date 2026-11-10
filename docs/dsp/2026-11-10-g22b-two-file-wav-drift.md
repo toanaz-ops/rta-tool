@@ -230,3 +230,105 @@ between windows and blocks.
 - **JUCE:** two WAV files written in the test, one pair carrying bext time
   references whose difference is the true offset beyond 10 s (found only
   through the prior).
+
+## 6. Shipped (amendments against the code)
+
+*Commits `fd16f35`..`57fe477`, fix rounds `1ae0016` and `0d5a108`. Fable review
+rounds: (1) 2 HIGH, 2 MEDIUM, 6 LOW; (2) 0 HIGH, 1 MEDIUM, 7 LOW; (3) 0 HIGH, 0 MEDIUM, 7 LOW.
+Each item below supersedes the sentence of §2-§5 it names.*
+
+- **E2, the prior's sign.** The mapping t(n) = offset + n x ratio takes a reference
+  index to a measurement index, so the offset is the measurement index of
+  reference sample 0.
+  - bext TimeReference is the wall-clock sample count of a file's FIRST sample,
+    so prior = T_ref - T_meas.
+  - The first build used T_meas - T_ref. The 14 s fixture had the same
+    inversion, so the test passed against physics-reversed files (review 1
+    HIGH 1).
+  - Now tested both ways: the measurement starts 14 s earlier, and 14 s later.
+- **E2, retry.** If the coarse window at the range start is refused, one retry
+  runs at the middle of the part of the range that can map into the measurement
+  file (prior and half-width taken into account). A measurement span shorter
+  than the 2^17 coarse window gets its own sentence (`CoarseSpanTooShort`).
+- **E3, fraction.** The fraction is RELATIVE to the highest-trust (anchor)
+  window: weighted LS slope of unwrap(arg(G_i conj(G_a))), with weights
+  1 / ((1 - g_i)/g_i + (1 - g_a)/g_a), both coherences >= 0.5, and the relative
+  fraction within 1 sample.
+  - The system's phase cancels exactly for any two integer alignments, because
+    an integer shift is pure linear phase.
+  - The absolute per-window fit of the first build dropped EVERY window on a
+    system with an LR4 crossover (100 Hz or 1500 Hz) -> NoCorrelation (review 1
+    HIGH 2). §2's "lands in the fit's intercept, never in the slope" is true
+    only for phase linear in f.
+  - The anchor's own fraction is its absolute fit when that fit is within one
+    sample, else 0. That constant offset is absorbed by G22's integer
+    re-alignment, and the sub-sample remainder stays in the stored phase,
+    exactly as on the one-file path (LR4 at 1500 Hz, shared clock, stores
+    "delay -1 samples").
+- **E3, band.** Coarse and pass 1 use GCC-PHAT and the phase-slope fit over
+  100 Hz..3 kHz. Pass 2 (on the corrected pair) uses the full band, with the fit
+  up to fs/4.
+  - Reason: drift smears each window, and the smear decorrelates the high bins
+    first, while PHAT weights every bin equally.
+  - The full-band first build had a clean ceiling of 100 ppm. Band-limited, it
+    is 400 ppm.
+- **E3, lag bound, coverage, length.**
+  - Lag bound: ±(maxPpm x 1e-6 x range + 64).
+  - Accepted windows must span >= 60 % of the range.
+  - Minimum range 2^17 samples (2.731 s at 48 kHz).
+  - `RangeTooLong` when maxPpm x 1e-6 x range > 2^15/4 (7.1 min at
+    48 kHz / 400 ppm).
+- **E4.** The ceiling is `maxPpm` = 400, MEASURED on the pink + biquad fixture
+  (9/9 windows clean at 400; at 600 the 2^17 coarse window smears 79 samples).
+  §4's 1000 ppm is not reachable.
+- **E6, uncertainty gate (added).**
+  - `ClockUncertain` when u = r2 x sqrt(12/K2) x range / spread2 > 0.1 sample
+    (LS slope standard error carried over the range). It uses pass 2's r2, K2
+    and spread.
+  - The limit on r2 depends on K2: 0.025 at the 2^17 minimum, 0.046 at 6.5 s,
+    and the gate is inert from K = 14 (range >= 917 504 samples, 19.1 s at
+    48 kHz), where E6's 0.1 binds first.
+  - u under-predicts the Theil-Sen error by ~16 % at K = 4.
+  - On a 3 s flat fixture it flips at ~5 dB SNR. Whether real reverberant rooms
+    trip it at short ranges is unmeasured until hardware (HW-175).
+- **E7.** Pass 2 always runs, full band, so the integer is settled.
+  - "Shared clock" requires pass 1's |eps| x range <= 0.05 sample AND pass 2's
+    |slope| x range <= 0.05. Pass 1's residual RMS is not gated.
+  - The pass-2 guard has no RED mutant: no fixture makes pass 1 say shared
+    while pass 2 disagrees.
+- **Overlap (added).**
+  - Before pass 1, the range is checked against the measurement's extent
+    mapped through the coarse offset, with margin ceil(maxPpm x 1e-6 x length)
+    + 32 taps.
+  - A TYPED length that runs past it is refused as `RangeOutsideFile`, with the
+    overlap in seconds (three decimals).
+  - In pair mode LENGTH empty means "to the end of the overlap", so the UI
+    leaves LENGTH empty in pair mode. One-file behaviour is unchanged.
+  - The empty-LENGTH range is CLIPPED, not refused. Its margin is recomputed
+    from the clipped length (clip, re-margin, clip again; converges within one
+    sample).
+  - A clipped remainder of 1..2^17-1 samples after START is refused as
+    `RangeTooShort` ("Only x.xxx s of the reference after the start are
+    covered by both files...").
+  - A remainder of 0 is refused as `RangeOutsideFile`.
+- **Relative delay, sample rate.** `relativeFractionalDelay` uses the window's
+  own sample rate and refuses (nullopt) when window and anchor rates differ.
+- **E9.** ppm `%+.2f`, offset `%.3f` s, all seconds in sentences three
+  decimals. `deviceName = "WAV <meas file> ch<M> vs <ref file> ch<R>"`, and
+  one-file output is byte-identical.
+- **Fixture independence (§5).** The measurement is pink noise through the
+  system, resampled by the test's own ±256-tap Blackman-Harris sinc (checked on
+  a sinusoid, 9.5e-8 against a 1e-4 bound), never by the production
+  interpolator. The 1500 ppm refusal of §5 became 480 and 1000 ppm cases.
+
+**Open LOWs (round 3, not fixed; follow-up):**
+
+- `WavPairClock.cpp:198-206`: when the first clip already leaves no range, the
+  refusal is `RangeOutsideFile` quoting the unclipped end, in a band about one
+  margin wide. Both answers send START earlier.
+- `test_wav_pair_lr4.cpp:65-70`: the comment blames the absolute fit for a
+  14.8-sample miss that is PHAT's band-limited integer lag (LR4 at 1500 Hz has
+  ~15 samples of group delay).
+- `ClockDrift.cpp:58-62`: the default band edge still reads
+  `options.sampleRate`.
+- `WavPairText.cpp:61-62`: a 1..23-sample remainder prints "Only 0.000 s".
