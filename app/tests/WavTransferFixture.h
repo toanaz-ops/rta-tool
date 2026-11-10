@@ -87,4 +87,18 @@ inline MemorySource twoChannel(std::size_t n, int delay, std::uint32_t seed = 5)
     return s;
 }
 
+/// A one-file request with its display fields left at their defaults. Positional
+/// brace-init of `WavTransferRequest` omits the H12 display members, which gcc and
+/// clang report under -Wmissing-field-initializers (CI's warning gate).
+inline rta::measure::WavTransferRequest req(int referenceChannel, int measurementChannel, double startSeconds,
+                                            double lengthSeconds, const char* fileName) {
+    rta::measure::WavTransferRequest r;
+    r.referenceChannel = referenceChannel;
+    r.measurementChannel = measurementChannel;
+    r.startSeconds = startSeconds;
+    r.lengthSeconds = lengthSeconds;
+    r.fileName = fileName;
+    return r;
+}
+
 }  // namespace wavfix

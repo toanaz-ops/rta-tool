@@ -91,7 +91,8 @@ SweepRow sweepOne(double ppm) {
     const double b = kBSeconds * wavfix::kFs;
     const auto p = makePair(384000, 528000, linearClock(b, eps));
     const std::atomic<bool> cancel{false};
-    SweepRow row{ppm};
+    SweepRow row{};
+    row.ppm = ppm;
     // Pass 1 alone, with the TRUE delay as the prior and a wide lag window, so the
     // table says where the windows stop being measurable, not where a coarse search fails.
     detail::WindowPass pass;

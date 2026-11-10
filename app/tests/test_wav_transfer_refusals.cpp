@@ -28,7 +28,7 @@ bool contains(const std::string& text, const std::string& part) {
     return text.find(part) != std::string::npos;
 }
 
-WavTransferOutcome run(const MemorySource& source, WavTransferRequest request = {0, 1, 0.0, 0.0, "f.wav"}) {
+WavTransferOutcome run(const MemorySource& source, WavTransferRequest request = req(0, 1, 0.0, 0.0, "f.wav")) {
     return analyseWavTransfer(source, request, kNoCancel);
 }
 
@@ -47,14 +47,14 @@ std::size_t smallestQualifyingFrames() {
 TEST_CASE("W2: channel refusals", "[wavtransfer]") {
     MemorySource mono;
     mono.channels = {pink(100000, 1)};
-    auto out = run(mono, {0, 0, 0.0, 0.0, "m.wav"});
+    auto out = run(mono, req(0, 0, 0.0, 0.0, "m.wav"));
     CHECK(out.refusal == WavTransferRefusal::NotEnoughChannels);
     CHECK_FALSE(out.ok());
 
     const auto two = twoChannel(100000, 0);
-    CHECK(run(two, {1, 1, 0.0, 0.0, "s.wav"}).refusal == WavTransferRefusal::SameChannel);
-    CHECK(run(two, {0, 2, 0.0, 0.0, "s.wav"}).refusal == WavTransferRefusal::ChannelOutOfRange);
-    CHECK(run(two, {-1, 1, 0.0, 0.0, "s.wav"}).refusal == WavTransferRefusal::ChannelOutOfRange);
+    CHECK(run(two, req(1, 1, 0.0, 0.0, "s.wav")).refusal == WavTransferRefusal::SameChannel);
+    CHECK(run(two, req(0, 2, 0.0, 0.0, "s.wav")).refusal == WavTransferRefusal::ChannelOutOfRange);
+    CHECK(run(two, req(-1, 1, 0.0, 0.0, "s.wav")).refusal == WavTransferRefusal::ChannelOutOfRange);
 
     auto bad = twoChannel(100000, 0);
     bad.fs = 0.0;
@@ -63,11 +63,11 @@ TEST_CASE("W2: channel refusals", "[wavtransfer]") {
 
 TEST_CASE("W2: ranges outside the file", "[wavtransfer]") {
     const auto source = twoChannel(480000, 0);  // 10 s
-    CHECK(run(source, {0, 1, 8.0, 5.0, "r.wav"}).refusal == WavTransferRefusal::RangeOutsideFile);
-    CHECK(run(source, {0, 1, 10.0, 0.0, "r.wav"}).refusal == WavTransferRefusal::RangeOutsideFile);
-    CHECK(run(source, {0, 1, -1.0, 2.0, "r.wav"}).refusal == WavTransferRefusal::RangeOutsideFile);
+    CHECK(run(source, req(0, 1, 8.0, 5.0, "r.wav")).refusal == WavTransferRefusal::RangeOutsideFile);
+    CHECK(run(source, req(0, 1, 10.0, 0.0, "r.wav")).refusal == WavTransferRefusal::RangeOutsideFile);
+    CHECK(run(source, req(0, 1, -1.0, 2.0, "r.wav")).refusal == WavTransferRefusal::RangeOutsideFile);
     // exactly to the end is inside
-    CHECK(run(source, {0, 1, 5.0, 5.0, "r.wav"}).ok());
+    CHECK(run(source, req(0, 1, 5.0, 5.0, "r.wav")).ok());
 }
 
 TEST_CASE("W2: the shortest accepted range and one sample fewer (frame count from fifoEffectiveAverages)",
@@ -77,13 +77,13 @@ TEST_CASE("W2: the shortest accepted range and one sample fewer (frame count fro
     const auto source = twoChannel(length + 50000, 0);
     const auto seconds = [](std::size_t samples) { return static_cast<double>(samples) / kFs; };
 
-    const auto shortest = run(source, {0, 1, 0.0, seconds(length), "s.wav"});
+    const auto shortest = run(source, req(0, 1, 0.0, seconds(length), "s.wav"));
     REQUIRE(shortest.ok());
     CHECK(shortest.frames == frames);
     CHECK(shortest.effectiveAverages >= 8.0);
 
     // One sample short drops the last frame: frames - 1 reaches less than the gate.
-    const auto fewer = run(source, {0, 1, 0.0, seconds(length - 1), "s.wav"});
+    const auto fewer = run(source, req(0, 1, 0.0, seconds(length - 1), "s.wav"));
     CHECK(fewer.refusal == WavTransferRefusal::RangeTooShort);
     CHECK(fewer.reachableAverages < 8.0);
     CHECK(fewer.neededAverages == 8.0);
@@ -99,8 +99,8 @@ TEST_CASE("W2: the delay discard counts against the minimum range", "[wavtransfe
     const std::size_t length = kFft + (frames - 1) * kHop + 3000;
     const auto source = twoChannel(length + 50000, 3000);
     const auto seconds = [](std::size_t samples) { return static_cast<double>(samples) / kFs; };
-    CHECK(run(source, {0, 1, 0.0, seconds(length), "d.wav"}).ok());
-    const auto fewer = run(source, {0, 1, 0.0, seconds(length - 1), "d.wav"});
+    CHECK(run(source, req(0, 1, 0.0, seconds(length), "d.wav")).ok());
+    const auto fewer = run(source, req(0, 1, 0.0, seconds(length - 1), "d.wav"));
     REQUIRE(fewer.refusal == WavTransferRefusal::RangeTooShort);
     CHECK(fewer.delaySamples == 3000);
     CHECK(fewer.discardedSamples == 3000);
@@ -136,7 +136,7 @@ TEST_CASE("W2: a delay that moves by two samples is refused, by one is not", "[w
 TEST_CASE("W2: cancel and read failure", "[wavtransfer]") {
     const auto source = twoChannel(480000, 5);
     const std::atomic<bool> cancelled{true};
-    const auto out = analyseWavTransfer(source, {0, 1, 0.0, 0.0, "c.wav"}, cancelled);
+    const auto out = analyseWavTransfer(source, req(0, 1, 0.0, 0.0, "c.wav"), cancelled);
     CHECK(out.refusal == WavTransferRefusal::Cancelled);
     CHECK_FALSE(out.ok());
 
@@ -181,18 +181,18 @@ TEST_CASE("W2: a read that fails in the middle or the last delay window is refus
     const auto memory = twoChannel(800000, 5);
     for (const std::int64_t failStart : {std::int64_t{268928}, std::int64_t{537856}}) {
         const DelayWindowFailSource source(memory, failStart);
-        const auto out = analyseWavTransfer(source, {0, 1, 0.0, 0.0, "w.wav"}, kNoCancel);
+        const auto out = analyseWavTransfer(source, req(0, 1, 0.0, 0.0, "w.wav"), kNoCancel);
         CHECK(out.refusal == WavTransferRefusal::ReadFailed);
     }
     // Control: a failure at an offset no window reads changes nothing.
     const DelayWindowFailSource unaffected(memory, 12345);
-    CHECK(analyseWavTransfer(unaffected, {0, 1, 0.0, 0.0, "w.wav"}, kNoCancel).ok());
+    CHECK(analyseWavTransfer(unaffected, req(0, 1, 0.0, 0.0, "w.wav"), kNoCancel).ok());
 }
 
 TEST_CASE("W2: a length under one sample is its own refusal", "[wavtransfer]") {
     const auto source = twoChannel(480000, 0);
     // 1e-5 s at 48 kHz is 0.48 samples: rounds to 0, which is not "outside the file".
-    const auto out = run(source, {0, 1, 0.0, 1e-5, "z.wav"});
+    const auto out = run(source, req(0, 1, 0.0, 1e-5, "z.wav"));
     CHECK(out.refusal == WavTransferRefusal::RangeRoundsToZero);
     const auto text = wavTransferRefusalText(out);
     CHECK(contains(text, "less than one sample"));

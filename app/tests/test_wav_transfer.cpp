@@ -105,7 +105,7 @@ TEST_CASE("W2: the leakage bound is a small fraction of a dB, not a loophole", "
 TEST_CASE("W2: pink through a +6 dB peaking filter, measurement lagging by D = +37", "[wavtransfer]") {
     const auto source = twoChannel(480000, 37);
     const std::atomic<bool> cancel{false};
-    const auto out = analyseWavTransfer(source, {0, 1, 0.0, 0.0, "pink.wav"}, cancel);
+    const auto out = analyseWavTransfer(source, req(0, 1, 0.0, 0.0, "pink.wav"), cancel);
     requireClosedForm(out, 37);
     CHECK(out.trace->meta().deviceName == "WAV pink.wav ch2 vs ch1");
     CHECK(out.trace->meta().averagingDepth == static_cast<int>(out.frames));
@@ -122,7 +122,7 @@ TEST_CASE("W2: pink through a +6 dB peaking filter, measurement lagging by D = +
 TEST_CASE("W2: the same system with the measurement LEADING, D = -53", "[wavtransfer]") {
     const auto source = twoChannel(480000, -53);
     const std::atomic<bool> cancel{false};
-    const auto out = analyseWavTransfer(source, {0, 1, 0.0, 0.0, "lead.wav"}, cancel);
+    const auto out = analyseWavTransfer(source, req(0, 1, 0.0, 0.0, "lead.wav"), cancel);
     requireClosedForm(out, -53);
 }
 
@@ -133,7 +133,7 @@ TEST_CASE("W2: a 4-channel file, channel 3 against channel 1, ignores the other 
     source.channels[1] = pink(480000, 77);   // unrelated programme
     source.channels[3] = pink(480000, 78);
     const std::atomic<bool> cancel{false};
-    const auto out = analyseWavTransfer(source, {0, 2, 0.0, 0.0, "four.wav"}, cancel);
+    const auto out = analyseWavTransfer(source, req(0, 2, 0.0, 0.0, "four.wav"), cancel);
     requireClosedForm(out, 11);
     CHECK(out.trace->meta().deviceName == "WAV four.wav ch3 vs ch1");
 }
@@ -146,7 +146,7 @@ TEST_CASE("W2: a sub-range of the file analyses only that range", "[wavtransfer]
     makePair(576000, 5, [](std::size_t n) { return n < 2 * 48000 ? 90 : 20; }, source.channels[0],
              source.channels[1]);
     const std::atomic<bool> cancel{false};
-    const auto out = analyseWavTransfer(source, {0, 1, 3.0, 6.0, "range.wav"}, cancel);
+    const auto out = analyseWavTransfer(source, req(0, 1, 3.0, 6.0, "range.wav"), cancel);
     requireClosedForm(out, 20);
 }
 
@@ -158,7 +158,7 @@ TEST_CASE("W2: a one-sample delay change inside the range is accepted (the neigh
     makePair(n, 5, [](std::size_t i) { return i < n / 2 ? 20 : 21; }, source.channels[0],
              source.channels[1]);
     const std::atomic<bool> cancel{false};
-    const auto out = analyseWavTransfer(source, {0, 1, 0.0, 0.0, "neighbour.wav"}, cancel);
+    const auto out = analyseWavTransfer(source, req(0, 1, 0.0, 0.0, "neighbour.wav"), cancel);
     REQUIRE(out.ok());
     CHECK((out.delaySamples == 20 || out.delaySamples == 21));
 }
